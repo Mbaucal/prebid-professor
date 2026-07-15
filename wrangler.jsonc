@@ -9,6 +9,14 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "prebid-professor-db",
+      "database_id": "7ef68f78-0fd8-4937-a774-d2fd1d5353e6",
+      "migrations_dir": "migrations"
+    }
+  ],
   "observability": {
     "enabled": true
   }
