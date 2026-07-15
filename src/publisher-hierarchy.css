@@ -1,0 +1,153 @@
+.publisher-tree {
+  gap: 10px;
+}
+
+.publisher-tree-group {
+  border: 1px solid #2b323d;
+  border-radius: 10px;
+  background: #1d222a;
+  overflow: hidden;
+}
+
+.publisher-account-link,
+.site-link {
+  width: 100%;
+  border: 0;
+  text-align: left;
+}
+
+.publisher-account-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 11px;
+  color: #d9dee8;
+  background: #242a33;
+  font-weight: 800;
+}
+
+.publisher-account-link:hover,
+.publisher-account-link.active {
+  color: #ffffff;
+  background: #303742;
+}
+
+.publisher-account-link small {
+  min-width: 25px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #111827;
+  background: #f2f4f7;
+  text-align: center;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+}
+
+.publisher-site-list {
+  display: grid;
+  gap: 2px;
+  padding: 5px;
+}
+
+.site-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 9px 8px 16px;
+  border-radius: 7px;
+  color: #9da7b6;
+  background: transparent;
+  font-size: 12px;
+}
+
+.site-link::before {
+  content: "↳";
+  margin-right: 3px;
+  color: #596474;
+}
+
+.site-link > span {
+  flex: 1;
+}
+
+.site-link:hover,
+.site-link.active {
+  color: #ffffff;
+  background: #2a3039;
+}
+
+.site-link small {
+  color: #7f8998;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.site-link small.live {
+  color: #40d986;
+}
+
+.site-link small.staging {
+  color: #f4c24b;
+}
+
+.add-site-link {
+  color: #7d8796;
+  font-weight: 800;
+}
+
+.add-site-link::before {
+  content: "";
+}
+
+.site-overview-card {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid #d8e0e9;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.site-overview-card > div:first-child {
+  margin-bottom: 15px;
+}
+
+.site-overview-card h2 {
+  margin-top: 4px;
+}
+
+.site-overview-card p {
+  margin: 5px 0 0;
+  color: #667181;
+}
+
+.empty-site-cta {
+  width: 100%;
+  min-height: 96px;
+  margin-top: 18px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 11px;
+  color: #c25518;
+  background: #fff8f3;
+  font-weight: 900;
+}
+
+.button.danger {
+  color: #9f2f2f;
+  border-color: #efb6b6;
+  background: #fff5f5;
+}
+
+.button.danger:hover {
+  color: #7f1d1d;
+  border-color: #e88f8f;
+  background: #ffe8e8;
+}
+
+@media (max-width: 760px) {
+  .publisher-tree {
+    display: none;
+  }
+}
