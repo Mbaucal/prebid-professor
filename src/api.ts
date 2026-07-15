@@ -11,7 +11,9 @@ import type {
   CreateAdUnitInput,
   CreateBidderInput,
   CreateBidderOverrideInput,
+  CreatePublisherAccountInput,
   CreatePublisherInput,
+  CreateSiteInput,
   CsvImportApplyResponse,
   CsvImportInput,
   CsvImportPreview,
@@ -19,27 +21,33 @@ import type {
   DeleteAdUnitResponse,
   DeleteBidderOverrideResponse,
   DeleteBidderResponse,
+  DeleteSiteResponse,
   DuplicateAdUnitInput,
   DuplicateBidderInput,
   DuplicateBidderOverrideInput,
   DuplicatePublisherInput,
+  DuplicateSiteInput,
   HealthResponse,
   Publisher,
+  PublisherAccount,
+  PublisherAccountResponse,
+  PublisherAccountsResponse,
   PublisherResponse,
   PublishersResponse,
+  Site,
+  SiteResponse,
   UpdateAdUnitInput,
   UpdateBidderInput,
   UpdateBidderOverrideInput,
+  UpdatePublisherAccountInput,
 } from './shared/types';
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
   const payload = (await response.json()) as T & { error?: string };
-
   if (!response.ok) {
     throw new Error(payload.error || `Request failed with status ${response.status}.`);
   }
-
   return payload;
 }
 
@@ -50,6 +58,92 @@ export const api = {
     return requestJson<HealthResponse>('/api/health');
   },
 
+  async listPublisherAccounts(): Promise<PublisherAccount[]> {
+    const payload = await requestJson<PublisherAccountsResponse>('/api/publisher-accounts');
+    return payload.publishers;
+  },
+
+  async getPublisherAccount(id: string): Promise<PublisherAccount> {
+    const payload = await requestJson<PublisherAccountResponse>(
+      `/api/publisher-accounts/${encodeURIComponent(id)}`,
+    );
+    return payload.publisher;
+  },
+
+  async createPublisherAccount(input: CreatePublisherAccountInput): Promise<PublisherAccount> {
+    const payload = await requestJson<PublisherAccountResponse>('/api/publisher-accounts', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(input),
+    });
+    return payload.publisher;
+  },
+
+  async updatePublisherAccount(
+    id: string,
+    input: UpdatePublisherAccountInput,
+  ): Promise<PublisherAccount> {
+    const payload = await requestJson<PublisherAccountResponse>(
+      `/api/publisher-accounts/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.publisher;
+  },
+
+  async deletePublisherAccount(id: string): Promise<string> {
+    const payload = await requestJson<{ ok: true; deletedId: string }>(
+      `/api/publisher-accounts/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+    );
+    return payload.deletedId;
+  },
+
+  async createSite(input: CreateSiteInput): Promise<Site> {
+    const payload = await requestJson<SiteResponse>('/api/sites', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(input),
+    });
+    return payload.site;
+  },
+
+  async duplicateSite(sourceId: string, input: DuplicateSiteInput): Promise<Site> {
+    const payload = await requestJson<SiteResponse>(
+      `/api/sites/${encodeURIComponent(sourceId)}/duplicate`,
+      {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.site;
+  },
+
+  async moveSite(siteId: string, publisherAccountId: string): Promise<Site> {
+    const payload = await requestJson<SiteResponse>(
+      `/api/sites/${encodeURIComponent(siteId)}/move`,
+      {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify({ publisherAccountId }),
+      },
+    );
+    return payload.site;
+  },
+
+  async deleteSite(siteId: string): Promise<string> {
+    const payload = await requestJson<DeleteSiteResponse>(
+      `/api/sites/${encodeURIComponent(siteId)}`,
+      { method: 'DELETE' },
+    );
+    return payload.deletedId;
+  },
+
+  // Legacy site API aliases retained while configuration modules still use publisherId.
   async listPublishers(): Promise<Publisher[]> {
     const payload = await requestJson<PublishersResponse>('/api/publishers');
     return payload.publishers;
