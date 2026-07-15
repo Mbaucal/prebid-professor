@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './api';
-import AdUnitsPanel from './components/AdUnitsPanel';
+import ConfigPanel from './components/ConfigPanel';
 import type { HealthResponse, Publisher, PublisherStatus } from './shared/types';
 
 const navItems = ['Publishers', 'Releases', 'Prebid builds', 'Audit log', 'Settings'];
@@ -233,7 +233,7 @@ function App() {
 
           <p>
             {databaseReady
-              ? 'Publisher records come from Cloudflare D1. The Config tab now manages repeatable ad units and copies their rules and bidder overrides.'
+              ? 'Publisher records come from Cloudflare D1. The Config workspace now manages repeatable ad units, bidders and their slot, device and exact ad-unit overrides.'
               : 'The dashboard and Worker are deployed. Bind the D1 database to enable publisher workflows.'}
           </p>
 
@@ -263,7 +263,7 @@ function App() {
             </div>
             <div className="milestone next">
               <span>4</span>
-              <div><strong>Ad units and config</strong><small>Create, edit, duplicate and delete inventory</small></div>
+              <div><strong>Publisher configuration</strong><small>Ad units, bidders, overrides, size maps and unit rules</small></div>
             </div>
           </div>
         </article>
@@ -409,7 +409,7 @@ function App() {
 
         {activeTab === 'Overview' ? renderOverview() : null}
         {activeTab === 'Config' && publisher ? (
-          <AdUnitsPanel
+          <ConfigPanel
             onChanged={() => loadPublishers(publisher.id)}
             publisherId={publisher.id}
           />
