@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './api';
+import AdUnitsPanel from './components/AdUnitsPanel';
 import type { HealthResponse, Publisher, PublisherStatus } from './shared/types';
 
 const navItems = ['Publishers', 'Releases', 'Prebid builds', 'Audit log', 'Settings'];
+const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Export', 'Debug', 'Ads.txt'] as const;
 
+type PublisherTab = (typeof publisherTabs)[number];
 type PublisherFormMode = 'create' | 'duplicate';
 
 type PublisherFormState = {
@@ -60,6 +63,7 @@ function App() {
   const [publisherError, setPublisherError] = useState<string | null>(null);
   const [publishersLoading, setPublishersLoading] = useState(true);
   const [activePublisher, setActivePublisher] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<PublisherTab>('Overview');
   const [formMode, setFormMode] = useState<PublisherFormMode | null>(null);
   const [form, setForm] = useState<PublisherFormState>(emptyPublisherForm);
   const [formError, setFormError] = useState<string | null>(null);
@@ -117,6 +121,10 @@ function App() {
   );
 
   const databaseReady = health?.database === 'connected';
+
+  function selectPublisher(id: string) {
+    setActivePublisher(id);
+  }
 
   function openCreatePublisher() {
     setFormMode('create');
@@ -203,6 +211,107 @@ function App() {
     }
   }
 
+  function renderOverview() {
+    return (
+      <section className="content-grid">
+        <article className="panel overview-panel">
+          <div className="panel-heading">
+            <div>
+              <span className="panel-kicker">Platform status</span>
+              <h2>{databaseReady ? 'D1 publisher storage is connected' : 'Foundation is ready'}</h2>
+            </div>
+            <span className={health?.ok ? 'health-pill healthy' : 'health-pill'}>
+              {health?.ok
+                ? health.database === 'connected'
+                  ? 'API + D1 healthy'
+                  : `API healthy · DB ${health.database}`
+                : healthError
+                  ? 'API error'
+                  : 'Checking API…'}
+            </span>
+          </div>
+
+          <p>
+            {databaseReady
+              ? 'Publisher records come from Cloudflare D1. The Config tab now manages repeatable ad units and copies their rules and bidder overrides.'
+              : 'The dashboard and Worker are deployed. Bind the D1 database to enable publisher workflows.'}
+          </p>
+
+          {publisherError ? <p className="inline-warning">Publisher API: {publisherError}</p> : null}
+
+          {publisher ? (
+            <div className="publisher-facts">
+              <div><span>Publisher ID</span><code>{publisher.id}</code></div>
+              <div><span>GAM path</span><code>{publisher.gamPath}</code></div>
+              <div><span>Ads.txt</span><code>{publisher.adsTxtUrl ?? 'Not configured'}</code></div>
+              <div><span>Updated</span><code>{formatTimestamp(publisher.updatedAt)}</code></div>
+            </div>
+          ) : null}
+
+          <div className="milestone-list">
+            <div className="milestone complete">
+              <span>1</span>
+              <div><strong>Repository and deployment</strong><small>React, Worker API and workers.dev</small></div>
+            </div>
+            <div className={databaseReady ? 'milestone complete' : 'milestone next'}>
+              <span>2</span>
+              <div><strong>Cloudflare D1</strong><small>Schema, binding and publisher records</small></div>
+            </div>
+            <div className="milestone complete">
+              <span>3</span>
+              <div><strong>Publisher management</strong><small>Create and duplicate are connected to D1</small></div>
+            </div>
+            <div className="milestone next">
+              <span>4</span>
+              <div><strong>Ad units and config</strong><small>Create, edit, duplicate and delete inventory</small></div>
+            </div>
+          </div>
+        </article>
+
+        <article className="panel api-panel">
+          <div className="panel-heading">
+            <div>
+              <span className="panel-kicker">Worker API</span>
+              <h2>/api/health + publisher config</h2>
+            </div>
+          </div>
+          <pre>{JSON.stringify({ health, publishers: publishers.length, activePublisher }, null, 2)}</pre>
+        </article>
+
+        <article className="panel stats-panel">
+          <div className="stat"><strong>{publishers.length}</strong><span>Publishers</span></div>
+          <div className="stat"><strong>{publisher?.adUnitsCount ?? 0}</strong><span>Ad units</span></div>
+          <div className="stat"><strong>{publisher?.biddersCount ?? 0}</strong><span>Bidders</span></div>
+          <div className="stat"><strong>{publisher?.releasesCount ?? 0}</strong><span>Releases</span></div>
+        </article>
+
+        <article className="panel ads-txt-panel">
+          <div className="panel-heading">
+            <div>
+              <span className="panel-kicker">Ads.txt checker</span>
+              <h2>Simple status model</h2>
+            </div>
+            <span className="ok-badge">✅ OK</span>
+          </div>
+          <p>When required lines are missing, the dashboard will show only the missing full entries.</p>
+          <pre>{`❌ Missing\n\n# Criteo\ncriteo.com, 213, RESELLER, 9fac4a4a87c2a44f`}</pre>
+        </article>
+      </section>
+    );
+  }
+
+  function renderPlaceholder(tab: PublisherTab) {
+    return (
+      <section className="content-page">
+        <article className="panel placeholder-panel">
+          <span className="panel-kicker">{tab}</span>
+          <h2>{tab} is next in the build plan</h2>
+          <p>The route and navigation are ready. The backing API and editor will be connected in the next implementation step.</p>
+        </article>
+      </section>
+    );
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -232,7 +341,7 @@ function App() {
             <button
               className={item.id === publisher?.id ? 'publisher-link active' : 'publisher-link'}
               key={item.id}
-              onClick={() => setActivePublisher(item.id)}
+              onClick={() => selectPublisher(item.id)}
               type="button"
             >
               <span>{item.name}</span>
@@ -286,97 +395,26 @@ function App() {
         </header>
 
         <section className="tabbar" aria-label="Publisher sections">
-          {['Overview', 'Config', 'Prebid.js', 'Releases', 'Export', 'Debug', 'Ads.txt'].map((item, index) => (
-            <button className={index === 0 ? 'tab active' : 'tab'} key={item} type="button">
+          {publisherTabs.map((item) => (
+            <button
+              className={item === activeTab ? 'tab active' : 'tab'}
+              key={item}
+              onClick={() => setActiveTab(item)}
+              type="button"
+            >
               {item}
             </button>
           ))}
         </section>
 
-        <section className="content-grid">
-          <article className="panel overview-panel">
-            <div className="panel-heading">
-              <div>
-                <span className="panel-kicker">Platform status</span>
-                <h2>{databaseReady ? 'D1 publisher storage is connected' : 'Foundation is ready'}</h2>
-              </div>
-              <span className={health?.ok ? 'health-pill healthy' : 'health-pill'}>
-                {health?.ok
-                  ? health.database === 'connected'
-                    ? 'API + D1 healthy'
-                    : `API healthy · DB ${health.database}`
-                  : healthError
-                    ? 'API error'
-                    : 'Checking API…'}
-              </span>
-            </div>
-
-            <p>
-              {databaseReady
-                ? 'Publisher records now come from Cloudflare D1. You can create a blank publisher or duplicate an existing site without copying its release history or production pointer.'
-                : 'The dashboard and Worker are deployed. Bind the D1 database to enable publisher workflows.'}
-            </p>
-
-            {publisherError ? <p className="inline-warning">Publisher API: {publisherError}</p> : null}
-
-            {publisher ? (
-              <div className="publisher-facts">
-                <div><span>Publisher ID</span><code>{publisher.id}</code></div>
-                <div><span>GAM path</span><code>{publisher.gamPath}</code></div>
-                <div><span>Ads.txt</span><code>{publisher.adsTxtUrl ?? 'Not configured'}</code></div>
-                <div><span>Updated</span><code>{formatTimestamp(publisher.updatedAt)}</code></div>
-              </div>
-            ) : null}
-
-            <div className="milestone-list">
-              <div className="milestone complete">
-                <span>1</span>
-                <div><strong>Repository and deployment</strong><small>React, Worker API and workers.dev</small></div>
-              </div>
-              <div className={databaseReady ? 'milestone complete' : 'milestone next'}>
-                <span>2</span>
-                <div><strong>Cloudflare D1</strong><small>Schema, binding and initial publisher records</small></div>
-              </div>
-              <div className={databaseReady ? 'milestone next' : 'milestone'}>
-                <span>3</span>
-                <div><strong>Publisher management</strong><small>Create and duplicate are now connected to D1</small></div>
-              </div>
-              <div className="milestone">
-                <span>4</span>
-                <div><strong>Ad units and config</strong><small>Edit, duplicate and validate publisher configuration</small></div>
-              </div>
-            </div>
-          </article>
-
-          <article className="panel api-panel">
-            <div className="panel-heading">
-              <div>
-                <span className="panel-kicker">Worker API</span>
-                <h2>/api/health + /api/publishers</h2>
-              </div>
-            </div>
-            <pre>{JSON.stringify({ health, publishers: publishers.length, activePublisher }, null, 2)}</pre>
-          </article>
-
-          <article className="panel stats-panel">
-            <div className="stat"><strong>{publishers.length}</strong><span>Publishers</span></div>
-            <div className="stat"><strong>{publisher?.adUnitsCount ?? 0}</strong><span>Ad units</span></div>
-            <div className="stat"><strong>{publisher?.biddersCount ?? 0}</strong><span>Bidders</span></div>
-            <div className="stat"><strong>{publisher?.releasesCount ?? 0}</strong><span>Releases</span></div>
-          </article>
-
-          <article className="panel ads-txt-panel">
-            <div className="panel-heading">
-              <div>
-                <span className="panel-kicker">Ads.txt checker</span>
-                <h2>Simple status model</h2>
-              </div>
-              <span className="ok-badge">✅ OK</span>
-            </div>
-            <p>When required lines are missing, the dashboard will show only the missing full entries.</p>
-            <pre>{`❌ Missing\n\n# Criteo\ncriteo.com, 213, RESELLER, 9fac4a4a87c2a44f`}</pre>
-          </article>
-        </section>
+        {activeTab === 'Overview' ? renderOverview() : null}
+        {activeTab === 'Config' && publisher ? (
+          <AdUnitsPanel
+            onChanged={() => loadPublishers(publisher.id)}
+            publisherId={publisher.id}
+          />
+        ) : null}
+        {activeTab !== 'Overview' && activeTab !== 'Config' ? renderPlaceholder(activeTab) : null}
       </main>
 
       {formMode ? (
