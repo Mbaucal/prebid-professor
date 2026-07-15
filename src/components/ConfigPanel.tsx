@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import AdUnitsPanel from './AdUnitsPanel';
 import BiddersPanel from './BiddersPanel';
+import BulkImportPanel from './BulkImportPanel';
 
 type Props = {
   publisherId: string;
   onChanged?: () => void | Promise<void>;
 };
 
-type ConfigSection = 'ad-units' | 'bidders';
+type ConfigSection = 'ad-units' | 'bidders' | 'imports';
 
 export default function ConfigPanel({ publisherId, onChanged }: Props) {
   const [section, setSection] = useState<ConfigSection>('ad-units');
@@ -29,6 +30,13 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
         >
           Bidders & overrides
         </button>
+        <button
+          className={section === 'imports' ? 'active' : ''}
+          onClick={() => setSection('imports')}
+          type="button"
+        >
+          CSV import
+        </button>
         <button disabled title="Size map editor is the next config module." type="button">
           Size maps
         </button>
@@ -39,9 +47,13 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
 
       {section === 'ad-units' ? (
         <AdUnitsPanel onChanged={onChanged} publisherId={publisherId} />
-      ) : (
+      ) : null}
+      {section === 'bidders' ? (
         <BiddersPanel onChanged={onChanged} publisherId={publisherId} />
-      )}
+      ) : null}
+      {section === 'imports' ? (
+        <BulkImportPanel onChanged={onChanged} publisherId={publisherId} />
+      ) : null}
     </div>
   );
 }
