@@ -77,6 +77,61 @@ export type DuplicateAdUnitInput = {
   copyBidderAdUnitOverrides?: boolean;
 };
 
+export type JsonObject = Record<string, unknown>;
+export type BidderOverrideScope = 'slot' | 'device' | 'adunit';
+
+export type BidderOverride = {
+  id: string;
+  publisherId: string;
+  bidder: string;
+  scopeType: BidderOverrideScope;
+  scopeKey: string;
+  params: JsonObject;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Bidder = {
+  id: string;
+  publisherId: string;
+  bidder: string;
+  params: JsonObject;
+  enabled: boolean;
+  overrides: BidderOverride[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateBidderInput = {
+  bidder: string;
+  params?: JsonObject;
+  enabled?: boolean;
+};
+
+export type UpdateBidderInput = Partial<CreateBidderInput>;
+
+export type DuplicateBidderInput = {
+  bidder: string;
+  enabled?: boolean;
+  copyOverrides?: boolean;
+};
+
+export type CreateBidderOverrideInput = {
+  scopeType: BidderOverrideScope;
+  scopeKey: string;
+  params?: JsonObject;
+  enabled?: boolean;
+};
+
+export type UpdateBidderOverrideInput = Partial<CreateBidderOverrideInput>;
+
+export type DuplicateBidderOverrideInput = {
+  scopeType?: BidderOverrideScope;
+  scopeKey: string;
+  enabled?: boolean;
+};
+
 export type ApiErrorResponse = {
   ok: false;
   error: string;
@@ -104,6 +159,31 @@ export type AdUnitResponse = {
 };
 
 export type DeleteAdUnitResponse = {
+  ok: true;
+  deletedId: string;
+};
+
+export type BiddersResponse = {
+  ok: true;
+  bidders: Bidder[];
+};
+
+export type BidderResponse = {
+  ok: true;
+  bidder: Bidder;
+};
+
+export type BidderOverrideResponse = {
+  ok: true;
+  override: BidderOverride;
+};
+
+export type DeleteBidderResponse = {
+  ok: true;
+  deletedId: string;
+};
+
+export type DeleteBidderOverrideResponse = {
   ok: true;
   deletedId: string;
 };
