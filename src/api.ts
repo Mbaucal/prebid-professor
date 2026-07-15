@@ -11,6 +11,10 @@ import type {
   CreateBidderInput,
   CreateBidderOverrideInput,
   CreatePublisherInput,
+  CsvImportApplyResponse,
+  CsvImportInput,
+  CsvImportPreview,
+  CsvImportPreviewResponse,
   DeleteAdUnitResponse,
   DeleteBidderOverrideResponse,
   DeleteBidderResponse,
@@ -248,5 +252,28 @@ export const api = {
       { method: 'DELETE' },
     );
     return payload.deletedId;
+  },
+
+  async previewCsvImport(publisherId: string, input: CsvImportInput): Promise<CsvImportPreview> {
+    const payload = await requestJson<CsvImportPreviewResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/imports/preview`,
+      {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.preview;
+  },
+
+  applyCsvImport(publisherId: string, input: CsvImportInput): Promise<CsvImportApplyResponse> {
+    return requestJson<CsvImportApplyResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/imports/apply`,
+      {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      },
+    );
   },
 };
