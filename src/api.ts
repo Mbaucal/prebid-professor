@@ -1,10 +1,17 @@
 import type {
+  AdUnit,
+  AdUnitResponse,
+  AdUnitsResponse,
+  CreateAdUnitInput,
   CreatePublisherInput,
+  DeleteAdUnitResponse,
+  DuplicateAdUnitInput,
   DuplicatePublisherInput,
   HealthResponse,
   Publisher,
   PublisherResponse,
   PublishersResponse,
+  UpdateAdUnitInput,
 } from './shared/types';
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
@@ -52,5 +59,64 @@ export const api = {
       },
     );
     return payload.publisher;
+  },
+
+  async listAdUnits(publisherId: string): Promise<AdUnit[]> {
+    const payload = await requestJson<AdUnitsResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/ad-units`,
+    );
+    return payload.adUnits;
+  },
+
+  async createAdUnit(publisherId: string, input: CreateAdUnitInput): Promise<AdUnit> {
+    const payload = await requestJson<AdUnitResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/ad-units`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.adUnit;
+  },
+
+  async updateAdUnit(
+    publisherId: string,
+    adUnitId: string,
+    input: UpdateAdUnitInput,
+  ): Promise<AdUnit> {
+    const payload = await requestJson<AdUnitResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/ad-units/${encodeURIComponent(adUnitId)}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.adUnit;
+  },
+
+  async duplicateAdUnit(
+    publisherId: string,
+    adUnitId: string,
+    input: DuplicateAdUnitInput,
+  ): Promise<AdUnit> {
+    const payload = await requestJson<AdUnitResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/ad-units/${encodeURIComponent(adUnitId)}/duplicate`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.adUnit;
+  },
+
+  async deleteAdUnit(publisherId: string, adUnitId: string): Promise<string> {
+    const payload = await requestJson<DeleteAdUnitResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/ad-units/${encodeURIComponent(adUnitId)}`,
+      { method: 'DELETE' },
+    );
+    return payload.deletedId;
   },
 };
