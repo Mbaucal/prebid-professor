@@ -1,7 +1,9 @@
 export type PublisherStatus = 'live' | 'staging' | 'draft' | 'archived';
+export type PublisherAccountStatus = 'active' | 'draft' | 'archived';
 
-export type Publisher = {
+export type Site = {
   id: string;
+  publisherAccountId: string | null;
   name: string;
   domain: string;
   gamPath: string;
@@ -17,8 +19,33 @@ export type Publisher = {
   releasesCount: number;
 };
 
-export type CreatePublisherInput = {
+// Backwards-compatible alias while older config modules still use publisherId
+// for the site/domain identifier.
+export type Publisher = Site;
+
+export type PublisherAccount = {
   id: string;
+  name: string;
+  status: PublisherAccountStatus;
+  notes: string | null;
+  sites: Site[];
+  sitesCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreatePublisherAccountInput = {
+  id: string;
+  name: string;
+  status?: PublisherAccountStatus;
+  notes?: string | null;
+};
+
+export type UpdatePublisherAccountInput = Partial<Omit<CreatePublisherAccountInput, 'id'>>;
+
+export type CreateSiteInput = {
+  id: string;
+  publisherAccountId?: string | null;
   name: string;
   domain: string;
   gamPath: string;
@@ -26,8 +53,9 @@ export type CreatePublisherInput = {
   adsTxtUrl?: string | null;
 };
 
-export type DuplicatePublisherInput = {
+export type DuplicateSiteInput = {
   id: string;
+  publisherAccountId?: string | null;
   name: string;
   domain: string;
   gamPath: string;
@@ -36,6 +64,10 @@ export type DuplicatePublisherInput = {
   copyPrebidBuild?: boolean;
   copyAdsTxtRequirements?: boolean;
 };
+
+// Backwards-compatible input aliases for the existing /api/publishers routes.
+export type CreatePublisherInput = CreateSiteInput;
+export type DuplicatePublisherInput = DuplicateSiteInput;
 
 export type AdUnitType = 'ATF' | 'BTF' | 'DRAFT';
 
@@ -166,12 +198,32 @@ export type ApiErrorResponse = {
 
 export type PublishersResponse = {
   ok: true;
-  publishers: Publisher[];
+  publishers: Site[];
 };
 
 export type PublisherResponse = {
   ok: true;
-  publisher: Publisher;
+  publisher: Site;
+};
+
+export type PublisherAccountsResponse = {
+  ok: true;
+  publishers: PublisherAccount[];
+};
+
+export type PublisherAccountResponse = {
+  ok: true;
+  publisher: PublisherAccount;
+};
+
+export type SiteResponse = {
+  ok: true;
+  site: Site;
+};
+
+export type DeleteSiteResponse = {
+  ok: true;
+  deletedId: string;
 };
 
 export type AdUnitsResponse = {
