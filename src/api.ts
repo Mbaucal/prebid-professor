@@ -1,3 +1,4 @@
+import { normalizeCsvForApi } from './csv';
 import type {
   AdUnit,
   AdUnitResponse,
@@ -260,7 +261,7 @@ export const api = {
       {
         method: 'POST',
         headers: jsonHeaders,
-        body: JSON.stringify(input),
+        body: JSON.stringify({ ...input, csv: normalizeCsvForApi(input.csv) }),
       },
     );
     return payload.preview;
@@ -272,7 +273,7 @@ export const api = {
       {
         method: 'POST',
         headers: jsonHeaders,
-        body: JSON.stringify(input),
+        body: JSON.stringify({ ...input, csv: normalizeCsvForApi(input.csv) }),
       },
     );
   },
