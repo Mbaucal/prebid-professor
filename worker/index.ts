@@ -1,3 +1,10 @@
+import {
+  createAdUnit,
+  deleteAdUnit,
+  duplicateAdUnit,
+  listAdUnits,
+  updateAdUnit,
+} from './ad-units';
 import { apiError, json } from './http';
 import {
   createPublisher,
@@ -40,6 +47,38 @@ export default {
     if (pathname === '/api/publishers') {
       if (request.method === 'GET') return listPublishers(env);
       if (request.method === 'POST') return createPublisher(request, env);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const adUnitDuplicateMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/ad-units\/([^/]+)\/duplicate$/,
+    );
+    if (adUnitDuplicateMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return duplicateAdUnit(
+        request,
+        env,
+        decodeURIComponent(adUnitDuplicateMatch[1]),
+        decodeURIComponent(adUnitDuplicateMatch[2]),
+      );
+    }
+
+    const adUnitMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ad-units\/([^/]+)$/);
+    if (adUnitMatch) {
+      const publisherId = decodeURIComponent(adUnitMatch[1]);
+      const adUnitId = decodeURIComponent(adUnitMatch[2]);
+
+      if (request.method === 'PATCH') return updateAdUnit(request, env, publisherId, adUnitId);
+      if (request.method === 'DELETE') return deleteAdUnit(request, env, publisherId, adUnitId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const adUnitsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ad-units$/);
+    if (adUnitsMatch) {
+      const publisherId = decodeURIComponent(adUnitsMatch[1]);
+
+      if (request.method === 'GET') return listAdUnits(env, publisherId);
+      if (request.method === 'POST') return createAdUnit(request, env, publisherId);
       return apiError('Method not allowed.', 405);
     }
 
