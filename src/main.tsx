@@ -4,6 +4,7 @@ import App from './App';
 import './styles.css';
 import './publisher-workflows.css';
 import './ad-units.css';
+import './bidders.css';
 
 const root = document.getElementById('root');
 
