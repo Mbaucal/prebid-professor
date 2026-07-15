@@ -1,0 +1,254 @@
+.publisher-nav-message {
+  margin: 4px 8px 8px;
+  padding: 9px 10px;
+  border: 1px solid #343b46;
+  border-radius: 8px;
+  color: #98a3b2;
+  background: #20252d;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.publisher-nav-message.error {
+  color: #fecaca;
+  border-color: #7f1d1d;
+  background: #3b181b;
+}
+
+.publisher-link small.draft,
+.publisher-link small.archived {
+  color: #94a3b8;
+}
+
+.status-badge.draft,
+.status-badge.archived {
+  color: #5f6875;
+  background: #eef1f5;
+  border: 1px solid #d7dde6;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.inline-warning {
+  padding: 10px 12px;
+  border: 1px solid #f0c36d;
+  border-radius: 8px;
+  color: #7c5310 !important;
+  background: #fff8df;
+}
+
+.publisher-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.publisher-facts > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #e0e5ec;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.publisher-facts span,
+.publisher-facts code {
+  display: block;
+}
+
+.publisher-facts span {
+  margin-bottom: 5px;
+  color: #7b8595;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.publisher-facts code {
+  overflow: hidden;
+  color: #344054;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(12 17 24 / 72%);
+  backdrop-filter: blur(3px);
+}
+
+.modal-card {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid #d4dbe5;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 28px 80px rgb(0 0 0 / 28%);
+}
+
+.modal-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid #e0e5ec;
+  background: #ffffff;
+}
+
+.modal-heading h2 {
+  font-size: 22px;
+}
+
+.icon-button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d6dde7;
+  border-radius: 9px;
+  color: #596273;
+  background: #f8fafc;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.publisher-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 20px 22px 22px;
+}
+
+.publisher-form > label {
+  min-width: 0;
+}
+
+.publisher-form label > span,
+.publisher-form label > small {
+  display: block;
+}
+
+.publisher-form label > span {
+  margin-bottom: 6px;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.publisher-form label > small {
+  margin-top: 5px;
+  color: #8a94a4;
+  font-size: 11px;
+}
+
+.publisher-form input,
+.publisher-form select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cfd7e3;
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: #263142;
+  background: #ffffff;
+  outline: none;
+}
+
+.publisher-form input:focus,
+.publisher-form select:focus {
+  border-color: #ef722d;
+  box-shadow: 0 0 0 3px rgb(239 114 45 / 14%);
+}
+
+.form-options,
+.form-error,
+.modal-actions {
+  grid-column: 1 / -1;
+}
+
+.form-options {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #e0e5ec;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #3f4a5a;
+  font-weight: 700;
+}
+
+.check-row input {
+  width: 17px;
+  min-height: 17px;
+  margin: 0;
+}
+
+.check-row span {
+  margin: 0 !important;
+  font-size: 13px !important;
+}
+
+.form-options p {
+  margin: 2px 0 0;
+  color: #6b7585;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.form-error {
+  padding: 11px 12px;
+  border: 1px solid #f1a7a7;
+  border-radius: 8px;
+  color: #9f1d1d;
+  background: #fff0f0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+@media (max-width: 760px) {
+  .publisher-facts,
+  .publisher-form {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-backdrop {
+    padding: 10px;
+  }
+
+  .modal-card {
+    max-height: calc(100vh - 20px);
+  }
+
+  .top-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
