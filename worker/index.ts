@@ -19,8 +19,19 @@ import {
 import { apiError, json } from './http';
 import { applyCsvImport, previewCsvImport } from './imports';
 import {
+  createPublisherAccount,
+  deletePublisherAccount,
+  getPublisherAccount,
+  listPublisherAccounts,
+  moveSiteToPublisher,
+  updatePublisherAccount,
+} from './publisher-accounts';
+import {
   createPublisher,
+  createSite,
+  deleteSite,
   duplicatePublisher,
+  duplicateSite,
   getPublisher,
   listPublishers,
   type DatabaseEnv,
@@ -32,7 +43,6 @@ interface Env extends DatabaseEnv {
 
 async function databaseStatus(env: Env): Promise<'connected' | 'not-bound' | 'error'> {
   if (!env.DB) return 'not-bound';
-
   try {
     await env.DB.prepare('SELECT 1 AS ok').first();
     return 'connected';
@@ -56,21 +66,62 @@ export default {
       });
     }
 
+    // New hierarchy: publisher account/company -> multiple sites/domains.
+    if (pathname === '/api/publisher-accounts') {
+      if (request.method === 'GET') return listPublisherAccounts(env);
+      if (request.method === 'POST') return createPublisherAccount(request, env);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const publisherAccountMatch = pathname.match(/^\/api\/publisher-accounts\/([^/]+)$/);
+    if (publisherAccountMatch) {
+      const accountId = decodeURIComponent(publisherAccountMatch[1]);
+      if (request.method === 'GET') return getPublisherAccount(env, accountId);
+      if (request.method === 'PATCH') return updatePublisherAccount(request, env, accountId);
+      if (request.method === 'DELETE') return deletePublisherAccount(request, env, accountId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    if (pathname === '/api/sites') {
+      if (request.method === 'GET') return listPublishers(env);
+      if (request.method === 'POST') return createSite(request, env);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const siteDuplicateMatch = pathname.match(/^\/api\/sites\/([^/]+)\/duplicate$/);
+    if (siteDuplicateMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return duplicateSite(request, env, decodeURIComponent(siteDuplicateMatch[1]));
+    }
+
+    const siteMoveMatch = pathname.match(/^\/api\/sites\/([^/]+)\/move$/);
+    if (siteMoveMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return moveSiteToPublisher(request, env, decodeURIComponent(siteMoveMatch[1]));
+    }
+
+    const siteMatch = pathname.match(/^\/api\/sites\/([^/]+)$/);
+    if (siteMatch) {
+      const siteId = decodeURIComponent(siteMatch[1]);
+      if (request.method === 'GET') return getPublisher(env, siteId);
+      if (request.method === 'DELETE') return deleteSite(request, env, siteId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    // Legacy endpoint: these rows are now sites, kept for existing clients and config routes.
     if (pathname === '/api/publishers') {
       if (request.method === 'GET') return listPublishers(env);
       if (request.method === 'POST') return createPublisher(request, env);
       return apiError('Method not allowed.', 405);
     }
 
-    const importMatch = pathname.match(
-      /^\/api\/publishers\/([^/]+)\/imports\/(preview|apply)$/,
-    );
+    const importMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/imports\/(preview|apply)$/);
     if (importMatch) {
       if (request.method !== 'POST') return apiError('Method not allowed.', 405);
-      const publisherId = decodeURIComponent(importMatch[1]);
+      const siteId = decodeURIComponent(importMatch[1]);
       return importMatch[2] === 'preview'
-        ? previewCsvImport(request, env, publisherId)
-        : applyCsvImport(request, env, publisherId);
+        ? previewCsvImport(request, env, siteId)
+        : applyCsvImport(request, env, siteId);
     }
 
     const adUnitDuplicateMatch = pathname.match(
@@ -88,20 +139,18 @@ export default {
 
     const adUnitMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ad-units\/([^/]+)$/);
     if (adUnitMatch) {
-      const publisherId = decodeURIComponent(adUnitMatch[1]);
+      const siteId = decodeURIComponent(adUnitMatch[1]);
       const adUnitId = decodeURIComponent(adUnitMatch[2]);
-
-      if (request.method === 'PATCH') return updateAdUnit(request, env, publisherId, adUnitId);
-      if (request.method === 'DELETE') return deleteAdUnit(request, env, publisherId, adUnitId);
+      if (request.method === 'PATCH') return updateAdUnit(request, env, siteId, adUnitId);
+      if (request.method === 'DELETE') return deleteAdUnit(request, env, siteId, adUnitId);
       return apiError('Method not allowed.', 405);
     }
 
     const adUnitsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ad-units$/);
     if (adUnitsMatch) {
-      const publisherId = decodeURIComponent(adUnitsMatch[1]);
-
-      if (request.method === 'GET') return listAdUnits(env, publisherId);
-      if (request.method === 'POST') return createAdUnit(request, env, publisherId);
+      const siteId = decodeURIComponent(adUnitsMatch[1]);
+      if (request.method === 'GET') return listAdUnits(env, siteId);
+      if (request.method === 'POST') return createAdUnit(request, env, siteId);
       return apiError('Method not allowed.', 405);
     }
 
@@ -133,20 +182,18 @@ export default {
 
     const bidderMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/bidders\/([^/]+)$/);
     if (bidderMatch) {
-      const publisherId = decodeURIComponent(bidderMatch[1]);
+      const siteId = decodeURIComponent(bidderMatch[1]);
       const bidderId = decodeURIComponent(bidderMatch[2]);
-
-      if (request.method === 'PATCH') return updateBidder(request, env, publisherId, bidderId);
-      if (request.method === 'DELETE') return deleteBidder(request, env, publisherId, bidderId);
+      if (request.method === 'PATCH') return updateBidder(request, env, siteId, bidderId);
+      if (request.method === 'DELETE') return deleteBidder(request, env, siteId, bidderId);
       return apiError('Method not allowed.', 405);
     }
 
     const biddersMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/bidders$/);
     if (biddersMatch) {
-      const publisherId = decodeURIComponent(biddersMatch[1]);
-
-      if (request.method === 'GET') return listBidders(env, publisherId);
-      if (request.method === 'POST') return createBidder(request, env, publisherId);
+      const siteId = decodeURIComponent(biddersMatch[1]);
+      if (request.method === 'GET') return listBidders(env, siteId);
+      if (request.method === 'POST') return createBidder(request, env, siteId);
       return apiError('Method not allowed.', 405);
     }
 
@@ -167,28 +214,23 @@ export default {
       /^\/api\/publishers\/([^/]+)\/bidder-overrides\/([^/]+)$/,
     );
     if (overrideMatch) {
-      const publisherId = decodeURIComponent(overrideMatch[1]);
+      const siteId = decodeURIComponent(overrideMatch[1]);
       const overrideId = decodeURIComponent(overrideMatch[2]);
-
-      if (request.method === 'PATCH') {
-        return updateBidderOverride(request, env, publisherId, overrideId);
-      }
-      if (request.method === 'DELETE') {
-        return deleteBidderOverride(request, env, publisherId, overrideId);
-      }
+      if (request.method === 'PATCH') return updateBidderOverride(request, env, siteId, overrideId);
+      if (request.method === 'DELETE') return deleteBidderOverride(request, env, siteId, overrideId);
       return apiError('Method not allowed.', 405);
     }
 
-    const duplicateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/duplicate$/);
-    if (duplicateMatch) {
+    const legacyDuplicateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/duplicate$/);
+    if (legacyDuplicateMatch) {
       if (request.method !== 'POST') return apiError('Method not allowed.', 405);
-      return duplicatePublisher(request, env, decodeURIComponent(duplicateMatch[1]));
+      return duplicatePublisher(request, env, decodeURIComponent(legacyDuplicateMatch[1]));
     }
 
-    const publisherMatch = pathname.match(/^\/api\/publishers\/([^/]+)$/);
-    if (publisherMatch) {
+    const legacyPublisherMatch = pathname.match(/^\/api\/publishers\/([^/]+)$/);
+    if (legacyPublisherMatch) {
       if (request.method !== 'GET') return apiError('Method not allowed.', 405);
-      return getPublisher(env, decodeURIComponent(publisherMatch[1]));
+      return getPublisher(env, decodeURIComponent(legacyPublisherMatch[1]));
     }
 
     if (pathname.startsWith('/api/')) {
