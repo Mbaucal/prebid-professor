@@ -17,6 +17,7 @@ import {
   updateBidderOverride,
 } from './bidders';
 import { apiError, json } from './http';
+import { applyCsvImport, previewCsvImport } from './imports';
 import {
   createPublisher,
   duplicatePublisher,
@@ -59,6 +60,17 @@ export default {
       if (request.method === 'GET') return listPublishers(env);
       if (request.method === 'POST') return createPublisher(request, env);
       return apiError('Method not allowed.', 405);
+    }
+
+    const importMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/imports\/(preview|apply)$/,
+    );
+    if (importMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      const publisherId = decodeURIComponent(importMatch[1]);
+      return importMatch[2] === 'preview'
+        ? previewCsvImport(request, env, publisherId)
+        : applyCsvImport(request, env, publisherId);
     }
 
     const adUnitDuplicateMatch = pathname.match(
