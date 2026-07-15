@@ -5,6 +5,17 @@ import {
   listAdUnits,
   updateAdUnit,
 } from './ad-units';
+import {
+  createBidder,
+  createBidderOverride,
+  deleteBidder,
+  deleteBidderOverride,
+  duplicateBidder,
+  duplicateBidderOverride,
+  listBidders,
+  updateBidder,
+  updateBidderOverride,
+} from './bidders';
 import { apiError, json } from './http';
 import {
   createPublisher,
@@ -79,6 +90,80 @@ export default {
 
       if (request.method === 'GET') return listAdUnits(env, publisherId);
       if (request.method === 'POST') return createAdUnit(request, env, publisherId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const bidderDuplicateMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/bidders\/([^/]+)\/duplicate$/,
+    );
+    if (bidderDuplicateMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return duplicateBidder(
+        request,
+        env,
+        decodeURIComponent(bidderDuplicateMatch[1]),
+        decodeURIComponent(bidderDuplicateMatch[2]),
+      );
+    }
+
+    const bidderOverridesCreateMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/bidders\/([^/]+)\/overrides$/,
+    );
+    if (bidderOverridesCreateMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return createBidderOverride(
+        request,
+        env,
+        decodeURIComponent(bidderOverridesCreateMatch[1]),
+        decodeURIComponent(bidderOverridesCreateMatch[2]),
+      );
+    }
+
+    const bidderMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/bidders\/([^/]+)$/);
+    if (bidderMatch) {
+      const publisherId = decodeURIComponent(bidderMatch[1]);
+      const bidderId = decodeURIComponent(bidderMatch[2]);
+
+      if (request.method === 'PATCH') return updateBidder(request, env, publisherId, bidderId);
+      if (request.method === 'DELETE') return deleteBidder(request, env, publisherId, bidderId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const biddersMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/bidders$/);
+    if (biddersMatch) {
+      const publisherId = decodeURIComponent(biddersMatch[1]);
+
+      if (request.method === 'GET') return listBidders(env, publisherId);
+      if (request.method === 'POST') return createBidder(request, env, publisherId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const overrideDuplicateMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/bidder-overrides\/([^/]+)\/duplicate$/,
+    );
+    if (overrideDuplicateMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return duplicateBidderOverride(
+        request,
+        env,
+        decodeURIComponent(overrideDuplicateMatch[1]),
+        decodeURIComponent(overrideDuplicateMatch[2]),
+      );
+    }
+
+    const overrideMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/bidder-overrides\/([^/]+)$/,
+    );
+    if (overrideMatch) {
+      const publisherId = decodeURIComponent(overrideMatch[1]);
+      const overrideId = decodeURIComponent(overrideMatch[2]);
+
+      if (request.method === 'PATCH') {
+        return updateBidderOverride(request, env, publisherId, overrideId);
+      }
+      if (request.method === 'DELETE') {
+        return deleteBidderOverride(request, env, publisherId, overrideId);
+      }
       return apiError('Method not allowed.', 405);
     }
 
