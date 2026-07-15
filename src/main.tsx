@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles.css';
 import './publisher-workflows.css';
+import './publisher-hierarchy.css';
 import './ad-units.css';
 import './bidders.css';
 import './imports.css';
