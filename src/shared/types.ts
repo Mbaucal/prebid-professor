@@ -37,6 +37,46 @@ export type DuplicatePublisherInput = {
   copyAdsTxtRequirements?: boolean;
 };
 
+export type AdUnitType = 'ATF' | 'BTF' | 'DRAFT';
+
+export type AdUnit = {
+  id: string;
+  publisherId: string;
+  code: string;
+  type: AdUnitType;
+  mediaType: string;
+  sizeMapKey: string | null;
+  enabled: boolean;
+  sortOrder: number;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateAdUnitInput = {
+  code: string;
+  type?: AdUnitType;
+  mediaType?: string;
+  sizeMapKey?: string | null;
+  enabled?: boolean;
+  sortOrder?: number;
+  notes?: string | null;
+};
+
+export type UpdateAdUnitInput = Partial<CreateAdUnitInput>;
+
+export type DuplicateAdUnitInput = {
+  code: string;
+  type?: AdUnitType;
+  mediaType?: string;
+  enabled?: boolean;
+  sortOrder?: number;
+  notes?: string | null;
+  copySizeMapReference?: boolean;
+  copyUnitRule?: boolean;
+  copyBidderAdUnitOverrides?: boolean;
+};
+
 export type ApiErrorResponse = {
   ok: false;
   error: string;
@@ -51,6 +91,21 @@ export type PublishersResponse = {
 export type PublisherResponse = {
   ok: true;
   publisher: Publisher;
+};
+
+export type AdUnitsResponse = {
+  ok: true;
+  adUnits: AdUnit[];
+};
+
+export type AdUnitResponse = {
+  ok: true;
+  adUnit: AdUnit;
+};
+
+export type DeleteAdUnitResponse = {
+  ok: true;
+  deletedId: string;
 };
 
 export type HealthResponse = {
