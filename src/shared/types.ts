@@ -132,6 +132,32 @@ export type DuplicateBidderOverrideInput = {
   enabled?: boolean;
 };
 
+export type CsvImportKind = 'ad-units' | 'bidders' | 'bidder-overrides' | 'size-maps';
+export type CsvImportRowStatus = 'create' | 'update' | 'error';
+
+export type CsvImportInput = {
+  kind: CsvImportKind;
+  csv: string;
+};
+
+export type CsvImportPreviewRow = {
+  rowNumber: number;
+  key: string;
+  status: CsvImportRowStatus;
+  summary: string;
+  errors: string[];
+  data: JsonObject;
+};
+
+export type CsvImportPreview = {
+  kind: CsvImportKind;
+  totalRows: number;
+  createCount: number;
+  updateCount: number;
+  errorCount: number;
+  rows: CsvImportPreviewRow[];
+};
+
 export type ApiErrorResponse = {
   ok: false;
   error: string;
@@ -186,6 +212,19 @@ export type DeleteBidderResponse = {
 export type DeleteBidderOverrideResponse = {
   ok: true;
   deletedId: string;
+};
+
+export type CsvImportPreviewResponse = {
+  ok: true;
+  preview: CsvImportPreview;
+};
+
+export type CsvImportApplyResponse = {
+  ok: true;
+  kind: CsvImportKind;
+  imported: number;
+  created: number;
+  updated: number;
 };
 
 export type HealthResponse = {
