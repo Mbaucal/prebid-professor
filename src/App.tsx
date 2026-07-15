@@ -1,86 +1,121 @@
 import { useEffect, useMemo, useState } from 'react';
+import { api } from './api';
+import type { HealthResponse, Publisher } from './shared/types';
 
-type HealthResponse = {
-  ok: boolean;
-  service: string;
-  environment: string;
-  timestamp: string;
-};
-
-type Publisher = {
-  id: string;
-  name: string;
-  domain: string;
-  status: 'live' | 'staging';
-  version: string;
-  updatedAt: string;
-};
-
-const publishers: Publisher[] = [
+const fallbackPublishers: Publisher[] = [
   {
     id: 'politika',
     name: 'Politika.rs',
     domain: 'politika.rs',
+    gamPath: '/23339552141/Politika.rs/',
     status: 'live',
-    version: '20260714_122757',
-    updatedAt: 'Jul 14, 12:27',
+    currentReleaseId: null,
+    currentVersion: '20260714_122757',
+    lastPublishedAt: '2026-07-14T12:27:57Z',
+    adsTxtUrl: 'https://www.politika.rs/ads.txt',
+    createdAt: '2026-07-14T12:27:57Z',
+    updatedAt: '2026-07-14T12:27:57Z',
+    adUnitsCount: 0,
+    biddersCount: 0,
+    releasesCount: 0,
   },
   {
     id: 'magazin-politika',
     name: 'Magazin Politika',
     domain: 'magazin.politika.rs',
+    gamPath: '/23339552141/Magazin.politika.rs/',
     status: 'live',
-    version: '20260713_184200',
-    updatedAt: 'Jul 13, 18:42',
+    currentReleaseId: null,
+    currentVersion: '20260713_184200',
+    lastPublishedAt: '2026-07-13T18:42:00Z',
+    adsTxtUrl: 'https://magazin.politika.rs/ads.txt',
+    createdAt: '2026-07-13T18:42:00Z',
+    updatedAt: '2026-07-13T18:42:00Z',
+    adUnitsCount: 0,
+    biddersCount: 0,
+    releasesCount: 0,
   },
   {
     id: 'zurnal',
     name: 'Žurnal',
     domain: 'zurnal.rs',
+    gamPath: '/23339552141/Zurnal/',
     status: 'staging',
-    version: 'draft',
-    updatedAt: 'Jul 12, 09:10',
+    currentReleaseId: null,
+    currentVersion: 'draft',
+    lastPublishedAt: null,
+    adsTxtUrl: 'https://www.zurnal.rs/ads.txt',
+    createdAt: '2026-07-12T09:10:00Z',
+    updatedAt: '2026-07-12T09:10:00Z',
+    adUnitsCount: 0,
+    biddersCount: 0,
+    releasesCount: 0,
   },
 ];
 
 const navItems = ['Publishers', 'Releases', 'Prebid builds', 'Audit log', 'Settings'];
 
+function formatTimestamp(value: string | null): string {
+  if (!value) return 'Not published yet';
+
+  try {
+    return new Intl.DateTimeFormat('en', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [publishers, setPublishers] = useState<Publisher[]>(fallbackPublishers);
+  const [publisherError, setPublisherError] = useState<string | null>(null);
   const [activePublisher, setActivePublisher] = useState('politika');
 
   useEffect(() => {
     let cancelled = false;
 
-    fetch('/api/health')
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Health endpoint returned ${response.status}`);
-        }
+    Promise.allSettled([api.health(), api.listPublishers()]).then(([healthResult, publishersResult]) => {
+      if (cancelled) return;
 
-        return (await response.json()) as HealthResponse;
-      })
-      .then((payload) => {
-        if (!cancelled) {
-          setHealth(payload);
+      if (healthResult.status === 'fulfilled') {
+        setHealth(healthResult.value);
+      } else {
+        setHealthError(healthResult.reason instanceof Error ? healthResult.reason.message : 'Health check failed');
+      }
+
+      if (publishersResult.status === 'fulfilled') {
+        setPublishers(publishersResult.value);
+        setPublisherError(null);
+
+        if (!publishersResult.value.some((item) => item.id === activePublisher)) {
+          setActivePublisher(publishersResult.value[0]?.id ?? 'politika');
         }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setHealthError(error instanceof Error ? error.message : 'Health check failed');
-        }
-      });
+      } else {
+        setPublisherError(
+          publishersResult.reason instanceof Error
+            ? publishersResult.reason.message
+            : 'Publisher API is not ready.',
+        );
+      }
+    });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activePublisher]);
 
   const publisher = useMemo(
-    () => publishers.find((item) => item.id === activePublisher) ?? publishers[0],
-    [activePublisher],
+    () => publishers.find((item) => item.id === activePublisher) ?? publishers[0] ?? fallbackPublishers[0],
+    [activePublisher, publishers],
   );
+
+  const databaseReady = health?.database === 'connected';
 
   return (
     <div className="app-shell">
@@ -135,9 +170,10 @@ function App() {
             <h1>{publisher.name}</h1>
             <div className="publisher-meta">
               <span className={`status-badge ${publisher.status}`}>● {publisher.status}</span>
-              <code>v {publisher.version}</code>
+              <code>v {publisher.currentVersion}</code>
               <span>{publisher.domain}</span>
-              <span>Updated {publisher.updatedAt}</span>
+              <span>{publisher.gamPath}</span>
+              <span>Published {formatTimestamp(publisher.lastPublishedAt)}</span>
             </div>
           </div>
 
@@ -161,7 +197,7 @@ function App() {
             <div className="panel-heading">
               <div>
                 <span className="panel-kicker">Platform status</span>
-                <h2>Foundation is ready</h2>
+                <h2>{databaseReady ? 'D1 publisher storage is connected' : 'Foundation is ready'}</h2>
               </div>
               <span className={health?.ok ? 'health-pill healthy' : 'health-pill'}>
                 {health?.ok ? 'API healthy' : healthError ? 'API error' : 'Checking API…'}
@@ -169,22 +205,25 @@ function App() {
             </div>
 
             <p>
-              The React dashboard and Cloudflare Worker now deploy as one application. The next step is
-              connecting D1 and R2, then replacing mock publisher data with real records.
+              {databaseReady
+                ? 'Publisher records now come from Cloudflare D1. Next we connect the visual create and duplicate publisher flows.'
+                : 'The dashboard and Worker are deployed. Create and bind the D1 database to replace fallback publisher data with real records.'}
             </p>
+
+            {publisherError ? <p className="inline-warning">Publisher API: {publisherError}</p> : null}
 
             <div className="milestone-list">
               <div className="milestone complete">
                 <span>1</span>
-                <div><strong>Repository scaffold</strong><small>React, Vite and Worker API</small></div>
+                <div><strong>Repository and deployment</strong><small>React, Worker API and workers.dev</small></div>
               </div>
-              <div className="milestone next">
+              <div className={databaseReady ? 'milestone complete' : 'milestone next'}>
                 <span>2</span>
-                <div><strong>Cloudflare resources</strong><small>Create D1 and R2 bindings</small></div>
+                <div><strong>Cloudflare D1</strong><small>Schema, binding and initial publisher records</small></div>
               </div>
-              <div className="milestone">
+              <div className={databaseReady ? 'milestone next' : 'milestone'}>
                 <span>3</span>
-                <div><strong>Publisher data</strong><small>CRUD, duplication and audit log</small></div>
+                <div><strong>Publisher management</strong><small>Create, edit, duplicate and audit</small></div>
               </div>
               <div className="milestone">
                 <span>4</span>
@@ -204,10 +243,10 @@ function App() {
           </article>
 
           <article className="panel stats-panel">
-            <div className="stat"><strong>3</strong><span>Publishers</span></div>
-            <div className="stat"><strong>0</strong><span>Production releases</span></div>
-            <div className="stat"><strong>0</strong><span>Prebid builds</span></div>
-            <div className="stat"><strong>0</strong><span>Blocking issues</span></div>
+            <div className="stat"><strong>{publishers.length}</strong><span>Publishers</span></div>
+            <div className="stat"><strong>{publisher.adUnitsCount}</strong><span>Ad units</span></div>
+            <div className="stat"><strong>{publisher.biddersCount}</strong><span>Bidders</span></div>
+            <div className="stat"><strong>{publisher.releasesCount}</strong><span>Releases</span></div>
           </article>
 
           <article className="panel ads-txt-panel">
