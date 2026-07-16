@@ -1,0 +1,157 @@
+.prebid-local-badge.r2-connected {
+  color: #11603a;
+  border-color: #a7e3c2;
+  background: #eafaf1;
+}
+
+.r2-upload-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #cfe8d8;
+  border-radius: 11px;
+  background: #f2fbf6;
+}
+
+.r2-upload-actions .button {
+  justify-self: start;
+}
+
+.r2-upload-actions small {
+  color: #597064;
+  line-height: 1.5;
+}
+
+.prebid-history-card {
+  margin-top: 18px;
+}
+
+.prebid-history-card .prebid-card-heading p {
+  margin: 5px 0 0;
+  color: #7a8494;
+  font-size: 12px;
+}
+
+.prebid-history-empty {
+  margin: 18px;
+  padding: 18px;
+  border: 1px dashed #d5dce6;
+  border-radius: 11px;
+  color: #7d8796;
+  background: #f8fafc;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.prebid-build-history-list {
+  display: grid;
+}
+
+.stored-build-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 17px 18px;
+  border-top: 1px solid #e6eaf0;
+}
+
+.stored-build-row.current {
+  border-left: 4px solid #26a269;
+  background: #f6fcf8;
+}
+
+.stored-build-row.invalid {
+  border-left: 4px solid #d14343;
+  background: #fff8f8;
+}
+
+.stored-build-main {
+  min-width: 0;
+}
+
+.stored-build-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.stored-build-title b {
+  overflow: hidden;
+  color: #222a36;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stored-build-status {
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: #5f6875;
+  background: #eceff3;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stored-build-status.current {
+  color: #0d6a3d;
+  background: #dff8e9;
+}
+
+.stored-build-status.invalid {
+  color: #a22d2d;
+  background: #fee7e7;
+}
+
+.stored-build-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 7px;
+  color: #7a8492;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+}
+
+.stored-build-missing {
+  margin-top: 9px;
+  color: #a43838;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.stored-build-hash {
+  display: block;
+  margin-top: 8px;
+  color: #8a94a3;
+  font-size: 10px;
+}
+
+.stored-build-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stored-build-actions .button,
+.stored-build-actions a.button {
+  min-height: 36px;
+  padding: 8px 11px;
+  text-decoration: none;
+}
+
+@media (max-width: 900px) {
+  .stored-build-row {
+    grid-template-columns: 1fr;
+  }
+
+  .stored-build-actions {
+    justify-content: flex-start;
+  }
+}
