@@ -1,0 +1,569 @@
+.prebid-builds-page {
+  padding: 24px 32px 40px;
+}
+
+.prebid-build-toolbar {
+  align-items: flex-start;
+}
+
+.prebid-local-badge,
+.module-count-chip,
+.build-state {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.prebid-local-badge {
+  padding: 7px 10px;
+  color: #7c5310;
+  border: 1px solid #f1cf7b;
+  background: #fff8df;
+}
+
+.prebid-build-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(400px, 0.88fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.prebid-build-card {
+  min-width: 0;
+  border: 1px solid #d4dbe5;
+  border-radius: 15px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 5%);
+  overflow: hidden;
+}
+
+.prebid-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #e3e8ef;
+  background: #f8fafc;
+}
+
+.prebid-card-heading h3,
+.prebid-section-heading h4,
+.platform-module-group h4,
+.analysis-section h4,
+.prebid-validation-placeholder h4 {
+  margin: 0;
+  color: #222a36;
+}
+
+.prebid-card-heading h3 {
+  margin-top: 4px;
+  font-size: 19px;
+}
+
+.module-count-chip {
+  padding: 6px 9px;
+  color: #334155;
+  background: #e8edf3;
+}
+
+.prebid-version-row,
+.adapter-requirements,
+.platform-module-groups,
+.extra-modules-field,
+.prebid-config-preview,
+.prebid-actions,
+.prebid-validation-card > .prebid-dropzone,
+.build-analysis,
+.prebid-validation-placeholder,
+.prebid-storage-note {
+  margin-left: 20px;
+  margin-right: 20px;
+}
+
+.prebid-version-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  align-items: end;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.prebid-version-row label,
+.extra-modules-field {
+  display: block;
+}
+
+.prebid-version-row label > span,
+.extra-modules-field > span {
+  display: block;
+  margin-bottom: 6px;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.prebid-version-row input,
+.prebid-version-row select,
+.extra-modules-field textarea {
+  width: 100%;
+  border: 1px solid #cfd7e3;
+  border-radius: 9px;
+  color: #263142;
+  background: #ffffff;
+  outline: none;
+}
+
+.prebid-version-row input,
+.prebid-version-row select {
+  min-height: 42px;
+  padding: 9px 11px;
+}
+
+.extra-modules-field textarea {
+  min-height: 96px;
+  padding: 10px 11px;
+  resize: vertical;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.prebid-version-row input:focus,
+.prebid-version-row select:focus,
+.extra-modules-field textarea:focus {
+  border-color: #ef722d;
+  box-shadow: 0 0 0 3px rgb(239 114 45 / 14%);
+}
+
+.prebid-version-help {
+  min-height: 42px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 11px;
+  border: 1px solid #e0e5ec;
+  border-radius: 9px;
+  color: #667181;
+  background: #f8fafc;
+  font-size: 11px;
+}
+
+.prebid-version-help b {
+  color: #344054;
+  font-size: 12px;
+}
+
+.adapter-requirements,
+.platform-module-groups,
+.extra-modules-field,
+.prebid-config-preview {
+  margin-top: 18px;
+}
+
+.prebid-section-heading,
+.analysis-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.prebid-section-heading p,
+.platform-module-group p,
+.analysis-section p,
+.prebid-validation-placeholder p {
+  margin: 4px 0 0;
+  color: #778292;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.prebid-section-heading > span {
+  color: #87909d;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.module-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.required-adapter-chip {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid #dbe3ec;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.required-adapter-chip b {
+  color: #263142;
+  font-size: 12px;
+}
+
+.required-adapter-chip code {
+  min-width: 0;
+  overflow: hidden;
+  color: #5d6878;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prebid-empty-note {
+  grid-column: 1 / -1;
+  padding: 13px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 9px;
+  color: #7b8595;
+  background: #f8fafc;
+  text-align: center;
+  font-size: 11px;
+}
+
+.platform-module-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.platform-module-group {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.52fr) minmax(0, 1.48fr);
+  gap: 14px;
+  padding: 13px;
+  border: 1px solid #e0e5ec;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.platform-module-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.platform-module-option {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  border: 1px solid #e2e7ee;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.platform-module-option input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.platform-module-option code {
+  min-width: 0;
+  overflow: hidden;
+  color: #344054;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extra-modules-field small {
+  display: block;
+  margin-top: 5px;
+  color: #8a94a4;
+  font-size: 10px;
+}
+
+.prebid-config-preview {
+  border: 1px solid #d9e1eb;
+  border-radius: 11px;
+  overflow: hidden;
+}
+
+.prebid-config-preview .prebid-section-heading {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e3e8ef;
+  background: #f8fafc;
+}
+
+.prebid-config-preview pre {
+  max-height: 320px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  color: #dbe7f5;
+  background: #121821;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.prebid-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 18px 0 20px;
+}
+
+.prebid-file-input {
+  display: none;
+}
+
+.prebid-dropzone {
+  min-height: 210px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 20px;
+  padding: 24px;
+  border: 2px dashed #c7d0dc;
+  border-radius: 13px;
+  color: #667181;
+  background: #fbfcfe;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.prebid-dropzone:hover,
+.prebid-dropzone.dragging {
+  border-color: #ef722d;
+  background: #fff8f3;
+  transform: translateY(-1px);
+}
+
+.prebid-dropzone b {
+  color: #263142;
+  font-size: 15px;
+}
+
+.prebid-dropzone span,
+.prebid-dropzone small {
+  font-size: 11px;
+}
+
+.prebid-dropzone small {
+  color: #8b95a4;
+}
+
+.prebid-drop-icon {
+  color: #ef722d;
+  font-size: 32px !important;
+  line-height: 1;
+}
+
+.build-state {
+  padding: 6px 9px;
+}
+
+.build-state.valid {
+  color: #117745;
+  background: #dff8e9;
+}
+
+.build-state.invalid {
+  color: #9f2f2f;
+  background: #ffe8e8;
+}
+
+.build-analysis {
+  margin-top: 18px;
+}
+
+.build-file-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.build-file-summary > div {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid #e0e5ec;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.build-file-summary span,
+.build-file-summary b {
+  display: block;
+}
+
+.build-file-summary span {
+  margin-bottom: 4px;
+  color: #87909d;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.build-file-summary b {
+  overflow: hidden;
+  color: #344054;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prebid-analysis-warning {
+  margin-top: 10px;
+  padding: 10px 11px;
+  border: 1px solid #f0c36d;
+  border-radius: 8px;
+  color: #7c5310;
+  background: #fff8df;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.analysis-section {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #e0e5ec;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.analysis-section.ok {
+  border-color: #b8e8cb;
+  background: #f1fbf5;
+}
+
+.analysis-section.missing {
+  border-color: #f0b7b7;
+  background: #fff5f5;
+}
+
+.analysis-section.warning {
+  border-color: #f1cf7b;
+  background: #fffaf0;
+}
+
+.analysis-section-heading span {
+  color: #667181;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.analysis-section.ok .analysis-section-heading span {
+  color: #117745;
+}
+
+.analysis-section.missing .analysis-section-heading span {
+  color: #9f2f2f;
+}
+
+.module-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.module-pill-list code {
+  padding: 5px 7px;
+  border: 1px solid #d9e1eb;
+  border-radius: 999px;
+  color: #344054;
+  background: #ffffff;
+  font-size: 9px;
+}
+
+.module-pill-list.missing code {
+  color: #9f2f2f;
+  border-color: #efb6b6;
+  background: #fff5f5;
+}
+
+.module-pill-list.warning code {
+  color: #7c5310;
+  border-color: #f0c36d;
+  background: #fff8df;
+}
+
+.installed-module-details {
+  margin-top: 10px;
+  padding: 11px 12px;
+  border: 1px solid #e0e5ec;
+  border-radius: 9px;
+  background: #ffffff;
+}
+
+.installed-module-details summary {
+  color: #475467;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.prebid-validation-placeholder {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid #e0e5ec;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.prebid-storage-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 16px;
+  margin-bottom: 20px;
+  padding: 12px;
+  border: 1px solid #d8e0e9;
+  border-radius: 10px;
+  color: #667181;
+  background: #f8fafc;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.prebid-storage-note b {
+  color: #344054;
+}
+
+@media (max-width: 1180px) {
+  .prebid-build-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .prebid-builds-page {
+    padding: 18px;
+  }
+
+  .prebid-version-row,
+  .platform-module-group,
+  .module-chip-grid,
+  .platform-module-list,
+  .build-file-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .prebid-actions {
+    flex-direction: column;
+  }
+
+  .prebid-actions .button {
+    width: 100%;
+  }
+}
