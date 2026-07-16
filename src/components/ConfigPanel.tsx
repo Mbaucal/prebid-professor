@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import AdUnitsPanel from './AdUnitsPanel';
+import AdvancedRefreshPanel from './AdvancedRefreshPanel';
 import BiddersPanel from './BiddersPanel';
 import BulkImportPanel from './BulkImportPanel';
+import GeneratorProfilesPanel from './GeneratorProfilesPanel';
 import SizeMapsPanel from './SizeMapsPanel';
 import UnitRulesPanel from './UnitRulesPanel';
 
@@ -10,7 +12,14 @@ type Props = {
   onChanged?: () => void | Promise<void>;
 };
 
-type ConfigSection = 'ad-units' | 'bidders' | 'size-maps' | 'unit-rules' | 'imports';
+type ConfigSection =
+  | 'ad-units'
+  | 'bidders'
+  | 'size-maps'
+  | 'unit-rules'
+  | 'advanced-rules'
+  | 'generator-profiles'
+  | 'imports';
 
 export default function ConfigPanel({ publisherId, onChanged }: Props) {
   const [section, setSection] = useState<ConfigSection>('ad-units');
@@ -18,58 +27,36 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
   return (
     <div className="config-workspace">
       <nav className="config-subnav" aria-label="Configuration sections">
-        <button
-          className={section === 'ad-units' ? 'active' : ''}
-          onClick={() => setSection('ad-units')}
-          type="button"
-        >
+        <button className={section === 'ad-units' ? 'active' : ''} onClick={() => setSection('ad-units')} type="button">
           Ad units
         </button>
-        <button
-          className={section === 'bidders' ? 'active' : ''}
-          onClick={() => setSection('bidders')}
-          type="button"
-        >
+        <button className={section === 'bidders' ? 'active' : ''} onClick={() => setSection('bidders')} type="button">
           Bidders & overrides
         </button>
-        <button
-          className={section === 'size-maps' ? 'active' : ''}
-          onClick={() => setSection('size-maps')}
-          type="button"
-        >
+        <button className={section === 'size-maps' ? 'active' : ''} onClick={() => setSection('size-maps')} type="button">
           Size maps
         </button>
-        <button
-          className={section === 'unit-rules' ? 'active' : ''}
-          onClick={() => setSection('unit-rules')}
-          type="button"
-        >
+        <button className={section === 'unit-rules' ? 'active' : ''} onClick={() => setSection('unit-rules')} type="button">
           Unit rules
         </button>
-        <button
-          className={section === 'imports' ? 'active' : ''}
-          onClick={() => setSection('imports')}
-          type="button"
-        >
+        <button className={section === 'advanced-rules' ? 'active' : ''} onClick={() => setSection('advanced-rules')} type="button">
+          Advanced schedules
+        </button>
+        <button className={section === 'generator-profiles' ? 'active' : ''} onClick={() => setSection('generator-profiles')} type="button">
+          Generator profiles
+        </button>
+        <button className={section === 'imports' ? 'active' : ''} onClick={() => setSection('imports')} type="button">
           CSV import
         </button>
       </nav>
 
-      {section === 'ad-units' ? (
-        <AdUnitsPanel onChanged={onChanged} publisherId={publisherId} />
-      ) : null}
-      {section === 'bidders' ? (
-        <BiddersPanel onChanged={onChanged} publisherId={publisherId} />
-      ) : null}
-      {section === 'size-maps' ? (
-        <SizeMapsPanel onChanged={onChanged} publisherId={publisherId} />
-      ) : null}
-      {section === 'unit-rules' ? (
-        <UnitRulesPanel onChanged={onChanged} publisherId={publisherId} />
-      ) : null}
-      {section === 'imports' ? (
-        <BulkImportPanel onChanged={onChanged} publisherId={publisherId} />
-      ) : null}
+      {section === 'ad-units' ? <AdUnitsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'bidders' ? <BiddersPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'size-maps' ? <SizeMapsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'unit-rules' ? <UnitRulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'advanced-rules' ? <AdvancedRefreshPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} /> : null}
+      {section === 'imports' ? <BulkImportPanel onChanged={onChanged} publisherId={publisherId} /> : null}
     </div>
   );
 }
