@@ -3,6 +3,7 @@ import { api } from './api';
 import ConfigPanel from './components/ConfigPanel';
 import HierarchySidebar from './components/HierarchySidebar';
 import PrebidBuildsPanel from './components/PrebidBuildsPanel';
+import ReleasesPanel from './components/ReleasesPanel';
 import type {
   HealthResponse,
   PublisherAccount,
@@ -476,7 +477,7 @@ export default function App() {
           <div className="avatar">S</div>
           <div>
             <strong>srdjan</strong>
-            <span>admin · Cloudflare Access next</span>
+            <span>admin · signed session</span>
           </div>
         </div>
       </aside>
@@ -509,9 +510,9 @@ export default function App() {
             <button className="button secondary" disabled={!site} onClick={openEditSite} type="button">Edit site</button>
             <button className="button secondary" disabled={!site} onClick={openDuplicateSite} type="button">Duplicate site</button>
             <button className="button danger" disabled={!site} onClick={() => void removeSite()} type="button">Delete site</button>
-            <button className="button secondary" disabled={!site} type="button">Validate</button>
-            <button className="button secondary" disabled={!site} type="button">Generate</button>
-            <button className="button primary" disabled={!site} type="button">Publish ↗</button>
+            <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Validate</button>
+            <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Generate</button>
+            <button className="button primary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Publish ↗</button>
           </div>
         </header>
 
@@ -539,7 +540,14 @@ export default function App() {
         {activeTab === 'Prebid.js' && site ? (
           <PrebidBuildsPanel publisherId={site.id} siteName={site.name} />
         ) : null}
-        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js'
+        {activeTab === 'Releases' && site ? (
+          <ReleasesPanel
+            onChanged={() => loadHierarchy(publisher?.id, site.id)}
+            publisherId={site.id}
+            siteName={site.name}
+          />
+        ) : null}
+        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases'
           ? renderPlaceholder(activeTab)
           : null}
       </main>
