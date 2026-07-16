@@ -378,6 +378,8 @@ export default function ReleasesPanel({ publisherId, siteName, onChanged }: Prop
         {releases.map((release) => {
           const isBusy = busyReleaseId === release.id;
           const isProduction = release.status === 'production';
+          const canPublishProduction = release.status === 'staging';
+          const canRollback = release.status === 'archived';
           return (
             <article className={`release-card ${release.status}`} key={release.id}>
               <div className="release-card-main">
@@ -404,10 +406,10 @@ export default function ReleasesPanel({ publisherId, siteName, onChanged }: Prop
                 <button disabled={isBusy || isProduction} onClick={() => void promote(release, 'staging')} type="button">
                   {isBusy ? 'Working…' : 'Publish staging'}
                 </button>
-                <button className="production-action" disabled={isBusy || isProduction} onClick={() => void promote(release, 'production')} type="button">
+                <button className="production-action" disabled={isBusy || !canPublishProduction} onClick={() => void promote(release, 'production')} type="button">
                   Publish production
                 </button>
-                <button className="rollback-action" disabled={isBusy || isProduction} onClick={() => void promote(release, 'rollback')} type="button">
+                <button className="rollback-action" disabled={isBusy || !canRollback} onClick={() => void promote(release, 'rollback')} type="button">
                   Rollback to this
                 </button>
               </div>
