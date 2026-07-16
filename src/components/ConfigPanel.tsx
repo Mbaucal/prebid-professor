@@ -3,13 +3,14 @@ import AdUnitsPanel from './AdUnitsPanel';
 import BiddersPanel from './BiddersPanel';
 import BulkImportPanel from './BulkImportPanel';
 import SizeMapsPanel from './SizeMapsPanel';
+import UnitRulesPanel from './UnitRulesPanel';
 
 type Props = {
   publisherId: string;
   onChanged?: () => void | Promise<void>;
 };
 
-type ConfigSection = 'ad-units' | 'bidders' | 'size-maps' | 'imports';
+type ConfigSection = 'ad-units' | 'bidders' | 'size-maps' | 'unit-rules' | 'imports';
 
 export default function ConfigPanel({ publisherId, onChanged }: Props) {
   const [section, setSection] = useState<ConfigSection>('ad-units');
@@ -39,14 +40,18 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
           Size maps
         </button>
         <button
+          className={section === 'unit-rules' ? 'active' : ''}
+          onClick={() => setSection('unit-rules')}
+          type="button"
+        >
+          Unit rules
+        </button>
+        <button
           className={section === 'imports' ? 'active' : ''}
           onClick={() => setSection('imports')}
           type="button"
         >
           CSV import
-        </button>
-        <button disabled title="Unit rule editor is the next config module." type="button">
-          Unit rules
         </button>
       </nav>
 
@@ -58,6 +63,9 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
       ) : null}
       {section === 'size-maps' ? (
         <SizeMapsPanel onChanged={onChanged} publisherId={publisherId} />
+      ) : null}
+      {section === 'unit-rules' ? (
+        <UnitRulesPanel onChanged={onChanged} publisherId={publisherId} />
       ) : null}
       {section === 'imports' ? (
         <BulkImportPanel onChanged={onChanged} publisherId={publisherId} />
