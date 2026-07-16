@@ -11,6 +11,15 @@ import {
 import { listAdvancedRules, updateAdvancedRule } from './advanced-rules';
 import baseHandler from './index';
 import {
+  createDeploymentTarget,
+  deleteDeploymentTarget,
+  deploymentCallback,
+  dispatchExternalDeployment,
+  listDeploymentTargets,
+  updateDeploymentTarget,
+  type ExternalDeployEnv,
+} from './external-deployments';
+import {
   createGeneratorProfile,
   deleteGeneratorProfile,
   downloadGeneratorProfileFile,
@@ -41,7 +50,7 @@ import {
 } from './releases';
 import { getUserIdConfig, updateUserIdConfig } from './user-id-config';
 
-interface Env extends PrebidBuildEnv, GeneratorProfileEnv, ReleaseEnv, AuthEnv {
+interface Env extends PrebidBuildEnv, GeneratorProfileEnv, ReleaseEnv, ExternalDeployEnv, AuthEnv {
   ASSETS: Fetcher;
 }
 
@@ -120,6 +129,10 @@ export default {
         database: await databaseStatus(env),
         storage: env.BUILDS ? 'connected' : 'not-bound',
         auth: authStatus(env),
+        externalDeploy: {
+          github: env.GITHUB_ACTIONS_TOKEN ? 'configured' : 'not-configured',
+          callback: env.DEPLOY_CALLBACK_SECRET ? 'configured' : 'not-configured',
+        },
         timestamp: new Date().toISOString(),
       });
     }
@@ -127,6 +140,12 @@ export default {
     if (pathname.startsWith('/cdn/')) {
       const cdnResponse = await serveReleaseCdn(request, env);
       if (cdnResponse) return cdnResponse;
+    }
+
+    // GitHub Actions calls this endpoint from outside the dashboard origin. It is
+    // authenticated with a dedicated callback secret instead of the admin cookie.
+    if (pathname === '/api/deployments/callback') {
+      return deploymentCallback(request, env);
     }
 
     if (request.method === 'GET' && pathname === '/login') {
@@ -257,6 +276,38 @@ export default {
     if (releasesMatch) {
       if (request.method !== 'GET') return apiError('Method not allowed.', 405);
       return listReleases(request, env, decodeURIComponent(releasesMatch[1]));
+    }
+
+    const deploymentDispatchMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/deployment-targets\/([^/]+)\/dispatch$/,
+    );
+    if (deploymentDispatchMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return dispatchExternalDeployment(
+        authenticatedRequest,
+        env,
+        decodeURIComponent(deploymentDispatchMatch[1]),
+        decodeURIComponent(deploymentDispatchMatch[2]),
+      );
+    }
+
+    const deploymentTargetMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/deployment-targets\/([^/]+)$/,
+    );
+    if (deploymentTargetMatch) {
+      const siteId = decodeURIComponent(deploymentTargetMatch[1]);
+      const targetId = decodeURIComponent(deploymentTargetMatch[2]);
+      if (request.method === 'PATCH') return updateDeploymentTarget(authenticatedRequest, env, siteId, targetId);
+      if (request.method === 'DELETE') return deleteDeploymentTarget(authenticatedRequest, env, siteId, targetId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const deploymentTargetsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/deployment-targets$/);
+    if (deploymentTargetsMatch) {
+      const siteId = decodeURIComponent(deploymentTargetsMatch[1]);
+      if (request.method === 'GET') return listDeploymentTargets(env, siteId);
+      if (request.method === 'POST') return createDeploymentTarget(authenticatedRequest, env, siteId);
+      return apiError('Method not allowed.', 405);
     }
 
     const buildDownloadMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/prebid-builds\/([^/]+)\/download$/);
