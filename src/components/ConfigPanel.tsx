@@ -6,6 +6,7 @@ import BulkImportPanel from './BulkImportPanel';
 import GeneratorProfilesPanel from './GeneratorProfilesPanel';
 import SizeMapsPanel from './SizeMapsPanel';
 import UnitRulesPanel from './UnitRulesPanel';
+import UserIdModulesPanel from './UserIdModulesPanel';
 
 type Props = {
   publisherId: string;
@@ -18,6 +19,7 @@ type ConfigSection =
   | 'size-maps'
   | 'unit-rules'
   | 'advanced-rules'
+  | 'user-id'
   | 'generator-profiles'
   | 'imports';
 
@@ -42,6 +44,9 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
         <button className={section === 'advanced-rules' ? 'active' : ''} onClick={() => setSection('advanced-rules')} type="button">
           Advanced schedules
         </button>
+        <button className={section === 'user-id' ? 'active' : ''} onClick={() => setSection('user-id')} type="button">
+          User ID modules
+        </button>
         <button className={section === 'generator-profiles' ? 'active' : ''} onClick={() => setSection('generator-profiles')} type="button">
           Generator profiles
         </button>
@@ -55,6 +60,7 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
       {section === 'size-maps' ? <SizeMapsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'unit-rules' ? <UnitRulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'advanced-rules' ? <AdvancedRefreshPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'user-id' ? <UserIdModulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} /> : null}
       {section === 'imports' ? <BulkImportPanel onChanged={onChanged} publisherId={publisherId} /> : null}
     </div>
