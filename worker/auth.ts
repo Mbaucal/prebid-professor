@@ -351,7 +351,7 @@ export async function handleLogin(request: Request, env: AuthEnv): Promise<Respo
     loginUrl.pathname = '/login';
     loginUrl.searchParams.set('next', input.next);
     return renderLoginPage(
-      new Request(loginUrl.toString(), request),
+      new Request(loginUrl.toString(), { headers: request.headers }),
       env,
       'Email or password is incorrect.',
       401,
