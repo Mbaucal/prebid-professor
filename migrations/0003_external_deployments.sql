@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS deployment_targets (
     CHECK (provider IN ('cloudflare-pages')),
   account_id TEXT NOT NULL,
   project_name TEXT NOT NULL,
-  github_environment TEXT NOT NULL,
+  credential_key TEXT NOT NULL,
   production_branch TEXT NOT NULL DEFAULT 'main',
   preview_branch TEXT NOT NULL DEFAULT 'staging',
   public_base_url TEXT,
