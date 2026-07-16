@@ -53,6 +53,8 @@ export type CreateSiteInput = {
   adsTxtUrl?: string | null;
 };
 
+export type UpdateSiteInput = Partial<Omit<CreateSiteInput, 'id'>>;
+
 export type DuplicateSiteInput = {
   id: string;
   publisherAccountId?: string | null;
@@ -107,6 +109,33 @@ export type DuplicateAdUnitInput = {
   copySizeMapReference?: boolean;
   copyUnitRule?: boolean;
   copyBidderAdUnitOverrides?: boolean;
+};
+
+export type SizeMapSize = [number, number];
+
+export type SizeMapBreakpoint = {
+  minViewPort: [number, number];
+  sizes: SizeMapSize[];
+};
+
+export type SizeMap = {
+  id: string;
+  publisherId: string;
+  name: string;
+  map: SizeMapBreakpoint[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateSizeMapInput = {
+  name: string;
+  map: SizeMapBreakpoint[];
+};
+
+export type UpdateSizeMapInput = Partial<CreateSizeMapInput>;
+
+export type DuplicateSizeMapInput = {
+  name: string;
 };
 
 export type JsonObject = Record<string, unknown>;
@@ -237,6 +266,21 @@ export type AdUnitResponse = {
 };
 
 export type DeleteAdUnitResponse = {
+  ok: true;
+  deletedId: string;
+};
+
+export type SizeMapsResponse = {
+  ok: true;
+  sizeMaps: SizeMap[];
+};
+
+export type SizeMapResponse = {
+  ok: true;
+  sizeMap: SizeMap;
+};
+
+export type DeleteSizeMapResponse = {
   ok: true;
   deletedId: string;
 };
