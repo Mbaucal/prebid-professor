@@ -34,6 +34,37 @@ type BuildAnalysis = {
   error: string | null;
 };
 
+type StoredBuildStatus = 'current' | 'archived' | 'invalid';
+
+type StoredBuild = {
+  id: string;
+  publisherId: string;
+  version: string;
+  fileKey: string;
+  fileName: string;
+  fileSize: number;
+  modules: string[];
+  status: StoredBuildStatus;
+  uploadedBy: string | null;
+  uploadedAt: string;
+  missingAdapters: string[];
+  valid: boolean;
+  downloadUrl: string;
+  contentHash: string | null;
+};
+
+type BuildsResponse = {
+  ok: true;
+  requiredAdapters: string[];
+  builds: StoredBuild[];
+};
+
+type BuildResponse = {
+  ok: true;
+  build: StoredBuild | null;
+  warnings?: string[];
+};
+
 const PREBID_DOWNLOAD_URL = 'https://docs.prebid.org/download.html';
 const PREBID_VERSIONS_URL = 'https://js-download.prebid.org/versions';
 
@@ -95,6 +126,16 @@ const BIDDER_MODULE_ALIASES: Record<string, string> = {
   teads: 'teadsBidAdapter',
 };
 
+async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const response = await fetch(input, init);
+  const payload = (await response.json()) as T & { error?: string; details?: unknown };
+  if (!response.ok) {
+    const details = payload.details ? ` ${JSON.stringify(payload.details)}` : '';
+    throw new Error(`${payload.error || `Request failed with ${response.status}.`}${details}`);
+  }
+  return payload;
+}
+
 function adapterModuleForBidder(bidder: string): string {
   const normalized = bidder.trim().toLowerCase();
   return BIDDER_MODULE_ALIASES[normalized] ?? `${normalized}BidAdapter`;
@@ -116,13 +157,27 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function formatTimestamp(value: string): string {
+  try {
+    return new Intl.DateTimeFormat('en', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
 function parsePrebidBuild(
   file: File,
   text: string,
   requiredAdapters: string[],
   selectedModules: string[],
 ): BuildAnalysis {
-  const header = text.slice(0, 300_000);
+  const header = text.slice(0, 500_000);
   const versionMatch = header.match(
     /prebid\.js\s+v?([0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9._-]+)?)/i,
   );
@@ -153,11 +208,8 @@ function parsePrebidBuild(
   const extraModules = modules.filter((module) => !requiredSet.has(module));
 
   let error: string | null = null;
-  if (!versionMatch?.[1]) {
-    error = 'Prebid version could not be read from the file header.';
-  } else if (!modules.length) {
-    error = 'Installed modules could not be read from the file.';
-  }
+  if (!versionMatch?.[1]) error = 'Prebid version could not be read from the file header.';
+  else if (!modules.length) error = 'Installed modules could not be read from the file.';
 
   return {
     fileName: file.name,
@@ -186,6 +238,7 @@ function triggerDownload(content: string, fileName: string, type: string) {
 
 export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
   const [bidders, setBidders] = useState<Bidder[]>([]);
+  const [builds, setBuilds] = useState<StoredBuild[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [versions, setVersions] = useState<string[]>([]);
@@ -195,18 +248,27 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
   );
   const [extraModulesText, setExtraModulesText] = useState('');
   const [analysis, setAnalysis] = useState<BuildAnalysis | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [copyState, setCopyState] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [busyBuildId, setBusyBuildId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const items = await api.listBidders(publisherId);
-      setBidders(items);
+      const [bidderItems, buildPayload] = await Promise.all([
+        api.listBidders(publisherId),
+        requestJson<BuildsResponse>(
+          `/api/publishers/${encodeURIComponent(publisherId)}/prebid-builds`,
+        ),
+      ]);
+      setBidders(bidderItems);
+      setBuilds(buildPayload.builds);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Could not load bidders.');
+      setError(requestError instanceof Error ? requestError.message : 'Could not load Prebid workspace.');
     } finally {
       setLoading(false);
     }
@@ -215,6 +277,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
   useEffect(() => {
     void load();
     setAnalysis(null);
+    setSelectedFile(null);
   }, [load]);
 
   useEffect(() => {
@@ -234,8 +297,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
           setVersion((current) => (list.includes(current) ? current : list[0]));
         }
       } catch {
-        // The editor still works with a manually entered version when the public
-        // Prebid version service is temporarily unavailable.
+        // A manually entered version remains available when the public service is unavailable.
       }
     }
 
@@ -267,13 +329,23 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
     [selectedModules, version],
   );
 
+  const currentBuild = useMemo(
+    () => builds.find((build) => build.status === 'current') ?? null,
+    [builds],
+  );
+
+  function resetSelectedBuild() {
+    setAnalysis(null);
+    setSelectedFile(null);
+  }
+
   function togglePlatformModule(module: string) {
     setSelectedPlatformModules((current) =>
       current.includes(module)
         ? current.filter((item) => item !== module)
         : uniqueSorted([...current, module]),
     );
-    setAnalysis(null);
+    resetSelectedBuild();
   }
 
   async function copyText(value: string, label: string) {
@@ -301,6 +373,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
     if (!file) return;
     setError(null);
     setAnalysis(null);
+    setSelectedFile(null);
 
     if (!/\.js$/i.test(file.name)) {
       setError('Choose a JavaScript file ending in .js.');
@@ -314,7 +387,9 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
 
     try {
       const text = await file.text();
-      setAnalysis(parsePrebidBuild(file, text, requiredAdapters, selectedModules));
+      const result = parsePrebidBuild(file, text, requiredAdapters, selectedModules);
+      setAnalysis(result);
+      setSelectedFile(file);
     } catch (readError) {
       setError(readError instanceof Error ? readError.message : 'The file could not be read.');
     }
@@ -331,21 +406,81 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
     void analyzeFile(event.dataTransfer.files?.[0]);
   }
 
+  async function uploadBuild() {
+    if (!selectedFile || !analysis) return;
+    if (analysis.error || analysis.missingAdapters.length) {
+      setError('Fix the build before upload. Every enabled bidder adapter is required.');
+      return;
+    }
+
+    setUploading(true);
+    setError(null);
+    try {
+      const body = new FormData();
+      body.append('file', selectedFile, selectedFile.name);
+      const payload = await requestJson<BuildResponse>(
+        `/api/publishers/${encodeURIComponent(publisherId)}/prebid-builds`,
+        { method: 'POST', body },
+      );
+      await load();
+      resetSelectedBuild();
+      if (payload.warnings?.length) setError(payload.warnings.join(' · '));
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'The build could not be uploaded.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function activateBuild(build: StoredBuild) {
+    setBusyBuildId(build.id);
+    setError(null);
+    try {
+      await requestJson<BuildResponse>(
+        `/api/publishers/${encodeURIComponent(publisherId)}/prebid-builds/${encodeURIComponent(build.id)}/activate`,
+        { method: 'POST' },
+      );
+      await load();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'The build could not be activated.');
+    } finally {
+      setBusyBuildId(null);
+    }
+  }
+
+  async function removeBuild(build: StoredBuild) {
+    if (!window.confirm(`Delete ${build.fileName} from R2 and build history?`)) return;
+    setBusyBuildId(build.id);
+    setError(null);
+    try {
+      await requestJson<{ ok: true; deletedId: string }>(
+        `/api/publishers/${encodeURIComponent(publisherId)}/prebid-builds/${encodeURIComponent(build.id)}`,
+        { method: 'DELETE' },
+      );
+      await load();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'The build could not be deleted.');
+    } finally {
+      setBusyBuildId(null);
+    }
+  }
+
   const adapterStatusOk = analysis ? analysis.missingAdapters.length === 0 : false;
   const selectedStatusOk = analysis ? analysis.missingSelectedModules.length === 0 : false;
+  const uploadReady = Boolean(selectedFile && analysis && !analysis.error && adapterStatusOk);
 
   return (
     <section className="prebid-builds-page">
       <div className="config-toolbar prebid-build-toolbar">
         <div>
-          <span className="panel-kicker">Build preparation & validation</span>
+          <span className="panel-kicker">Build preparation, validation & storage</span>
           <h2>Prebid.js</h2>
           <p>
-            Generate the official Prebid.org import configuration from active bidders, then inspect a downloaded
-            custom build before it is uploaded to production storage.
+            Generate the official Prebid.org import configuration, validate the downloaded custom build and keep
+            approved versions in private Cloudflare R2 storage.
           </p>
         </div>
-        <span className="prebid-local-badge">Local validation · no upload yet</span>
+        <span className="prebid-local-badge r2-connected">R2 build storage</span>
       </div>
 
       {error ? <div className="form-error config-error">{error}</div> : null}
@@ -372,11 +507,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
                   ))}
                 </select>
               ) : (
-                <input
-                  onChange={(event) => setVersion(event.target.value)}
-                  placeholder="11.11.0"
-                  value={version}
-                />
+                <input onChange={(event) => setVersion(event.target.value)} value={version} />
               )}
             </label>
             <div className="prebid-version-help">
@@ -389,11 +520,10 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
             <div className="prebid-section-heading">
               <div>
                 <h4>Required bidder adapters</h4>
-                <p>Generated automatically from enabled bidders. These cannot be unchecked here.</p>
+                <p>Generated from enabled bidders. They cannot be unchecked here.</p>
               </div>
               {loading ? <span>Loading…</span> : null}
             </div>
-
             <div className="module-chip-grid">
               {enabledBidders.map((bidder) => (
                 <div className="required-adapter-chip" key={bidder.id}>
@@ -435,7 +565,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
             <textarea
               onChange={(event) => {
                 setExtraModulesText(event.target.value);
-                setAnalysis(null);
+                resetSelectedBuild();
               }}
               placeholder={'One module per line, or separated by comma\nExample: bidViewability'}
               rows={4}
@@ -448,7 +578,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
             <div className="prebid-section-heading">
               <div>
                 <h4>prebid-config.json</h4>
-                <p>This is the format accepted by “Upload Configuration” on the official download page.</p>
+                <p>Accepted by “Upload Configuration” on the official download page.</p>
               </div>
             </div>
             <pre>{configJson}</pre>
@@ -458,9 +588,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
             <button className="button secondary" onClick={() => void copyText(configJson, 'config')} type="button">
               {copyState === 'config' ? '✓ Copied' : 'Copy config'}
             </button>
-            <button className="button secondary" onClick={downloadConfig} type="button">
-              Download config
-            </button>
+            <button className="button secondary" onClick={downloadConfig} type="button">Download config</button>
             <button className="button primary" disabled={!version.trim()} onClick={openPrebidBuilder} type="button">
               Open Prebid.org builder ↗
             </button>
@@ -471,11 +599,11 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
           <div className="prebid-card-heading">
             <div>
               <span className="panel-kicker">Step 2</span>
-              <h3>Inspect downloaded prebid.js</h3>
+              <h3>Validate and store prebid.js</h3>
             </div>
             {analysis ? (
               <span className={analysis.error || !adapterStatusOk ? 'build-state invalid' : 'build-state valid'}>
-                {analysis.error || !adapterStatusOk ? 'Needs attention' : 'Adapters OK'}
+                {analysis.error || !adapterStatusOk ? 'Needs attention' : 'Upload ready'}
               </span>
             ) : null}
           </div>
@@ -509,34 +637,22 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
             <span className="prebid-drop-icon">⇧</span>
             <b>Drop prebid.js here</b>
             <span>or click to select the downloaded custom build</span>
-            <small>The file is read only in this browser during this phase.</small>
+            <small>Validation happens locally first; upload is explicit.</small>
           </div>
 
           {analysis ? (
             <div className="build-analysis">
               <div className="build-file-summary">
-                <div>
-                  <span>File</span>
-                  <b>{analysis.fileName}</b>
-                </div>
-                <div>
-                  <span>Size</span>
-                  <b>{formatBytes(analysis.fileSize)}</b>
-                </div>
-                <div>
-                  <span>Version</span>
-                  <b>{analysis.version ?? 'Not detected'}</b>
-                </div>
-                <div>
-                  <span>Modules</span>
-                  <b>{analysis.modules.length}</b>
-                </div>
+                <div><span>File</span><b>{analysis.fileName}</b></div>
+                <div><span>Size</span><b>{formatBytes(analysis.fileSize)}</b></div>
+                <div><span>Version</span><b>{analysis.version ?? 'Not detected'}</b></div>
+                <div><span>Modules</span><b>{analysis.modules.length}</b></div>
               </div>
 
               {analysis.error ? <div className="prebid-analysis-warning">{analysis.error}</div> : null}
               {analysis.usedFallbackDetection ? (
                 <div className="prebid-analysis-warning">
-                  The standard “Modules:” header was not found, so module names were detected from script text.
+                  The standard “Modules:” header was not found, so names were detected from script text.
                 </div>
               ) : null}
 
@@ -549,9 +665,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
                   <div className="module-pill-list missing">
                     {analysis.missingAdapters.map((module) => <code key={module}>{module}</code>)}
                   </div>
-                ) : (
-                  <p>Every enabled bidder has its adapter in this build.</p>
-                )}
+                ) : <p>Every enabled bidder has its adapter in this build.</p>}
               </section>
 
               <section className={selectedStatusOk ? 'analysis-section ok' : 'analysis-section warning'}>
@@ -563,9 +677,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
                   <div className="module-pill-list warning">
                     {analysis.missingSelectedModules.map((module) => <code key={module}>{module}</code>)}
                   </div>
-                ) : (
-                  <p>All currently selected platform modules were detected.</p>
-                )}
+                ) : <p>All selected platform modules were detected.</p>}
               </section>
 
               <details className="installed-module-details">
@@ -575,34 +687,95 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
                 </div>
               </details>
 
-              {analysis.extraModules.length ? (
-                <details className="installed-module-details">
-                  <summary>Additional modules found ({analysis.extraModules.length})</summary>
-                  <div className="module-pill-list">
-                    {analysis.extraModules.map((module) => <code key={module}>{module}</code>)}
-                  </div>
-                </details>
-              ) : null}
+              <div className="r2-upload-actions">
+                <button
+                  className="button primary"
+                  disabled={!uploadReady || uploading}
+                  onClick={() => void uploadBuild()}
+                  type="button"
+                >
+                  {uploading ? 'Uploading to R2…' : 'Upload approved build to R2'}
+                </button>
+                <small>
+                  The first valid build becomes current automatically. Later uploads are stored as archived candidates.
+                </small>
+              </div>
             </div>
           ) : (
             <div className="prebid-validation-placeholder">
               <h4>Validation result will appear here</h4>
-              <p>
-                The check reads the Prebid version and installed module manifest, then compares it with bidders and
-                modules selected on the left.
-              </p>
+              <p>The check compares the build manifest with active bidders and selected modules.</p>
             </div>
           )}
-
-          <div className="prebid-storage-note">
-            <b>Next infrastructure step: Cloudflare R2</b>
-            <span>
-              After R2 is connected, an approved file will be stored by site, added to build history and made
-              available to the release generator.
-            </span>
-          </div>
         </article>
       </div>
+
+      <article className="prebid-build-card prebid-history-card">
+        <div className="prebid-card-heading">
+          <div>
+            <span className="panel-kicker">Step 3</span>
+            <h3>R2 build history</h3>
+            <p>Current is the build that the next release generator will use.</p>
+          </div>
+          <span className={currentBuild ? 'build-state valid' : 'build-state invalid'}>
+            {currentBuild ? `Current v${currentBuild.version}` : 'No current build'}
+          </span>
+        </div>
+
+        {loading ? <div className="prebid-history-empty">Loading stored builds…</div> : null}
+        {!loading && builds.length === 0 ? (
+          <div className="prebid-history-empty">No Prebid build has been uploaded to R2 for this site.</div>
+        ) : null}
+
+        <div className="prebid-build-history-list">
+          {builds.map((build) => (
+            <section className={`stored-build-row ${build.status}`} key={build.id}>
+              <div className="stored-build-main">
+                <div className="stored-build-title">
+                  <b>{build.fileName}</b>
+                  <span className={`stored-build-status ${build.status}`}>{build.status}</span>
+                </div>
+                <div className="stored-build-meta">
+                  <span>v{build.version}</span>
+                  <span>{formatBytes(build.fileSize)}</span>
+                  <span>{build.modules.length} modules</span>
+                  <span>{formatTimestamp(build.uploadedAt)}</span>
+                  <span>{build.uploadedBy ?? 'system'}</span>
+                </div>
+                {build.missingAdapters.length ? (
+                  <div className="stored-build-missing">
+                    Missing: {build.missingAdapters.join(', ')}
+                  </div>
+                ) : null}
+                {build.contentHash ? <code className="stored-build-hash">sha256 {build.contentHash.slice(0, 16)}…</code> : null}
+              </div>
+              <div className="stored-build-actions">
+                <a className="button secondary" href={build.downloadUrl}>Download</a>
+                {build.status !== 'current' && build.valid ? (
+                  <button
+                    className="button secondary"
+                    disabled={busyBuildId === build.id}
+                    onClick={() => void activateBuild(build)}
+                    type="button"
+                  >
+                    {busyBuildId === build.id ? 'Working…' : 'Set current'}
+                  </button>
+                ) : null}
+                {build.status !== 'current' ? (
+                  <button
+                    className="button danger"
+                    disabled={busyBuildId === build.id}
+                    onClick={() => void removeBuild(build)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ))}
+        </div>
+      </article>
     </section>
   );
 }
