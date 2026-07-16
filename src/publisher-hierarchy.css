@@ -199,10 +199,103 @@
   background: #fff5f5;
 }
 
-.button.danger:hover {
+.button.danger:hover:not(:disabled) {
   color: #7f1d1d;
   border-color: #e88f8f;
   background: #ffe8e8;
+}
+
+.publisher-danger-zone {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 15px;
+  border: 1px solid #f1c1c1;
+  border-radius: 11px;
+  background: #fff8f8;
+}
+
+.publisher-danger-zone strong,
+.publisher-danger-zone p,
+.publisher-danger-zone small {
+  display: block;
+}
+
+.publisher-danger-zone strong {
+  color: #8b1e1e;
+  font-size: 13px;
+}
+
+.publisher-danger-zone p {
+  margin: 5px 0 0;
+  color: #745b5b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.publisher-danger-zone small {
+  margin-top: 6px;
+  color: #9f3f3f;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.publisher-delete-confirmation {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f1caca;
+}
+
+.publisher-delete-confirmation label {
+  min-width: 0;
+}
+
+.publisher-delete-confirmation label > span {
+  display: block;
+  margin-bottom: 6px;
+  color: #8b1e1e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.publisher-delete-confirmation input {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid #e0a2a2;
+  border-radius: 8px;
+  color: #5b1d1d;
+  background: #ffffff;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  outline: none;
+}
+
+.publisher-delete-confirmation input:focus {
+  border-color: #c43d3d;
+  box-shadow: 0 0 0 3px rgb(196 61 61 / 12%);
+}
+
+.publisher-delete-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.publisher-delete-final:not(:disabled) {
+  color: #ffffff;
+  border-color: #a51d1d;
+  background: #b42323;
+}
+
+.publisher-delete-final:hover:not(:disabled) {
+  color: #ffffff;
+  border-color: #7f1515;
+  background: #8f1b1b;
 }
 
 @media (max-width: 760px) {
@@ -211,6 +304,15 @@
   }
 
   .site-overview-heading {
+    flex-direction: column;
+  }
+
+  .publisher-danger-zone,
+  .publisher-delete-confirmation {
+    grid-template-columns: 1fr;
+  }
+
+  .publisher-delete-actions {
     flex-direction: column;
   }
 }
