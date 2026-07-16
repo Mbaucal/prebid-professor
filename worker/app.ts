@@ -44,11 +44,13 @@ function withAuthenticatedActor(request: Request, email: string): Request {
 }
 
 /**
- * Some browser/Cloudflare combinations report a normal form POST as
- * `Sec-Fetch-Site: same-site` even though the Origin is exactly the Worker
- * origin. The lower-level CSRF check intentionally accepts only
- * `same-origin`, so normalize the fetch metadata only after independently
- * proving the Origin or Referer is the exact same origin.
+ * Normalize fetch metadata only after the browser has independently marked the
+ * request as same-origin, or after Origin/Referer exactly matches this Worker.
+ *
+ * Chrome may send `Origin: null` for a normal top-level form submission when
+ * the login document uses a no-referrer policy. In that case the unforgeable
+ * `Sec-Fetch-Site: same-origin` value is sufficient to accept the request. A
+ * real cross-site request remains `cross-site` and is not normalized.
  */
 function normalizeVerifiedSameOriginRequest(request: Request): Request {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return request;
@@ -56,6 +58,7 @@ function normalizeVerifiedSameOriginRequest(request: Request): Request {
   const requestOrigin = new URL(request.url).origin;
   const originHeader = request.headers.get('origin')?.trim() ?? '';
   const refererHeader = request.headers.get('referer')?.trim() ?? '';
+  const fetchSite = request.headers.get('sec-fetch-site')?.trim().toLowerCase() ?? '';
 
   let verifiedSameOrigin = false;
 
@@ -71,6 +74,8 @@ function normalizeVerifiedSameOriginRequest(request: Request): Request {
     } catch {
       verifiedSameOrigin = false;
     }
+  } else if (originHeader === 'null' && fetchSite === 'same-origin') {
+    verifiedSameOrigin = true;
   }
 
   if (!verifiedSameOrigin) return request;
