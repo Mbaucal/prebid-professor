@@ -15,6 +15,7 @@ import type {
   CreatePublisherInput,
   CreateSiteInput,
   CreateSizeMapInput,
+  CreateUnitRuleInput,
   CsvImportApplyResponse,
   CsvImportInput,
   CsvImportPreview,
@@ -24,12 +25,14 @@ import type {
   DeleteBidderResponse,
   DeleteSiteResponse,
   DeleteSizeMapResponse,
+  DeleteUnitRuleResponse,
   DuplicateAdUnitInput,
   DuplicateBidderInput,
   DuplicateBidderOverrideInput,
   DuplicatePublisherInput,
   DuplicateSiteInput,
   DuplicateSizeMapInput,
+  DuplicateUnitRuleInput,
   HealthResponse,
   Publisher,
   PublisherAccount,
@@ -42,12 +45,16 @@ import type {
   SizeMap,
   SizeMapResponse,
   SizeMapsResponse,
+  UnitRule,
+  UnitRuleResponse,
+  UnitRulesResponse,
   UpdateAdUnitInput,
   UpdateBidderInput,
   UpdateBidderOverrideInput,
   UpdatePublisherAccountInput,
   UpdateSiteInput,
   UpdateSizeMapInput,
+  UpdateUnitRuleInput,
 } from './shared/types';
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
@@ -305,6 +312,65 @@ export const api = {
   async deleteSizeMap(publisherId: string, sizeMapId: string): Promise<string> {
     const payload = await requestJson<DeleteSizeMapResponse>(
       `/api/publishers/${encodeURIComponent(publisherId)}/size-maps/${encodeURIComponent(sizeMapId)}`,
+      { method: 'DELETE' },
+    );
+    return payload.deletedId;
+  },
+
+  async listUnitRules(publisherId: string): Promise<UnitRule[]> {
+    const payload = await requestJson<UnitRulesResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules`,
+    );
+    return payload.unitRules;
+  },
+
+  async createUnitRule(publisherId: string, input: CreateUnitRuleInput): Promise<UnitRule> {
+    const payload = await requestJson<UnitRuleResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules`,
+      {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.unitRule;
+  },
+
+  async updateUnitRule(
+    publisherId: string,
+    unitRuleId: string,
+    input: UpdateUnitRuleInput,
+  ): Promise<UnitRule> {
+    const payload = await requestJson<UnitRuleResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules/${encodeURIComponent(unitRuleId)}`,
+      {
+        method: 'PATCH',
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.unitRule;
+  },
+
+  async duplicateUnitRule(
+    publisherId: string,
+    unitRuleId: string,
+    input: DuplicateUnitRuleInput,
+  ): Promise<UnitRule> {
+    const payload = await requestJson<UnitRuleResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules/${encodeURIComponent(unitRuleId)}/duplicate`,
+      {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.unitRule;
+  },
+
+  async deleteUnitRule(publisherId: string, unitRuleId: string): Promise<string> {
+    const payload = await requestJson<DeleteUnitRuleResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules/${encodeURIComponent(unitRuleId)}`,
       { method: 'DELETE' },
     );
     return payload.deletedId;
