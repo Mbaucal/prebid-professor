@@ -138,6 +138,77 @@ export type DuplicateSizeMapInput = {
   name: string;
 };
 
+export type UnitRuleConditionOperator =
+  | 'equals'
+  | 'notEquals'
+  | 'contains'
+  | 'notContains'
+  | 'exists'
+  | 'notExists';
+export type UnitRuleMatchMode = 'all' | 'any';
+export type UnitRuleSlotAction = 'inherit' | 'enable' | 'disable';
+
+export type UnitRuleCondition = {
+  id: string;
+  key: string;
+  operator: UnitRuleConditionOperator;
+  value: string;
+};
+
+export type UnitRuleConditionalMapping = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  match: UnitRuleMatchMode;
+  conditions: UnitRuleCondition[];
+  sizeMapKey: string | null;
+  slotAction: UnitRuleSlotAction;
+};
+
+export type UnitRuleLazyConfig = {
+  enabled: boolean;
+  fetchMarginPx: number;
+  renderMarginPx: number;
+};
+
+export type UnitRuleRefreshConfig = {
+  enabled: boolean;
+  minSeconds: number;
+  minViewPct: number;
+  requirePreviousViewable: boolean;
+  checkEveryMs: number;
+};
+
+export type UnitRuleConfig = {
+  timeout?: number;
+  lazy?: UnitRuleLazyConfig;
+  refresh?: UnitRuleRefreshConfig;
+  conditionalMappings?: UnitRuleConditionalMapping[];
+};
+
+export type UnitRule = {
+  id: string;
+  publisherId: string;
+  ruleKey: string;
+  rule: UnitRuleConfig;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateUnitRuleInput = {
+  ruleKey: string;
+  rule: UnitRuleConfig;
+};
+
+export type UpdateUnitRuleInput = {
+  rule: UnitRuleConfig;
+};
+
+export type DuplicateUnitRuleInput = {
+  ruleKey: string;
+};
+
 export type JsonObject = Record<string, unknown>;
 export type BidderOverrideScope = 'slot' | 'device' | 'adunit';
 
@@ -281,6 +352,21 @@ export type SizeMapResponse = {
 };
 
 export type DeleteSizeMapResponse = {
+  ok: true;
+  deletedId: string;
+};
+
+export type UnitRulesResponse = {
+  ok: true;
+  unitRules: UnitRule[];
+};
+
+export type UnitRuleResponse = {
+  ok: true;
+  unitRule: UnitRule;
+};
+
+export type DeleteUnitRuleResponse = {
   ok: true;
   deletedId: string;
 };
