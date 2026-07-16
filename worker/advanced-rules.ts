@@ -49,7 +49,7 @@ async function ruleTargetExists(db: D1Database, siteId: string, ruleKey: string)
   return Boolean(row);
 }
 
-function parseRule(value: string | null | undefined): JsonRecord {
+function parseRecord(value: string | null | undefined): JsonRecord {
   if (!value) return {};
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -81,12 +81,13 @@ function normalizeRefresh(value: unknown, current: JsonRecord): JsonRecord {
   const mode = String(scheduleInput.mode ?? currentSchedule.mode ?? 'fixed') as RefreshMode;
   if (!REFRESH_MODES.has(mode)) throw new Error('refresh.schedule.mode is invalid.');
 
+  const legacyCurrentSeconds = Number(current.minSeconds ?? 30);
   const fixedSeconds = integerInRange(
     scheduleInput.fixedSeconds,
     'refresh.schedule.fixedSeconds',
     5,
     3600,
-    integerInRange(current.minSeconds, 'refresh.minSeconds', 5, 3600, 30),
+    Number.isFinite(legacyCurrentSeconds) ? legacyCurrentSeconds : 30,
   );
   const firstSeconds = integerInRange(
     scheduleInput.firstSeconds,
@@ -126,7 +127,6 @@ function normalizeRefresh(value: unknown, current: JsonRecord): JsonRecord {
         : firstSeconds;
 
   return {
-    ...current,
     enabled: booleanValue(value.enabled, booleanValue(current.enabled, true)),
     minSeconds: legacyMinSeconds,
     minViewPct: integerInRange(value.minViewPct, 'refresh.minViewPct', 0, 100, Number(current.minViewPct ?? 50)),
@@ -173,28 +173,78 @@ function normalizeRefresh(value: unknown, current: JsonRecord): JsonRecord {
   };
 }
 
-async function syncConfigJson(db: D1Database, siteId: string): Promise<void> {
-  const [configRow, rulesResult] = await Promise.all([
-    db
-      .prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1')
-      .bind(siteId)
-      .first<{ config_json: string }>(),
-    db
-      .prepare('SELECT rule_key, rule_json FROM unit_rules WHERE publisher_id = ? ORDER BY rule_key COLLATE NOCASE')
-      .bind(siteId)
-      .all<{ rule_key: string; rule_json: string }>(),
-  ]);
+async function readConfig(db: D1Database, siteId: string): Promise<{ raw: JsonRecord; rowId: string } | null> {
+  const row = await db
+    .prepare('SELECT id, config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1')
+    .bind(siteId)
+    .first<{ id: string; config_json: string }>();
+  if (!row) return null;
+  return { raw: parseRecord(row.config_json), rowId: row.id };
+}
 
-  if (!configRow) return;
-  const config = parseRule(configRow.config_json);
-  const unitRules: Record<string, JsonRecord> = {};
-  for (const row of rulesResult.results ?? []) unitRules[row.rule_key] = parseRule(row.rule_json);
-  config.unitRules = unitRules;
+function advancedMap(config: JsonRecord): Record<string, JsonRecord> {
+  const value = config.advancedUnitRules;
+  if (!isRecord(value)) return {};
+  const result: Record<string, JsonRecord> = {};
+  for (const [key, rule] of Object.entries(value)) {
+    if (isRecord(rule)) result[key] = rule;
+  }
+  return result;
+}
 
+async function mirrorLegacyRule(
+  db: D1Database,
+  siteId: string,
+  ruleKey: string,
+  advanced: JsonRecord,
+  now: string,
+): Promise<{ id: string; rule: JsonRecord }> {
+  const row = await db
+    .prepare('SELECT id, rule_json FROM unit_rules WHERE publisher_id = ? AND rule_key = ? LIMIT 1')
+    .bind(siteId, ruleKey)
+    .first<{ id: string; rule_json: string }>();
+
+  const rule = parseRecord(row?.rule_json);
+  const advancedRefresh = isRecord(advanced.refresh) ? advanced.refresh : {};
+  const currentRefresh = isRecord(rule.refresh) ? rule.refresh : {};
+  rule.timeout = advanced.timeout;
+  rule.refresh = {
+    ...currentRefresh,
+    enabled: advancedRefresh.enabled,
+    minSeconds: advancedRefresh.minSeconds,
+    minViewPct: advancedRefresh.minViewPct,
+    requirePreviousViewable: advancedRefresh.requirePreviousViewable,
+    checkEveryMs: advancedRefresh.checkEveryMs,
+  };
+
+  const id = row?.id ?? crypto.randomUUID();
   await db
-    .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ?')
-    .bind(JSON.stringify(config), new Date().toISOString(), siteId)
+    .prepare(
+      `INSERT INTO unit_rules (id, publisher_id, rule_key, rule_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(publisher_id, rule_key)
+       DO UPDATE SET rule_json = excluded.rule_json, updated_at = excluded.updated_at`,
+    )
+    .bind(id, siteId, ruleKey, JSON.stringify(rule), now, now)
     .run();
+  return { id, rule };
+}
+
+async function syncConfigUnitRules(db: D1Database, siteId: string, config: JsonRecord): Promise<void> {
+  const rulesResult = await db
+    .prepare('SELECT rule_key, rule_json FROM unit_rules WHERE publisher_id = ? ORDER BY rule_key COLLATE NOCASE')
+    .bind(siteId)
+    .all<{ rule_key: string; rule_json: string }>();
+  const unitRules: Record<string, JsonRecord> = {};
+  for (const row of rulesResult.results ?? []) unitRules[row.rule_key] = parseRecord(row.rule_json);
+  config.unitRules = unitRules;
+}
+
+export async function listAdvancedRules(env: DatabaseEnv, siteId: string): Promise<Response> {
+  if (!env.DB) return databaseMissing();
+  if (!(await siteExists(env.DB, siteId))) return apiError('Site not found.', 404);
+  const config = await readConfig(env.DB, siteId);
+  return json({ ok: true, advancedRules: config ? advancedMap(config.raw) : {} });
 }
 
 export async function updateAdvancedRule(
@@ -216,76 +266,64 @@ export async function updateAdvancedRule(
     return apiError('JSON body could not be read.');
   }
 
-  const existing = await env.DB
-    .prepare('SELECT id, rule_json FROM unit_rules WHERE publisher_id = ? AND rule_key = ? LIMIT 1')
-    .bind(siteId, ruleKey)
-    .first<{ id: string; rule_json: string }>();
-
-  const rule = parseRule(existing?.rule_json);
+  const configRow = await readConfig(env.DB, siteId);
+  if (!configRow) return apiError('Publisher config was not found.', 404);
+  const config = configRow.raw;
+  const allAdvanced = advancedMap(config);
+  const current = allAdvanced[ruleKey] ?? {};
+  const advanced: JsonRecord = { ...current };
 
   try {
     if (Object.prototype.hasOwnProperty.call(input, 'timeout')) {
-      rule.timeout = integerInRange(input.timeout, 'timeout', 100, 60000, Number(rule.timeout ?? 2500));
+      advanced.timeout = integerInRange(input.timeout, 'timeout', 100, 60000, Number(current.timeout ?? 2500));
     }
     if (Object.prototype.hasOwnProperty.call(input, 'cmpTimeout')) {
-      rule.cmpTimeout = integerInRange(
+      advanced.cmpTimeout = integerInRange(
         input.cmpTimeout,
         'cmpTimeout',
         100,
         30000,
-        Number(rule.cmpTimeout ?? 1500),
+        Number(current.cmpTimeout ?? 1500),
       );
     }
     if (Object.prototype.hasOwnProperty.call(input, 'refresh')) {
-      rule.refresh = normalizeRefresh(input.refresh, isRecord(rule.refresh) ? rule.refresh : {});
+      advanced.refresh = normalizeRefresh(input.refresh, isRecord(current.refresh) ? current.refresh : {});
     }
   } catch (error) {
     return apiError(error instanceof Error ? error.message : 'Advanced rule validation failed.', 422);
   }
 
   const now = new Date().toISOString();
-  const id = existing?.id ?? crypto.randomUUID();
   const actor = getActor(request);
 
   try {
+    const mirrored = await mirrorLegacyRule(env.DB, siteId, ruleKey, advanced, now);
+    allAdvanced[ruleKey] = advanced;
+    config.advancedUnitRules = allAdvanced;
+    await syncConfigUnitRules(env.DB, siteId, config);
+
     await env.DB.batch([
       env.DB
-        .prepare(
-          `INSERT INTO unit_rules (id, publisher_id, rule_key, rule_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(publisher_id, rule_key)
-           DO UPDATE SET rule_json = excluded.rule_json, updated_at = excluded.updated_at`,
-        )
-        .bind(id, siteId, ruleKey, JSON.stringify(rule), now, now),
+        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ?')
+        .bind(JSON.stringify(config), now, siteId),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'unit_rule.advanced_updated', ?, 'unit_rule', ?, ?, ?)`,
+           ) VALUES (?, ?, 'unit_rule.advanced_updated', ?, 'advanced_unit_rule', ?, ?, ?)`,
         )
         .bind(
           crypto.randomUUID(),
           actor,
           siteId,
-          id,
-          JSON.stringify({ ruleKey, timeout: rule.timeout, cmpTimeout: rule.cmpTimeout, refresh: rule.refresh }),
+          ruleKey,
+          JSON.stringify({ ruleKey, advanced, mirroredUnitRuleId: mirrored.id }),
           now,
         ),
     ]);
-    await syncConfigJson(env.DB, siteId);
   } catch (error) {
     return apiError('Advanced rule update failed.', 500, error instanceof Error ? error.message : String(error));
   }
 
-  return json({
-    ok: true,
-    unitRule: {
-      id,
-      publisherId: siteId,
-      ruleKey,
-      rule,
-      createdAt: now,
-      updatedAt: now,
-    },
-  });
+  return json({ ok: true, ruleKey, advancedRule: advanced });
 }
