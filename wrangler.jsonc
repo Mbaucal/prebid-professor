@@ -17,6 +17,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "BUILDS",
+      "bucket_name": "prebid-professor-builds"
+    }
+  ],
   "observability": {
     "enabled": true
   }
