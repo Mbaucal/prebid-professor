@@ -29,9 +29,19 @@ import {
   type PrebidBuildEnv,
   uploadPrebidBuild,
 } from './prebid-builds-identity';
+import {
+  generateRelease,
+  listReleases,
+  publishReleaseToProduction,
+  publishReleaseToStaging,
+  rollbackRelease,
+  serveReleaseCdn,
+  validateRelease,
+  type ReleaseEnv,
+} from './releases';
 import { getUserIdConfig, updateUserIdConfig } from './user-id-config';
 
-interface Env extends PrebidBuildEnv, GeneratorProfileEnv, AuthEnv {
+interface Env extends PrebidBuildEnv, GeneratorProfileEnv, ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
 }
 
@@ -55,11 +65,6 @@ function withAuthenticatedActor(request: Request, email: string): Request {
   return new Request(request, { headers });
 }
 
-/**
- * Normalize fetch metadata only after the browser has independently marked the
- * request as same-origin, or after Origin/Referer exactly matches this Worker.
- * Chrome may send Origin:null for a normal top-level form submission.
- */
 function normalizeVerifiedSameOriginRequest(request: Request): Request {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return request;
 
@@ -110,10 +115,19 @@ export default {
       });
     }
 
+    // Publisher sites load these release artifacts without an admin session.
+    if (pathname.startsWith('/cdn/')) {
+      const cdnResponse = await serveReleaseCdn(request, env);
+      if (cdnResponse) return cdnResponse;
+    }
+
     if (request.method === 'GET' && pathname === '/login') {
       const user = await getAuthenticatedUser(request, env);
       if (user) {
-        return new Response(null, { status: 303, headers: { location: '/', 'cache-control': 'no-store' } });
+        return new Response(null, {
+          status: 303,
+          headers: { location: '/', 'cache-control': 'no-store' },
+        });
       }
       return renderLoginPage(request, env);
     }
@@ -137,39 +151,32 @@ export default {
     if (request.method === 'GET' && pathname === '/api/auth/me') return json({ ok: true, user });
     const authenticatedRequest = withAuthenticatedActor(verifiedRequest, user.email);
 
-    // Platform-level immutable generator profiles stored in R2.
     if (pathname === '/api/generator-profiles') {
       if (request.method === 'GET') return listGeneratorProfiles(env);
       if (request.method === 'POST') return createGeneratorProfile(authenticatedRequest, env);
       return apiError('Method not allowed.', 405);
     }
 
-    const generatorProfileDuplicateMatch = pathname.match(/^\/api\/generator-profiles\/([^/]+)\/duplicate$/);
-    if (generatorProfileDuplicateMatch) {
+    const profileDuplicateMatch = pathname.match(/^\/api\/generator-profiles\/([^/]+)\/duplicate$/);
+    if (profileDuplicateMatch) {
       if (request.method !== 'POST') return apiError('Method not allowed.', 405);
-      return duplicateGeneratorProfile(
-        authenticatedRequest,
-        env,
-        decodeURIComponent(generatorProfileDuplicateMatch[1]),
-      );
+      return duplicateGeneratorProfile(authenticatedRequest, env, decodeURIComponent(profileDuplicateMatch[1]));
     }
 
-    const generatorProfileDownloadMatch = pathname.match(
-      /^\/api\/generator-profiles\/([^/]+)\/(template|source)\/download$/,
-    );
-    if (generatorProfileDownloadMatch) {
+    const profileDownloadMatch = pathname.match(/^\/api\/generator-profiles\/([^/]+)\/(template|source)\/download$/);
+    if (profileDownloadMatch) {
       if (request.method !== 'GET') return apiError('Method not allowed.', 405);
       return downloadGeneratorProfileFile(
         env,
-        decodeURIComponent(generatorProfileDownloadMatch[1]),
-        generatorProfileDownloadMatch[2] as 'template' | 'source',
+        decodeURIComponent(profileDownloadMatch[1]),
+        profileDownloadMatch[2] as 'template' | 'source',
       );
     }
 
-    const generatorProfileMatch = pathname.match(/^\/api\/generator-profiles\/([^/]+)$/);
-    if (generatorProfileMatch) {
+    const profileMatch = pathname.match(/^\/api\/generator-profiles\/([^/]+)$/);
+    if (profileMatch) {
       if (request.method !== 'DELETE') return apiError('Method not allowed.', 405);
-      return deleteGeneratorProfile(authenticatedRequest, env, decodeURIComponent(generatorProfileMatch[1]));
+      return deleteGeneratorProfile(authenticatedRequest, env, decodeURIComponent(profileMatch[1]));
     }
 
     const generatorSelectionMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/generator-selection$/);
@@ -186,9 +193,7 @@ export default {
       return listAdvancedRules(env, decodeURIComponent(advancedRulesMatch[1]));
     }
 
-    const advancedRuleMatch = pathname.match(
-      /^\/api\/publishers\/([^/]+)\/unit-rules-advanced\/([^/]+)$/,
-    );
+    const advancedRuleMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/unit-rules-advanced\/([^/]+)$/);
     if (advancedRuleMatch) {
       if (request.method !== 'PUT') return apiError('Method not allowed.', 405);
       return updateAdvancedRule(
@@ -207,21 +212,44 @@ export default {
       return apiError('Method not allowed.', 405);
     }
 
-    const buildDownloadMatch = pathname.match(
-      /^\/api\/publishers\/([^/]+)\/prebid-builds\/([^/]+)\/download$/,
-    );
-    if (buildDownloadMatch) {
+    const releaseValidateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/validate$/);
+    if (releaseValidateMatch) {
       if (request.method !== 'GET') return apiError('Method not allowed.', 405);
-      return downloadPrebidBuild(
-        env,
-        decodeURIComponent(buildDownloadMatch[1]),
-        decodeURIComponent(buildDownloadMatch[2]),
-      );
+      return validateRelease(env, decodeURIComponent(releaseValidateMatch[1]));
     }
 
-    const buildActivateMatch = pathname.match(
-      /^\/api\/publishers\/([^/]+)\/prebid-builds\/([^/]+)\/activate$/,
+    const releaseGenerateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/generate$/);
+    if (releaseGenerateMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return generateRelease(authenticatedRequest, env, decodeURIComponent(releaseGenerateMatch[1]));
+    }
+
+    const releaseActionMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/releases\/([^/]+)\/(staging|production|rollback)$/,
     );
+    if (releaseActionMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      const siteId = decodeURIComponent(releaseActionMatch[1]);
+      const releaseId = decodeURIComponent(releaseActionMatch[2]);
+      const action = releaseActionMatch[3];
+      if (action === 'staging') return publishReleaseToStaging(authenticatedRequest, env, siteId, releaseId);
+      if (action === 'production') return publishReleaseToProduction(authenticatedRequest, env, siteId, releaseId);
+      return rollbackRelease(authenticatedRequest, env, siteId, releaseId);
+    }
+
+    const releasesMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases$/);
+    if (releasesMatch) {
+      if (request.method !== 'GET') return apiError('Method not allowed.', 405);
+      return listReleases(request, env, decodeURIComponent(releasesMatch[1]));
+    }
+
+    const buildDownloadMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/prebid-builds\/([^/]+)\/download$/);
+    if (buildDownloadMatch) {
+      if (request.method !== 'GET') return apiError('Method not allowed.', 405);
+      return downloadPrebidBuild(env, decodeURIComponent(buildDownloadMatch[1]), decodeURIComponent(buildDownloadMatch[2]));
+    }
+
+    const buildActivateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/prebid-builds\/([^/]+)\/activate$/);
     if (buildActivateMatch) {
       if (request.method !== 'POST') return apiError('Method not allowed.', 405);
       return activatePrebidBuild(
