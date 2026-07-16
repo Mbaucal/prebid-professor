@@ -12,6 +12,8 @@ import './size-maps.css';
 import './unit-rules.css';
 import './prebid-builds.css';
 import './prebid-storage.css';
+import './generator-profiles.css';
+import './advanced-refresh.css';
 import './auth-account.css';
 
 const root = document.getElementById('root');
