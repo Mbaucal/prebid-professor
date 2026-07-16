@@ -50,6 +50,9 @@ export default function HierarchySidebar({
   });
   const [editError, setEditError] = useState<string | null>(null);
   const [savingPublisher, setSavingPublisher] = useState(false);
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deletingPublisher, setDeletingPublisher] = useState(false);
 
   useEffect(() => {
     const returnId = sessionStorage.getItem(RETURN_TO_PUBLISHER_KEY);
@@ -112,12 +115,16 @@ export default function HierarchySidebar({
       notes: account.notes ?? '',
     });
     setEditError(null);
+    setDeleteConfirming(false);
+    setDeleteConfirmation('');
   }
 
   function closePublisherEditor() {
-    if (savingPublisher) return;
+    if (savingPublisher || deletingPublisher) return;
     setEditingPublisher(null);
     setEditError(null);
+    setDeleteConfirming(false);
+    setDeleteConfirmation('');
   }
 
   async function savePublisher(event: FormEvent<HTMLFormElement>) {
@@ -151,6 +158,43 @@ export default function HierarchySidebar({
           : 'Publisher could not be updated.',
       );
       setSavingPublisher(false);
+    }
+  }
+
+  function beginPublisherDelete() {
+    if (!editingPublisher) return;
+
+    if (editingPublisher.sitesCount > 0) {
+      setEditError(
+        `Move or delete all ${editingPublisher.sitesCount} site(s) before deleting this publisher.`,
+      );
+      return;
+    }
+
+    setDeleteConfirming(true);
+    setDeleteConfirmation('');
+    setEditError(null);
+  }
+
+  async function permanentlyDeletePublisher() {
+    if (!editingPublisher) return;
+    if (editingPublisher.sitesCount > 0) return;
+    if (deleteConfirmation.trim() !== editingPublisher.id) return;
+
+    setDeletingPublisher(true);
+    setEditError(null);
+
+    try {
+      await api.deletePublisherAccount(editingPublisher.id);
+      sessionStorage.removeItem(RETURN_TO_PUBLISHER_KEY);
+      window.location.reload();
+    } catch (requestError) {
+      setEditError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Publisher could not be deleted.',
+      );
+      setDeletingPublisher(false);
     }
   }
 
@@ -259,7 +303,10 @@ export default function HierarchySidebar({
               <label>
                 <span>Publisher ID</span>
                 <input disabled value={editingPublisher.id} />
-                <small>Publisher ID is immutable because sites and audit records reference it.</small>
+                <small>
+                  Publisher ID is immutable. If it was created incorrectly, move or delete all sites,
+                  delete this empty publisher, and recreate it with the correct ID.
+                </small>
               </label>
 
               <label>
@@ -290,18 +337,87 @@ export default function HierarchySidebar({
                 />
               </label>
 
+              <div className="publisher-danger-zone">
+                <div>
+                  <strong>Delete publisher</strong>
+                  <p>
+                    This permanently removes only the publisher account. A publisher must contain zero sites
+                    before it can be deleted.
+                  </p>
+                  {editingPublisher.sitesCount > 0 ? (
+                    <small>
+                      Move or delete {editingPublisher.sitesCount} site(s) first. Their configurations and
+                      releases will remain attached to the sites when moved.
+                    </small>
+                  ) : null}
+                </div>
+
+                {!deleteConfirming ? (
+                  <button
+                    className="button danger"
+                    disabled={editingPublisher.sitesCount > 0 || savingPublisher || deletingPublisher}
+                    onClick={beginPublisherDelete}
+                    type="button"
+                  >
+                    Delete publisher
+                  </button>
+                ) : null}
+
+                {deleteConfirming ? (
+                  <div className="publisher-delete-confirmation">
+                    <label>
+                      <span>Type the Publisher ID to confirm</span>
+                      <input
+                        autoFocus
+                        onChange={(event) => setDeleteConfirmation(event.target.value)}
+                        placeholder={editingPublisher.id}
+                        value={deleteConfirmation}
+                      />
+                    </label>
+                    <div className="publisher-delete-actions">
+                      <button
+                        className="button secondary"
+                        disabled={deletingPublisher}
+                        onClick={() => {
+                          setDeleteConfirming(false);
+                          setDeleteConfirmation('');
+                        }}
+                        type="button"
+                      >
+                        Keep publisher
+                      </button>
+                      <button
+                        className="button danger publisher-delete-final"
+                        disabled={
+                          deletingPublisher ||
+                          deleteConfirmation.trim() !== editingPublisher.id
+                        }
+                        onClick={() => void permanentlyDeletePublisher()}
+                        type="button"
+                      >
+                        {deletingPublisher ? 'Deleting…' : 'Delete permanently'}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
               {editError ? <div className="form-error">{editError}</div> : null}
 
               <div className="modal-actions">
                 <button
                   className="button secondary"
-                  disabled={savingPublisher}
+                  disabled={savingPublisher || deletingPublisher}
                   onClick={closePublisherEditor}
                   type="button"
                 >
                   Cancel
                 </button>
-                <button className="button primary" disabled={savingPublisher} type="submit">
+                <button
+                  className="button primary"
+                  disabled={savingPublisher || deletingPublisher || deleteConfirming}
+                  type="submit"
+                >
                   {savingPublisher ? 'Saving…' : 'Save publisher'}
                 </button>
               </div>
