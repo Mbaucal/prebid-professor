@@ -16,6 +16,13 @@
   box-shadow: 0 0 0 2px rgb(242 118 46 / 20%);
 }
 
+.publisher-account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  align-items: stretch;
+  background: #242a33;
+}
+
 .publisher-account-link,
 .site-link {
   width: 100%;
@@ -28,9 +35,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 11px;
+  padding: 10px 8px 10px 11px;
   color: #d9dee8;
-  background: #242a33;
+  background: transparent;
   font-weight: 800;
 }
 
@@ -49,6 +56,24 @@
   text-align: center;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 10px;
+}
+
+.publisher-account-edit {
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-left: 1px solid #333a45;
+  color: #8e99a8;
+  background: #242a33;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.publisher-account-edit:hover,
+.publisher-account-edit:focus-visible {
+  color: #ffffff;
+  background: #353c47;
+  outline: none;
 }
 
 .site-drop-hint {
