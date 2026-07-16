@@ -59,6 +59,15 @@ async function databaseStatus(env: Env): Promise<'connected' | 'not-bound' | 'er
   }
 }
 
+async function releaseStatus(env: Env, siteId: string, releaseId: string): Promise<string | null> {
+  if (!env.DB) return null;
+  const row = await env.DB
+    .prepare('SELECT status FROM releases WHERE publisher_id = ? AND id = ? LIMIT 1')
+    .bind(siteId, releaseId)
+    .first<{ status: string }>();
+  return row?.status ?? null;
+}
+
 function withAuthenticatedActor(request: Request, email: string): Request {
   const headers = new Headers(request.headers);
   headers.set('x-user-email', email);
@@ -115,7 +124,6 @@ export default {
       });
     }
 
-    // Publisher sites load these release artifacts without an admin session.
     if (pathname.startsWith('/cdn/')) {
       const cdnResponse = await serveReleaseCdn(request, env);
       if (cdnResponse) return cdnResponse;
@@ -232,6 +240,14 @@ export default {
       const siteId = decodeURIComponent(releaseActionMatch[1]);
       const releaseId = decodeURIComponent(releaseActionMatch[2]);
       const action = releaseActionMatch[3];
+      const status = await releaseStatus(env, siteId, releaseId);
+      if (!status) return apiError('Release not found.', 404);
+      if (action === 'production' && status !== 'staging') {
+        return apiError('A release must be published to staging before production.', 409);
+      }
+      if (action === 'rollback' && status !== 'archived') {
+        return apiError('Rollback is only available for an archived production release.', 409);
+      }
       if (action === 'staging') return publishReleaseToStaging(authenticatedRequest, env, siteId, releaseId);
       if (action === 'production') return publishReleaseToProduction(authenticatedRequest, env, siteId, releaseId);
       return rollbackRelease(authenticatedRequest, env, siteId, releaseId);
