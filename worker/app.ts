@@ -29,6 +29,7 @@ import {
   type PrebidBuildEnv,
   uploadPrebidBuild,
 } from './prebid-builds';
+import { getUserIdConfig, updateUserIdConfig } from './user-id-config';
 
 interface Env extends PrebidBuildEnv, GeneratorProfileEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -196,6 +197,14 @@ export default {
         decodeURIComponent(advancedRuleMatch[1]),
         decodeURIComponent(advancedRuleMatch[2]),
       );
+    }
+
+    const userIdConfigMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/user-id-config$/);
+    if (userIdConfigMatch) {
+      const siteId = decodeURIComponent(userIdConfigMatch[1]);
+      if (request.method === 'GET') return getUserIdConfig(env, siteId);
+      if (request.method === 'PUT') return updateUserIdConfig(authenticatedRequest, env, siteId);
+      return apiError('Method not allowed.', 405);
     }
 
     const buildDownloadMatch = pathname.match(
