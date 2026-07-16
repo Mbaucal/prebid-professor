@@ -28,7 +28,7 @@ import {
   listPrebidBuilds,
   type PrebidBuildEnv,
   uploadPrebidBuild,
-} from './prebid-builds';
+} from './prebid-builds-identity';
 import { getUserIdConfig, updateUserIdConfig } from './user-id-config';
 
 interface Env extends PrebidBuildEnv, GeneratorProfileEnv, AuthEnv {
