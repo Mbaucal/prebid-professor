@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import ExternalDeploymentsPanel from './ExternalDeploymentsPanel';
 
 type Props = {
   publisherId: string;
@@ -368,6 +369,8 @@ export default function ReleasesPanel({ publisherId, siteName, onChanged }: Prop
           ) : null}
         </article>
       </div>
+
+      <ExternalDeploymentsPanel publisherId={publisherId} releases={releases} />
 
       <div className="release-history-heading">
         <div><span className="panel-kicker">R2 + D1 history</span><h3>{siteName} releases</h3></div>
