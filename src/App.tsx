@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from './api';
 import ConfigPanel from './components/ConfigPanel';
+import HierarchySidebar from './components/HierarchySidebar';
 import type {
   HealthResponse,
   PublisherAccount,
@@ -13,7 +14,7 @@ const navItems = ['Publishers', 'Releases', 'Prebid builds', 'Audit log', 'Setti
 const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Export', 'Debug', 'Ads.txt'] as const;
 
 type PublisherTab = (typeof publisherTabs)[number];
-type ModalMode = 'create-publisher' | 'create-site' | 'duplicate-site' | null;
+type ModalMode = 'create-publisher' | 'create-site' | 'edit-site' | 'duplicate-site' | null;
 
 type PublisherForm = {
   id: string;
@@ -116,8 +117,8 @@ function App() {
 
         const allSites = items.flatMap((item) => item.sites);
         const candidateSite =
-          allSites.find((site) => site.id === preferredSiteId) ??
-          allSites.find((site) => site.id === activeSiteId) ??
+          allSites.find((candidate) => candidate.id === preferredSiteId) ??
+          allSites.find((candidate) => candidate.id === activeSiteId) ??
           candidatePublisher?.sites[0] ??
           allSites[0] ??
           null;
@@ -149,7 +150,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []); // load once; subsequent refreshes are explicit
+  }, []); // initial load only; later refreshes are explicit
 
   const publisher = useMemo(
     () => publishers.find((item) => item.id === activePublisherId) ?? publishers[0] ?? null,
@@ -183,10 +184,32 @@ function App() {
     setModal('create-publisher');
   }
 
-  function openCreateSite() {
-    setSiteForm({ ...emptySiteForm, publisherAccountId: publisher?.id ?? '' });
+  function openCreateSiteForPublisher(publisherAccountId: string) {
+    setActivePublisherId(publisherAccountId);
+    setSiteForm({ ...emptySiteForm, publisherAccountId });
     setFormError(null);
     setModal('create-site');
+  }
+
+  function openCreateSite() {
+    openCreateSiteForPublisher(publisher?.id ?? '');
+  }
+
+  function openEditSite() {
+    if (!site) return;
+    setSiteForm({
+      id: site.id,
+      publisherAccountId: site.publisherAccountId ?? publisher?.id ?? '',
+      name: site.name,
+      domain: site.domain,
+      gamPath: site.gamPath,
+      status: site.status,
+      adsTxtUrl: site.adsTxtUrl ?? '',
+      copyPrebidBuild: false,
+      copyAdsTxtRequirements: false,
+    });
+    setFormError(null);
+    setModal('edit-site');
   }
 
   function openDuplicateSite() {
@@ -255,8 +278,7 @@ function App() {
 
     setSubmitting(true);
     try {
-      const input = {
-        id: siteForm.id.trim(),
+      const common = {
         publisherAccountId: siteForm.publisherAccountId,
         name: siteForm.name.trim(),
         domain: siteForm.domain.trim(),
@@ -266,13 +288,16 @@ function App() {
       };
 
       const saved =
-        modal === 'duplicate-site' && site
-          ? await api.duplicateSite(site.id, {
-              ...input,
-              copyPrebidBuild: siteForm.copyPrebidBuild,
-              copyAdsTxtRequirements: siteForm.copyAdsTxtRequirements,
-            })
-          : await api.createSite(input);
+        modal === 'edit-site' && site
+          ? await api.updateSite(site.id, common)
+          : modal === 'duplicate-site' && site
+            ? await api.duplicateSite(site.id, {
+                id: siteForm.id.trim(),
+                ...common,
+                copyPrebidBuild: siteForm.copyPrebidBuild,
+                copyAdsTxtRequirements: siteForm.copyAdsTxtRequirements,
+              })
+            : await api.createSite({ id: siteForm.id.trim(), ...common });
 
       await loadHierarchy(saved.publisherAccountId ?? siteForm.publisherAccountId, saved.id);
       setModal(null);
@@ -280,6 +305,18 @@ function App() {
       setFormError(error instanceof Error ? error.message : 'Site could not be saved.');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function moveSiteToPublisher(siteId: string, targetPublisherId: string) {
+    try {
+      const moved = await api.moveSite(siteId, targetPublisherId);
+      await loadHierarchy(targetPublisherId, moved.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Site could not be moved.';
+      setHierarchyError(message);
+      window.alert(message);
+      throw error;
     }
   }
 
@@ -320,8 +357,8 @@ function App() {
           </div>
 
           <p>
-            A publisher is now the business/account. Every publisher can contain multiple sites or domains,
-            and each site keeps its own GAM path, bidders, ad units, releases and ads.txt configuration.
+            A publisher is the business/account. Each site keeps its own GAM path, bidders, ad units,
+            releases and ads.txt configuration. Drag any site in the sidebar onto another publisher to move it.
           </p>
 
           {hierarchyError ? <p className="inline-warning">Hierarchy API: {hierarchyError}</p> : null}
@@ -337,16 +374,21 @@ function App() {
 
           {site ? (
             <div className="site-overview-card">
-              <div>
-                <span className="panel-kicker">Active site</span>
-                <h2>{site.name}</h2>
-                <p>{site.domain}</p>
+              <div className="site-overview-heading">
+                <div>
+                  <span className="panel-kicker">Active site</span>
+                  <h2>{site.name}</h2>
+                  <p>{site.domain}</p>
+                </div>
+                <button className="button secondary" onClick={openEditSite} type="button">Edit site</button>
               </div>
               <div className="publisher-facts">
                 <div><span>Site ID</span><code>{site.id}</code></div>
+                <div><span>Publisher</span><code>{publisher?.name ?? site.publisherAccountId ?? '—'}</code></div>
                 <div><span>GAM path</span><code>{site.gamPath}</code></div>
                 <div><span>Ads.txt</span><code>{site.adsTxtUrl ?? 'Not configured'}</code></div>
                 <div><span>Version</span><code>{site.currentVersion}</code></div>
+                <div><span>Updated</span><code>{formatTimestamp(site.updatedAt)}</code></div>
               </div>
             </div>
           ) : (
@@ -388,6 +430,14 @@ function App() {
     );
   }
 
+  const siteModalOpen = modal === 'create-site' || modal === 'edit-site' || modal === 'duplicate-site';
+  const siteModalTitle =
+    modal === 'edit-site'
+      ? `Edit ${site?.name ?? 'site'}`
+      : modal === 'duplicate-site'
+        ? `Duplicate ${site?.name ?? 'site'}`
+        : 'Create site';
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -407,53 +457,18 @@ function App() {
           ))}
         </nav>
 
-        <div className="publisher-nav publisher-tree">
-          <div className="section-label">Publishers</div>
-          {loading ? <div className="publisher-nav-message">Loading publisher hierarchy…</div> : null}
-          {hierarchyError ? <div className="publisher-nav-message error">{hierarchyError}</div> : null}
-
-          {publishers.map((account) => (
-            <div className="publisher-tree-group" key={account.id}>
-              <button
-                className={account.id === publisher?.id ? 'publisher-account-link active' : 'publisher-account-link'}
-                onClick={() => selectPublisher(account)}
-                type="button"
-              >
-                <span>{account.name}</span>
-                <small>{account.sitesCount}</small>
-              </button>
-              <div className="publisher-site-list">
-                {account.sites.map((item) => (
-                  <button
-                    className={item.id === site?.id ? 'site-link active' : 'site-link'}
-                    key={item.id}
-                    onClick={() => selectSite(account.id, item)}
-                    type="button"
-                  >
-                    <span>{item.name}</span>
-                    <small className={item.status}>{item.status}</small>
-                  </button>
-                ))}
-                <button
-                  className="site-link add-site-link"
-                  onClick={() => {
-                    setActivePublisherId(account.id);
-                    setActiveSiteId(account.sites[0]?.id ?? null);
-                    setSiteForm({ ...emptySiteForm, publisherAccountId: account.id });
-                    setModal('create-site');
-                  }}
-                  type="button"
-                >
-                  ＋ Add site
-                </button>
-              </div>
-            </div>
-          ))}
-
-          <button className="publisher-link muted" onClick={openCreatePublisher} type="button">
-            <span>＋ New publisher</span>
-          </button>
-        </div>
+        <HierarchySidebar
+          activePublisherId={publisher?.id ?? null}
+          activeSiteId={site?.id ?? null}
+          error={hierarchyError}
+          loading={loading}
+          onAddSite={openCreateSiteForPublisher}
+          onCreatePublisher={openCreatePublisher}
+          onMoveSite={moveSiteToPublisher}
+          onSelectPublisher={selectPublisher}
+          onSelectSite={selectSite}
+          publishers={publishers}
+        />
 
         <div className="account-card">
           <div className="avatar">S</div>
@@ -488,15 +503,10 @@ function App() {
           </div>
 
           <div className="top-actions">
-            <button className="button secondary" disabled={!publisher} onClick={openCreateSite} type="button">
-              ＋ Site
-            </button>
-            <button className="button secondary" disabled={!site} onClick={openDuplicateSite} type="button">
-              Duplicate site
-            </button>
-            <button className="button danger" disabled={!site} onClick={() => void removeSite()} type="button">
-              Delete site
-            </button>
+            <button className="button secondary" disabled={!publisher} onClick={openCreateSite} type="button">＋ Site</button>
+            <button className="button secondary" disabled={!site} onClick={openEditSite} type="button">Edit site</button>
+            <button className="button secondary" disabled={!site} onClick={openDuplicateSite} type="button">Duplicate site</button>
+            <button className="button danger" disabled={!site} onClick={() => void removeSite()} type="button">Delete site</button>
             <button className="button secondary" disabled={!site} type="button">Validate</button>
             <button className="button secondary" disabled={!site} type="button">Generate</button>
             <button className="button primary" disabled={!site} type="button">Publish ↗</button>
@@ -597,13 +607,13 @@ function App() {
         </div>
       ) : null}
 
-      {modal === 'create-site' || modal === 'duplicate-site' ? (
+      {siteModalOpen ? (
         <div className="modal-backdrop" onMouseDown={closeModal} role="presentation">
           <section className="modal-card" onMouseDown={(event) => event.stopPropagation()} role="dialog">
             <div className="modal-heading">
               <div>
                 <span className="panel-kicker">Site / domain workflow</span>
-                <h2>{modal === 'duplicate-site' ? `Duplicate ${site?.name ?? 'site'}` : 'Create site'}</h2>
+                <h2>{siteModalTitle}</h2>
               </div>
               <button className="icon-button" onClick={closeModal} type="button">×</button>
             </div>
@@ -617,6 +627,7 @@ function App() {
                   <option value="">Select publisher</option>
                   {publishers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
+                {modal === 'edit-site' ? <small>Changing this value moves the site to another publisher.</small> : null}
               </label>
               <label>
                 <span>Site name</span>
@@ -626,7 +637,7 @@ function App() {
                     setSiteForm((current) => ({
                       ...current,
                       name: event.target.value,
-                      id: current.id || slugify(event.target.value),
+                      id: modal === 'edit-site' ? current.id : current.id || slugify(event.target.value),
                     }))
                   }
                   placeholder="K1info.rs"
@@ -636,10 +647,12 @@ function App() {
               <label>
                 <span>Site ID</span>
                 <input
+                  disabled={modal === 'edit-site'}
                   onChange={(event) => setSiteForm((current) => ({ ...current, id: slugify(event.target.value) }))}
                   placeholder="k1info"
                   value={siteForm.id}
                 />
+                {modal === 'edit-site' ? <small>Site ID is immutable because configs and releases reference it.</small> : null}
               </label>
               <label>
                 <span>Domain</span>
@@ -707,7 +720,13 @@ function App() {
               <div className="modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeModal} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting} type="submit">
-                  {submitting ? 'Saving…' : modal === 'duplicate-site' ? 'Duplicate site' : 'Create site'}
+                  {submitting
+                    ? 'Saving…'
+                    : modal === 'duplicate-site'
+                      ? 'Duplicate site'
+                      : modal === 'edit-site'
+                        ? 'Save site'
+                        : 'Create site'}
                 </button>
               </div>
             </form>
