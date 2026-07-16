@@ -8,7 +8,18 @@ import {
   renderLoginPage,
   type AuthEnv,
 } from './auth';
+import { updateAdvancedRule } from './advanced-rules';
 import baseHandler from './index';
+import {
+  createGeneratorProfile,
+  deleteGeneratorProfile,
+  downloadGeneratorProfileFile,
+  duplicateGeneratorProfile,
+  getGeneratorSelection,
+  listGeneratorProfiles,
+  setGeneratorSelection,
+  type GeneratorProfileEnv,
+} from './generator-profiles';
 import { apiError, json } from './http';
 import {
   activatePrebidBuild,
@@ -19,7 +30,7 @@ import {
   uploadPrebidBuild,
 } from './prebid-builds';
 
-interface Env extends PrebidBuildEnv, AuthEnv {
+interface Env extends PrebidBuildEnv, GeneratorProfileEnv, AuthEnv {
   ASSETS: Fetcher;
 }
 
@@ -46,11 +57,7 @@ function withAuthenticatedActor(request: Request, email: string): Request {
 /**
  * Normalize fetch metadata only after the browser has independently marked the
  * request as same-origin, or after Origin/Referer exactly matches this Worker.
- *
- * Chrome may send `Origin: null` for a normal top-level form submission when
- * the login document uses a no-referrer policy. In that case the unforgeable
- * `Sec-Fetch-Site: same-origin` value is sufficient to accept the request. A
- * real cross-site request remains `cross-site` and is not normalized.
+ * Chrome may send Origin:null for a normal top-level form submission.
  */
 function normalizeVerifiedSameOriginRequest(request: Request): Request {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return request;
@@ -61,7 +68,6 @@ function normalizeVerifiedSameOriginRequest(request: Request): Request {
   const fetchSite = request.headers.get('sec-fetch-site')?.trim().toLowerCase() ?? '';
 
   let verifiedSameOrigin = false;
-
   if (originHeader && originHeader !== 'null') {
     try {
       verifiedSameOrigin = new URL(originHeader).origin === requestOrigin;
@@ -79,7 +85,6 @@ function normalizeVerifiedSameOriginRequest(request: Request): Request {
   }
 
   if (!verifiedSameOrigin) return request;
-
   const headers = new Headers(request.headers);
   headers.set('origin', requestOrigin);
   headers.set('sec-fetch-site', 'same-origin');
@@ -92,8 +97,6 @@ export default {
     const { pathname } = url;
     const verifiedRequest = normalizeVerifiedSameOriginRequest(request);
 
-    // Health stays public so deployment, D1, R2 and auth configuration can be checked
-    // even when a session has expired.
     if (request.method === 'GET' && pathname === '/api/health') {
       return json({
         ok: true,
@@ -109,18 +112,12 @@ export default {
     if (request.method === 'GET' && pathname === '/login') {
       const user = await getAuthenticatedUser(request, env);
       if (user) {
-        return new Response(null, {
-          status: 303,
-          headers: { location: '/', 'cache-control': 'no-store' },
-        });
+        return new Response(null, { status: 303, headers: { location: '/', 'cache-control': 'no-store' } });
       }
       return renderLoginPage(request, env);
     }
 
-    if (pathname === '/api/auth/login') {
-      return handleLogin(verifiedRequest, env);
-    }
-
+    if (pathname === '/api/auth/login') return handleLogin(verifiedRequest, env);
     if (pathname === '/api/auth/logout') {
       if (request.method !== 'POST') return apiError('Method not allowed.', 405);
       return handleLogout(verifiedRequest);
@@ -136,13 +133,64 @@ export default {
       return apiError('Cross-site state-changing request blocked.', 403);
     }
 
-    if (request.method === 'GET' && pathname === '/api/auth/me') {
-      return json({ ok: true, user });
+    if (request.method === 'GET' && pathname === '/api/auth/me') return json({ ok: true, user });
+    const authenticatedRequest = withAuthenticatedActor(verifiedRequest, user.email);
+
+    // Platform-level immutable generator profiles stored in R2.
+    if (pathname === '/api/generator-profiles') {
+      if (request.method === 'GET') return listGeneratorProfiles(env);
+      if (request.method === 'POST') return createGeneratorProfile(authenticatedRequest, env);
+      return apiError('Method not allowed.', 405);
     }
 
-    // Existing handlers already use getActor(), which reads x-user-email. Add the
-    // authenticated account to the internal request so audit records show the real admin.
-    const authenticatedRequest = withAuthenticatedActor(verifiedRequest, user.email);
+    const generatorProfileDuplicateMatch = pathname.match(/^\/api\/generator-profiles\/([^/]+)\/duplicate$/);
+    if (generatorProfileDuplicateMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return duplicateGeneratorProfile(
+        authenticatedRequest,
+        env,
+        decodeURIComponent(generatorProfileDuplicateMatch[1]),
+      );
+    }
+
+    const generatorProfileDownloadMatch = pathname.match(
+      /^\/api\/generator-profiles\/([^/]+)\/(template|source)\/download$/,
+    );
+    if (generatorProfileDownloadMatch) {
+      if (request.method !== 'GET') return apiError('Method not allowed.', 405);
+      return downloadGeneratorProfileFile(
+        env,
+        decodeURIComponent(generatorProfileDownloadMatch[1]),
+        generatorProfileDownloadMatch[2] as 'template' | 'source',
+      );
+    }
+
+    const generatorProfileMatch = pathname.match(/^\/api\/generator-profiles\/([^/]+)$/);
+    if (generatorProfileMatch) {
+      if (request.method !== 'DELETE') return apiError('Method not allowed.', 405);
+      return deleteGeneratorProfile(authenticatedRequest, env, decodeURIComponent(generatorProfileMatch[1]));
+    }
+
+    const generatorSelectionMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/generator-selection$/);
+    if (generatorSelectionMatch) {
+      const siteId = decodeURIComponent(generatorSelectionMatch[1]);
+      if (request.method === 'GET') return getGeneratorSelection(env, siteId);
+      if (request.method === 'PUT') return setGeneratorSelection(authenticatedRequest, env, siteId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const advancedRuleMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/unit-rules-advanced\/([^/]+)$/,
+    );
+    if (advancedRuleMatch) {
+      if (request.method !== 'PUT') return apiError('Method not allowed.', 405);
+      return updateAdvancedRule(
+        authenticatedRequest,
+        env,
+        decodeURIComponent(advancedRuleMatch[1]),
+        decodeURIComponent(advancedRuleMatch[2]),
+      );
+    }
 
     const buildDownloadMatch = pathname.match(
       /^\/api\/publishers\/([^/]+)\/prebid-builds\/([^/]+)\/download$/,
@@ -169,9 +217,7 @@ export default {
       );
     }
 
-    const buildMatch = pathname.match(
-      /^\/api\/publishers\/([^/]+)\/prebid-builds\/([^/]+)$/,
-    );
+    const buildMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/prebid-builds\/([^/]+)$/);
     if (buildMatch) {
       if (request.method !== 'DELETE') return apiError('Method not allowed.', 405);
       return deletePrebidBuild(
