@@ -43,6 +43,13 @@ import {
   listSizeMaps,
   updateSizeMap,
 } from './size-maps';
+import {
+  createUnitRule,
+  deleteUnitRule,
+  duplicateUnitRule,
+  listUnitRules,
+  updateUnitRule,
+} from './unit-rules';
 
 interface Env extends DatabaseEnv {
   ASSETS: Fetcher;
@@ -191,6 +198,38 @@ export default {
       const siteId = decodeURIComponent(sizeMapsMatch[1]);
       if (request.method === 'GET') return listSizeMaps(env, siteId);
       if (request.method === 'POST') return createSizeMap(request, env, siteId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const unitRuleDuplicateMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/unit-rules\/([^/]+)\/duplicate$/,
+    );
+    if (unitRuleDuplicateMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return duplicateUnitRule(
+        request,
+        env,
+        decodeURIComponent(unitRuleDuplicateMatch[1]),
+        decodeURIComponent(unitRuleDuplicateMatch[2]),
+      );
+    }
+
+    const unitRuleMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/unit-rules\/([^/]+)$/,
+    );
+    if (unitRuleMatch) {
+      const siteId = decodeURIComponent(unitRuleMatch[1]);
+      const unitRuleId = decodeURIComponent(unitRuleMatch[2]);
+      if (request.method === 'PATCH') return updateUnitRule(request, env, siteId, unitRuleId);
+      if (request.method === 'DELETE') return deleteUnitRule(request, env, siteId, unitRuleId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const unitRulesMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/unit-rules$/);
+    if (unitRulesMatch) {
+      const siteId = decodeURIComponent(unitRulesMatch[1]);
+      if (request.method === 'GET') return listUnitRules(env, siteId);
+      if (request.method === 'POST') return createUnitRule(request, env, siteId);
       return apiError('Method not allowed.', 405);
     }
 
