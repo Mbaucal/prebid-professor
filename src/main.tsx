@@ -10,6 +10,7 @@ import './imports.css';
 import './size-maps.css';
 import './unit-rules.css';
 import './prebid-builds.css';
+import './prebid-storage.css';
 
 const root = document.getElementById('root');
 
