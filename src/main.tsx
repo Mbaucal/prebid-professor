@@ -16,6 +16,7 @@ import './generator-profiles.css';
 import './advanced-refresh.css';
 import './user-id-modules.css';
 import './releases.css';
+import './external-deployments.css';
 import './auth-account.css';
 
 const root = document.getElementById('root');
