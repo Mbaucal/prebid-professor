@@ -173,6 +173,7 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
 export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) {
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
   const [rules, setRules] = useState<UnitRule[]>([]);
+  const [advancedRules, setAdvancedRules] = useState<Record<string, AdvancedRule>>({});
   const [form, setForm] = useState<FormState>(() => defaultForm());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -183,14 +184,19 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) 
     setLoading(true);
     setError(null);
     try {
-      const [units, unitRules] = await Promise.all([
+      const [units, unitRules, advancedPayload] = await Promise.all([
         api.listAdUnits(publisherId),
         api.listUnitRules(publisherId),
+        requestJson<{ ok: true; advancedRules: Record<string, AdvancedRule> }>(
+          `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced`,
+        ),
       ]);
       setAdUnits(units);
       setRules(unitRules);
+      setAdvancedRules(advancedPayload.advancedRules);
       const selected = unitRules.find((rule) => rule.ruleKey === form.ruleKey);
-      setForm(formFromRule(form.ruleKey, selected?.rule as AdvancedRule | undefined));
+      const baseRule = selected?.rule as AdvancedRule | undefined;
+      setForm(formFromRule(form.ruleKey, advancedPayload.advancedRules[form.ruleKey] ?? baseRule));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Advanced schedules could not be loaded.');
     } finally {
@@ -216,7 +222,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) 
 
   function selectTarget(ruleKey: string) {
     const rule = rules.find((item) => item.ruleKey === ruleKey);
-    setForm(formFromRule(ruleKey, rule?.rule as AdvancedRule | undefined));
+    setForm(formFromRule(ruleKey, advancedRules[ruleKey] ?? (rule?.rule as AdvancedRule | undefined)));
     setSavedMessage(null);
     setError(null);
   }
@@ -268,8 +274,14 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) 
           }),
         },
       );
-      const unitRules = await api.listUnitRules(publisherId);
+      const [unitRules, advancedPayload] = await Promise.all([
+        api.listUnitRules(publisherId),
+        requestJson<{ ok: true; advancedRules: Record<string, AdvancedRule> }>(
+          `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced`,
+        ),
+      ]);
       setRules(unitRules);
+      setAdvancedRules(advancedPayload.advancedRules);
       setSavedMessage(`Saved ${form.ruleKey}. The runtime profile will apply this schedule during release generation.`);
       await onChanged?.();
     } catch (requestError) {
