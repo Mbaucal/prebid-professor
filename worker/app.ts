@@ -43,10 +43,49 @@ function withAuthenticatedActor(request: Request, email: string): Request {
   return new Request(request, { headers });
 }
 
+/**
+ * Some browser/Cloudflare combinations report a normal form POST as
+ * `Sec-Fetch-Site: same-site` even though the Origin is exactly the Worker
+ * origin. The lower-level CSRF check intentionally accepts only
+ * `same-origin`, so normalize the fetch metadata only after independently
+ * proving the Origin or Referer is the exact same origin.
+ */
+function normalizeVerifiedSameOriginRequest(request: Request): Request {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return request;
+
+  const requestOrigin = new URL(request.url).origin;
+  const originHeader = request.headers.get('origin')?.trim() ?? '';
+  const refererHeader = request.headers.get('referer')?.trim() ?? '';
+
+  let verifiedSameOrigin = false;
+
+  if (originHeader && originHeader !== 'null') {
+    try {
+      verifiedSameOrigin = new URL(originHeader).origin === requestOrigin;
+    } catch {
+      verifiedSameOrigin = false;
+    }
+  } else if (refererHeader) {
+    try {
+      verifiedSameOrigin = new URL(refererHeader).origin === requestOrigin;
+    } catch {
+      verifiedSameOrigin = false;
+    }
+  }
+
+  if (!verifiedSameOrigin) return request;
+
+  const headers = new Headers(request.headers);
+  headers.set('origin', requestOrigin);
+  headers.set('sec-fetch-site', 'same-origin');
+  return new Request(request, { headers });
+}
+
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
     const { pathname } = url;
+    const verifiedRequest = normalizeVerifiedSameOriginRequest(request);
 
     // Health stays public so deployment, D1, R2 and auth configuration can be checked
     // even when a session has expired.
@@ -74,12 +113,12 @@ export default {
     }
 
     if (pathname === '/api/auth/login') {
-      return handleLogin(request, env);
+      return handleLogin(verifiedRequest, env);
     }
 
     if (pathname === '/api/auth/logout') {
       if (request.method !== 'POST') return apiError('Method not allowed.', 405);
-      return handleLogout(request);
+      return handleLogout(verifiedRequest);
     }
 
     const user = await getAuthenticatedUser(request, env);
@@ -88,7 +127,7 @@ export default {
       return redirectToLogin(request);
     }
 
-    if (!isSameOriginMutation(request)) {
+    if (!isSameOriginMutation(verifiedRequest)) {
       return apiError('Cross-site state-changing request blocked.', 403);
     }
 
@@ -98,7 +137,7 @@ export default {
 
     // Existing handlers already use getActor(), which reads x-user-email. Add the
     // authenticated account to the internal request so audit records show the real admin.
-    const authenticatedRequest = withAuthenticatedActor(request, user.email);
+    const authenticatedRequest = withAuthenticatedActor(verifiedRequest, user.email);
 
     const buildDownloadMatch = pathname.match(
       /^\/api\/publishers\/([^/]+)\/prebid-builds\/([^/]+)\/download$/,
