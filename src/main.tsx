@@ -7,6 +7,7 @@ import './publisher-hierarchy.css';
 import './ad-units.css';
 import './bidders.css';
 import './imports.css';
+import './size-maps.css';
 
 const root = document.getElementById('root');
 
