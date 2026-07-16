@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import AdminHelpers from './AdminHelpers';
 
 type AuthUser = {
   email: string;
@@ -13,6 +14,7 @@ export default function AuthAccount() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [helpersOpen, setHelpersOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,15 +67,25 @@ export default function AuthAccount() {
   }
 
   return (
-    <aside className="auth-account-card" aria-label="Signed-in administrator">
-      <div className="auth-account-avatar">{initial}</div>
-      <div className="auth-account-copy">
-        <strong>{user?.email ?? (error ? 'Session error' : 'Loading admin…')}</strong>
-        <span>{error ?? 'admin · signed session'}</span>
-      </div>
-      <button disabled={loggingOut} onClick={() => void logout()} title="Sign out" type="button">
-        {loggingOut ? '…' : '↪'}
-      </button>
-    </aside>
+    <>
+      <aside className="auth-account-card" aria-label="Signed-in administrator">
+        <div className="auth-account-avatar">{initial}</div>
+        <button
+          className="auth-account-identity"
+          onClick={() => setHelpersOpen(true)}
+          title="Open admin helpers"
+          type="button"
+        >
+          <span>{user?.email ?? (error ? 'Session error' : 'Loading admin…')}</span>
+          <small>{error ?? 'admin · signed session'}</small>
+        </button>
+        <button onClick={() => setHelpersOpen(true)} title="Admin helpers" type="button">?</button>
+        <button disabled={loggingOut} onClick={() => void logout()} title="Sign out" type="button">
+          {loggingOut ? '…' : '↪'}
+        </button>
+      </aside>
+
+      <AdminHelpers adminEmail={user?.email} onClose={() => setHelpersOpen(false)} open={helpersOpen} />
+    </>
   );
 }
