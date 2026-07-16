@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { api } from './api';
 import ConfigPanel from './components/ConfigPanel';
 import HierarchySidebar from './components/HierarchySidebar';
+import PrebidBuildsPanel from './components/PrebidBuildsPanel';
 import type {
   HealthResponse,
   PublisherAccount,
@@ -85,7 +86,7 @@ function nextCopyId(value: string): string {
   return `${base}-${next}`;
 }
 
-function App() {
+export default function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [publishers, setPublishers] = useState<PublisherAccount[]>([]);
@@ -151,7 +152,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []); // initial load only; later refreshes are explicit
+  }, []);
 
   const publisher = useMemo(
     () => publishers.find((item) => item.id === activePublisherId) ?? publishers[0] ?? null,
@@ -535,7 +536,12 @@ function App() {
             publisherId={site.id}
           />
         ) : null}
-        {activeTab !== 'Overview' && activeTab !== 'Config' ? renderPlaceholder(activeTab) : null}
+        {activeTab === 'Prebid.js' && site ? (
+          <PrebidBuildsPanel publisherId={site.id} siteName={site.name} />
+        ) : null}
+        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js'
+          ? renderPlaceholder(activeTab)
+          : null}
       </main>
 
       {modal === 'create-publisher' ? (
@@ -737,5 +743,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
