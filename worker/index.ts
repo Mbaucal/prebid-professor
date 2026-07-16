@@ -23,7 +23,6 @@ import {
   deletePublisherAccount,
   getPublisherAccount,
   listPublisherAccounts,
-  moveSiteToPublisher,
   updatePublisherAccount,
 } from './publisher-accounts';
 import {
@@ -36,6 +35,14 @@ import {
   listPublishers,
   type DatabaseEnv,
 } from './publishers';
+import { moveSite, updateSite } from './site-management';
+import {
+  createSizeMap,
+  deleteSizeMap,
+  duplicateSizeMap,
+  listSizeMaps,
+  updateSizeMap,
+} from './size-maps';
 
 interface Env extends DatabaseEnv {
   ASSETS: Fetcher;
@@ -66,7 +73,7 @@ export default {
       });
     }
 
-    // New hierarchy: publisher account/company -> multiple sites/domains.
+    // Publisher account/company -> multiple sites/domains.
     if (pathname === '/api/publisher-accounts') {
       if (request.method === 'GET') return listPublisherAccounts(env);
       if (request.method === 'POST') return createPublisherAccount(request, env);
@@ -97,18 +104,19 @@ export default {
     const siteMoveMatch = pathname.match(/^\/api\/sites\/([^/]+)\/move$/);
     if (siteMoveMatch) {
       if (request.method !== 'POST') return apiError('Method not allowed.', 405);
-      return moveSiteToPublisher(request, env, decodeURIComponent(siteMoveMatch[1]));
+      return moveSite(request, env, decodeURIComponent(siteMoveMatch[1]));
     }
 
     const siteMatch = pathname.match(/^\/api\/sites\/([^/]+)$/);
     if (siteMatch) {
       const siteId = decodeURIComponent(siteMatch[1]);
       if (request.method === 'GET') return getPublisher(env, siteId);
+      if (request.method === 'PATCH') return updateSite(request, env, siteId);
       if (request.method === 'DELETE') return deleteSite(request, env, siteId);
       return apiError('Method not allowed.', 405);
     }
 
-    // Legacy endpoint: these rows are now sites, kept for existing clients and config routes.
+    // Legacy endpoint: these rows are now sites, kept for config routes.
     if (pathname === '/api/publishers') {
       if (request.method === 'GET') return listPublishers(env);
       if (request.method === 'POST') return createPublisher(request, env);
@@ -151,6 +159,38 @@ export default {
       const siteId = decodeURIComponent(adUnitsMatch[1]);
       if (request.method === 'GET') return listAdUnits(env, siteId);
       if (request.method === 'POST') return createAdUnit(request, env, siteId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const sizeMapDuplicateMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/size-maps\/([^/]+)\/duplicate$/,
+    );
+    if (sizeMapDuplicateMatch) {
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return duplicateSizeMap(
+        request,
+        env,
+        decodeURIComponent(sizeMapDuplicateMatch[1]),
+        decodeURIComponent(sizeMapDuplicateMatch[2]),
+      );
+    }
+
+    const sizeMapMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/size-maps\/([^/]+)$/,
+    );
+    if (sizeMapMatch) {
+      const siteId = decodeURIComponent(sizeMapMatch[1]);
+      const sizeMapId = decodeURIComponent(sizeMapMatch[2]);
+      if (request.method === 'PATCH') return updateSizeMap(request, env, siteId, sizeMapId);
+      if (request.method === 'DELETE') return deleteSizeMap(request, env, siteId, sizeMapId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const sizeMapsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/size-maps$/);
+    if (sizeMapsMatch) {
+      const siteId = decodeURIComponent(sizeMapsMatch[1]);
+      if (request.method === 'GET') return listSizeMaps(env, siteId);
+      if (request.method === 'POST') return createSizeMap(request, env, siteId);
       return apiError('Method not allowed.', 405);
     }
 
