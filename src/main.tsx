@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import AuthAccount from './components/AuthAccount';
 import './styles.css';
 import './publisher-workflows.css';
 import './publisher-hierarchy.css';
@@ -11,6 +12,7 @@ import './size-maps.css';
 import './unit-rules.css';
 import './prebid-builds.css';
 import './prebid-storage.css';
+import './auth-account.css';
 
 const root = document.getElementById('root');
 
@@ -21,5 +23,6 @@ if (!root) {
 createRoot(root).render(
   <StrictMode>
     <App />
+    <AuthAccount />
   </StrictMode>,
 );
