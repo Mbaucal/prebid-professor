@@ -1,0 +1,92 @@
+/* The original prototype account card is replaced by the authenticated session card. */
+.sidebar > .account-card {
+  visibility: hidden;
+}
+
+.auth-account-card {
+  position: fixed;
+  z-index: 50;
+  left: 18px;
+  bottom: 18px;
+  width: 234px;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid #333a45;
+  border-radius: 11px;
+  color: #d9dee8;
+  background: #1d222a;
+  box-shadow: 0 14px 35px rgb(0 0 0 / 24%);
+}
+
+.auth-account-avatar {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #ffffff;
+  background: #303743;
+  font-weight: 900;
+}
+
+.auth-account-copy {
+  min-width: 0;
+}
+
+.auth-account-copy strong,
+.auth-account-copy span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-account-copy strong {
+  color: #f3f5f8;
+  font-size: 11px;
+}
+
+.auth-account-copy span {
+  margin-top: 4px;
+  color: #7f8998;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+}
+
+.auth-account-card button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #3d4653;
+  border-radius: 8px;
+  color: #9ca7b6;
+  background: #262c35;
+  font-size: 15px;
+}
+
+.auth-account-card button:hover,
+.auth-account-card button:focus-visible {
+  color: #ffffff;
+  border-color: #f2762e;
+  background: #343b45;
+  outline: none;
+}
+
+.auth-account-card button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+@media (max-width: 760px) {
+  .auth-account-card {
+    left: auto;
+    right: 12px;
+    bottom: 12px;
+    width: min(300px, calc(100vw - 24px));
+  }
+}
