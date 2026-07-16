@@ -8,7 +8,7 @@ import {
   renderLoginPage,
   type AuthEnv,
 } from './auth';
-import { updateAdvancedRule } from './advanced-rules';
+import { listAdvancedRules, updateAdvancedRule } from './advanced-rules';
 import baseHandler from './index';
 import {
   createGeneratorProfile,
@@ -177,6 +177,12 @@ export default {
       if (request.method === 'GET') return getGeneratorSelection(env, siteId);
       if (request.method === 'PUT') return setGeneratorSelection(authenticatedRequest, env, siteId);
       return apiError('Method not allowed.', 405);
+    }
+
+    const advancedRulesMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/unit-rules-advanced$/);
+    if (advancedRulesMatch) {
+      if (request.method !== 'GET') return apiError('Method not allowed.', 405);
+      return listAdvancedRules(env, decodeURIComponent(advancedRulesMatch[1]));
     }
 
     const advancedRuleMatch = pathname.match(
