@@ -1,0 +1,201 @@
+name: Deploy Prebid release to Cloudflare Pages
+
+on:
+  workflow_dispatch:
+    inputs:
+      correlation_id:
+        description: Internal deployment correlation ID
+        required: true
+        type: string
+      callback_url:
+        description: Prebid Professor callback URL
+        required: true
+        type: string
+      site_id:
+        description: Site ID
+        required: true
+        type: string
+      release_id:
+        description: Release ID
+        required: true
+        type: string
+      release_version:
+        description: Release version
+        required: true
+        type: string
+      release_base_url:
+        description: Public immutable release URL
+        required: true
+        type: string
+      github_environment:
+        description: GitHub Environment containing CLOUDFLARE_API_TOKEN
+        required: true
+        type: string
+      account_id:
+        description: Target Cloudflare account ID
+        required: true
+        type: string
+      project_name:
+        description: Target Cloudflare Pages project
+        required: true
+        type: string
+      branch:
+        description: Pages production or preview branch
+        required: true
+        type: string
+      channel:
+        description: Deployment channel
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: prebid-pages-${{ inputs.account_id }}-${{ inputs.project_name }}-${{ inputs.branch }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: ${{ inputs.site_id }} · ${{ inputs.release_version }} · ${{ inputs.channel }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+
+    steps:
+      - name: Check out deployment workflow
+        uses: actions/checkout@v6
+
+      - name: Download immutable release package
+        shell: bash
+        env:
+          RELEASE_BASE_URL: ${{ inputs.release_base_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          files=(
+            ads.js
+            ads.min.js
+            prebid.js
+            config.json
+            manifest.json
+            min-height.css
+            div-export.csv
+            implementation.html
+          )
+
+          for file in "${files[@]}"; do
+            echo "Downloading ${file}"
+            curl \
+              --fail \
+              --location \
+              --retry 3 \
+              --retry-all-errors \
+              --silent \
+              --show-error \
+              "${RELEASE_BASE_URL}/${file}" \
+              --output "dist/${file}"
+          done
+
+          cat > dist/_headers <<'EOF'
+          /*
+            Access-Control-Allow-Origin: *
+            X-Content-Type-Options: nosniff
+          EOF
+
+          echo "Release package ready:"
+          find dist -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Deploy release with Wrangler
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ inputs.account_id }}
+          wranglerVersion: "4"
+          command: >-
+            pages deploy dist
+            --project-name=${{ inputs.project_name }}
+            --branch=${{ inputs.branch }}
+            --commit-dirty=false
+            --commit-message="Prebid Professor ${{ inputs.channel }} ${{ inputs.site_id }} ${{ inputs.release_version }}"
+
+      - name: Report successful deployment
+        if: success()
+        shell: bash
+        env:
+          CALLBACK_URL: ${{ inputs.callback_url }}
+          CALLBACK_SECRET: ${{ secrets.PREBID_PROFESSOR_CALLBACK_SECRET }}
+          CORRELATION_ID: ${{ inputs.correlation_id }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+          ALIAS_URL: ${{ steps.deploy.outputs.pages-deployment-alias-url }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg correlationId "$CORRELATION_ID" \
+            --arg status "success" \
+            --arg githubRunId "$RUN_ID" \
+            --arg githubRunUrl "$RUN_URL" \
+            --arg deploymentUrl "$DEPLOYMENT_URL" \
+            --arg aliasUrl "$ALIAS_URL" \
+            --arg message "Cloudflare Pages deployment completed." \
+            '{
+              correlationId: $correlationId,
+              status: $status,
+              githubRunId: $githubRunId,
+              githubRunUrl: $githubRunUrl,
+              deploymentUrl: $deploymentUrl,
+              aliasUrl: $aliasUrl,
+              message: $message
+            }' > callback.json
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${CALLBACK_SECRET}" \
+            --header "Content-Type: application/json" \
+            --data @callback.json \
+            "$CALLBACK_URL"
+
+      - name: Report failed deployment
+        if: failure()
+        shell: bash
+        env:
+          CALLBACK_URL: ${{ inputs.callback_url }}
+          CALLBACK_SECRET: ${{ secrets.PREBID_PROFESSOR_CALLBACK_SECRET }}
+          CORRELATION_ID: ${{ inputs.correlation_id }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg correlationId "$CORRELATION_ID" \
+            --arg status "failed" \
+            --arg githubRunId "$RUN_ID" \
+            --arg githubRunUrl "$RUN_URL" \
+            --arg message "Cloudflare Pages deployment failed. Open the GitHub Actions run for details." \
+            '{
+              correlationId: $correlationId,
+              status: $status,
+              githubRunId: $githubRunId,
+              githubRunUrl: $githubRunUrl,
+              message: $message
+            }' > callback.json
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${CALLBACK_SECRET}" \
+            --header "Content-Type: application/json" \
+            --data @callback.json \
+            "$CALLBACK_URL"
