@@ -108,25 +108,26 @@ function App() {
         setPublishers(items);
         setHierarchyError(null);
 
-        const candidatePublisher =
-          items.find((item) => item.id === preferredPublisherId) ??
-          items.find((item) => item.id === activePublisherId) ??
-          items[0] ??
-          null;
-        setActivePublisherId(candidatePublisher?.id ?? null);
-
         const allSites = items.flatMap((item) => item.sites);
-        const candidateSite =
-          allSites.find((candidate) => candidate.id === preferredSiteId) ??
-          allSites.find((candidate) => candidate.id === activeSiteId) ??
-          candidatePublisher?.sites[0] ??
-          allSites[0] ??
-          null;
-        setActiveSiteId(candidateSite?.id ?? null);
+        const preferredSite = preferredSiteId
+          ? allSites.find((candidate) => candidate.id === preferredSiteId) ?? null
+          : null;
 
-        if (candidateSite?.publisherAccountId) {
-          setActivePublisherId(candidateSite.publisherAccountId);
-        }
+        const candidatePublisher = preferredSite?.publisherAccountId
+          ? items.find((item) => item.id === preferredSite.publisherAccountId) ?? null
+          : items.find((item) => item.id === preferredPublisherId) ??
+            items.find((item) => item.id === activePublisherId) ??
+            items[0] ??
+            null;
+
+        const candidateSite =
+          preferredSite ??
+          candidatePublisher?.sites.find((candidate) => candidate.id === activeSiteId) ??
+          candidatePublisher?.sites[0] ??
+          null;
+
+        setActivePublisherId(candidatePublisher?.id ?? null);
+        setActiveSiteId(candidateSite?.id ?? null);
       } catch (error) {
         setHierarchyError(error instanceof Error ? error.message : 'Publisher hierarchy could not be loaded.');
       } finally {
@@ -158,9 +159,9 @@ function App() {
   );
 
   const site = useMemo(() => {
-    const allSites = publishers.flatMap((item) => item.sites);
-    return allSites.find((item) => item.id === activeSiteId) ?? publisher?.sites[0] ?? allSites[0] ?? null;
-  }, [activeSiteId, publisher, publishers]);
+    if (!publisher) return null;
+    return publisher.sites.find((item) => item.id === activeSiteId) ?? publisher.sites[0] ?? null;
+  }, [activeSiteId, publisher]);
 
   const totalSites = useMemo(
     () => publishers.reduce((sum, item) => sum + item.sitesCount, 0),
