@@ -1,0 +1,350 @@
+.advanced-profile-note {
+  max-width: 280px;
+  padding: 8px 11px;
+  border: 1px solid #efc4a8;
+  border-radius: 999px;
+  color: #8d481c;
+  background: #fff4ec;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.advanced-save-message {
+  margin: 16px 0;
+  padding: 11px 13px;
+  border: 1px solid #b8edcf;
+  border-radius: 9px;
+  color: #117745;
+  background: #e7faef;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.advanced-refresh-layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 18px;
+}
+
+.advanced-target-list {
+  position: sticky;
+  top: 18px;
+  display: grid;
+  gap: 6px;
+  padding: 13px;
+  border: 1px solid #d9e0e9;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.advanced-target-list > .panel-kicker {
+  padding: 3px 6px 7px;
+}
+
+.advanced-target-list button {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #596576;
+  background: #f7f9fb;
+  text-align: left;
+}
+
+.advanced-target-list button:hover,
+.advanced-target-list button.active {
+  color: #a64a17;
+  border-color: #efbd9e;
+  background: #fff5ee;
+}
+
+.advanced-target-list strong {
+  font-size: 12px;
+}
+
+.advanced-target-list code {
+  color: #8b95a3;
+  font-size: 10px;
+}
+
+.advanced-refresh-form {
+  display: grid;
+  gap: 16px;
+}
+
+.advanced-rule-card {
+  padding: 20px;
+  border: 1px solid #d9e0e9;
+  border-radius: 13px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(31 38 51 / 4%);
+}
+
+.advanced-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.advanced-card-heading h3 {
+  margin: 5px 0 0;
+  font-size: 19px;
+}
+
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #455162;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.advanced-toggle input {
+  width: 17px;
+  height: 17px;
+}
+
+.advanced-field-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.advanced-field-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.advanced-field-grid.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.advanced-field-grid label > span,
+.advanced-field-grid label > small {
+  display: block;
+}
+
+.advanced-field-grid label > span {
+  margin-bottom: 6px;
+  color: #485466;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.advanced-field-grid label > small {
+  margin-top: 5px;
+  color: #8b95a3;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.advanced-field-grid input,
+.advanced-field-grid select,
+.sequence-field input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cfd7e3;
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #263142;
+  background: #ffffff;
+  outline: none;
+}
+
+.advanced-field-grid input:focus,
+.sequence-field input:focus {
+  border-color: #ef722d;
+  box-shadow: 0 0 0 3px rgb(239 114 45 / 14%);
+}
+
+.number-with-unit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.number-with-unit input {
+  border-radius: 8px 0 0 8px;
+}
+
+.number-with-unit b {
+  min-height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0 10px;
+  border: 1px solid #cfd7e3;
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  color: #6b7585;
+  background: #f3f5f8;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.schedule-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin-bottom: 15px;
+}
+
+.schedule-mode-grid label {
+  min-height: 94px;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #d9e0e9;
+  border-radius: 9px;
+  color: #5d6878;
+  background: #fafbfc;
+  cursor: pointer;
+}
+
+.schedule-mode-grid label.selected {
+  border-color: #ef9d6c;
+  background: #fff5ee;
+  box-shadow: 0 0 0 2px rgb(242 118 46 / 10%);
+}
+
+.schedule-mode-grid input {
+  width: 16px;
+  height: 16px;
+  margin: 0 0 5px;
+}
+
+.schedule-mode-grid b {
+  color: #344054;
+  font-size: 12px;
+}
+
+.schedule-mode-grid span {
+  color: #8a94a4;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.sequence-field {
+  grid-column: 1 / -1;
+}
+
+.schedule-preview {
+  margin-top: 15px;
+  padding: 12px;
+  border: 1px solid #e1e6ed;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.schedule-preview > span {
+  display: block;
+  margin-bottom: 8px;
+  color: #667181;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.schedule-preview > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.schedule-preview code {
+  padding: 5px 8px;
+  border-radius: 7px;
+  color: #a34815;
+  background: #fff0e5;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.advanced-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.advanced-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid #dfe5ec;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.advanced-options input {
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+}
+
+.advanced-options span,
+.advanced-options b,
+.advanced-options small {
+  display: block;
+}
+
+.advanced-options b {
+  color: #3d4858;
+  font-size: 12px;
+}
+
+.advanced-options small {
+  margin-top: 4px;
+  color: #7e8897;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.advanced-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1180px) {
+  .advanced-field-grid.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .schedule-mode-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .advanced-refresh-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .advanced-target-list {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .advanced-target-list > .panel-kicker {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 680px) {
+  .advanced-field-grid,
+  .advanced-field-grid.two,
+  .advanced-field-grid.four,
+  .schedule-mode-grid,
+  .advanced-options,
+  .advanced-target-list {
+    grid-template-columns: 1fr;
+  }
+}
