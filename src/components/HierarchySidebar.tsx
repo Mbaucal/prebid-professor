@@ -1,5 +1,10 @@
-import { useState, type DragEvent } from 'react';
-import type { PublisherAccount, Site } from '../shared/types';
+import { useEffect, useState, type DragEvent, type FormEvent } from 'react';
+import { api } from '../api';
+import type {
+  PublisherAccount,
+  PublisherAccountStatus,
+  Site,
+} from '../shared/types';
 
 type Props = {
   publishers: PublisherAccount[];
@@ -13,6 +18,14 @@ type Props = {
   onAddSite: (publisherId: string) => void;
   onMoveSite: (siteId: string, targetPublisherId: string) => Promise<void>;
 };
+
+type PublisherEditForm = {
+  name: string;
+  status: PublisherAccountStatus;
+  notes: string;
+};
+
+const RETURN_TO_PUBLISHER_KEY = 'prebid-professor:return-to-publisher';
 
 export default function HierarchySidebar({
   publishers,
@@ -29,6 +42,25 @@ export default function HierarchySidebar({
   const [draggedSiteId, setDraggedSiteId] = useState<string | null>(null);
   const [dragOverPublisherId, setDragOverPublisherId] = useState<string | null>(null);
   const [movingSiteId, setMovingSiteId] = useState<string | null>(null);
+  const [editingPublisher, setEditingPublisher] = useState<PublisherAccount | null>(null);
+  const [editForm, setEditForm] = useState<PublisherEditForm>({
+    name: '',
+    status: 'active',
+    notes: '',
+  });
+  const [editError, setEditError] = useState<string | null>(null);
+  const [savingPublisher, setSavingPublisher] = useState(false);
+
+  useEffect(() => {
+    const returnId = sessionStorage.getItem(RETURN_TO_PUBLISHER_KEY);
+    if (!returnId) return;
+
+    const account = publishers.find((publisher) => publisher.id === returnId);
+    if (!account) return;
+
+    sessionStorage.removeItem(RETURN_TO_PUBLISHER_KEY);
+    onSelectPublisher(account);
+  }, [onSelectPublisher, publishers]);
 
   function startDrag(event: DragEvent<HTMLButtonElement>, site: Site) {
     event.dataTransfer.effectAllowed = 'move';
@@ -72,64 +104,211 @@ export default function HierarchySidebar({
     }
   }
 
+  function openPublisherEditor(account: PublisherAccount) {
+    setEditingPublisher(account);
+    setEditForm({
+      name: account.name,
+      status: account.status,
+      notes: account.notes ?? '',
+    });
+    setEditError(null);
+  }
+
+  function closePublisherEditor() {
+    if (savingPublisher) return;
+    setEditingPublisher(null);
+    setEditError(null);
+  }
+
+  async function savePublisher(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingPublisher) return;
+
+    const name = editForm.name.trim();
+    if (!name) {
+      setEditError('Publisher name is required.');
+      return;
+    }
+
+    setSavingPublisher(true);
+    setEditError(null);
+
+    try {
+      const updated = await api.updatePublisherAccount(editingPublisher.id, {
+        name,
+        status: editForm.status,
+        notes: editForm.notes.trim() || null,
+      });
+
+      // Reload the hierarchy from D1 so the sidebar, breadcrumb, page title and
+      // overview all receive the new publisher name in one consistent refresh.
+      sessionStorage.setItem(RETURN_TO_PUBLISHER_KEY, updated.id);
+      window.location.reload();
+    } catch (requestError) {
+      setEditError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Publisher could not be updated.',
+      );
+      setSavingPublisher(false);
+    }
+  }
+
   return (
-    <div className="publisher-nav publisher-tree">
-      <div className="section-label">Publishers</div>
-      {loading ? <div className="publisher-nav-message">Loading publisher hierarchy…</div> : null}
-      {error ? <div className="publisher-nav-message error">{error}</div> : null}
+    <>
+      <div className="publisher-nav publisher-tree">
+        <div className="section-label">Publishers</div>
+        {loading ? <div className="publisher-nav-message">Loading publisher hierarchy…</div> : null}
+        {error ? <div className="publisher-nav-message error">{error}</div> : null}
 
-      {publishers.map((account) => (
-        <div
-          className={`publisher-tree-group${dragOverPublisherId === account.id ? ' drag-target' : ''}`}
-          key={account.id}
-          onDragEnter={(event) => allowDrop(event, account.id)}
-          onDragOver={(event) => allowDrop(event, account.id)}
-          onDragLeave={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              setDragOverPublisherId(null);
-            }
-          }}
-          onDrop={(event) => void drop(event, account.id)}
-        >
-          <button
-            className={account.id === activePublisherId ? 'publisher-account-link active' : 'publisher-account-link'}
-            onClick={() => onSelectPublisher(account)}
-            type="button"
+        {publishers.map((account) => (
+          <div
+            className={`publisher-tree-group${dragOverPublisherId === account.id ? ' drag-target' : ''}`}
+            key={account.id}
+            onDragEnter={(event) => allowDrop(event, account.id)}
+            onDragOver={(event) => allowDrop(event, account.id)}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setDragOverPublisherId(null);
+              }
+            }}
+            onDrop={(event) => void drop(event, account.id)}
           >
-            <span>{account.name}</span>
-            <small>{account.sitesCount}</small>
-          </button>
-
-          {dragOverPublisherId === account.id ? (
-            <div className="site-drop-hint">Drop site here to move it</div>
-          ) : null}
-
-          <div className="publisher-site-list">
-            {account.sites.map((site) => (
+            <div className="publisher-account-row">
               <button
-                className={`site-link${site.id === activeSiteId ? ' active' : ''}${draggedSiteId === site.id ? ' dragging' : ''}`}
-                draggable
-                key={site.id}
-                onClick={() => onSelectSite(account.id, site)}
-                onDragEnd={endDrag}
-                onDragStart={(event) => startDrag(event, site)}
-                title="Open site, or drag it onto another publisher to move it"
+                className={account.id === activePublisherId ? 'publisher-account-link active' : 'publisher-account-link'}
+                onClick={() => onSelectPublisher(account)}
                 type="button"
               >
-                <span>{movingSiteId === site.id ? 'Moving…' : site.name}</span>
-                <small className={site.status}>{site.status}</small>
+                <span>{account.name}</span>
+                <small>{account.sitesCount}</small>
               </button>
-            ))}
-            <button className="site-link add-site-link" onClick={() => onAddSite(account.id)} type="button">
-              ＋ Add site
-            </button>
-          </div>
-        </div>
-      ))}
+              <button
+                aria-label={`Edit publisher ${account.name}`}
+                className="publisher-account-edit"
+                onClick={() => openPublisherEditor(account)}
+                title={`Edit ${account.name}`}
+                type="button"
+              >
+                ✎
+              </button>
+            </div>
 
-      <button className="publisher-link muted" onClick={onCreatePublisher} type="button">
-        <span>＋ New publisher</span>
-      </button>
-    </div>
+            {dragOverPublisherId === account.id ? (
+              <div className="site-drop-hint">Drop site here to move it</div>
+            ) : null}
+
+            <div className="publisher-site-list">
+              {account.sites.map((site) => (
+                <button
+                  className={`site-link${site.id === activeSiteId ? ' active' : ''}${draggedSiteId === site.id ? ' dragging' : ''}`}
+                  draggable
+                  key={site.id}
+                  onClick={() => onSelectSite(account.id, site)}
+                  onDragEnd={endDrag}
+                  onDragStart={(event) => startDrag(event, site)}
+                  title="Open site, or drag it onto another publisher to move it"
+                  type="button"
+                >
+                  <span>{movingSiteId === site.id ? 'Moving…' : site.name}</span>
+                  <small className={site.status}>{site.status}</small>
+                </button>
+              ))}
+              <button className="site-link add-site-link" onClick={() => onAddSite(account.id)} type="button">
+                ＋ Add site
+              </button>
+            </div>
+          </div>
+        ))}
+
+        <button className="publisher-link muted" onClick={onCreatePublisher} type="button">
+          <span>＋ New publisher</span>
+        </button>
+      </div>
+
+      {editingPublisher ? (
+        <div className="modal-backdrop" onMouseDown={closePublisherEditor} role="presentation">
+          <section
+            aria-labelledby="edit-publisher-title"
+            aria-modal="true"
+            className="modal-card"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="modal-heading">
+              <div>
+                <span className="panel-kicker">Publisher account</span>
+                <h2 id="edit-publisher-title">Edit {editingPublisher.name}</h2>
+              </div>
+              <button className="icon-button" onClick={closePublisherEditor} type="button">×</button>
+            </div>
+
+            <form className="publisher-form" onSubmit={savePublisher}>
+              <label>
+                <span>Publisher name</span>
+                <input
+                  autoFocus
+                  onChange={(event) =>
+                    setEditForm((current) => ({ ...current, name: event.target.value }))
+                  }
+                  placeholder="Minacord"
+                  value={editForm.name}
+                />
+              </label>
+
+              <label>
+                <span>Publisher ID</span>
+                <input disabled value={editingPublisher.id} />
+                <small>Publisher ID is immutable because sites and audit records reference it.</small>
+              </label>
+
+              <label>
+                <span>Status</span>
+                <select
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      status: event.target.value as PublisherAccountStatus,
+                    }))
+                  }
+                  value={editForm.status}
+                >
+                  <option value="active">active</option>
+                  <option value="draft">draft</option>
+                  <option value="archived">archived</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Notes</span>
+                <input
+                  onChange={(event) =>
+                    setEditForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                  placeholder="K1info.rs, Tanjug.rs..."
+                  value={editForm.notes}
+                />
+              </label>
+
+              {editError ? <div className="form-error">{editError}</div> : null}
+
+              <div className="modal-actions">
+                <button
+                  className="button secondary"
+                  disabled={savingPublisher}
+                  onClick={closePublisherEditor}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button className="button primary" disabled={savingPublisher} type="submit">
+                  {savingPublisher ? 'Saving…' : 'Save publisher'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+    </>
   );
 }
