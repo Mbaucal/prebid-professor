@@ -14,6 +14,7 @@ import './prebid-builds.css';
 import './prebid-storage.css';
 import './generator-profiles.css';
 import './advanced-refresh.css';
+import './user-id-modules.css';
 import './auth-account.css';
 
 const root = document.getElementById('root');
