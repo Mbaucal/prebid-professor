@@ -14,6 +14,7 @@ import type {
   CreatePublisherAccountInput,
   CreatePublisherInput,
   CreateSiteInput,
+  CreateSizeMapInput,
   CsvImportApplyResponse,
   CsvImportInput,
   CsvImportPreview,
@@ -22,11 +23,13 @@ import type {
   DeleteBidderOverrideResponse,
   DeleteBidderResponse,
   DeleteSiteResponse,
+  DeleteSizeMapResponse,
   DuplicateAdUnitInput,
   DuplicateBidderInput,
   DuplicateBidderOverrideInput,
   DuplicatePublisherInput,
   DuplicateSiteInput,
+  DuplicateSizeMapInput,
   HealthResponse,
   Publisher,
   PublisherAccount,
@@ -36,10 +39,15 @@ import type {
   PublishersResponse,
   Site,
   SiteResponse,
+  SizeMap,
+  SizeMapResponse,
+  SizeMapsResponse,
   UpdateAdUnitInput,
   UpdateBidderInput,
   UpdateBidderOverrideInput,
   UpdatePublisherAccountInput,
+  UpdateSiteInput,
+  UpdateSizeMapInput,
 } from './shared/types';
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
@@ -105,6 +113,15 @@ export const api = {
   async createSite(input: CreateSiteInput): Promise<Site> {
     const payload = await requestJson<SiteResponse>('/api/sites', {
       method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(input),
+    });
+    return payload.site;
+  },
+
+  async updateSite(siteId: string, input: UpdateSiteInput): Promise<Site> {
+    const payload = await requestJson<SiteResponse>(`/api/sites/${encodeURIComponent(siteId)}`, {
+      method: 'PATCH',
       headers: jsonHeaders,
       body: JSON.stringify(input),
     });
@@ -229,6 +246,65 @@ export const api = {
   async deleteAdUnit(publisherId: string, adUnitId: string): Promise<string> {
     const payload = await requestJson<DeleteAdUnitResponse>(
       `/api/publishers/${encodeURIComponent(publisherId)}/ad-units/${encodeURIComponent(adUnitId)}`,
+      { method: 'DELETE' },
+    );
+    return payload.deletedId;
+  },
+
+  async listSizeMaps(publisherId: string): Promise<SizeMap[]> {
+    const payload = await requestJson<SizeMapsResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/size-maps`,
+    );
+    return payload.sizeMaps;
+  },
+
+  async createSizeMap(publisherId: string, input: CreateSizeMapInput): Promise<SizeMap> {
+    const payload = await requestJson<SizeMapResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/size-maps`,
+      {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.sizeMap;
+  },
+
+  async updateSizeMap(
+    publisherId: string,
+    sizeMapId: string,
+    input: UpdateSizeMapInput,
+  ): Promise<SizeMap> {
+    const payload = await requestJson<SizeMapResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/size-maps/${encodeURIComponent(sizeMapId)}`,
+      {
+        method: 'PATCH',
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.sizeMap;
+  },
+
+  async duplicateSizeMap(
+    publisherId: string,
+    sizeMapId: string,
+    input: DuplicateSizeMapInput,
+  ): Promise<SizeMap> {
+    const payload = await requestJson<SizeMapResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/size-maps/${encodeURIComponent(sizeMapId)}/duplicate`,
+      {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      },
+    );
+    return payload.sizeMap;
+  },
+
+  async deleteSizeMap(publisherId: string, sizeMapId: string): Promise<string> {
+    const payload = await requestJson<DeleteSizeMapResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/size-maps/${encodeURIComponent(sizeMapId)}`,
       { method: 'DELETE' },
     );
     return payload.deletedId;
