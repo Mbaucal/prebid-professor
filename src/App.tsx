@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from './api';
 import ConfigPanel from './components/ConfigPanel';
+import ExportPanel from './components/ExportPanel';
 import HierarchySidebar from './components/HierarchySidebar';
 import PrebidBuildsPanel from './components/PrebidBuildsPanel';
 import ReleasesPanel from './components/ReleasesPanel';
@@ -114,14 +115,12 @@ export default function App() {
         const preferredSite = preferredSiteId
           ? allSites.find((candidate) => candidate.id === preferredSiteId) ?? null
           : null;
-
         const candidatePublisher = preferredSite?.publisherAccountId
           ? items.find((item) => item.id === preferredSite.publisherAccountId) ?? null
           : items.find((item) => item.id === preferredPublisherId) ??
             items.find((item) => item.id === activePublisherId) ??
             items[0] ??
             null;
-
         const candidateSite =
           preferredSite ??
           candidatePublisher?.sites.find((candidate) => candidate.id === activeSiteId) ??
@@ -268,13 +267,7 @@ export default function App() {
   async function submitSite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
-    if (
-      !siteForm.id ||
-      !siteForm.publisherAccountId ||
-      !siteForm.name ||
-      !siteForm.domain ||
-      !siteForm.gamPath
-    ) {
+    if (!siteForm.id || !siteForm.publisherAccountId || !siteForm.name || !siteForm.domain || !siteForm.gamPath) {
       setFormError('Publisher, Site ID, name, domain and GAM path are required.');
       return;
     }
@@ -289,7 +282,6 @@ export default function App() {
         status: siteForm.status,
         adsTxtUrl: siteForm.adsTxtUrl.trim() || null,
       };
-
       const saved =
         modal === 'edit-site' && site
           ? await api.updateSite(site.id, common)
@@ -325,11 +317,7 @@ export default function App() {
 
   async function removeSite() {
     if (!site) return;
-    const confirmed = window.confirm(
-      `Delete ${site.name} (${site.domain})? Its config, ad units, bidders, imports and releases will be deleted.`,
-    );
-    if (!confirmed) return;
-
+    if (!window.confirm(`Delete ${site.name} (${site.domain})? Its config, ad units, bidders, imports and releases will be deleted.`)) return;
     try {
       const previousPublisher = site.publisherAccountId ?? publisher?.id;
       await api.deleteSite(site.id);
@@ -358,12 +346,10 @@ export default function App() {
                   : 'Checking API…'}
             </span>
           </div>
-
           <p>
             A publisher is the business/account. Each site keeps its own GAM path, bidders, ad units,
             releases and ads.txt configuration. Drag any site in the sidebar onto another publisher to move it.
           </p>
-
           {hierarchyError ? <p className="inline-warning">Hierarchy API: {hierarchyError}</p> : null}
 
           {publisher ? (
@@ -403,10 +389,7 @@ export default function App() {
 
         <article className="panel api-panel">
           <div className="panel-heading">
-            <div>
-              <span className="panel-kicker">Current selection</span>
-              <h2>Publisher → Site</h2>
-            </div>
+            <div><span className="panel-kicker">Current selection</span><h2>Publisher → Site</h2></div>
           </div>
           <pre>{JSON.stringify({ publisher: publisher?.id, site: site?.id, health }, null, 2)}</pre>
         </article>
@@ -446,17 +429,12 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">PP</div>
-          <div>
-            <strong>Prebid Professor</strong>
-            <span>Ad-tech control plane</span>
-          </div>
+          <div><strong>Prebid Professor</strong><span>Ad-tech control plane</span></div>
         </div>
 
         <nav className="main-nav" aria-label="Main navigation">
           {navItems.map((item, index) => (
-            <button className={index === 0 ? 'nav-item active' : 'nav-item'} key={item} type="button">
-              {item}
-            </button>
+            <button className={index === 0 ? 'nav-item active' : 'nav-item'} key={item} type="button">{item}</button>
           ))}
         </nav>
 
@@ -475,19 +453,14 @@ export default function App() {
 
         <div className="account-card">
           <div className="avatar">S</div>
-          <div>
-            <strong>srdjan</strong>
-            <span>admin · signed session</span>
-          </div>
+          <div><strong>srdjan</strong><span>admin · signed session</span></div>
         </div>
       </aside>
 
       <main className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">
-              Publishers / {publisher?.name ?? 'No publisher'} / {site?.name ?? 'No site'}
-            </span>
+            <span className="eyebrow">Publishers / {publisher?.name ?? 'No publisher'} / {site?.name ?? 'No site'}</span>
             <h1>{site?.name ?? publisher?.name ?? 'Prebid Professor'}</h1>
             {site ? (
               <div className="publisher-meta">
@@ -532,10 +505,7 @@ export default function App() {
 
         {activeTab === 'Overview' ? renderOverview() : null}
         {activeTab === 'Config' && site ? (
-          <ConfigPanel
-            onChanged={() => loadHierarchy(publisher?.id, site.id)}
-            publisherId={site.id}
-          />
+          <ConfigPanel onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
         ) : null}
         {activeTab === 'Prebid.js' && site ? (
           <PrebidBuildsPanel publisherId={site.id} siteName={site.name} />
@@ -547,7 +517,8 @@ export default function App() {
             siteName={site.name}
           />
         ) : null}
-        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases'
+        {activeTab === 'Export' && site ? <ExportPanel publisherId={site.id} site={site} /> : null}
+        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export'
           ? renderPlaceholder(activeTab)
           : null}
       </main>
@@ -556,10 +527,7 @@ export default function App() {
         <div className="modal-backdrop" onMouseDown={closeModal} role="presentation">
           <section className="modal-card" onMouseDown={(event) => event.stopPropagation()} role="dialog">
             <div className="modal-heading">
-              <div>
-                <span className="panel-kicker">Publisher account</span>
-                <h2>Create publisher</h2>
-              </div>
+              <div><span className="panel-kicker">Publisher account</span><h2>Create publisher</h2></div>
               <button className="icon-button" onClick={closeModal} type="button">×</button>
             </div>
             <form className="publisher-form" onSubmit={submitPublisher}>
@@ -567,13 +535,11 @@ export default function App() {
                 <span>Publisher name</span>
                 <input
                   autoFocus
-                  onChange={(event) =>
-                    setPublisherForm((current) => ({
-                      ...current,
-                      name: event.target.value,
-                      id: current.id || slugify(event.target.value),
-                    }))
-                  }
+                  onChange={(event) => setPublisherForm((current) => ({
+                    ...current,
+                    name: event.target.value,
+                    id: current.id || slugify(event.target.value),
+                  }))}
                   placeholder="Minacord"
                   value={publisherForm.name}
                 />
@@ -589,12 +555,10 @@ export default function App() {
               <label>
                 <span>Status</span>
                 <select
-                  onChange={(event) =>
-                    setPublisherForm((current) => ({
-                      ...current,
-                      status: event.target.value as PublisherAccountStatus,
-                    }))
-                  }
+                  onChange={(event) => setPublisherForm((current) => ({
+                    ...current,
+                    status: event.target.value as PublisherAccountStatus,
+                  }))}
                   value={publisherForm.status}
                 >
                   <option value="active">active</option>
@@ -613,9 +577,7 @@ export default function App() {
               {formError ? <div className="form-error">{formError}</div> : null}
               <div className="modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeModal} type="button">Cancel</button>
-                <button className="button primary" disabled={submitting} type="submit">
-                  {submitting ? 'Saving…' : 'Create publisher'}
-                </button>
+                <button className="button primary" disabled={submitting} type="submit">{submitting ? 'Saving…' : 'Create publisher'}</button>
               </div>
             </form>
           </section>
@@ -626,10 +588,7 @@ export default function App() {
         <div className="modal-backdrop" onMouseDown={closeModal} role="presentation">
           <section className="modal-card" onMouseDown={(event) => event.stopPropagation()} role="dialog">
             <div className="modal-heading">
-              <div>
-                <span className="panel-kicker">Site / domain workflow</span>
-                <h2>{siteModalTitle}</h2>
-              </div>
+              <div><span className="panel-kicker">Site / domain workflow</span><h2>{siteModalTitle}</h2></div>
               <button className="icon-button" onClick={closeModal} type="button">×</button>
             </div>
             <form className="publisher-form" onSubmit={submitSite}>
@@ -648,13 +607,11 @@ export default function App() {
                 <span>Site name</span>
                 <input
                   autoFocus
-                  onChange={(event) =>
-                    setSiteForm((current) => ({
-                      ...current,
-                      name: event.target.value,
-                      id: modal === 'edit-site' ? current.id : current.id || slugify(event.target.value),
-                    }))
-                  }
+                  onChange={(event) => setSiteForm((current) => ({
+                    ...current,
+                    name: event.target.value,
+                    id: modal === 'edit-site' ? current.id : current.id || slugify(event.target.value),
+                  }))}
                   placeholder="K1info.rs"
                   value={siteForm.name}
                 />
