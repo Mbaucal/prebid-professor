@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import AdUnitsPanel from './AdUnitsPanel';
 import AdvancedRefreshPanel from './AdvancedRefreshPanel';
+import BidderBuildSelectionPanel from './BidderBuildSelectionPanel';
 import BiddersPanel from './BiddersPanel';
 import BulkImportPanel from './BulkImportPanel';
 import GeneratorProfilesPanel from './GeneratorProfilesPanel';
@@ -56,7 +57,12 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
       </nav>
 
       {section === 'ad-units' ? <AdUnitsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
-      {section === 'bidders' ? <BiddersPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'bidders' ? (
+        <>
+          <BidderBuildSelectionPanel onChanged={onChanged} publisherId={publisherId} />
+          <BiddersPanel onChanged={onChanged} publisherId={publisherId} />
+        </>
+      ) : null}
       {section === 'size-maps' ? <SizeMapsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'unit-rules' ? <UnitRulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'advanced-rules' ? <AdvancedRefreshPanel onChanged={onChanged} publisherId={publisherId} /> : null}
