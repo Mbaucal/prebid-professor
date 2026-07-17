@@ -15,6 +15,7 @@ import {
   previewFlexibleSizeMapCsv,
   updateFlexibleSizeMap,
 } from './size-map-compat';
+import { duplicateFlexibleSizeMap } from './size-map-duplicate-compat';
 import type { ReleaseEnv } from './releases';
 
 interface Env extends ReleaseEnv, AuthEnv {
@@ -98,6 +99,20 @@ export default {
           ? previewFlexibleSizeMapCsv(verified, env, siteId)
           : applyFlexibleSizeMapCsv(verified, env, siteId);
       }
+    }
+
+    const sizeMapDuplicateMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/size-maps\/([^/]+)\/duplicate$/,
+    );
+    if (sizeMapDuplicateMatch && request.method === 'POST') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      return duplicateFlexibleSizeMap(
+        verified,
+        env,
+        decodeURIComponent(sizeMapDuplicateMatch[1]),
+        decodeURIComponent(sizeMapDuplicateMatch[2]),
+      );
     }
 
     const sizeMapCollectionMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/size-maps$/);
