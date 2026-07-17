@@ -5,6 +5,7 @@ import BidderBuildSelectionPanel from './BidderBuildSelectionPanel';
 import BiddersPanel from './BiddersPanel';
 import BulkImportPanel from './BulkImportPanel';
 import GeneratorProfilesPanel from './GeneratorProfilesPanel';
+import PrebidModePanel from './PrebidModePanel';
 import SizeMapsCompatPanel from './SizeMapsCompatPanel';
 import UnitRulesPanel from './UnitRulesPanel';
 import UserIdModulesPanel from './UserIdModulesPanel';
@@ -16,6 +17,7 @@ type Props = {
 
 type ConfigSection =
   | 'ad-units'
+  | 'demand-mode'
   | 'bidders'
   | 'size-maps'
   | 'unit-rules'
@@ -32,6 +34,9 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
       <nav className="config-subnav" aria-label="Configuration sections">
         <button className={section === 'ad-units' ? 'active' : ''} onClick={() => setSection('ad-units')} type="button">
           Ad units
+        </button>
+        <button className={section === 'demand-mode' ? 'active' : ''} onClick={() => setSection('demand-mode')} type="button">
+          Demand mode
         </button>
         <button className={section === 'bidders' ? 'active' : ''} onClick={() => setSection('bidders')} type="button">
           Bidders & overrides
@@ -57,6 +62,7 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
       </nav>
 
       {section === 'ad-units' ? <AdUnitsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'demand-mode' ? <PrebidModePanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'bidders' ? (
         <>
           <BidderBuildSelectionPanel onChanged={onChanged} publisherId={publisherId} />
