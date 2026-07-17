@@ -10,6 +10,7 @@ import './bidders.css';
 import './bidder-build-selection.css';
 import './imports.css';
 import './size-maps.css';
+import './size-maps-compat.css';
 import './unit-rules.css';
 import './prebid-builds.css';
 import './prebid-storage.css';
