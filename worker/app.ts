@@ -30,6 +30,7 @@ import {
   type GeneratorProfileEnv,
 } from './generator-profiles';
 import { apiError, json } from './http';
+import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import {
   activatePrebidBuild,
   deletePrebidBuild,
@@ -53,6 +54,8 @@ import { getUserIdConfig, updateUserIdConfig } from './user-id-config';
 interface Env extends PrebidBuildEnv, GeneratorProfileEnv, ReleaseEnv, ExternalDeployEnv, AuthEnv {
   ASSETS: Fetcher;
 }
+
+const RUNTIME_BUILD = '2026-07-17-primary-demand-mode-v2';
 
 const legacyHandler = baseHandler as {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
@@ -133,6 +136,8 @@ export default {
           github: env.GITHUB_ACTIONS_TOKEN ? 'configured' : 'not-configured',
           callback: env.DEPLOY_CALLBACK_SECRET ? 'configured' : 'not-configured',
         },
+        runtimeBuild: RUNTIME_BUILD,
+        workerEntrypoint: 'worker/app.ts',
         timestamp: new Date().toISOString(),
       });
     }
@@ -142,8 +147,6 @@ export default {
       if (cdnResponse) return cdnResponse;
     }
 
-    // GitHub Actions calls this endpoint from outside the dashboard origin. It is
-    // authenticated with a dedicated callback secret instead of the admin cookie.
     if (pathname === '/api/deployments/callback') {
       return deploymentCallback(request, env);
     }
@@ -177,6 +180,14 @@ export default {
 
     if (request.method === 'GET' && pathname === '/api/auth/me') return json({ ok: true, user });
     const authenticatedRequest = withAuthenticatedActor(verifiedRequest, user.email);
+
+    const prebidModeMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/prebid-mode$/);
+    if (prebidModeMatch) {
+      const siteId = decodeURIComponent(prebidModeMatch[1]);
+      if (request.method === 'GET') return getPrebidMode(env, siteId);
+      if (request.method === 'PUT') return updatePrebidMode(authenticatedRequest, env, siteId);
+      return apiError('Method not allowed.', 405);
+    }
 
     if (pathname === '/api/generator-profiles') {
       if (request.method === 'GET') return listGeneratorProfiles(env);
