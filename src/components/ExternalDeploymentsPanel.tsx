@@ -146,8 +146,8 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [editingTarget, setEditingTarget] = useState<DeploymentTarget | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [editingTarget, setEditingTarget] = useState<DeploymentTarget | null>(null);
   const [form, setForm] = useState<TargetForm>(emptyForm);
   const [savingTarget, setSavingTarget] = useState(false);
   const [selectedTargetId, setSelectedTargetId] = useState('');
@@ -155,8 +155,8 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
   const [channel, setChannel] = useState<'staging' | 'production'>('staging');
   const [dispatching, setDispatching] = useState(false);
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
     setError(null);
     try {
       const payload = await requestJson<TargetsResponse>(
@@ -172,7 +172,7 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Deployment targets could not be loaded.');
     } finally {
-      if (!silent) setLoading(false);
+      if (!quiet) setLoading(false);
     }
   }, [publisherId]);
 
@@ -180,21 +180,23 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
     void load();
   }, [load]);
 
-  const hasActiveDeployment = deployments.some(
-    (deployment) => deployment.status === 'queued' || deployment.status === 'running',
+  useEffect(() => {
+    if (!deployments.some((deployment) => deployment.status === 'queued' || deployment.status === 'running')) return;
+    const timer = window.setInterval(() => void load(true), 5000);
+    return () => window.clearInterval(timer);
+  }, [deployments, load]);
+
+  const selectedTarget = useMemo(
+    () => targets.find((target) => target.id === selectedTargetId) ?? null,
+    [selectedTargetId, targets],
   );
 
-  useEffect(() => {
-    if (!hasActiveDeployment) return undefined;
-    const interval = window.setInterval(() => void load(true), 7000);
-    return () => window.clearInterval(interval);
-  }, [hasActiveDeployment, load]);
-
   const eligibleReleases = useMemo(() => {
-    const filtered = channel === 'production'
-      ? releases.filter((release) => release.status === 'production')
-      : releases.filter((release) => release.status !== 'failed');
-    return [...filtered].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return releases.filter((release) =>
+      channel === 'production'
+        ? release.status === 'production'
+        : ['draft', 'staging', 'production', 'archived'].includes(release.status),
+    );
   }, [channel, releases]);
 
   useEffect(() => {
@@ -204,9 +206,16 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
     });
   }, [eligibleReleases]);
 
-  const selectedRelease = eligibleReleases.find((release) => release.id === selectedReleaseId) ?? null;
-  const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
+  const selectedRelease = useMemo(
+    () => eligibleReleases.find((release) => release.id === selectedReleaseId) ?? null,
+    [eligibleReleases, selectedReleaseId],
+  );
+
   const orchestratorReady = Boolean(orchestrator?.githubConfigured && orchestrator?.callbackConfigured);
+
+  function updateForm<K extends keyof TargetForm>(key: K, value: TargetForm[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
 
   function openCreate() {
     setEditingTarget(null);
@@ -228,11 +237,7 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
     if (savingTarget) return;
     setFormOpen(false);
     setEditingTarget(null);
-    setError(null);
-  }
-
-  function updateForm<K extends keyof TargetForm>(key: K, value: TargetForm[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm(emptyForm);
   }
 
   async function saveTarget(event: FormEvent<HTMLFormElement>) {
@@ -338,7 +343,7 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
           <h3>Cloudflare Pages deployment targets</h3>
           <p>
             Deploy an immutable release to a Pages project in another Cloudflare account. Cloudflare API tokens stay
-            in GitHub Environment secrets and are never stored in the browser or D1.
+            in GitHub repository secrets and are never stored in the browser or D1.
           </p>
         </div>
         <div className="external-deploy-toolbar-actions">
@@ -389,9 +394,9 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
               <input onChange={(event) => updateForm('projectName', event.target.value.toLowerCase())} placeholder="politika" required value={form.projectName} />
             </label>
             <label>
-              <span>GitHub Environment</span>
-              <input onChange={(event) => updateForm('githubEnvironment', event.target.value)} placeholder="politika-pages" required value={form.githubEnvironment} />
-              <small>This Environment must contain the target account's CLOUDFLARE_API_TOKEN secret.</small>
+              <span>GitHub repository secret name</span>
+              <input onChange={(event) => updateForm('githubEnvironment', event.target.value)} placeholder="CLOUDFLARE_API_TOKEN_POLITIKA" required value={form.githubEnvironment} />
+              <small>Enter the exact Repository secret name that contains the target account's Cloudflare API token. Never paste the token value here.</small>
             </label>
             <label>
               <span>Production branch</span>
@@ -422,22 +427,23 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
 
       <div className="external-target-grid">
         {targets.map((target) => (
-          <article className={target.enabled ? 'external-target-card enabled' : 'external-target-card disabled'} key={target.id}>
+          <article className={`external-target-card ${target.enabled ? 'enabled' : 'disabled'}`} key={target.id}>
             <div className="external-target-card-heading">
               <div>
-                <span className="release-state ready">CLOUDFLARE PAGES</span>
+                <span className="panel-kicker">{target.provider}</span>
                 <h4>{target.name}</h4>
-                <code>{target.projectName}</code>
+                <p>{target.projectName}</p>
               </div>
-              <span className={target.enabled ? 'target-enabled-pill' : 'target-disabled-pill'}>
-                {target.enabled ? 'enabled' : 'disabled'}
+              <span className={target.enabled ? 'external-target-status enabled' : 'external-target-status disabled'}>
+                {target.enabled ? 'ENABLED' : 'DISABLED'}
               </span>
             </div>
             <dl>
-              <div><dt>Account</dt><dd><code>{target.accountId}</code></dd></div>
-              <div><dt>GitHub environment</dt><dd><code>{target.githubEnvironment}</code></dd></div>
+              <div><dt>Account ID</dt><dd><code>{target.accountId}</code></dd></div>
+              <div><dt>Repository secret</dt><dd><code>{target.githubEnvironment}</code></dd></div>
               <div><dt>Production</dt><dd><code>{target.productionBranch}</code></dd></div>
               <div><dt>Preview</dt><dd><code>{target.previewBranch}</code></dd></div>
+              <div><dt>Public URL</dt><dd>{target.publicBaseUrl ? <a href={target.publicBaseUrl} rel="noreferrer" target="_blank">Open ↗</a> : '—'}</dd></div>
             </dl>
             <div className="external-target-actions">
               <button onClick={() => openEdit(target)} type="button">Edit</button>
@@ -445,10 +451,10 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
             </div>
           </article>
         ))}
+
         {!loading && !targets.length ? (
-          <button className="external-empty-target" onClick={openCreate} type="button">
-            <strong>＋ Add the first Cloudflare Pages target</strong>
-            <span>Account ID, project name and GitHub Environment only. The token remains secret.</span>
+          <button className="external-target-empty" onClick={openCreate} type="button">
+            ＋ Add the first Cloudflare Pages destination
           </button>
         ) : null}
       </div>
@@ -456,14 +462,15 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
       <article className="external-dispatch-card">
         <div className="external-dispatch-heading">
           <div>
-            <span className="panel-kicker">Wrangler runner</span>
-            <h4>Deploy a release</h4>
-            <p>The workflow downloads this exact immutable release, adds the Pages _headers file and runs Wrangler.</p>
+            <span className="panel-kicker">GitHub Actions runner</span>
+            <h4>Deploy a release package</h4>
+            <p>The selected immutable release is downloaded, given an explicit CORS _headers file and deployed with Wrangler.</p>
           </div>
         </div>
+
         <div className="external-dispatch-fields">
           <label>
-            <span>Destination</span>
+            <span>Target</span>
             <select onChange={(event) => setSelectedTargetId(event.target.value)} value={selectedTargetId}>
               <option value="">Select target</option>
               {targets.filter((target) => target.enabled).map((target) => (
@@ -474,8 +481,8 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
           <label>
             <span>Channel</span>
             <select onChange={(event) => setChannel(event.target.value as 'staging' | 'production')} value={channel}>
-              <option value="staging">staging / preview branch</option>
-              <option value="production">production branch</option>
+              <option value="staging">staging / preview</option>
+              <option value="production">production</option>
             </select>
           </label>
           <label>
@@ -483,54 +490,59 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
             <select onChange={(event) => setSelectedReleaseId(event.target.value)} value={selectedReleaseId}>
               <option value="">Select release</option>
               {eligibleReleases.map((release) => (
-                <option key={release.id} value={release.id}>v {release.version} · {release.status}</option>
+                <option key={release.id} value={release.id}>
+                  {release.version} · {release.status} · {formatTime(release.createdAt)}
+                </option>
               ))}
             </select>
           </label>
           <button
-            className="button primary external-dispatch-button"
+            className="button primary"
             disabled={!orchestratorReady || !selectedTarget || !selectedRelease || dispatching}
             onClick={() => void dispatch()}
             type="button"
           >
-            {dispatching ? 'Starting GitHub Actions…' : `Deploy ${channel}`}
+            {dispatching ? 'Queuing…' : channel === 'production' ? 'Deploy production ↗' : 'Deploy staging ↗'}
           </button>
         </div>
+
+        {!orchestratorReady ? (
+          <p className="external-dispatch-warning">
+            Add Worker secrets GITHUB_ACTIONS_TOKEN and DEPLOY_CALLBACK_SECRET before dispatching.
+          </p>
+        ) : null}
         {channel === 'production' && !eligibleReleases.length ? (
-          <p className="inline-warning">Publish a release to the internal production channel before an external production deployment.</p>
+          <p className="external-dispatch-warning">Publish a release to the internal production channel before external production deployment.</p>
         ) : null}
       </article>
 
       <div className="external-history-heading">
-        <div><span className="panel-kicker">GitHub Actions + Cloudflare Pages</span><h4>External deployment history</h4></div>
+        <div><span className="panel-kicker">Last 100 dispatches</span><h4>External deployment history</h4></div>
         <span>{deployments.length} deployment(s)</span>
       </div>
 
-      <div className="external-history-list">
+      <div className="external-deployment-list">
         {deployments.map((deployment) => (
-          <article className={`external-history-row ${deployment.status}`} key={deployment.id}>
-            <div className="external-history-status">
-              <span>{deployment.status.toUpperCase()}</span>
-              <small>{deployment.channel}</small>
+          <article className={`external-deployment-row ${deployment.status}`} key={deployment.id}>
+            <div>
+              <span className={`external-deployment-status ${deployment.status}`}>{deployment.status.toUpperCase()}</span>
+              <strong>{deployment.releaseVersion}</strong>
+              <small>{deployment.targetName ?? deployment.projectName ?? deployment.targetId} · {deployment.channel}</small>
             </div>
-            <div className="external-history-main">
-              <strong>v {deployment.releaseVersion}</strong>
-              <span>{deployment.targetName ?? deployment.projectName ?? deployment.targetId}</span>
-              <small>{deployment.message ?? 'No status message.'}</small>
-            </div>
-            <div className="external-history-time">
+            <div className="external-deployment-timing">
               <span>{formatTime(deployment.createdAt)}</span>
-              <small>{deployment.createdBy ?? 'system'}</small>
+              <small>{deployment.message ?? 'Waiting for workflow callback.'}</small>
             </div>
-            <div className="external-history-links">
-              {deployment.githubRunUrl ? <a href={deployment.githubRunUrl} rel="noreferrer" target="_blank">GitHub run</a> : null}
-              {deployment.deploymentUrl ? <a href={deployment.deploymentUrl} rel="noreferrer" target="_blank">Deployment</a> : null}
-              {deployment.aliasUrl ? <a href={deployment.aliasUrl} rel="noreferrer" target="_blank">Alias</a> : null}
+            <div className="external-deployment-links">
+              {deployment.githubRunUrl ? <a href={deployment.githubRunUrl} rel="noreferrer" target="_blank">GitHub run ↗</a> : null}
+              {deployment.deploymentUrl ? <a href={deployment.deploymentUrl} rel="noreferrer" target="_blank">Deployment ↗</a> : null}
+              {deployment.aliasUrl ? <a href={deployment.aliasUrl} rel="noreferrer" target="_blank">Alias ↗</a> : null}
             </div>
           </article>
         ))}
+
         {!loading && !deployments.length ? (
-          <div className="external-history-empty">No external deployments have been started for this site.</div>
+          <div className="external-deployment-empty">No cross-account deployments have been queued for this site.</div>
         ) : null}
       </div>
     </section>
