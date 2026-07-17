@@ -29,5 +29,25 @@ jobs:
       - name: Install dependencies exactly like Cloudflare build
         run: bun install
 
-      - name: Build
-        run: npm run build
+      - name: Build and capture complete output
+        id: build
+        shell: bash
+        run: |
+          set +e
+          npm run build 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=${status}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Fail when build failed
+        if: steps.build.outputs.exit_code != '0'
+        run: exit 1
