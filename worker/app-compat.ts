@@ -6,9 +6,9 @@ import {
 import baseApp from './app';
 import { apiError } from './http';
 import {
-  generateReleaseWithFlexibleSizes,
-  validateReleaseWithFlexibleSizes,
-} from './release-size-map-compat';
+  generateReleaseWithFluidPreflight,
+  validateReleaseWithFluidPreflight,
+} from './release-size-map-preflight';
 import {
   applyFlexibleSizeMapCsv,
   createFlexibleSizeMap,
@@ -123,14 +123,14 @@ export default {
     if (releaseValidateMatch && request.method === 'GET') {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return verified;
-      return validateReleaseWithFlexibleSizes(env, decodeURIComponent(releaseValidateMatch[1]));
+      return validateReleaseWithFluidPreflight(env, decodeURIComponent(releaseValidateMatch[1]));
     }
 
     const releaseGenerateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/generate$/);
     if (releaseGenerateMatch && request.method === 'POST') {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return verified;
-      return generateReleaseWithFlexibleSizes(verified, env, decodeURIComponent(releaseGenerateMatch[1]));
+      return generateReleaseWithFluidPreflight(verified, env, decodeURIComponent(releaseGenerateMatch[1]));
     }
 
     return legacyApp.fetch(request, env, ctx);
