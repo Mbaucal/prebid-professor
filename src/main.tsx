@@ -17,6 +17,7 @@ import './prebid-storage.css';
 import './generator-profiles.css';
 import './advanced-refresh.css';
 import './user-id-modules.css';
+import './prebid-mode.css';
 import './releases.css';
 import './external-deployments.css';
 import './auth-account.css';
