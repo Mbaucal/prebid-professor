@@ -8,8 +8,7 @@ import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-17-runtime-template-marker-v3';
-const GENERATOR_TEMPLATE_KEY = /^generator-profiles\/[^/]+\/template\//;
+const RUNTIME_BUILD = '2026-07-18-runtime-template-content-v4';
 const RELEASE_COMPILE_ROUTE = /^\/api\/publishers\/[^/]+\/releases\/(?:validate|generate)$/;
 
 interface Env extends ReleaseEnv, AuthEnv {
@@ -85,9 +84,15 @@ function normalizeRuntimeBuildMarker(source: string): string {
     if (pattern.test(source)) return source.replace(pattern, canonical);
   }
 
-  // Build metadata is operational metadata, not ad-serving logic. Older frozen
-  // templates are therefore safe to upgrade by prepending the canonical marker.
+  // The marker is release metadata only. Adding it does not alter auction,
+  // targeting, lazy-load or refresh behavior in a frozen runtime.
   return `${canonical}\n${source}`;
+}
+
+function looksLikeRuntimeTemplate(source: string): boolean {
+  return /\bvar\s+BIDDERS\s*=/.test(source)
+    && /\bvar\s+EXPLICIT_UNITS\s*=/.test(source)
+    && /\bvar\s+SIZE_MAPS_RAW\s*=/.test(source);
 }
 
 function textBackedR2Object(object: R2ObjectBody, text: string): R2ObjectBody {
@@ -125,9 +130,17 @@ function withRuntimeTemplateCompatibility(env: Env): Env {
       if (property === 'get') {
         return async (key: string, options?: R2GetOptions) => {
           const object = await target.get(key, options);
-          if (!object || !GENERATOR_TEMPLATE_KEY.test(key)) return object;
+          if (!object) return object;
+
+          // During release validation/generation R2 returns manifests, the frozen
+          // runtime template and prebid.js. Detect the runtime by its required
+          // compiler variables instead of assuming a historical R2 key layout.
+          if (key.includes('/source/') || /\.(?:zip|gz|wasm)$/i.test(key)) return object;
           const source = await object.text();
-          return textBackedR2Object(object, normalizeRuntimeBuildMarker(source));
+          const normalized = looksLikeRuntimeTemplate(source)
+            ? normalizeRuntimeBuildMarker(source)
+            : source;
+          return textBackedR2Object(object, normalized);
         };
       }
       const value = Reflect.get(target, property, target);
