@@ -1,0 +1,228 @@
+.bidder-build-selection {
+  margin: 22px 32px 0;
+  padding: 20px;
+  border: 1px solid #d3dbe6;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #ffffff 0%, #f7faff 100%);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 5%);
+}
+
+.bidder-build-selection-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 22px;
+  align-items: flex-start;
+}
+
+.bidder-build-selection-heading h2 {
+  margin: 4px 0 7px;
+  color: #202733;
+  font-size: 20px;
+}
+
+.bidder-build-selection-heading p {
+  max-width: 820px;
+  margin: 0;
+  color: #687386;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.bidder-build-selection-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.bidder-build-selection-actions button {
+  border: 1px solid #cdd6e2;
+  border-radius: 9px;
+  padding: 9px 12px;
+  color: #435166;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.bidder-build-selection-actions button.exclude {
+  color: #9a3a30;
+  border-color: #efc5c0;
+  background: #fff8f7;
+}
+
+.bidder-build-selection-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.bidder-build-selection-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 17px;
+  border: 1px solid #dde4ed;
+  border-radius: 11px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.bidder-build-selection-summary > div {
+  padding: 12px 14px;
+  border-right: 1px solid #e5e9ef;
+}
+
+.bidder-build-selection-summary > div:last-child {
+  border-right: 0;
+}
+
+.bidder-build-selection-summary strong,
+.bidder-build-selection-summary span {
+  display: block;
+}
+
+.bidder-build-selection-summary strong {
+  color: #202733;
+  font-size: 19px;
+}
+
+.bidder-build-selection-summary span {
+  margin-top: 3px;
+  color: #7e8998;
+  font-size: 10px;
+}
+
+.bidder-build-selection-message {
+  margin-top: 13px;
+  padding: 10px 12px;
+  border: 1px solid #bfe7cf;
+  border-radius: 9px;
+  color: #166b42;
+  background: #edfbf3;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.bidder-build-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 15px;
+}
+
+.bidder-build-checklist label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 22px minmax(100px, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid #dce3ec;
+  border-radius: 10px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.bidder-build-checklist label.included {
+  border-color: #b9dfca;
+  background: #f4fcf7;
+}
+
+.bidder-build-checklist label.excluded {
+  border-color: #e0e4ea;
+  background: #f7f8fa;
+}
+
+.bidder-build-checklist input {
+  width: 17px;
+  height: 17px;
+  accent-color: #1d8b55;
+}
+
+.bidder-build-name {
+  overflow: hidden;
+  color: #263040;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bidder-build-overrides {
+  color: #7b8593;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.bidder-build-checklist strong {
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #8a5960;
+  background: #f3e8ea;
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.bidder-build-checklist label.included strong {
+  color: #147447;
+  background: #dff7e9;
+}
+
+.bidder-build-empty {
+  grid-column: 1 / -1;
+  padding: 22px;
+  border: 1px dashed #cbd4df;
+  border-radius: 10px;
+  color: #7f8997;
+  text-align: center;
+  background: #fafbfc;
+  font-size: 12px;
+}
+
+@media (max-width: 1050px) {
+  .bidder-build-checklist {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .bidder-build-selection {
+    margin: 16px 18px 0;
+    padding: 16px;
+  }
+
+  .bidder-build-selection-heading {
+    display: grid;
+  }
+
+  .bidder-build-selection-actions {
+    width: 100%;
+  }
+
+  .bidder-build-selection-actions button {
+    flex: 1;
+  }
+
+  .bidder-build-selection-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .bidder-build-selection-summary > div {
+    border-right: 0;
+    border-bottom: 1px solid #e5e9ef;
+  }
+
+  .bidder-build-selection-summary > div:last-child {
+    border-bottom: 0;
+  }
+
+  .bidder-build-checklist label {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .bidder-build-overrides,
+  .bidder-build-checklist strong {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
