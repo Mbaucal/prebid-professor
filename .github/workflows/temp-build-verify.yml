@@ -1,0 +1,26 @@
+name: Temporary production build verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/temp-build-verify.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.15
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+      - run: bun install
+      - run: npm run build
