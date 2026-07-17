@@ -5,7 +5,7 @@ import BidderBuildSelectionPanel from './BidderBuildSelectionPanel';
 import BiddersPanel from './BiddersPanel';
 import BulkImportPanel from './BulkImportPanel';
 import GeneratorProfilesPanel from './GeneratorProfilesPanel';
-import SizeMapsPanel from './SizeMapsPanel';
+import SizeMapsCompatPanel from './SizeMapsCompatPanel';
 import UnitRulesPanel from './UnitRulesPanel';
 import UserIdModulesPanel from './UserIdModulesPanel';
 
@@ -63,12 +63,20 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
           <BiddersPanel onChanged={onChanged} publisherId={publisherId} />
         </>
       ) : null}
-      {section === 'size-maps' ? <SizeMapsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'size-maps' ? <SizeMapsCompatPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'unit-rules' ? <UnitRulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'advanced-rules' ? <AdvancedRefreshPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'user-id' ? <UserIdModulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} /> : null}
-      {section === 'imports' ? <BulkImportPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'imports' ? (
+        <>
+          <div className="size-map-import-compat-note">
+            <strong>Size-map CSV:</strong>
+            <span>Use <code>fluid</code> as a size. Leave the <code>sizes</code> cell empty to store <code>[]</code> and disable the slot at that breakpoint.</span>
+          </div>
+          <BulkImportPanel onChanged={onChanged} publisherId={publisherId} />
+        </>
+      ) : null}
     </div>
   );
 }
