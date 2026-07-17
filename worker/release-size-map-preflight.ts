@@ -48,12 +48,12 @@ function wrapSizeMapStatement(
   return new Proxy(statement, {
     get(target, property) {
       if (property === 'bind') {
-        return (...values: unknown[]) => wrapSizeMapStatement(target.bind(...values), state);
+        return (...values: D1Value[]) => wrapSizeMapStatement(target.bind(...values), state);
       }
 
       if (property === 'all') {
-        return async (...values: unknown[]) => {
-          const result = await (target.all as (...args: unknown[]) => Promise<D1Result<JsonRecord>>)(...values);
+        return async () => {
+          const result = await target.all<JsonRecord>();
           if (state.transformedFirstSizeMapRead) return result;
           state.transformedFirstSizeMapRead = true;
           return {
