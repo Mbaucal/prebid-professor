@@ -1,0 +1,1 @@
+Apply the verified one-line regex syntax repair in worker/prebid-mode-release.ts.
