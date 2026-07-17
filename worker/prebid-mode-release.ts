@@ -224,7 +224,7 @@ async function profileSupportsAdxOnly(env: ReleaseEnv, config: JsonRecord): Prom
 }
 
 function patchPrebidFlag(source: string): string {
-  const declaration = /^(\s*(?:var|let|const)\s+ENABLE_PREBID\s*=\s*).*?(;\s*(?://[^\r\n]*)?[\t ]*)$/m;
+  const declaration = /^(\s*(?:var|let|const)\s+ENABLE_PREBID\s*=\s*).*?(;\s*(?:\/\/[^\r\n]*)?[\t ]*)$/m;
   const windowAssignment = /^(\s*window\.ENABLE_PREBID\s*=\s*).*?(;[\t ]*)$/m;
   let output = source;
   if (declaration.test(output)) {
