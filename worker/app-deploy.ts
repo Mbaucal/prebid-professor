@@ -8,7 +8,9 @@ import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-17-demand-mode-router-v2';
+const RUNTIME_BUILD = '2026-07-17-runtime-template-marker-v3';
+const GENERATOR_TEMPLATE_KEY = /^generator-profiles\/[^/]+\/template\//;
+const RELEASE_COMPILE_ROUTE = /^\/api\/publishers\/[^/]+\/releases\/(?:validate|generate)$/;
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -71,6 +73,71 @@ async function authenticatedRequest(request: Request, env: Env): Promise<Request
   return withAuthenticatedActor(normalized, user.email);
 }
 
+function normalizeRuntimeBuildMarker(source: string): string {
+  const canonical = 'window.ADS_BUILD_TS = "__PP_TEMPLATE_BUILD__";';
+  const patterns = [
+    /window\s*\.\s*ADS_BUILD_TS\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[A-Za-z0-9_.$-]+)\s*;?/,
+    /window\s*\[\s*["']ADS_BUILD_TS["']\s*\]\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[A-Za-z0-9_.$-]+)\s*;?/,
+    /(?:var|let|const)\s+ADS_BUILD_TS\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[A-Za-z0-9_.$-]+)\s*;?/,
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.test(source)) return source.replace(pattern, canonical);
+  }
+
+  // Build metadata is operational metadata, not ad-serving logic. Older frozen
+  // templates are therefore safe to upgrade by prepending the canonical marker.
+  return `${canonical}\n${source}`;
+}
+
+function textBackedR2Object(object: R2ObjectBody, text: string): R2ObjectBody {
+  const bytes = new TextEncoder().encode(text);
+  const toArrayBuffer = () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+
+  return new Proxy(object, {
+    get(target, property) {
+      if (property === 'text') return async () => text;
+      if (property === 'arrayBuffer') return async () => toArrayBuffer();
+      if (property === 'blob') return async () => new Blob([bytes], { type: 'application/javascript' });
+      if (property === 'json') return async <T>() => JSON.parse(text) as T;
+      if (property === 'size') return bytes.byteLength;
+      if (property === 'bodyUsed') return false;
+      if (property === 'body') {
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(bytes);
+            controller.close();
+          },
+        });
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  }) as R2ObjectBody;
+}
+
+function withRuntimeTemplateCompatibility(env: Env): Env {
+  if (!env.BUILDS) return env;
+  const originalBucket = env.BUILDS;
+
+  const bucket = new Proxy(originalBucket, {
+    get(target, property) {
+      if (property === 'get') {
+        return async (key: string, options?: R2GetOptions) => {
+          const object = await target.get(key, options);
+          if (!object || !GENERATOR_TEMPLATE_KEY.test(key)) return object;
+          const source = await object.text();
+          return textBackedR2Object(object, normalizeRuntimeBuildMarker(source));
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  }) as R2Bucket;
+
+  return { ...env, BUILDS: bucket };
+}
+
 function withBuildHeader(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set('x-prebid-professor-build', RUNTIME_BUILD);
@@ -125,6 +192,10 @@ export default {
       return withBuildHeader(apiError('Method not allowed.', 405));
     }
 
-    return withBuildHeader(await downstream.fetch(request, env, ctx));
+    const runtimeEnv = RELEASE_COMPILE_ROUTE.test(pathname)
+      ? withRuntimeTemplateCompatibility(env)
+      : env;
+
+    return withBuildHeader(await downstream.fetch(request, runtimeEnv, ctx));
   },
 } satisfies ExportedHandler<Env>;
