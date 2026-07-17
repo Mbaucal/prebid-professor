@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "prebid-professor",
-  "main": "worker/app-compat.ts",
+  "main": "worker/app-deploy.ts",
   "compatibility_date": "2026-07-15",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
