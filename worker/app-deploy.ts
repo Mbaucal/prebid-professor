@@ -8,7 +8,7 @@ import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-17-demand-mode-router-v1';
+const RUNTIME_BUILD = '2026-07-17-demand-mode-router-v2';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -71,6 +71,16 @@ async function authenticatedRequest(request: Request, env: Env): Promise<Request
   return withAuthenticatedActor(normalized, user.email);
 }
 
+function withBuildHeader(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set('x-prebid-professor-build', RUNTIME_BUILD);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 async function healthWithBuildMarker(
   request: Request,
   env: Env,
@@ -81,6 +91,8 @@ async function healthWithBuildMarker(
     const payload = (await response.clone().json()) as Record<string, unknown>;
     const headers = new Headers(response.headers);
     headers.set('content-type', 'application/json; charset=utf-8');
+    headers.set('cache-control', 'no-store');
+    headers.set('x-prebid-professor-build', RUNTIME_BUILD);
     return new Response(
       `${JSON.stringify({
         ...payload,
@@ -90,7 +102,7 @@ async function healthWithBuildMarker(
       { status: response.status, headers },
     );
   } catch {
-    return response;
+    return withBuildHeader(response);
   }
 }
 
@@ -105,14 +117,14 @@ export default {
     const prebidModeMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/prebid-mode$/);
     if (prebidModeMatch) {
       const verified = await authenticatedRequest(request, env);
-      if (verified instanceof Response) return verified;
+      if (verified instanceof Response) return withBuildHeader(verified);
 
       const siteId = decodeURIComponent(prebidModeMatch[1]);
-      if (request.method === 'GET') return getPrebidMode(env, siteId);
-      if (request.method === 'PUT') return updatePrebidMode(verified, env, siteId);
-      return apiError('Method not allowed.', 405);
+      if (request.method === 'GET') return withBuildHeader(await getPrebidMode(env, siteId));
+      if (request.method === 'PUT') return withBuildHeader(await updatePrebidMode(verified, env, siteId));
+      return withBuildHeader(apiError('Method not allowed.', 405));
     }
 
-    return downstream.fetch(request, env, ctx);
+    return withBuildHeader(await downstream.fetch(request, env, ctx));
   },
 } satisfies ExportedHandler<Env>;
