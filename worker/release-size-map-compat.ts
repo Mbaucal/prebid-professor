@@ -214,16 +214,6 @@ async function readText(bucket: R2Bucket, key: string): Promise<string> {
   return object.text();
 }
 
-function uniqueWarnings(values: unknown[]): unknown[] {
-  const seen = new Set<string>();
-  return values.filter((value) => {
-    const key = typeof value === 'string' ? value : JSON.stringify(value);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 export async function validateReleaseWithFlexibleSizes(
   env: ReleaseEnv,
   siteId: string,
@@ -246,26 +236,18 @@ export async function validateReleaseWithFlexibleSizes(
     return !Array.from(validMapNames).some((name) => message.includes(name));
   });
 
-  const warnings = Array.isArray(payload.warnings) ? [...payload.warnings] : [];
-  for (const entry of maps) {
-    if (entry.map.some((breakpoint) => breakpoint.sizes.some((size) => size === 'fluid'))) {
-      warnings.push({
-        code: 'fluid_gpt_only',
-        area: 'size_maps',
-        message: `${entry.name} contains fluid. GPT can request fluid/native; fluid is intentionally excluded from Prebid banner sizes.`,
-      });
-    }
-    if (entry.map.some((breakpoint) => breakpoint.sizes.length === 0)) {
-      warnings.push({
-        code: 'disabled_breakpoint',
-        area: 'size_maps',
-        message: `${entry.name} contains an empty breakpoint. The slot is disabled when that viewport rule is active.`,
-      });
-    }
-  }
+  // `fluid` and empty breakpoint arrays are intentional, supported mapping
+  // values. They are shown in the size-map editor itself and should not make a
+  // clean release look unhealthy.
+  const warnings = Array.isArray(payload.warnings)
+    ? payload.warnings.filter((value) => {
+        if (!isRecord(value)) return true;
+        return !['fluid_gpt_only', 'disabled_breakpoint'].includes(String(value.code ?? ''));
+      })
+    : [];
 
   payload.errors = filteredErrors;
-  payload.warnings = uniqueWarnings(warnings);
+  payload.warnings = warnings;
   payload.ok = filteredErrors.length === 0;
   return json(payload, { status: filteredErrors.length ? 422 : 200 });
 }
