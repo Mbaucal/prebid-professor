@@ -48,7 +48,7 @@ function wrapSizeMapStatement(
   return new Proxy(statement, {
     get(target, property) {
       if (property === 'bind') {
-        return (...values: D1Value[]) => wrapSizeMapStatement(target.bind(...values), state);
+        return (...values: unknown[]) => wrapSizeMapStatement(target.bind(...values), state);
       }
 
       if (property === 'all') {
