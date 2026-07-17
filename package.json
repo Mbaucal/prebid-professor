@@ -13,6 +13,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply prebid-professor-db --remote"
   },
   "dependencies": {
+    "fflate": "^0.8.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
