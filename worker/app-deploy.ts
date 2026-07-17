@@ -8,7 +8,7 @@ import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-18-runtime-template-content-v4';
+const RUNTIME_BUILD = '2026-07-18-runtime-template-manifest-v5';
 const RELEASE_COMPILE_ROUTE = /^\/api\/publishers\/[^/]+\/releases\/(?:validate|generate)$/;
 
 interface Env extends ReleaseEnv, AuthEnv {
@@ -75,9 +75,9 @@ async function authenticatedRequest(request: Request, env: Env): Promise<Request
 function normalizeRuntimeBuildMarker(source: string): string {
   const canonical = 'window.ADS_BUILD_TS = "__PP_TEMPLATE_BUILD__";';
   const patterns = [
-    /window\s*\.\s*ADS_BUILD_TS\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[A-Za-z0-9_.$-]+)\s*;?/,
-    /window\s*\[\s*["']ADS_BUILD_TS["']\s*\]\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[A-Za-z0-9_.$-]+)\s*;?/,
-    /(?:var|let|const)\s+ADS_BUILD_TS\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[A-Za-z0-9_.$-]+)\s*;?/,
+    /window\s*\.\s*ADS_BUILD_TS\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[^;\r\n]+)\s*;?/,
+    /window\s*\[\s*["']ADS_BUILD_TS["']\s*\]\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[^;\r\n]+)\s*;?/,
+    /(?:var|let|const)\s+ADS_BUILD_TS\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[^;\r\n]+)\s*;?/,
   ];
 
   for (const pattern of patterns) {
@@ -89,10 +89,22 @@ function normalizeRuntimeBuildMarker(source: string): string {
   return `${canonical}\n${source}`;
 }
 
+function templateKeyFromManifest(source: string): string | null {
+  try {
+    const parsed = JSON.parse(source) as { templateKey?: unknown };
+    return typeof parsed.templateKey === 'string' && parsed.templateKey.trim()
+      ? parsed.templateKey.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function looksLikeRuntimeTemplate(source: string): boolean {
-  return /\bvar\s+BIDDERS\s*=/.test(source)
-    && /\bvar\s+EXPLICIT_UNITS\s*=/.test(source)
-    && /\bvar\s+SIZE_MAPS_RAW\s*=/.test(source);
+  const hasBidders = /\b(?:var|let|const)\s+BIDDERS\s*=/.test(source) || /\bBIDDERS\s*=/.test(source);
+  const hasUnits = /\b(?:var|let|const)\s+EXPLICIT_UNITS\s*=/.test(source) || /\bEXPLICIT_UNITS\s*=/.test(source);
+  const hasMaps = /\b(?:var|let|const)\s+SIZE_MAPS_RAW\s*=/.test(source) || /\bSIZE_MAPS_RAW\s*=/.test(source);
+  return hasBidders && hasUnits && hasMaps;
 }
 
 function textBackedR2Object(object: R2ObjectBody, text: string): R2ObjectBody {
@@ -124,6 +136,7 @@ function textBackedR2Object(object: R2ObjectBody, text: string): R2ObjectBody {
 function withRuntimeTemplateCompatibility(env: Env): Env {
   if (!env.BUILDS) return env;
   const originalBucket = env.BUILDS;
+  const knownTemplateKeys = new Set<string>();
 
   const bucket = new Proxy(originalBucket, {
     get(target, property) {
@@ -131,15 +144,18 @@ function withRuntimeTemplateCompatibility(env: Env): Env {
         return async (key: string, options?: R2GetOptions) => {
           const object = await target.get(key, options);
           if (!object) return object;
-
-          // During release validation/generation R2 returns manifests, the frozen
-          // runtime template and prebid.js. Detect the runtime by its required
-          // compiler variables instead of assuming a historical R2 key layout.
           if (key.includes('/source/') || /\.(?:zip|gz|wasm)$/i.test(key)) return object;
+
           const source = await object.text();
-          const normalized = looksLikeRuntimeTemplate(source)
-            ? normalizeRuntimeBuildMarker(source)
-            : source;
+          const discoveredTemplateKey = key.endsWith('/manifest.json')
+            ? templateKeyFromManifest(source)
+            : null;
+          if (discoveredTemplateKey) knownTemplateKeys.add(discoveredTemplateKey);
+
+          const isTemplate = knownTemplateKeys.has(key)
+            || key.includes('/template/')
+            || looksLikeRuntimeTemplate(source);
+          const normalized = isTemplate ? normalizeRuntimeBuildMarker(source) : source;
           return textBackedR2Object(object, normalized);
         };
       }
