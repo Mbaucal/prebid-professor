@@ -1,0 +1,44 @@
+name: Run sticky CSS export patch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/run-sticky-css-export-patch.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/sticky-css-export
+          fetch-depth: 0
+
+      - name: Extract and run branch patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          awk '
+            /- name: Add sticky CSS release artifact and export UI/ { section=1; next }
+            section && /run: \|/ { capture=1; next }
+            capture && /^      - name: Build/ { exit }
+            capture { sub(/^          /, ""); print }
+          ' .github/workflows/apply-sticky-css-export.yml > /tmp/apply-sticky-css-export.py
+          python /tmp/apply-sticky-css-export.py
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit patched feature
+        run: |
+          git config user.name "Prebid Professor Sticky CSS"
+          git config user.email "actions@users.noreply.github.com"
+          git add worker/releases.ts worker/app-deploy.ts src/components/ReleasesPanel.tsx src/components/ExportPanel.tsx .github/workflows/deploy-pages-release.yml
+          git commit -m "Add sticky CSS release artifact and export"
+          git push origin HEAD:feature/sticky-css-export
