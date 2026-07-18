@@ -8,8 +8,7 @@ import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-18-runtime-template-manifest-v5';
-const RELEASE_COMPILE_ROUTE = /^\/api\/publishers\/[^/]+\/releases\/(?:validate|generate)$/;
+const RUNTIME_BUILD = '2026-07-18-generated-artifact-v6';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -72,101 +71,6 @@ async function authenticatedRequest(request: Request, env: Env): Promise<Request
   return withAuthenticatedActor(normalized, user.email);
 }
 
-function normalizeRuntimeBuildMarker(source: string): string {
-  const canonical = 'window.ADS_BUILD_TS = "__PP_TEMPLATE_BUILD__";';
-  const patterns = [
-    /window\s*\.\s*ADS_BUILD_TS\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[^;\r\n]+)\s*;?/,
-    /window\s*\[\s*["']ADS_BUILD_TS["']\s*\]\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[^;\r\n]+)\s*;?/,
-    /(?:var|let|const)\s+ADS_BUILD_TS\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`|[^;\r\n]+)\s*;?/,
-  ];
-
-  for (const pattern of patterns) {
-    if (pattern.test(source)) return source.replace(pattern, canonical);
-  }
-
-  // The marker is release metadata only. Adding it does not alter auction,
-  // targeting, lazy-load or refresh behavior in a frozen runtime.
-  return `${canonical}\n${source}`;
-}
-
-function templateKeyFromManifest(source: string): string | null {
-  try {
-    const parsed = JSON.parse(source) as { templateKey?: unknown };
-    return typeof parsed.templateKey === 'string' && parsed.templateKey.trim()
-      ? parsed.templateKey.trim()
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function looksLikeRuntimeTemplate(source: string): boolean {
-  const hasBidders = /\b(?:var|let|const)\s+BIDDERS\s*=/.test(source) || /\bBIDDERS\s*=/.test(source);
-  const hasUnits = /\b(?:var|let|const)\s+EXPLICIT_UNITS\s*=/.test(source) || /\bEXPLICIT_UNITS\s*=/.test(source);
-  const hasMaps = /\b(?:var|let|const)\s+SIZE_MAPS_RAW\s*=/.test(source) || /\bSIZE_MAPS_RAW\s*=/.test(source);
-  return hasBidders && hasUnits && hasMaps;
-}
-
-function textBackedR2Object(object: R2ObjectBody, text: string): R2ObjectBody {
-  const bytes = new TextEncoder().encode(text);
-  const toArrayBuffer = () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-
-  return new Proxy(object, {
-    get(target, property) {
-      if (property === 'text') return async () => text;
-      if (property === 'arrayBuffer') return async () => toArrayBuffer();
-      if (property === 'blob') return async () => new Blob([bytes], { type: 'application/javascript' });
-      if (property === 'json') return async <T>() => JSON.parse(text) as T;
-      if (property === 'size') return bytes.byteLength;
-      if (property === 'bodyUsed') return false;
-      if (property === 'body') {
-        return new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(bytes);
-            controller.close();
-          },
-        });
-      }
-      const value = Reflect.get(target, property, target);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  }) as R2ObjectBody;
-}
-
-function withRuntimeTemplateCompatibility(env: Env): Env {
-  if (!env.BUILDS) return env;
-  const originalBucket = env.BUILDS;
-  const knownTemplateKeys = new Set<string>();
-
-  const bucket = new Proxy(originalBucket, {
-    get(target, property) {
-      if (property === 'get') {
-        return async (key: string, options?: R2GetOptions) => {
-          const object = await target.get(key, options);
-          if (!object) return object;
-          if (key.includes('/source/') || /\.(?:zip|gz|wasm)$/i.test(key)) return object;
-
-          const source = await object.text();
-          const discoveredTemplateKey = key.endsWith('/manifest.json')
-            ? templateKeyFromManifest(source)
-            : null;
-          if (discoveredTemplateKey) knownTemplateKeys.add(discoveredTemplateKey);
-
-          const isTemplate = knownTemplateKeys.has(key)
-            || key.includes('/template/')
-            || looksLikeRuntimeTemplate(source);
-          const normalized = isTemplate ? normalizeRuntimeBuildMarker(source) : source;
-          return textBackedR2Object(object, normalized);
-        };
-      }
-      const value = Reflect.get(target, property, target);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  }) as R2Bucket;
-
-  return { ...env, BUILDS: bucket };
-}
-
 function withBuildHeader(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set('x-prebid-professor-build', RUNTIME_BUILD);
@@ -221,10 +125,10 @@ export default {
       return withBuildHeader(apiError('Method not allowed.', 405));
     }
 
-    const runtimeEnv = RELEASE_COMPILE_ROUTE.test(pathname)
-      ? withRuntimeTemplateCompatibility(env)
-      : env;
-
-    return withBuildHeader(await downstream.fetch(request, runtimeEnv, ctx));
+    // Runtime-template compatibility now lives inside runtime-compiler.ts.
+    // Do not proxy R2 reads here: downstream fluid/AdX post-processors read the
+    // generated ads.js back from R2, and rewriting those objects would turn the
+    // real ADS_BUILD_TS back into the template placeholder.
+    return withBuildHeader(await downstream.fetch(request, env, ctx));
   },
 } satisfies ExportedHandler<Env>;
