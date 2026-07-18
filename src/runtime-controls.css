@@ -1,0 +1,275 @@
+.runtime-controls-page {
+  padding: 24px 32px 44px;
+}
+
+.runtime-controls-heading,
+.runtime-controls-card-heading,
+.runtime-controls-subheading,
+.runtime-controls-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.runtime-controls-heading {
+  margin-bottom: 18px;
+}
+
+.runtime-controls-heading h2,
+.runtime-controls-card h3,
+.runtime-controls-card h4 {
+  margin: 4px 0 0;
+  color: #202734;
+}
+
+.runtime-controls-heading p,
+.runtime-controls-card p,
+.runtime-controls-card small,
+.runtime-output-preview span,
+.runtime-controls-floor-note span {
+  color: #697587;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.runtime-controls-message {
+  margin-bottom: 16px;
+  padding: 11px 14px;
+  border: 1px solid #b9e4c9;
+  border-radius: 10px;
+  color: #176c44;
+  background: #eaf9f0;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.runtime-controls-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+  gap: 16px;
+}
+
+.runtime-controls-card {
+  padding: 20px;
+  border: 1px solid #d5dce6;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 5%);
+}
+
+.runtime-controls-floors {
+  margin-top: 16px;
+}
+
+.runtime-controls-fields {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.runtime-controls-fields.two-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.runtime-controls-fields.floor-basics {
+  grid-template-columns: 150px 190px minmax(240px, 1fr);
+  align-items: end;
+}
+
+.runtime-controls-fields label,
+.runtime-bidder-floor-grid label {
+  display: grid;
+  gap: 6px;
+}
+
+.runtime-controls-fields label > span,
+.runtime-bidder-floor-grid label > span {
+  color: #3d4654;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.runtime-controls-fields input,
+.runtime-controls-fields select,
+.runtime-bidder-floor-grid input,
+.runtime-floor-rule-row input {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid #cfd7e3;
+  border-radius: 9px;
+  color: #1f2937;
+  background: #fff;
+  font: inherit;
+}
+
+.runtime-controls-fields input:focus,
+.runtime-controls-fields select:focus,
+.runtime-bidder-floor-grid input:focus,
+.runtime-floor-rule-row input:focus {
+  border-color: #ef7a36;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgb(239 122 54 / 12%);
+}
+
+.runtime-controls-check,
+.runtime-controls-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.runtime-controls-check {
+  margin-top: 18px;
+  padding: 13px 14px;
+  border: 1px solid #e0e5ec;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.runtime-controls-check input,
+.runtime-controls-switch input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #ef6f24;
+}
+
+.runtime-controls-check span,
+.runtime-controls-check strong,
+.runtime-controls-check small {
+  display: block;
+}
+
+.runtime-controls-check strong {
+  color: #28303d;
+  font-size: 12px;
+}
+
+.runtime-controls-switch {
+  align-items: center;
+  padding: 8px 11px;
+  border: 1px solid #d9e0e8;
+  border-radius: 999px;
+  color: #334155;
+  background: #f8fafc;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.runtime-output-preview,
+.runtime-controls-floor-note {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  padding: 13px 14px;
+  border-radius: 11px;
+  background: #111827;
+}
+
+.runtime-output-preview code,
+.runtime-controls-floor-note strong {
+  color: #e5eefc;
+  font-size: 12px;
+}
+
+.runtime-controls-floor-note {
+  margin-top: 0;
+}
+
+.runtime-controls-subsection {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid #e4e8ee;
+}
+
+.runtime-controls-subheading {
+  align-items: center;
+}
+
+.runtime-controls-subheading h4 {
+  font-size: 14px;
+}
+
+.runtime-bidder-floor-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.runtime-floor-rules {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.runtime-floor-rule-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 140px 38px;
+  gap: 9px;
+}
+
+.runtime-floor-rule-row button {
+  border: 1px solid #efc2bd;
+  border-radius: 9px;
+  color: #a3312a;
+  background: #fff5f4;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.runtime-floor-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.runtime-floor-examples code {
+  padding: 6px 8px;
+  border: 1px solid #dbe2ea;
+  border-radius: 7px;
+  color: #536174;
+  background: #f8fafc;
+  font-size: 10px;
+}
+
+.runtime-controls-empty {
+  margin: 0;
+  padding: 13px;
+  border: 1px dashed #cfd7e3;
+  border-radius: 10px;
+  color: #748094;
+  background: #fafbfc;
+  font-size: 12px;
+}
+
+.runtime-controls-actions {
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+@media (max-width: 1100px) {
+  .runtime-controls-grid,
+  .runtime-controls-fields.floor-basics {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-bidder-floor-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .runtime-controls-page {
+    padding: 20px 18px 36px;
+  }
+
+  .runtime-controls-fields.two-columns,
+  .runtime-bidder-floor-grid,
+  .runtime-floor-rule-row {
+    grid-template-columns: 1fr;
+  }
+}
