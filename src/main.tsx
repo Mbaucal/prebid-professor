@@ -21,6 +21,7 @@ import './supply-chain-consent.css';
 import './user-id-modules.css';
 import './prebid-mode.css';
 import './releases.css';
+import './release-deletion.css';
 import './external-deployments.css';
 import './export.css';
 import './auth-account.css';
