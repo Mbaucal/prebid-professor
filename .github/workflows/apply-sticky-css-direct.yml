@@ -26,13 +26,13 @@ jobs:
           node-version: '22'
 
       - name: Apply direct source integration
-        run: python3 .github/scripts/apply_sticky_css_direct.py
+        run: python3 .github/scripts/apply_sticky_css_direct_v2.py
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
       - name: Build
-        run: npm run build
+        run: npm run --ignore-scripts build
 
       - name: Commit source integration
         run: |
