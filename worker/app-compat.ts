@@ -10,6 +10,7 @@ import {
   generateReleaseForDemandMode,
   validateReleaseForDemandMode,
 } from './prebid-mode-release';
+import { getRuntimeControls, updateRuntimeControls } from './runtime-controls';
 import {
   applyFlexibleSizeMapCsv,
   createFlexibleSizeMap,
@@ -142,6 +143,16 @@ export default {
       const siteId = decodeURIComponent(prebidModeMatch[1]);
       if (request.method === 'GET') return getPrebidMode(env, siteId);
       if (request.method === 'PUT') return updatePrebidMode(verified, env, siteId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const runtimeControlsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/runtime-controls$/);
+    if (runtimeControlsMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      const siteId = decodeURIComponent(runtimeControlsMatch[1]);
+      if (request.method === 'GET') return getRuntimeControls(env, siteId);
+      if (request.method === 'PUT') return updateRuntimeControls(verified, env, siteId);
       return apiError('Method not allowed.', 405);
     }
 
