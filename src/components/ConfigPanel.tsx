@@ -8,6 +8,7 @@ import GeneratorProfilesPanel from './GeneratorProfilesPanel';
 import PrebidModePanel from './PrebidModePanel';
 import RuntimeControlsPanel from './RuntimeControlsPanel';
 import SizeMapsCompatPanel from './SizeMapsCompatPanel';
+import SupplyChainConsentPanel from './SupplyChainConsentPanel';
 import UnitRulesPanel from './UnitRulesPanel';
 import UserIdModulesPanel from './UserIdModulesPanel';
 
@@ -24,6 +25,7 @@ type ConfigSection =
   | 'unit-rules'
   | 'advanced-rules'
   | 'runtime-controls'
+  | 'supply-consent'
   | 'user-id'
   | 'generator-profiles'
   | 'imports';
@@ -55,6 +57,9 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
         <button className={section === 'runtime-controls' ? 'active' : ''} onClick={() => setSection('runtime-controls')} type="button">
           Runtime controls
         </button>
+        <button className={section === 'supply-consent' ? 'active' : ''} onClick={() => setSection('supply-consent')} type="button">
+          Supply & consent
+        </button>
         <button className={section === 'user-id' ? 'active' : ''} onClick={() => setSection('user-id')} type="button">
           User ID modules
         </button>
@@ -78,6 +83,7 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
       {section === 'unit-rules' ? <UnitRulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'advanced-rules' ? <AdvancedRefreshPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'runtime-controls' ? <RuntimeControlsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'supply-consent' ? <SupplyChainConsentPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'user-id' ? <UserIdModulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} /> : null}
       {section === 'imports' ? (
