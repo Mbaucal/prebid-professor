@@ -215,7 +215,6 @@ replace_once(
     '<link rel="stylesheet" href="${origin}/cdn/${snapshot.site.id}/current/min-height.css">\n<!-- ads.min.js injects sticky base styles. sticky.css is an optional handoff and override artifact. -->\n<script src="${origin}/cdn/${snapshot.site.id}/current/prebid.js"></script>',
     "implementation sticky note",
 )
-
 replace_once(
     "worker/releases.ts",
     '''      manifest: absoluteUrl(request, `${base}/manifest.json`), css: absoluteUrl(request, `${base}/min-height.css`),
@@ -225,7 +224,6 @@ replace_once(
       divCsv: absoluteUrl(request, `${base}/div-export.csv`), implementation: absoluteUrl(request, `${base}/implementation.html`),''',
     "release payload stickyCss URL",
 )
-
 replace_once(
     "worker/releases.ts",
     '''      add('config.json', configText), add('min-height.css', minHeightCss(snapshot)), add('div-export.csv', divCsv(snapshot)),
@@ -234,7 +232,6 @@ replace_once(
       add('div-export.csv', divCsv(snapshot)), add('implementation.html', implementationHtml(snapshot, origin)),''',
     "release generation sticky.css artifact",
 )
-
 replace_once(
     "worker/releases.ts",
     '''    const source = await bucket.get(releaseKey(siteId, version, fileName));
@@ -311,6 +308,7 @@ sticky_effect = '''  useEffect(() => {
     const url = artifacts['sticky.css'];
     if (!url) {
       setStickyCssText('');
+      setLoadingStickyCss(false);
       return;
     }
     let cancelled = false;
@@ -339,14 +337,14 @@ insert_before(
     "src/components/ExportPanel.tsx",
     "  async function copyText(value: string, label: string): Promise<void> {",
     sticky_effect,
-    "const [stickyCssText, setStickyCssText]",
+    "Sticky CSS artifact returned",
     "ExportPanel sticky CSS loader",
 )
 
 replace_once(
     "src/components/ExportPanel.tsx",
-    "        `Demand mode: ${prebidEnabled ? 'GAM + Prebid' : 'GAM / AdX only'}`,\n        `Source: ${source}` ,".replace(" `Source", "`Source"),
-    "        `Demand mode: ${prebidEnabled ? 'GAM + Prebid' : 'GAM / AdX only'}`,\n        'Sticky styling: ads.js injects base styles automatically; sticky.css is included for review and optional external integration.',\n        `Source: ${source}` ,".replace(" `Source", "`Source"),
+    "        `Demand mode: ${prebidEnabled ? 'GAM + Prebid' : 'GAM / AdX only'}`,\n        `Source: ${source}`,",
+    "        `Demand mode: ${prebidEnabled ? 'GAM + Prebid' : 'GAM / AdX only'}`,\n        'Sticky styling: ads.js injects base styles automatically; sticky.css is included for review and optional external integration.',\n        `Source: ${source}`,",
     "Export ZIP README sticky note",
 )
 
@@ -378,12 +376,10 @@ insert_before(
 # ---------------------------------------------------------------------------
 replace_once(
     ".github/workflows/deploy-pages-release.yml",
-    '''          done
+    "          done\n\n          cat > dist/_headers <<'EOF'",
+    """          done
 
-          cat > dist/_headers <<'EOF' ''',
-    '''          done
-
-          echo "Downloading optional sticky.css"
+          echo \"Downloading optional sticky.css\"
           if ! curl \\
             --fail \\
             --location \\
@@ -391,13 +387,13 @@ replace_once(
             --retry-all-errors \\
             --silent \\
             --show-error \\
-            "${RELEASE_BASE_URL}/sticky.css" \\
-            --output "dist/sticky.css"; then
+            \"${RELEASE_BASE_URL}/sticky.css\" \\
+            --output \"dist/sticky.css\"; then
             rm -f dist/sticky.css
-            echo "sticky.css is not present on this legacy release; continuing without it."
+            echo \"sticky.css is not present on this legacy release; continuing without it.\"
           fi
 
-          cat > dist/_headers <<'EOF' ''',
+          cat > dist/_headers <<'EOF'""",
     "Cloudflare Pages optional sticky.css download",
 )
 
