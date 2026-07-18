@@ -1,0 +1,401 @@
+name: Apply runtime controls compiler refactor
+
+on:
+  push:
+    branches:
+      - feature/runtime-controls-clean-output
+    paths:
+      - .github/runtime-controls-refactor.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/runtime-controls-clean-output
+          fetch-depth: 0
+
+      - name: Patch compiler and release pipeline
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          compiler_path = Path('worker/runtime-compiler.ts')
+          compiler = compiler_path.read_text(encoding='utf-8')
+          original_compiler = compiler
+
+          compiler = compiler.replace(
+              '  generatorProfileId: string;\n  gamPath: string;',
+              '  generatorProfileId: string;\n  generatorProfileVersion: string;\n  gamPath: string;',
+              1,
+          )
+          compiler = compiler.replace(
+              '  globalRefresh: JsonRecord;\n  maxCmpTimeout: number;\n};',
+              '''  globalRefresh: JsonRecord;
+  maxCmpTimeout: number;
+  stickyBottomAdUnitId: string;
+  stickyTopAdUnitId: string;
+  allowClosePortal: boolean;
+  floorsEnabled: boolean;
+  floorCurrency: string;
+  hardFloor: number;
+  bidderFloors: JsonRecord;
+  floorRules: JsonRecord;
+  cleanComments: boolean;
+};''',
+              1,
+          )
+
+          old_metadata = '''    `$1\\n      window.ADOPS_SITE_ID = ${jsonLiteral(input.siteId)};\\n      window.ADOPS_RELEASE = ${jsonLiteral(input.buildVersion)};\\n      window.ADOPS_GENERATOR_PROFILE = ${jsonLiteral(input.generatorProfileId)};`,'''
+          new_metadata = '''    `$1\\n      window.ADOPS_SITE_ID = ${jsonLiteral(input.siteId)};\\n      window.ADOPS_RELEASE = ${jsonLiteral(input.buildVersion)};\\n      window.ADOPS_GENERATOR_PROFILE = ${jsonLiteral(input.generatorProfileId)};\\n      window.ADOPS_GENERATOR_PROFILE_ID = ${jsonLiteral(input.generatorProfileId)};\\n      window.ADOPS_GENERATOR_PROFILE_VERSION = ${jsonLiteral(input.generatorProfileVersion)};`,'''
+          if old_metadata not in compiler:
+              raise SystemExit('patchMetadata replacement anchor was not found.')
+          compiler = compiler.replace(old_metadata, new_metadata, 1)
+
+          helper_anchor = 'function compactSafely(source: string): string {'
+          if helper_anchor not in compiler:
+              raise SystemExit('compactSafely anchor was not found.')
+
+          helpers = r'''function ensureVarAssignmentAfter(
+  source: string,
+  anchorName: string,
+  name: string,
+  value: unknown,
+  patches: string[],
+): string {
+  const existing = new RegExp(`^\\s*var\\s+${escapeRegExp(name)}\\s*=`, 'm');
+  if (existing.test(source)) return replaceVarAssignment(source, name, value, patches, false);
+  const anchor = new RegExp(`^(\\s*var\\s+${escapeRegExp(anchorName)}\\s*=\\s*.*?;[\\t ]*)$`, 'm');
+  if (!anchor.test(source)) return source;
+  patches.push(name);
+  return source.replace(anchor, `$1\\n  var ${name} = ${jsonLiteral(value)};`);
+}
+
+function patchGenericStickyRuntime(source: string, patches: string[]): string {
+  const startMarker = '  function _q(sel)';
+  const endMarker = '/* Fallback:';
+  if (source.includes(startMarker) && source.includes(endMarker)) {
+    source = replaceSection(
+      source,
+      startMarker,
+      endMarker,
+      `  function _q(sel){ try{ return document.querySelector(sel); }catch(_){ return null; } }
+
+  function findStickyHost(id, position){
+    if (!id) return null;
+    return document.getElementById(id) ||
+      _q('[data-ad="'+id+'"], [data-slot="'+id+'"], [data-sticky-position="'+position+'"]');
+  }
+
+  function getStickyHost(){ return findStickyHost(STICKY_TARGET_ID, 'bottom'); }
+  function getStickyTopHost(){ return findStickyHost(STICKY_TOP_TARGET_ID, 'top'); }
+  window.getStickyHost = getStickyHost;
+  window.getStickyTopHost = getStickyTopHost;`,
+      'generic sticky host lookup',
+      patches,
+    );
+  }
+  source = source
+    .replace(/__cvjTopBound/g, '__ppStickyTopBound')
+    .replace(/__cvjBound/g, '__ppStickyBound')
+    .replace(/adsx-sticky-top-css/g, 'pp-sticky-top-css')
+    .replace(/adsx-sticky-css/g, 'pp-sticky-css');
+  return source;
+}
+
+function patchFloorRuntime(
+  source: string,
+  input: RuntimeCompileInput,
+  patches: string[],
+  warnings: string[],
+): string {
+  const hardFloor = input.floorsEnabled ? Math.max(0, Number(input.hardFloor) || 0) : 0;
+  const bidderFloors = input.floorsEnabled ? input.bidderFloors : {};
+  const floorRules = input.floorsEnabled ? input.floorRules : {};
+
+  source = replaceVarAssignment(source, 'AD_SERVER_CURRENCY', input.floorCurrency, patches, false);
+  source = replaceVarAssignment(source, 'HARD_FLOOR_EUR', hardFloor, patches, false);
+  source = replaceVarAssignment(source, 'BIDDER_FLOORS', bidderFloors, patches, false);
+  source = ensureVarAssignmentAfter(source, 'BIDDER_FLOORS', 'FLOOR_RULES', floorRules, patches);
+
+  const enabledPattern = /(floors\\s*:\\s*\\{\\s*enabled\\s*:\\s*)(?:true|false)/;
+  if (enabledPattern.test(source)) {
+    source = source.replace(enabledPattern, `$1${input.floorsEnabled ? 'true' : 'false'}`);
+    patches.push('floors.enabled');
+  } else {
+    warnings.push('The runtime floor plugin enabled flag was not found.');
+  }
+
+  const extraPattern = /var\\s+extra\\s*=\\s*(?:\\/\\*[\\s\\S]*?\\*\\/\\s*)?\\{\\s*\\}\\s*;/;
+  if (extraPattern.test(source)) {
+    source = source.replace(extraPattern, 'var extra = FLOOR_RULES;');
+    patches.push('FLOOR_RULES');
+  } else if (!source.includes('var extra = FLOOR_RULES;')) {
+    warnings.push('The runtime custom floor-rule insertion point was not found.');
+  }
+  return source;
+}
+
+function stripTrailingLineComment(line: string): string {
+  let quote = '';
+  let escaped = false;
+  for (let index = 0; index < line.length - 1; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (char === '\\\\') escaped = true;
+      else if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char;
+      continue;
+    }
+    if (char === '/' && next === '/') return line.slice(0, index).replace(/[\\t ]+$/g, '');
+  }
+  return line;
+}
+
+function stripLegacyComments(source: string): string {
+  const output: string[] = [];
+  let blockComment = false;
+  let previousBlank = false;
+
+  for (const rawLine of source.replace(/\\r\\n?/g, '\\n').split('\\n')) {
+    const trimmed = rawLine.trim();
+    if (blockComment) {
+      if (trimmed.includes('*/')) blockComment = false;
+      continue;
+    }
+    if (trimmed.startsWith('/*')) {
+      if (!trimmed.includes('*/')) blockComment = true;
+      continue;
+    }
+    if (trimmed.startsWith('//')) continue;
+
+    let line = rawLine.replace(/\\s*\\/\\*.*?\\*\\/\\s*/g, ' ');
+    line = stripTrailingLineComment(line).replace(/[\\t ]+$/g, '');
+    const blank = line.trim() === '';
+    if (blank && previousBlank) continue;
+    output.push(line);
+    previousBlank = blank;
+  }
+  return output.join('\\n').trim();
+}
+
+function generatedHeader(input: RuntimeCompileInput): string {
+  return `/*!
+ * Prebid Professor generated runtime
+ * Site: ${input.siteId}
+ * Release: ${input.buildVersion}
+ * Generator profile: ${input.generatorProfileId}
+ * Runtime version: ${input.generatorProfileVersion}
+ * Generated artifact. Do not edit manually.
+ */`;
+}
+
+function cleanGeneratedRuntime(source: string, input: RuntimeCompileInput): string {
+  return `${generatedHeader(input)}\\n${stripLegacyComments(source)}\\n`;
+}
+
+'''
+          if 'function patchFloorRuntime(' not in compiler:
+              compiler = compiler.replace(helper_anchor, helpers + helper_anchor, 1)
+
+          compile_anchor = '''  source = patchMetadata(source, input, patches);
+  source = replaceVarAssignment(source, 'adUnitPath', input.gamPath, patches);'''
+          compile_replacement = '''  source = patchMetadata(source, input, patches);
+  source = replaceVarAssignment(source, 'STICKY_TARGET_ID', input.stickyBottomAdUnitId, patches, false);
+  source = replaceVarAssignment(source, 'STICKY_TOP_TARGET_ID', input.stickyTopAdUnitId, patches, false);
+  source = replaceVarAssignment(source, 'ALLOW_CLOSE_PORTAL', input.allowClosePortal, patches, false);
+  source = patchGenericStickyRuntime(source, patches);
+  source = patchFloorRuntime(source, input, patches, warnings);
+  source = replaceVarAssignment(source, 'adUnitPath', input.gamPath, patches);'''
+          if compile_anchor not in compiler:
+              raise SystemExit('compileRuntime patch anchor was not found.')
+          compiler = compiler.replace(compile_anchor, compile_replacement, 1)
+
+          return_anchor = '''  return {
+    adsJs: source,
+    adsMinJs: compactSafely(source),'''
+          return_replacement = '''  if (input.cleanComments) source = cleanGeneratedRuntime(source, input);
+
+  return {
+    adsJs: source,
+    adsMinJs: compactSafely(source),'''
+          if return_anchor not in compiler:
+              raise SystemExit('compileRuntime return anchor was not found.')
+          compiler = compiler.replace(return_anchor, return_replacement, 1)
+
+          if compiler == original_compiler:
+              raise SystemExit('runtime-compiler.ts was not changed.')
+          compiler_path.write_text(compiler, encoding='utf-8')
+
+          releases_path = Path('worker/releases.ts')
+          releases = releases_path.read_text(encoding='utf-8')
+          original_releases = releases
+
+          releases = releases.replace(
+              '  requiredUserIdModules: string[];\n};',
+              '  requiredUserIdModules: string[];\n  requiredRuntimeModules: string[];\n};',
+              1,
+          )
+
+          module_anchor = '''  const requiredBidderModules = uniqueSorted(enabledBidders.map((row) => adapterFor(row.bidder)));
+  const requiredUserIdModules = await readRequiredUserIdModules(env.DB, siteId);
+  const installed = new Set(prebidModules);
+  for (const module of [...requiredBidderModules, ...requiredUserIdModules]) {'''
+          module_replacement = '''  const requiredBidderModules = uniqueSorted(enabledBidders.map((row) => adapterFor(row.bidder)));
+  const requiredUserIdModules = await readRequiredUserIdModules(env.DB, siteId);
+  const runtimeControls = isRecord(config.runtimeControls) ? config.runtimeControls : {};
+  const floorControls = isRecord(runtimeControls.floors) ? runtimeControls.floors : {};
+  const floorsEnabled = config.enablePrebid !== false && floorControls.enabled !== false;
+  const requiredRuntimeModules = floorsEnabled ? ['priceFloors'] : [];
+  const installed = new Set(prebidModules);
+  for (const module of [...requiredBidderModules, ...requiredUserIdModules, ...requiredRuntimeModules]) {'''
+          if module_anchor not in releases:
+              raise SystemExit('required module anchor was not found in releases.ts.')
+          releases = releases.replace(module_anchor, module_replacement, 1)
+
+          releases = releases.replace(
+              '    requiredUserIdModules,\n  };',
+              '    requiredUserIdModules,\n    requiredRuntimeModules,\n    floorsEnabled,\n  };',
+              1,
+          )
+          releases = releases.replace(
+              '          requiredBidderModules, requiredUserIdModules }',
+              '          requiredBidderModules, requiredUserIdModules, requiredRuntimeModules }',
+              1,
+          )
+
+          user_sync_anchor = '''  const userSync = isRecord(snapshot.config.userSync)
+    ? snapshot.config.userSync
+    : { syncEnabled: true, aliasSyncEnabled: true, syncsPerBidder: 5, syncDelay: 3000,
+        auctionDelay: 150, filterSettings: { all: { bidders: '*', filter: 'include' } }, userIds: [] };
+
+  return {'''
+          user_sync_replacement = '''  const userSync = isRecord(snapshot.config.userSync)
+    ? snapshot.config.userSync
+    : { syncEnabled: true, aliasSyncEnabled: true, syncsPerBidder: 5, syncDelay: 3000,
+        auctionDelay: 150, filterSettings: { all: { bidders: '*', filter: 'include' } }, userIds: [] };
+
+  const runtimeControls = isRecord(snapshot.config.runtimeControls) ? snapshot.config.runtimeControls : {};
+  const stickyControls = isRecord(runtimeControls.sticky) ? runtimeControls.sticky : {};
+  const floorControls = isRecord(runtimeControls.floors) ? runtimeControls.floors : {};
+  const outputControls = isRecord(runtimeControls.output) ? runtimeControls.output : {};
+  const activeCodes = new Set(activeUnits.map((unit) => unit.code));
+  const normalizeNumberRecord = (value: unknown) => {
+    if (!isRecord(value)) return {};
+    return Object.fromEntries(Object.entries(value).flatMap(([key, candidate]) => {
+      const parsed = Number(candidate);
+      return key.trim() && Number.isFinite(parsed) && parsed >= 0 ? [[key.trim(), parsed]] : [];
+    }));
+  };
+  const floorCurrency = /^[A-Z]{3}$/.test(String(floorControls.currency ?? '').toUpperCase())
+    ? String(floorControls.currency).toUpperCase()
+    : 'EUR';
+  const hardFloor = Number(floorControls.hardFloor);
+
+  return {'''
+          if user_sync_anchor not in releases:
+              raise SystemExit('runtimeData userSync anchor was not found.')
+          releases = releases.replace(user_sync_anchor, user_sync_replacement, 1)
+
+          return_fields_anchor = '''    globalRefresh: isRecord(defaultRule.refresh) ? defaultRule.refresh as JsonRecord
+      : isRecord(atfRule.refresh) ? atfRule.refresh as JsonRecord : {},
+    maxCmpTimeout,
+  };'''
+          return_fields_replacement = '''    globalRefresh: isRecord(defaultRule.refresh) ? defaultRule.refresh as JsonRecord
+      : isRecord(atfRule.refresh) ? atfRule.refresh as JsonRecord : {},
+    maxCmpTimeout,
+    stickyBottomAdUnitId: typeof stickyControls.bottomAdUnitId === 'string'
+      ? stickyControls.bottomAdUnitId.trim()
+      : activeCodes.has('Sticky') ? 'Sticky' : '',
+    stickyTopAdUnitId: typeof stickyControls.topAdUnitId === 'string'
+      ? stickyControls.topAdUnitId.trim()
+      : '',
+    allowClosePortal: stickyControls.allowClosePortal === true,
+    floorsEnabled: floorControls.enabled !== false,
+    floorCurrency,
+    hardFloor: Number.isFinite(hardFloor) && hardFloor >= 0 ? hardFloor : 0.04,
+    bidderFloors: normalizeNumberRecord(floorControls.bidderFloors),
+    floorRules: normalizeNumberRecord(floorControls.rules),
+    cleanComments: outputControls.cleanComments !== false,
+  };'''
+          if return_fields_anchor not in releases:
+              raise SystemExit('runtimeData return anchor was not found.')
+          releases = releases.replace(return_fields_anchor, return_fields_replacement, 1)
+
+          compile_call_anchor = '''      generatorProfileId: snapshot.profile.id,
+      gamPath: snapshot.site.gam_path,'''
+          compile_call_replacement = '''      generatorProfileId: snapshot.profile.id,
+      generatorProfileVersion: snapshot.profile.version,
+      gamPath: snapshot.site.gam_path,'''
+          if compile_call_anchor not in releases:
+              raise SystemExit('compile call profile anchor was not found.')
+          releases = releases.replace(compile_call_anchor, compile_call_replacement, 1)
+
+          compile_tail_anchor = '''      globalRefresh: data.globalRefresh,
+      maxCmpTimeout: data.maxCmpTimeout,
+    });'''
+          compile_tail_replacement = '''      globalRefresh: data.globalRefresh,
+      maxCmpTimeout: data.maxCmpTimeout,
+      stickyBottomAdUnitId: data.stickyBottomAdUnitId,
+      stickyTopAdUnitId: data.stickyTopAdUnitId,
+      allowClosePortal: data.allowClosePortal,
+      floorsEnabled: data.floorsEnabled,
+      floorCurrency: data.floorCurrency,
+      hardFloor: data.hardFloor,
+      bidderFloors: data.bidderFloors,
+      floorRules: data.floorRules,
+      cleanComments: data.cleanComments,
+    });'''
+          if compile_tail_anchor not in releases:
+              raise SystemExit('compile call tail anchor was not found.')
+          releases = releases.replace(compile_tail_anchor, compile_tail_replacement, 1)
+
+          releases = releases.replace(
+              '    requiredUserIdModules: snapshot.config.userIdConfig ?? null,',
+              '    requiredUserIdModules: snapshot.config.userIdConfig ?? null,',
+          )
+          config_anchor = '''    userIdConfig: snapshot.config.userIdConfig ?? null,
+    userSync: data.userSync,
+    compiler: { engine: snapshot.profile.engine, patches: compiled.patches, warnings: compiled.warnings, minifier: compiled.minifier },'''
+          config_replacement = '''    userIdConfig: snapshot.config.userIdConfig ?? null,
+    userSync: data.userSync,
+    runtimeControls: snapshot.config.runtimeControls ?? null,
+    requiredRuntimeModules: snapshot.requiredRuntimeModules,
+    compiler: { engine: snapshot.profile.engine, patches: compiled.patches, warnings: compiled.warnings, minifier: compiled.minifier },'''
+          if config_anchor not in releases:
+              raise SystemExit('config snapshot anchor was not found.')
+          releases = releases.replace(config_anchor, config_replacement, 1)
+
+          if releases == original_releases:
+              raise SystemExit('releases.ts was not changed.')
+          releases_path.write_text(releases, encoding='utf-8')
+
+          deploy_path = Path('worker/app-deploy.ts')
+          deploy = deploy_path.read_text(encoding='utf-8')
+          deploy = re.sub(
+              r"const RUNTIME_BUILD = '[^']+';",
+              "const RUNTIME_BUILD = '2026-07-18-runtime-controls-v7';",
+              deploy,
+              count=1,
+          )
+          deploy_path.write_text(deploy, encoding='utf-8')
+
+      - name: Commit refactor
+        shell: bash
+        run: |
+          git config user.name "Prebid Professor Refactor"
+          git config user.email "actions@users.noreply.github.com"
+          git add worker/runtime-compiler.ts worker/releases.ts worker/app-deploy.ts
+          git commit -m "Add clean runtime output, sticky controls and floor compilation"
+          git push origin HEAD:feature/runtime-controls-clean-output
