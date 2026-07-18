@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "python3 .github/scripts/apply_sticky_css_direct.py",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
