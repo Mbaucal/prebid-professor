@@ -8,9 +8,14 @@ import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { getRuntimeControls, updateRuntimeControls } from './runtime-controls';
 import {
-  generateReleaseWithRuntimeControls,
-  validateReleaseWithRuntimeControls,
-} from './runtime-controls-release';
+  getRuntimeIntegrations,
+  updateRuntimeIntegrations,
+} from './runtime-integrations';
+import {
+  generateReleaseWithIntegrations,
+  publishProductionWithConsentGuard,
+  validateReleaseWithIntegrations,
+} from './runtime-integrations-release';
 import {
   applyFlexibleSizeMapCsv,
   createFlexibleSizeMap,
@@ -156,18 +161,42 @@ export default {
       return apiError('Method not allowed.', 405);
     }
 
+    const runtimeIntegrationsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/runtime-integrations$/);
+    if (runtimeIntegrationsMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      const siteId = decodeURIComponent(runtimeIntegrationsMatch[1]);
+      if (request.method === 'GET') return getRuntimeIntegrations(env, siteId);
+      if (request.method === 'PUT') return updateRuntimeIntegrations(verified, env, siteId);
+      return apiError('Method not allowed.', 405);
+    }
+
     const releaseValidateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/validate$/);
     if (releaseValidateMatch && request.method === 'GET') {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return verified;
-      return validateReleaseWithRuntimeControls(env, decodeURIComponent(releaseValidateMatch[1]));
+      return validateReleaseWithIntegrations(env, decodeURIComponent(releaseValidateMatch[1]));
     }
 
     const releaseGenerateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/generate$/);
     if (releaseGenerateMatch && request.method === 'POST') {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return verified;
-      return generateReleaseWithRuntimeControls(verified, env, decodeURIComponent(releaseGenerateMatch[1]));
+      return generateReleaseWithIntegrations(verified, env, decodeURIComponent(releaseGenerateMatch[1]));
+    }
+
+    const productionMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/releases\/([^/]+)\/production$/,
+    );
+    if (productionMatch && request.method === 'POST') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      return publishProductionWithConsentGuard(
+        verified,
+        env,
+        decodeURIComponent(productionMatch[1]),
+        decodeURIComponent(productionMatch[2]),
+      );
     }
 
     return legacyApp.fetch(request, env, ctx);
