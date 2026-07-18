@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ExternalDeploymentsPanel from './ExternalDeploymentsPanel';
+import ReleaseDeleteButton from './ReleaseDeleteButton';
 
 type Props = {
   publisherId: string;
@@ -415,6 +416,17 @@ export default function ReleasesPanel({ publisherId, siteName, onChanged }: Prop
                 <button className="rollback-action" disabled={isBusy || !canRollback} onClick={() => void promote(release, 'rollback')} type="button">
                   Rollback to this
                 </button>
+                <ReleaseDeleteButton
+                  disabled={isBusy}
+                  onDeleted={async (message) => {
+                    await load();
+                    setSuccess(message);
+                    await onChanged?.();
+                  }}
+                  onError={(message) => setError(message || null)}
+                  publisherId={publisherId}
+                  release={release}
+                />
               </div>
             </article>
           );
