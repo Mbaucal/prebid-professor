@@ -9,7 +9,7 @@ import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-18-release-cleanup-v9';
+const RUNTIME_BUILD = '2026-07-18-sticky-css-export-v10';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
