@@ -1,1 +1,1 @@
-Retry the sticky CSS export patch while preserving triple-quoted replacement-string indentation.
+Run the standalone sticky CSS patch script on the refreshed feature branch.
