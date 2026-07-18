@@ -6,10 +6,11 @@ import {
 import baseApp from './app';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
+import { getRuntimeControls, updateRuntimeControls } from './runtime-controls';
 import {
-  generateReleaseForDemandMode,
-  validateReleaseForDemandMode,
-} from './prebid-mode-release';
+  generateReleaseWithRuntimeControls,
+  validateReleaseWithRuntimeControls,
+} from './runtime-controls-release';
 import {
   applyFlexibleSizeMapCsv,
   createFlexibleSizeMap,
@@ -145,18 +146,28 @@ export default {
       return apiError('Method not allowed.', 405);
     }
 
+    const runtimeControlsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/runtime-controls$/);
+    if (runtimeControlsMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      const siteId = decodeURIComponent(runtimeControlsMatch[1]);
+      if (request.method === 'GET') return getRuntimeControls(env, siteId);
+      if (request.method === 'PUT') return updateRuntimeControls(verified, env, siteId);
+      return apiError('Method not allowed.', 405);
+    }
+
     const releaseValidateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/validate$/);
     if (releaseValidateMatch && request.method === 'GET') {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return verified;
-      return validateReleaseForDemandMode(env, decodeURIComponent(releaseValidateMatch[1]));
+      return validateReleaseWithRuntimeControls(env, decodeURIComponent(releaseValidateMatch[1]));
     }
 
     const releaseGenerateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/generate$/);
     if (releaseGenerateMatch && request.method === 'POST') {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return verified;
-      return generateReleaseForDemandMode(verified, env, decodeURIComponent(releaseGenerateMatch[1]));
+      return generateReleaseWithRuntimeControls(verified, env, decodeURIComponent(releaseGenerateMatch[1]));
     }
 
     return legacyApp.fetch(request, env, ctx);

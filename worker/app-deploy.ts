@@ -8,7 +8,7 @@ import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-18-generated-artifact-v6';
+const RUNTIME_BUILD = '2026-07-18-runtime-controls-v7';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -125,10 +125,6 @@ export default {
       return withBuildHeader(apiError('Method not allowed.', 405));
     }
 
-    // Runtime-template compatibility now lives inside runtime-compiler.ts.
-    // Do not proxy R2 reads here: downstream fluid/AdX post-processors read the
-    // generated ads.js back from R2, and rewriting those objects would turn the
-    // real ADS_BUILD_TS back into the template placeholder.
     return withBuildHeader(await downstream.fetch(request, env, ctx));
   },
 } satisfies ExportedHandler<Env>;
