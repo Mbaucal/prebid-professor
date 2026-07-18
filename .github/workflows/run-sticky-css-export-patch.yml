@@ -25,42 +25,64 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import textwrap
 
-          workflow = Path('.github/workflows/apply-sticky-css-export.yml').read_text(encoding='utf-8')
-          step_marker = '      - name: Add sticky CSS release artifact and export UI\n'
-          run_marker = '        run: |\n'
-          end_marker = '      - name: Build\n'
+          workflow_path = Path('.github/workflows/apply-sticky-css-export.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          lines = workflow.splitlines()
 
-          step_start = workflow.find(step_marker)
-          if step_start < 0:
-              raise SystemExit('Sticky CSS patch step was not found in the feature workflow.')
+          step_marker = '      - name: Add sticky CSS release artifact and export UI'
+          run_marker = '        run: |'
+          end_marker = '      - name: Build'
 
-          run_start = workflow.find(run_marker, step_start)
-          if run_start < 0:
-              raise SystemExit('Sticky CSS patch run block was not found.')
-          run_start += len(run_marker)
+          try:
+              step_index = lines.index(step_marker)
+          except ValueError as error:
+              raise SystemExit('Sticky CSS patch step was not found in the feature workflow.') from error
 
-          run_end = workflow.find(end_marker, run_start)
-          if run_end < 0:
-              raise SystemExit('Sticky CSS patch end marker was not found.')
+          try:
+              run_index = next(
+                  index for index in range(step_index + 1, len(lines))
+                  if lines[index] == run_marker
+              )
+          except StopIteration as error:
+              raise SystemExit('Sticky CSS patch run block was not found.') from error
 
-          script = textwrap.dedent(workflow[run_start:run_end]).rstrip() + '\n'
+          try:
+              end_index = next(
+                  index for index in range(run_index + 1, len(lines))
+                  if lines[index] == end_marker
+              )
+          except StopIteration as error:
+              raise SystemExit('Sticky CSS patch end marker was not found.') from error
+
+          yaml_indent = '          '
+          script_lines = []
+          for source_line_number, line in enumerate(lines[run_index + 1:end_index], start=run_index + 2):
+              if not line:
+                  script_lines.append('')
+                  continue
+              if not line.startswith(yaml_indent):
+                  raise SystemExit(
+                      f'Unexpected indentation at workflow line {source_line_number}: {line!r}'
+                  )
+              script_lines.append(line[len(yaml_indent):])
+
+          script = '\n'.join(script_lines).rstrip() + '\n'
           output = Path('/tmp/apply-sticky-css-export.py')
           output.write_text(script, encoding='utf-8')
 
           try:
               compile(script, str(output), 'exec')
           except SyntaxError as error:
-              lines = script.splitlines()
-              start = max(0, (error.lineno or 1) - 4)
-              end = min(len(lines), (error.lineno or 1) + 3)
+              excerpt = script.splitlines()
+              start = max(0, (error.lineno or 1) - 5)
+              end = min(len(excerpt), (error.lineno or 1) + 4)
               print('Extracted patch script has invalid Python syntax:')
               for index in range(start, end):
-                  print(f'{index + 1:04d}: {lines[index]}')
+                  print(f'{index + 1:04d}: {excerpt[index]}')
               raise
 
-          print(f'Extracted {len(script.splitlines())} Python lines.')
+          print(f'Extracted and validated {len(script_lines)} Python lines.')
 
       - name: Apply sticky CSS patch
         run: python /tmp/apply-sticky-css-export.py
