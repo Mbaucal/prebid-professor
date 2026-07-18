@@ -6,11 +6,11 @@ import {
 import baseApp from './app';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
-import {
-  generateReleaseForDemandMode,
-  validateReleaseForDemandMode,
-} from './prebid-mode-release';
 import { getRuntimeControls, updateRuntimeControls } from './runtime-controls';
+import {
+  generateReleaseWithRuntimeControls,
+  validateReleaseWithRuntimeControls,
+} from './runtime-controls-release';
 import {
   applyFlexibleSizeMapCsv,
   createFlexibleSizeMap,
@@ -160,14 +160,14 @@ export default {
     if (releaseValidateMatch && request.method === 'GET') {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return verified;
-      return validateReleaseForDemandMode(env, decodeURIComponent(releaseValidateMatch[1]));
+      return validateReleaseWithRuntimeControls(env, decodeURIComponent(releaseValidateMatch[1]));
     }
 
     const releaseGenerateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/generate$/);
     if (releaseGenerateMatch && request.method === 'POST') {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return verified;
-      return generateReleaseForDemandMode(verified, env, decodeURIComponent(releaseGenerateMatch[1]));
+      return generateReleaseWithRuntimeControls(verified, env, decodeURIComponent(releaseGenerateMatch[1]));
     }
 
     return legacyApp.fetch(request, env, ctx);
