@@ -14,6 +14,7 @@ type RuntimeControls = {
     allowClosePortal: boolean;
   };
   floors: {
+    configured: boolean;
     enabled: boolean;
     currency: string;
     hardFloor: number;
@@ -57,7 +58,8 @@ function numericRecord(value: unknown): JsonRecord {
 function normalizeControls(config: JsonRecord, adUnitCodes: string[]): RuntimeControls {
   const runtime = isRecord(config.runtimeControls) ? config.runtimeControls : {};
   const sticky = isRecord(runtime.sticky) ? runtime.sticky : {};
-  const floors = isRecord(runtime.floors) ? runtime.floors : {};
+  const floorsConfigured = isRecord(runtime.floors);
+  const floors = floorsConfigured ? runtime.floors as JsonRecord : {};
   const output = isRecord(runtime.output) ? runtime.output : {};
   const bottom = typeof sticky.bottomAdUnitId === 'string'
     ? sticky.bottomAdUnitId.trim()
@@ -73,7 +75,8 @@ function normalizeControls(config: JsonRecord, adUnitCodes: string[]): RuntimeCo
       allowClosePortal: sticky.allowClosePortal === true,
     },
     floors: {
-      enabled: floors.enabled !== false,
+      configured: floorsConfigured,
+      enabled: floorsConfigured ? floors.enabled !== false : true,
       currency: /^[A-Z]{3}$/.test(currency) ? currency : 'EUR',
       hardFloor: Number.isFinite(hardFloor) && hardFloor >= 0 ? hardFloor : 0.04,
       bidderFloors: numericRecord(floors.bidderFloors),
@@ -114,6 +117,10 @@ function jsonLiteral(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+function hasVar(source: string, name: string): boolean {
+  return new RegExp(`^\\s*(?:var|let|const)\\s+${escapeRegExp(name)}\\s*=`, 'm').test(source);
+}
+
 function replaceVar(source: string, name: string, value: unknown, required = true): string {
   const pattern = new RegExp(
     `^(\\s*(?:var|let|const)\\s+${escapeRegExp(name)}\\s*=\\s*).*?(;\\s*(?://[^\\r\\n]*)?[\\t ]*)$`,
@@ -127,8 +134,7 @@ function replaceVar(source: string, name: string, value: unknown, required = tru
 }
 
 function ensureVarAfter(source: string, anchorName: string, name: string, value: unknown): string {
-  const existing = new RegExp(`^\\s*(?:var|let|const)\\s+${escapeRegExp(name)}\\s*=`, 'm');
-  if (existing.test(source)) return replaceVar(source, name, value, false);
+  if (hasVar(source, name)) return replaceVar(source, name, value, false);
   const anchor = new RegExp(
     `^(\\s*(?:var|let|const)\\s+${escapeRegExp(anchorName)}\\s*=\\s*.*?;[\\t ]*)$`,
     'm',
@@ -194,19 +200,33 @@ function patchGenericSticky(source: string): string {
 }
 
 function patchFloors(source: string, controls: RuntimeControls): string {
+  // A site that has never saved floor controls keeps the immutable template's
+  // exact legacy behavior. This avoids silently enabling, disabling or
+  // requiring priceFloors for existing configurations.
+  if (!controls.floors.configured) return source;
+
   const enabled = controls.floors.enabled;
   source = replaceVar(source, 'AD_SERVER_CURRENCY', controls.floors.currency, false);
-  source = replaceVar(source, 'HARD_FLOOR_EUR', enabled ? controls.floors.hardFloor : 0, true);
-  source = replaceVar(source, 'BIDDER_FLOORS', enabled ? controls.floors.bidderFloors : {}, true);
-  source = ensureVarAfter(source, 'BIDDER_FLOORS', 'FLOOR_RULES', enabled ? controls.floors.rules : {});
+  source = replaceVar(source, 'HARD_FLOOR_EUR', enabled ? controls.floors.hardFloor : 0, enabled);
+  source = replaceVar(source, 'BIDDER_FLOORS', enabled ? controls.floors.bidderFloors : {}, enabled);
+
+  if (hasVar(source, 'BIDDER_FLOORS')) {
+    source = ensureVarAfter(source, 'BIDDER_FLOORS', 'FLOOR_RULES', enabled ? controls.floors.rules : {});
+  } else if (enabled) {
+    throw new Error('Generated runtime does not contain variable BIDDER_FLOORS.');
+  }
 
   const enabledPattern = /(floors\s*:\s*\{\s*enabled\s*:\s*)(?:true|false)/;
-  if (!enabledPattern.test(source)) throw new Error('Generated runtime floor configuration was not found.');
-  source = source.replace(enabledPattern, `$1${enabled ? 'true' : 'false'}`);
+  if (enabledPattern.test(source)) {
+    source = source.replace(enabledPattern, `$1${enabled ? 'true' : 'false'}`);
+  } else if (enabled) {
+    throw new Error('Generated runtime floor configuration was not found.');
+  }
 
   const extraPattern = /var\s+extra\s*=\s*(?:\/\*[\s\S]*?\*\/\s*)?\{\s*\}\s*;/;
-  if (extraPattern.test(source)) source = source.replace(extraPattern, 'var extra = FLOOR_RULES;');
-  else if (!source.includes('var extra = FLOOR_RULES;')) {
+  if (extraPattern.test(source) && hasVar(source, 'FLOOR_RULES')) {
+    source = source.replace(extraPattern, 'var extra = FLOOR_RULES;');
+  } else if (enabled && !source.includes('var extra = FLOOR_RULES;')) {
     throw new Error('Generated runtime custom floor-rule insertion point was not found.');
   }
   return source;
@@ -376,7 +396,7 @@ export async function validateReleaseWithRuntimeControls(
   }
 
   const errors = Array.isArray(payload.errors) ? [...payload.errors] : [];
-  if (state.prebidEnabled && state.controls.floors.enabled) {
+  if (state.prebidEnabled && state.controls.floors.configured && state.controls.floors.enabled) {
     const modules = await currentPrebidModules(env, siteId);
     if (!modules.includes('priceFloors')) {
       errors.push({
@@ -389,7 +409,9 @@ export async function validateReleaseWithRuntimeControls(
 
   const summary = isRecord(payload.summary) ? payload.summary : {};
   summary.runtimeControls = state.controls;
-  summary.floorModuleRequired = state.prebidEnabled && state.controls.floors.enabled;
+  summary.floorModuleRequired = state.prebidEnabled
+    && state.controls.floors.configured
+    && state.controls.floors.enabled;
   payload.summary = summary;
   payload.errors = errors;
   payload.ok = errors.length === 0;
@@ -410,7 +432,7 @@ export async function generateReleaseWithRuntimeControls(
     return apiError(error instanceof Error ? error.message : 'Runtime controls could not be read.', 422);
   }
 
-  if (state.prebidEnabled && state.controls.floors.enabled) {
+  if (state.prebidEnabled && state.controls.floors.configured && state.controls.floors.enabled) {
     const modules = await currentPrebidModules(env, siteId);
     if (!modules.includes('priceFloors')) {
       return apiError('Current Prebid.js is missing priceFloors while floor enforcement is enabled.', 422);
@@ -449,7 +471,11 @@ export async function generateReleaseWithRuntimeControls(
 
     const config = parseRecord(configSource);
     config.runtimeControls = state.controls;
-    config.requiredRuntimeModules = state.prebidEnabled && state.controls.floors.enabled ? ['priceFloors'] : [];
+    config.requiredRuntimeModules = state.prebidEnabled
+      && state.controls.floors.configured
+      && state.controls.floors.enabled
+      ? ['priceFloors']
+      : [];
     const configText = `${JSON.stringify(config, null, 2)}\n`;
     const configHash = await sha256Hex(configText);
 
@@ -457,7 +483,7 @@ export async function generateReleaseWithRuntimeControls(
     manifest.configHash = configHash;
     addCompilerPatch(manifest, 'clean generated runtime comments and English header');
     addCompilerPatch(manifest, 'generic sticky host selectors');
-    addCompilerPatch(manifest, 'runtime floor controls');
+    if (state.controls.floors.configured) addCompilerPatch(manifest, 'runtime floor controls');
 
     const files = isRecord(manifest.files) ? manifest.files : {};
     const metadata = { siteId, releaseId, version, runtimeControls: 'v1' };
