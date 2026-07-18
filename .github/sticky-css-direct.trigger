@@ -1,1 +1,1 @@
-Apply the sticky CSS release artifact directly to TypeScript and React source.
+Apply the validated sticky CSS release artifact patch and commit the resulting TypeScript and React source.
