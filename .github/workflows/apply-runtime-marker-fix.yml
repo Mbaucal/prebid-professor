@@ -1,0 +1,67 @@
+name: Apply runtime compiler marker fix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/runtime-compiler-marker-fix.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Make ADS_BUILD_TS normalization part of the compiler
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('worker/runtime-compiler.ts')
+          source = path.read_text(encoding='utf-8')
+          original = source
+
+          helper = '''function ensureRuntimeBuildMarker(source: string): string {
+            // Release metadata must never depend on how an older frozen template
+            // spelled or omitted its build marker. This runs on the in-memory
+            // template only; the immutable R2 object and its hash stay unchanged.
+            if (/^\\s*window\\.ADS_BUILD_TS\\s*=.*;\\s*$/m.test(source)) return source;
+            return `window.ADS_BUILD_TS = "__PP_TEMPLATE_BUILD__";\\n${source}`;
+          }'''
+
+          anchor = 'function compactSafely(source: string): string {'
+          if 'function ensureRuntimeBuildMarker(' not in source:
+            if anchor not in source:
+              raise SystemExit('compactSafely anchor was not found.')
+            source = source.replace(anchor, helper + '\n\n' + anchor, 1)
+
+          old = "  let source = input.template.replace(/^\\uFEFF/, '');"
+          new = "  let source = ensureRuntimeBuildMarker(input.template.replace(/^\\uFEFF/, ''));"
+          if old in source:
+            source = source.replace(old, new, 1)
+          elif new not in source:
+            raise SystemExit('compileRuntime template initialization was not found.')
+
+          if source != original:
+            path.write_text(source, encoding='utf-8')
+
+      - name: Commit the repair
+        shell: bash
+        run: |
+          if git diff --quiet -- worker/runtime-compiler.ts; then
+            echo "Runtime compiler is already patched."
+            exit 0
+          fi
+          git config user.name "Prebid Professor Build Fix"
+          git config user.email "actions@users.noreply.github.com"
+          git add worker/runtime-compiler.ts
+          git commit -m "Normalize ADS_BUILD_TS inside runtime compiler"
+          git push origin HEAD:main
