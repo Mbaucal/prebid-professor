@@ -20,8 +20,11 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Apply sticky CSS source integration
+        run: python3 .github/scripts/apply_sticky_css_direct.py
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Build
-        run: npm run build
+      - name: Build patched source
+        run: npm run --ignore-scripts build
