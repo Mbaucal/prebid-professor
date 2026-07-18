@@ -1,6 +1,7 @@
 name: Run sticky CSS export patch
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
