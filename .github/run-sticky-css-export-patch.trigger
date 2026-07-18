@@ -1,1 +1,1 @@
-Retry the sticky CSS export patch with exact YAML indentation stripping.
+Retry the sticky CSS export patch while preserving triple-quoted replacement-string indentation.
