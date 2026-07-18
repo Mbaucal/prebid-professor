@@ -337,6 +337,14 @@ function patchGlobalRefresh(
   return source;
 }
 
+function ensureRuntimeBuildMarker(source: string): string {
+  // Release metadata must never depend on how an older frozen template
+  // spelled or omitted its build marker. This runs on the in-memory
+  // template only; the immutable R2 object and its hash stay unchanged.
+  if (/^\s*window\.ADS_BUILD_TS\s*=.*;\s*$/m.test(source)) return source;
+  return `window.ADS_BUILD_TS = "__PP_TEMPLATE_BUILD__";\n${source}`;
+}
+
 function compactSafely(source: string): string {
   const output: string[] = [];
   let previousBlank = false;
@@ -353,7 +361,7 @@ function compactSafely(source: string): string {
 export function compileRuntime(input: RuntimeCompileInput): RuntimeCompileResult {
   const patches: string[] = [];
   const warnings: string[] = [];
-  let source = input.template.replace(/^\uFEFF/, '');
+  let source = ensureRuntimeBuildMarker(input.template.replace(/^\uFEFF/, ''));
 
   source = replaceWindowAssignment(source, 'ADS_BUILD_TS', input.buildVersion, patches);
   source = patchMetadata(source, input, patches);
