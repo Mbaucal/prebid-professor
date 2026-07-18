@@ -8,7 +8,7 @@ import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-18-runtime-controls-v7';
+const RUNTIME_BUILD = '2026-07-18-supply-consent-v8';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
