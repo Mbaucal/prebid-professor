@@ -21,17 +21,49 @@ jobs:
           ref: feature/sticky-css-export
           fetch-depth: 0
 
-      - name: Extract and run branch patch
-        shell: bash
+      - name: Extract branch patch safely
+        shell: python
         run: |
-          set -euo pipefail
-          awk '
-            /- name: Add sticky CSS release artifact and export UI/ { section=1; next }
-            section && /run: \|/ { capture=1; next }
-            capture && /^      - name: Build/ { exit }
-            capture { sub(/^          /, ""); print }
-          ' .github/workflows/apply-sticky-css-export.yml > /tmp/apply-sticky-css-export.py
-          python /tmp/apply-sticky-css-export.py
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/apply-sticky-css-export.yml').read_text(encoding='utf-8')
+          step_marker = '      - name: Add sticky CSS release artifact and export UI\n'
+          run_marker = '        run: |\n'
+          end_marker = '      - name: Build\n'
+
+          step_start = workflow.find(step_marker)
+          if step_start < 0:
+              raise SystemExit('Sticky CSS patch step was not found in the feature workflow.')
+
+          run_start = workflow.find(run_marker, step_start)
+          if run_start < 0:
+              raise SystemExit('Sticky CSS patch run block was not found.')
+          run_start += len(run_marker)
+
+          run_end = workflow.find(end_marker, run_start)
+          if run_end < 0:
+              raise SystemExit('Sticky CSS patch end marker was not found.')
+
+          script = textwrap.dedent(workflow[run_start:run_end]).rstrip() + '\n'
+          output = Path('/tmp/apply-sticky-css-export.py')
+          output.write_text(script, encoding='utf-8')
+
+          try:
+              compile(script, str(output), 'exec')
+          except SyntaxError as error:
+              lines = script.splitlines()
+              start = max(0, (error.lineno or 1) - 4)
+              end = min(len(lines), (error.lineno or 1) + 3)
+              print('Extracted patch script has invalid Python syntax:')
+              for index in range(start, end):
+                  print(f'{index + 1:04d}: {lines[index]}')
+              raise
+
+          print(f'Extracted {len(script.splitlines())} Python lines.')
+
+      - name: Apply sticky CSS patch
+        run: python /tmp/apply-sticky-css-export.py
 
       - name: Build
         run: npm run build
