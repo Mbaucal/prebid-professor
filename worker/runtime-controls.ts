@@ -10,6 +10,7 @@ type RuntimeControls = {
     allowClosePortal: boolean;
   };
   floors: {
+    configured: boolean;
     enabled: boolean;
     currency: string;
     hardFloor: number;
@@ -67,7 +68,8 @@ function nullableString(value: unknown): string | null {
 function controlsFromConfig(config: JsonRecord, adUnitCodes: string[]): RuntimeControls {
   const runtime = isRecord(config.runtimeControls) ? config.runtimeControls : {};
   const sticky = isRecord(runtime.sticky) ? runtime.sticky : {};
-  const floors = isRecord(runtime.floors) ? runtime.floors : {};
+  const floorsConfigured = isRecord(runtime.floors);
+  const floors = floorsConfigured ? runtime.floors as JsonRecord : {};
   const output = isRecord(runtime.output) ? runtime.output : {};
   const defaultBottom = adUnitCodes.includes('Sticky') ? 'Sticky' : null;
 
@@ -78,7 +80,11 @@ function controlsFromConfig(config: JsonRecord, adUnitCodes: string[]): RuntimeC
       allowClosePortal: sticky.allowClosePortal === true,
     },
     floors: {
-      enabled: floors.enabled !== false,
+      configured: floorsConfigured,
+      // Existing legacy templates already enforce 0.04 EUR. Until the admin
+      // saves this panel, expose that legacy value without making validation
+      // depend on the optional priceFloors module.
+      enabled: floorsConfigured ? floors.enabled !== false : true,
       currency: /^[A-Z]{3}$/.test(String(floors.currency ?? '').toUpperCase())
         ? String(floors.currency).toUpperCase()
         : 'EUR',
@@ -171,6 +177,7 @@ function validateControls(body: JsonRecord, adUnitCodes: Set<string>): RuntimeCo
       allowClosePortal: stickyInput.allowClosePortal === true,
     },
     floors: {
+      configured: true,
       enabled: floorsInput.enabled !== false,
       currency,
       hardFloor,
