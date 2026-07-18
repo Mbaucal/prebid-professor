@@ -57,15 +57,11 @@ jobs:
 
           yaml_indent = '          '
           script_lines = []
-          for source_line_number, line in enumerate(lines[run_index + 1:end_index], start=run_index + 2):
-              if not line:
-                  script_lines.append('')
-                  continue
-              if not line.startswith(yaml_indent):
-                  raise SystemExit(
-                      f'Unexpected indentation at workflow line {source_line_number}: {line!r}'
-                  )
-              script_lines.append(line[len(yaml_indent):])
+          for line in lines[run_index + 1:end_index]:
+              # Python statements in the YAML block carry ten spaces. Lines inside
+              # Python triple-quoted replacement strings intentionally have their
+              # own indentation and must be preserved exactly.
+              script_lines.append(line[len(yaml_indent):] if line.startswith(yaml_indent) else line)
 
           script = '\n'.join(script_lines).rstrip() + '\n'
           output = Path('/tmp/apply-sticky-css-export.py')
