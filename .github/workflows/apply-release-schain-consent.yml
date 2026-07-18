@@ -1,0 +1,667 @@
+name: Apply release cleanup, SChain and consent controls
+
+on:
+  push:
+    branches:
+      - feature/release-cleanup-schain-consent-test
+    paths:
+      - .github/release-schain-consent.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/release-cleanup-schain-consent-test
+          fetch-depth: 0
+
+      - name: Patch release and runtime workflows
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              if old not in source:
+                  raise SystemExit(f'{label} anchor was not found.')
+              return source.replace(old, new, 1)
+
+          # Config navigation
+          path = Path('src/components/ConfigPanel.tsx')
+          source = path.read_text(encoding='utf-8')
+          source = replace_once(
+              source,
+              "import RuntimeControlsPanel from './RuntimeControlsPanel';\n",
+              "import RuntimeControlsPanel from './RuntimeControlsPanel';\nimport SupplyChainConsentPanel from './SupplyChainConsentPanel';\n",
+              'ConfigPanel import',
+          )
+          source = replace_once(
+              source,
+              "  | 'runtime-controls'\n  | 'user-id'",
+              "  | 'runtime-controls'\n  | 'supply-consent'\n  | 'user-id'",
+              'ConfigPanel section type',
+          )
+          source = replace_once(
+              source,
+              '''        <button className={section === 'runtime-controls' ? 'active' : ''} onClick={() => setSection('runtime-controls')} type="button">
+          Runtime controls
+        </button>
+''',
+              '''        <button className={section === 'runtime-controls' ? 'active' : ''} onClick={() => setSection('runtime-controls')} type="button">
+          Runtime controls
+        </button>
+        <button className={section === 'supply-consent' ? 'active' : ''} onClick={() => setSection('supply-consent')} type="button">
+          Supply & consent
+        </button>
+''',
+              'ConfigPanel nav',
+          )
+          source = replace_once(
+              source,
+              "      {section === 'runtime-controls' ? <RuntimeControlsPanel onChanged={onChanged} publisherId={publisherId} /> : null}\n      {section === 'user-id'",
+              "      {section === 'runtime-controls' ? <RuntimeControlsPanel onChanged={onChanged} publisherId={publisherId} /> : null}\n      {section === 'supply-consent' ? <SupplyChainConsentPanel onChanged={onChanged} publisherId={publisherId} /> : null}\n      {section === 'user-id'",
+              'ConfigPanel render',
+          )
+          path.write_text(source, encoding='utf-8')
+
+          # CSS import
+          path = Path('src/main.tsx')
+          source = path.read_text(encoding='utf-8')
+          source = replace_once(
+              source,
+              "import './runtime-controls.css';\n",
+              "import './runtime-controls.css';\nimport './supply-chain-consent.css';\n",
+              'main CSS import',
+          )
+          path.write_text(source, encoding='utf-8')
+
+          # Runtime-control release post-processing
+          path = Path('worker/runtime-controls-release.ts')
+          source = path.read_text(encoding='utf-8')
+          source = replace_once(
+              source,
+              '''  floors: {
+    configured: boolean;
+    enabled: boolean;
+    currency: string;
+    hardFloor: number;
+    bidderFloors: JsonRecord;
+    rules: JsonRecord;
+  };
+  output: {''',
+              '''  floors: {
+    configured: boolean;
+    enabled: boolean;
+    currency: string;
+    hardFloor: number;
+    bidderFloors: JsonRecord;
+    rules: JsonRecord;
+  };
+  schain: {
+    configured: boolean;
+    enabled: boolean;
+    version: string;
+    complete: 0 | 1;
+    nodes: JsonRecord[];
+  };
+  consent: {
+    mode: 'cmp' | 'contextual-test';
+  };
+  output: {''',
+              'RuntimeControls type',
+          )
+          source = replace_once(
+              source,
+              '''  const floorsConfigured = isRecord(runtime.floors);
+  const floors = floorsConfigured ? runtime.floors as JsonRecord : {};
+  const output = isRecord(runtime.output) ? runtime.output : {};''',
+              '''  const floorsConfigured = isRecord(runtime.floors);
+  const floors = floorsConfigured ? runtime.floors as JsonRecord : {};
+  const schainConfigured = isRecord(runtime.schain);
+  const schain = schainConfigured ? runtime.schain as JsonRecord : {};
+  const consent = isRecord(runtime.consent) ? runtime.consent : {};
+  const output = isRecord(runtime.output) ? runtime.output : {};''',
+              'normalizeControls declarations',
+          )
+          source = replace_once(
+              source,
+              '''    floors: {
+      configured: floorsConfigured,
+      enabled: floorsConfigured ? floors.enabled !== false : true,
+      currency: /^[A-Z]{3}$/.test(currency) ? currency : 'EUR',
+      hardFloor: Number.isFinite(hardFloor) && hardFloor >= 0 ? hardFloor : 0.04,
+      bidderFloors: numericRecord(floors.bidderFloors),
+      rules: numericRecord(floors.rules),
+    },
+    output: {''',
+              '''    floors: {
+      configured: floorsConfigured,
+      enabled: floorsConfigured ? floors.enabled !== false : true,
+      currency: /^[A-Z]{3}$/.test(currency) ? currency : 'EUR',
+      hardFloor: Number.isFinite(hardFloor) && hardFloor >= 0 ? hardFloor : 0.04,
+      bidderFloors: numericRecord(floors.bidderFloors),
+      rules: numericRecord(floors.rules),
+    },
+    schain: {
+      configured: schainConfigured,
+      enabled: schainConfigured ? schain.enabled !== false : true,
+      version: /^\\d+\\.\\d+$/.test(String(schain.version ?? '')) ? String(schain.version) : '1.0',
+      complete: Number(schain.complete) === 0 ? 0 : 1,
+      nodes: Array.isArray(schain.nodes)
+        ? schain.nodes.filter((node): node is JsonRecord => isRecord(node))
+        : [],
+    },
+    consent: {
+      mode: consent.mode === 'contextual-test' ? 'contextual-test' : 'cmp',
+    },
+    output: {''',
+              'normalizeControls result',
+          )
+          helper_anchor = 'function stripTrailingLineComment(line: string): string {'
+          helpers = r'''function patchSchain(source: string, controls: RuntimeControls): string {
+  if (!controls.schain.configured) return source;
+
+  const schainConfig = controls.schain.enabled
+    ? {
+        ver: controls.schain.version,
+        complete: controls.schain.complete,
+        nodes: controls.schain.nodes,
+      }
+    : null;
+  source = replaceVar(source, 'SCHAIN_CONFIG', schainConfig, true);
+
+  const ortbPattern = /ortb2\s*:\s*\{\s*source\s*:\s*\{\s*schain\s*:\s*SCHAIN_CONFIG\s*\}\s*\}\s*,/;
+  const conditional = 'ortb2: SCHAIN_CONFIG ? { source: { schain: SCHAIN_CONFIG } } : {},';
+  if (ortbPattern.test(source)) return source.replace(ortbPattern, conditional);
+  if (source.includes(conditional)) return source;
+  throw new Error('Generated runtime SChain insertion point was not found.');
+}
+
+function patchConsent(source: string, controls: RuntimeControls): string {
+  source = ensureVarAfter(source, 'SCHAIN_CONFIG', 'CMP_MODE', controls.consent.mode);
+
+  const resolvePattern = /(function\s+resolveConsent\(cb(?:,\s*timeoutMs)?\)\s*\{)/;
+  if (!source.includes('test:contextual-no-cmp')) {
+    if (!resolvePattern.test(source)) throw new Error('Generated runtime consent resolver was not found.');
+    source = source.replace(
+      resolvePattern,
+      '$1\n    if (CMP_MODE === "contextual-test") { cb({p:false,src:"test:contextual-no-cmp"}); return; }',
+    );
+  }
+
+  if (!source.includes('CMP_MODE === "contextual-test") gdprConsentConfig')) {
+    const configAnchor = /(\n\s*try\{\s*\n\s*pbjs\.setConfig\(\{)/;
+    if (!configAnchor.test(source)) throw new Error('Generated runtime Prebid configuration anchor was not found.');
+    source = source.replace(
+      configAnchor,
+      '\n      if (CMP_MODE === "contextual-test") gdprConsentConfig = { enabled: false };\n$1',
+    );
+  }
+
+  if (!source.includes('deviceAccess: CMP_MODE !== "contextual-test"')) {
+    const debugPattern = /(debug\s*:\s*false\s*,)/;
+    if (!debugPattern.test(source)) throw new Error('Generated runtime Prebid debug setting was not found.');
+    source = source.replace(debugPattern, '$1\n        deviceAccess: CMP_MODE !== "contextual-test",');
+  }
+
+  source = source.replace(/syncEnabled\s*:\s*true\s*,/, 'syncEnabled: CMP_MODE !== "contextual-test",');
+  source = source.replace(/userIds\s*:\s*userIds\s*,/, 'userIds: CMP_MODE === "contextual-test" ? [] : userIds,');
+
+  const existing = /^\s*window\.ADOPS_CONSENT_MODE\s*=/m;
+  if (existing.test(source)) {
+    source = replaceWindowValue(source, 'ADOPS_CONSENT_MODE', controls.consent.mode);
+  } else {
+    const marker = /^(\s*window\.ADOPS_GENERATOR_PROFILE_VERSION\s*=\s*[^;]+;[\t ]*)$/m;
+    if (marker.test(source)) {
+      source = source.replace(marker, `$1\n      window.ADOPS_CONSENT_MODE = ${jsonLiteral(controls.consent.mode)};`);
+    }
+  }
+  return source;
+}
+
+'''
+          if helper_anchor not in source:
+              raise SystemExit('runtime-controls helper anchor was not found.')
+          source = source.replace(helper_anchor, helpers + helper_anchor, 1)
+          source = replace_once(
+              source,
+              '''  source = patchGenericSticky(source);
+  source = patchFloors(source, controls);
+  source = ensureWindowMetadata(source, profileId, profileVersion);''',
+              '''  source = patchGenericSticky(source);
+  source = patchFloors(source, controls);
+  source = patchSchain(source, controls);
+  source = ensureWindowMetadata(source, profileId, profileVersion);
+  source = patchConsent(source, controls);''',
+              'patchRuntime pipeline',
+          )
+          source = replace_once(
+              source,
+              '''  const errors = Array.isArray(payload.errors) ? [...payload.errors] : [];
+  if (state.prebidEnabled''',
+              '''  const errors = Array.isArray(payload.errors) ? [...payload.errors] : [];
+  const warnings = Array.isArray(payload.warnings) ? [...payload.warnings] : [];
+  if (state.controls.consent.mode === 'contextual-test') {
+    warnings.push({
+      code: 'contextual_test_mode',
+      area: 'consent',
+      message: 'Contextual no-CMP test mode is enabled. The release may be used on staging but cannot be published to production.',
+    });
+  }
+  if (state.prebidEnabled''',
+              'runtime validation warnings',
+          )
+          source = replace_once(
+              source,
+              '''  summary.runtimeControls = state.controls;
+  summary.floorModuleRequired = state.prebidEnabled''',
+              '''  summary.runtimeControls = state.controls;
+  summary.schainEnabled = state.controls.schain.configured ? state.controls.schain.enabled : 'template-default';
+  summary.consentMode = state.controls.consent.mode;
+  summary.floorModuleRequired = state.prebidEnabled''',
+              'runtime validation summary',
+          )
+          source = replace_once(
+              source,
+              '''  payload.summary = summary;
+  payload.errors = errors;
+  payload.ok = errors.length === 0;''',
+              '''  payload.summary = summary;
+  payload.errors = errors;
+  payload.warnings = warnings;
+  payload.ok = errors.length === 0;''',
+              'runtime validation payload',
+          )
+          source = replace_once(
+              source,
+              '''    addCompilerPatch(manifest, 'generic sticky host selectors');
+    if (state.controls.floors.configured) addCompilerPatch(manifest, 'runtime floor controls');''',
+              '''    addCompilerPatch(manifest, 'generic sticky host selectors');
+    if (state.controls.floors.configured) addCompilerPatch(manifest, 'runtime floor controls');
+    if (state.controls.schain.configured) addCompilerPatch(manifest, 'site-level OpenRTB SupplyChain controls');
+    addCompilerPatch(manifest, `consent mode: ${state.controls.consent.mode}`);''',
+              'runtime compiler manifest patches',
+          )
+          source = source.replace("runtimeControls: 'v1'", "runtimeControls: 'v2'", 1)
+          path.write_text(source, encoding='utf-8')
+
+          # Release deletion and production guard
+          path = Path('worker/releases.ts')
+          source = path.read_text(encoding='utf-8')
+          source = replace_once(
+              source,
+              '''async function deletePrefix(bucket: R2Bucket, prefix: string): Promise<void> {
+  let cursor: string | undefined;
+  do {
+    const page = await bucket.list({ prefix, cursor });
+    if (page.objects.length) await bucket.delete(page.objects.map((object) => object.key));
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+}
+''',
+              '''async function deletePrefix(bucket: R2Bucket, prefix: string): Promise<void> {
+  let cursor: string | undefined;
+  do {
+    const page = await bucket.list({ prefix, cursor });
+    if (page.objects.length) await bucket.delete(page.objects.map((object) => object.key));
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+}
+
+async function prefixStorage(bucket: R2Bucket, prefix: string): Promise<{ objects: number; bytes: number }> {
+  let cursor: string | undefined;
+  let objects = 0;
+  let bytes = 0;
+  do {
+    const page = await bucket.list({ prefix, cursor });
+    objects += page.objects.length;
+    bytes += page.objects.reduce((total, object) => total + Number(object.size || 0), 0);
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return { objects, bytes };
+}
+''',
+              'release prefix helpers',
+          )
+          promote_anchor = '''async function promote(request: Request, env: ReleaseEnv, siteId: string, releaseId: string, channel: 'staging' | 'production', rollback: boolean): Promise<Response> {'''
+          guard_helpers = r'''async function releaseConsentMode(env: ReleaseEnv, release: ReleaseRow): Promise<string> {
+  if (!env.BUILDS || !release.config_key) return 'cmp';
+  const object = await env.BUILDS.get(release.config_key);
+  if (!object) return 'cmp';
+  try {
+    const config = JSON.parse(await object.text()) as unknown;
+    if (!isRecord(config)) return 'cmp';
+    const runtime = isRecord(config.runtimeControls) ? config.runtimeControls : {};
+    const consent = isRecord(runtime.consent) ? runtime.consent : {};
+    return consent.mode === 'contextual-test' ? 'contextual-test' : 'cmp';
+  } catch {
+    return 'cmp';
+  }
+}
+
+export async function deleteRelease(
+  request: Request,
+  env: ReleaseEnv,
+  siteId: string,
+  releaseId: string,
+): Promise<Response> {
+  if (!env.DB) return databaseMissing();
+  if (!env.BUILDS) return storageMissing();
+  const release = await fetchRelease(env.DB, siteId, releaseId);
+  if (!release) return apiError('Release not found.', 404);
+  if (release.status === 'production' || release.status === 'staging') {
+    return apiError('Production and staging releases must be replaced before they can be deleted.', 409);
+  }
+
+  const publisher = await env.DB.prepare('SELECT current_release_id FROM publishers WHERE id = ? LIMIT 1')
+    .bind(siteId)
+    .first<{ current_release_id: string | null }>();
+  if (publisher?.current_release_id === releaseId) {
+    return apiError('The current production release cannot be deleted.', 409);
+  }
+
+  const prefix = releasePrefix(siteId, release.version);
+  let storage = { objects: 0, bytes: 0 };
+  try {
+    storage = await prefixStorage(env.BUILDS, prefix);
+    await deletePrefix(env.BUILDS, prefix);
+  } catch (error) {
+    return apiError('Release artifacts could not be deleted from R2.', 500, error instanceof Error ? error.message : String(error));
+  }
+
+  const actor = getActor(request);
+  const now = new Date().toISOString();
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO audit_log (
+        id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
+      ) VALUES (?, ?, 'release.deleted', ?, 'release', ?, ?, ?)`) 
+        .bind(
+          crypto.randomUUID(),
+          actor,
+          siteId,
+          releaseId,
+          JSON.stringify({ version: release.version, status: release.status, ...storage }),
+          now,
+        ),
+      env.DB.prepare('DELETE FROM external_deployments WHERE release_id = ?').bind(releaseId),
+      env.DB.prepare('DELETE FROM releases WHERE publisher_id = ? AND id = ?').bind(siteId, releaseId),
+    ]);
+  } catch (error) {
+    return apiError(
+      'R2 artifacts were removed, but release metadata could not be deleted. Retry the deletion.',
+      500,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  return json({
+    ok: true,
+    deleted: {
+      id: releaseId,
+      version: release.version,
+      status: release.status,
+      objectsDeleted: storage.objects,
+      bytesFreed: storage.bytes,
+    },
+  });
+}
+
+'''
+          if promote_anchor not in source:
+              raise SystemExit('promote anchor was not found.')
+          source = source.replace(promote_anchor, guard_helpers + promote_anchor, 1)
+          source = replace_once(
+              source,
+              '''  if (release.status === 'failed') return apiError('Failed releases cannot be promoted.', 409);
+  if (channel === 'staging' && release.status === 'production') return apiError('The current production release does not need staging promotion.', 409);
+  try {''',
+              '''  if (release.status === 'failed') return apiError('Failed releases cannot be promoted.', 409);
+  if (channel === 'staging' && release.status === 'production') return apiError('The current production release does not need staging promotion.', 409);
+  if (channel === 'production' && await releaseConsentMode(env, release) === 'contextual-test') {
+    return apiError(
+      'Contextual no-CMP test mode cannot be published to production. Switch back to Standard CMP mode and generate a new release.',
+      409,
+    );
+  }
+  try {''',
+              'production consent guard',
+          )
+          path.write_text(source, encoding='utf-8')
+
+          # Active compatibility router
+          path = Path('worker/app-compat.ts')
+          source = path.read_text(encoding='utf-8')
+          source = replace_once(
+              source,
+              "import { getRuntimeControls, updateRuntimeControls } from './runtime-controls';\n",
+              "import { getRuntimeControls, updateRuntimeControls } from './runtime-controls';\nimport { getRuntimeIntegrations, updateRuntimeIntegrations } from './runtime-integrations';\n",
+              'app-compat integrations import',
+          )
+          source = replace_once(
+              source,
+              "import type { ReleaseEnv } from './releases';",
+              "import { deleteRelease, type ReleaseEnv } from './releases';",
+              'app-compat release import',
+          )
+          source = replace_once(
+              source,
+              '''    const releaseValidateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/validate$/);''',
+              '''    const runtimeIntegrationsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/runtime-integrations$/);
+    if (runtimeIntegrationsMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      const siteId = decodeURIComponent(runtimeIntegrationsMatch[1]);
+      if (request.method === 'GET') return getRuntimeIntegrations(env, siteId);
+      if (request.method === 'PUT') return updateRuntimeIntegrations(verified, env, siteId);
+      return apiError('Method not allowed.', 405);
+    }
+
+    const releaseDeleteMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/([^/]+)$/);
+    if (releaseDeleteMatch && request.method === 'DELETE') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      return deleteRelease(
+        verified,
+        env,
+        decodeURIComponent(releaseDeleteMatch[1]),
+        decodeURIComponent(releaseDeleteMatch[2]),
+      );
+    }
+
+    const releaseValidateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/validate$/);''',
+              'app-compat integration routes',
+          )
+          path.write_text(source, encoding='utf-8')
+
+          # Legacy router completeness
+          path = Path('worker/app.ts')
+          source = path.read_text(encoding='utf-8')
+          source = source.replace(
+              '  generateRelease,\n  listReleases,',
+              '  deleteRelease,\n  generateRelease,\n  listReleases,',
+              1,
+          )
+          source = replace_once(
+              source,
+              '''    const releasesMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases$/);''',
+              '''    const releaseDeleteMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/([^/]+)$/);
+    if (releaseDeleteMatch && request.method === 'DELETE') {
+      return deleteRelease(
+        authenticatedRequest,
+        env,
+        decodeURIComponent(releaseDeleteMatch[1]),
+        decodeURIComponent(releaseDeleteMatch[2]),
+      );
+    }
+
+    const releasesMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases$/);''',
+              'app delete route',
+          )
+          path.write_text(source, encoding='utf-8')
+
+          # Release UI
+          path = Path('src/components/ReleasesPanel.tsx')
+          source = path.read_text(encoding='utf-8')
+          source = replace_once(
+              source,
+              '''type ReleasePayload = {
+  ok: true;
+  release: Release | null;
+};
+''',
+              '''type ReleasePayload = {
+  ok: true;
+  release: Release | null;
+};
+
+type DeleteReleasePayload = {
+  ok: true;
+  deleted: {
+    id: string;
+    version: string;
+    status: ReleaseStatus;
+    objectsDeleted: number;
+    bytesFreed: number;
+  };
+};
+''',
+              'release delete payload type',
+          )
+          source = replace_once(
+              source,
+              '''function shortHash(value: string | null): string {
+  if (!value) return '—';
+  return value.length > 14 ? `${value.slice(0, 12)}…` : value;
+}
+''',
+              '''function shortHash(value: string | null): string {
+  if (!value) return '—';
+  return value.length > 14 ? `${value.slice(0, 12)}…` : value;
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = value;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size >= 10 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`;
+}
+''',
+              'release formatBytes',
+          )
+          delete_anchor = '''  async function copyUrl(value: string, label: string) {'''
+          delete_function = '''  async function removeRelease(release: Release) {
+    if (release.status === 'production' || release.status === 'staging') return;
+    const confirmation = window.prompt(
+      `Delete release ${release.version} permanently?\n\nThis removes its immutable R2 files, D1 release row and external deployment history. Type the exact version to continue.`,
+    );
+    if (confirmation !== release.version) return;
+
+    setBusyReleaseId(release.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      const payload = await requestJson<DeleteReleasePayload>(
+        `/api/publishers/${encodeURIComponent(publisherId)}/releases/${encodeURIComponent(release.id)}`,
+        { method: 'DELETE' },
+      );
+      setSuccess(
+        `Deleted ${payload.deleted.version}: ${payload.deleted.objectsDeleted} object(s), ${formatBytes(payload.deleted.bytesFreed)} freed.`,
+      );
+      await load();
+      await onChanged?.();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Release deletion failed.');
+    } finally {
+      setBusyReleaseId(null);
+    }
+  }
+
+'''
+          if delete_anchor not in source:
+              raise SystemExit('release UI delete anchor was not found.')
+          source = source.replace(delete_anchor, delete_function + delete_anchor, 1)
+          source = replace_once(
+              source,
+              '''          const canRollback = release.status === 'archived';
+          return (''',
+              '''          const canRollback = release.status === 'archived';
+          const canDelete = release.status !== 'production' && release.status !== 'staging';
+          return (''',
+              'release canDelete',
+          )
+          source = replace_once(
+              source,
+              '''                <button className="rollback-action" disabled={isBusy || !canRollback} onClick={() => void promote(release, 'rollback')} type="button">
+                  Rollback to this
+                </button>
+''',
+              '''                <button className="rollback-action" disabled={isBusy || !canRollback} onClick={() => void promote(release, 'rollback')} type="button">
+                  Rollback to this
+                </button>
+                <button className="delete-release-action" disabled={isBusy || !canDelete} onClick={() => void removeRelease(release)} type="button">
+                  Delete release
+                </button>
+''',
+              'release delete button',
+          )
+          path.write_text(source, encoding='utf-8')
+
+          # Release deletion styling
+          path = Path('src/releases.css')
+          source = path.read_text(encoding='utf-8')
+          source = replace_once(
+              source,
+              '''.release-actions .rollback-action {
+  border-color: #d3b7e8;
+  color: #6e3b91;
+  background: #f7effd;
+}
+''',
+              '''.release-actions .rollback-action {
+  border-color: #d3b7e8;
+  color: #6e3b91;
+  background: #f7effd;
+}
+
+.release-actions .delete-release-action {
+  border-color: #efb5b8;
+  color: #9a3339;
+  background: #fff0f1;
+}
+
+.release-actions .delete-release-action:hover {
+  border-color: #d8676e;
+  color: #7c242a;
+}
+''',
+              'release delete styling',
+          )
+          path.write_text(source, encoding='utf-8')
+
+          # Build marker
+          path = Path('worker/app-deploy.ts')
+          source = path.read_text(encoding='utf-8')
+          source = source.replace(
+              "const RUNTIME_BUILD = '2026-07-18-runtime-controls-v7';",
+              "const RUNTIME_BUILD = '2026-07-18-release-cleanup-schain-consent-v8';",
+              1,
+          )
+          path.write_text(source, encoding='utf-8')
+
+      - name: Commit changes
+        run: |
+          git config user.name "Prebid Professor Feature Builder"
+          git config user.email "actions@users.noreply.github.com"
+          git add worker src
+          git commit -m "Add release deletion, SChain controls and contextual CMP testing"
+          git push origin HEAD:feature/release-cleanup-schain-consent-test
