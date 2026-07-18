@@ -23,7 +23,7 @@ jobs:
       - name: Apply sticky CSS source integration
         id: patch
         continue-on-error: true
-        run: python3 .github/scripts/apply_sticky_css_direct.py > sticky-css-patch.log 2>&1
+        run: python3 .github/scripts/apply_sticky_css_direct_v2.py > sticky-css-patch.log 2>&1
 
       - name: Upload patch diagnostics
         if: always()
