@@ -5,40 +5,28 @@ type Props = {
   onChanged?: () => void | Promise<void>;
 };
 
-type AdUnitReference = {
-  code: string;
-  type: string;
-  enabled: boolean;
-};
-
-type BidderReference = {
-  bidder: string;
-  enabled: boolean;
-};
-
-type RuntimeControls = {
-  sticky: {
-    bottomAdUnitId: string | null;
-    topAdUnitId: string | null;
-    allowClosePortal: boolean;
-  };
-  floors: {
-    enabled: boolean;
-    currency: string;
-    hardFloor: number;
-    bidderFloors: Record<string, number>;
-    rules: Record<string, number>;
-  };
-  output: {
-    cleanComments: boolean;
-  };
-};
-
 type RuntimeControlsPayload = {
   ok: true;
-  controls: RuntimeControls;
-  adUnits: AdUnitReference[];
-  bidders: BidderReference[];
+  controls: {
+    sticky: {
+      bottomAdUnitId: string | null;
+      topAdUnitId: string | null;
+      allowClosePortal: boolean;
+    };
+    floors: {
+      configured: boolean;
+      enabled: boolean;
+      currency: string;
+      hardFloor: number;
+      bidderFloors: Record<string, number>;
+      rules: Record<string, number>;
+    };
+    output: {
+      cleanComments: boolean;
+    };
+  };
+  adUnits: Array<{ code: string; type: string; enabled: boolean }>;
+  bidders: Array<{ bidder: string; enabled: boolean }>;
   floorRuleSchema: {
     delimiter: string;
     fields: string[];
@@ -56,6 +44,7 @@ type FormState = {
   bottomAdUnitId: string;
   topAdUnitId: string;
   allowClosePortal: boolean;
+  floorsConfigured: boolean;
   floorsEnabled: boolean;
   currency: string;
   hardFloor: string;
@@ -64,10 +53,7 @@ type FormState = {
   cleanComments: boolean;
 };
 
-type ApiFailure = {
-  error?: string;
-  details?: unknown;
-};
+type ApiFailure = { error?: string; details?: unknown };
 
 function randomId(): string {
   return `rule-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
@@ -94,6 +80,7 @@ function formFromPayload(payload: RuntimeControlsPayload): FormState {
     bottomAdUnitId: payload.controls.sticky.bottomAdUnitId ?? '',
     topAdUnitId: payload.controls.sticky.topAdUnitId ?? '',
     allowClosePortal: payload.controls.sticky.allowClosePortal,
+    floorsConfigured: payload.controls.floors.configured,
     floorsEnabled: payload.controls.floors.enabled,
     currency: payload.controls.floors.currency,
     hardFloor: String(payload.controls.floors.hardFloor),
@@ -137,6 +124,8 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
       setPayload(next);
       setForm(formFromPayload(next));
     } catch (requestError) {
+      setPayload(null);
+      setForm(null);
       setError(requestError instanceof Error ? requestError.message : 'Runtime controls could not be loaded.');
     } finally {
       setLoading(false);
@@ -207,8 +196,21 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
     }
   }
 
-  if (loading || !form || !payload) {
-    return <div className="config-loading">Loading runtime controls…</div>;
+  if (loading) return <div className="config-loading">Loading runtime controls…</div>;
+
+  if (!form || !payload) {
+    return (
+      <section className="runtime-controls-page">
+        <div className="runtime-controls-heading">
+          <div>
+            <span className="panel-kicker">Reusable runtime behavior</span>
+            <h2>Runtime controls</h2>
+          </div>
+        </div>
+        <div className="form-error config-error">{error || 'Runtime controls could not be loaded.'}</div>
+        <button className="button secondary" onClick={() => void load()} type="button">Retry</button>
+      </section>
+    );
   }
 
   return (
@@ -224,14 +226,16 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
 
       {error ? <div className="form-error config-error">{error}</div> : null}
       {message ? <div className="runtime-controls-message">{message}</div> : null}
+      {!form.floorsConfigured ? (
+        <div className="runtime-controls-message">
+          Floor controls have not been saved for this site. The current generator template keeps its existing legacy floor behavior until you click Save runtime controls.
+        </div>
+      ) : null}
 
       <div className="runtime-controls-grid">
         <article className="runtime-controls-card">
           <div className="runtime-controls-card-heading">
-            <div>
-              <span className="panel-kicker">Sticky ads</span>
-              <h3>Reusable sticky positions</h3>
-            </div>
+            <div><span className="panel-kicker">Sticky ads</span><h3>Reusable sticky positions</h3></div>
           </div>
 
           <div className="runtime-controls-fields two-columns">
@@ -243,9 +247,7 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
               >
                 <option value="">Disabled</option>
                 {payload.adUnits.map((unit) => (
-                  <option key={unit.code} value={unit.code}>
-                    {unit.code}{unit.enabled ? '' : ' · disabled'}
-                  </option>
+                  <option key={unit.code} value={unit.code}>{unit.code}{unit.enabled ? '' : ' · disabled'}</option>
                 ))}
               </select>
               <small>The selected ad unit gets the generic bottom-sticky host, close button and refresh behavior.</small>
@@ -259,9 +261,7 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
               >
                 <option value="">Disabled</option>
                 {payload.adUnits.map((unit) => (
-                  <option key={unit.code} value={unit.code}>
-                    {unit.code}{unit.enabled ? '' : ' · disabled'}
-                  </option>
+                  <option key={unit.code} value={unit.code}>{unit.code}{unit.enabled ? '' : ' · disabled'}</option>
                 ))}
               </select>
               <small>Leave empty unless a future publisher explicitly uses a top sticky position.</small>
@@ -283,12 +283,8 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
 
         <article className="runtime-controls-card">
           <div className="runtime-controls-card-heading">
-            <div>
-              <span className="panel-kicker">Generated output</span>
-              <h3>Clean release source</h3>
-            </div>
+            <div><span className="panel-kicker">Generated output</span><h3>Clean release source</h3></div>
           </div>
-
           <label className="runtime-controls-check">
             <input
               checked={form.cleanComments}
@@ -300,7 +296,6 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
               <small>Generated ads.js keeps one English release header and removes publisher-specific or non-English comments.</small>
             </span>
           </label>
-
           <div className="runtime-output-preview">
             <code>Prebid Professor generated runtime</code>
             <span>Site, release and generator profile metadata remain visible at the top of the file.</span>
@@ -346,16 +341,13 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
           </label>
           <div className="runtime-controls-floor-note">
             <strong>{form.floorsEnabled ? `${form.hardFloor || '0'} ${form.currency || 'EUR'}` : 'No floor enforcement'}</strong>
-            <span>The Prebid build must include <code>priceFloors</code> while floors are enabled.</span>
+            <span>The Prebid build must include <code>priceFloors</code> while saved floor controls are enabled.</span>
           </div>
         </div>
 
         <div className="runtime-controls-subsection">
           <div className="runtime-controls-subheading">
-            <div>
-              <h4>Per-bidder floors</h4>
-              <p>Use an override only when one bidder needs a different minimum CPM.</p>
-            </div>
+            <div><h4>Per-bidder floors</h4><p>Use an override only when one bidder needs a different minimum CPM.</p></div>
           </div>
           <div className="runtime-bidder-floor-grid">
             {orderedBidders.length ? orderedBidders.map((bidder) => (
@@ -379,10 +371,7 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
 
         <div className="runtime-controls-subsection">
           <div className="runtime-controls-subheading">
-            <div>
-              <h4>Advanced floor rules</h4>
-              <p>Fields: {payload.floorRuleSchema.fields.join(' | ')}</p>
-            </div>
+            <div><h4>Advanced floor rules</h4><p>Fields: {payload.floorRuleSchema.fields.join(' | ')}</p></div>
             <button
               className="button secondary"
               onClick={() => setForm((current) => current ? {
@@ -428,15 +417,11 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
                     floorRules: current.floorRules.filter((candidate) => candidate.id !== row.id),
                   } : current)}
                   type="button"
-                >
-                  ×
-                </button>
+                >×</button>
               </div>
             ))}
             {!form.floorRules.length ? (
-              <div className="runtime-controls-empty">
-                No custom floor rules. The global floor applies to all banner traffic.
-              </div>
+              <div className="runtime-controls-empty">No custom floor rules. The global floor applies to all banner traffic.</div>
             ) : null}
           </div>
 
