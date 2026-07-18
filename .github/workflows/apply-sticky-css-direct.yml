@@ -1,0 +1,47 @@
+name: Apply sticky CSS artifact source
+
+on:
+  push:
+    branches:
+      - feature/sticky-css-artifact-direct
+    paths:
+      - .github/sticky-css-direct.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/sticky-css-artifact-direct
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Apply direct source integration
+        run: python3 .github/scripts/apply_sticky_css_direct.py
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit source integration
+        run: |
+          git config user.name "Prebid Professor Sticky CSS"
+          git config user.email "actions@users.noreply.github.com"
+          git add worker/releases.ts worker/app-deploy.ts src/components/ReleasesPanel.tsx src/components/ExportPanel.tsx .github/workflows/deploy-pages-release.yml
+          if git diff --cached --quiet; then
+            echo "No source changes were required."
+            exit 0
+          fi
+          git commit -m "Add sticky CSS release artifact directly"
+          git push origin HEAD:feature/sticky-css-artifact-direct
