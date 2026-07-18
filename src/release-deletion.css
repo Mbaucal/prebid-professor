@@ -1,0 +1,11 @@
+.release-actions .delete-release-action {
+  border-color: #efb6b6;
+  color: #a12f35;
+  background: #fff2f2;
+}
+
+.release-actions .delete-release-action:hover:not(:disabled) {
+  border-color: #d85b62;
+  color: #831f25;
+  background: #ffe5e6;
+}

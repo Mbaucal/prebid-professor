@@ -6,9 +6,10 @@ import {
 import compatApp from './app-compat';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
+import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-18-supply-consent-v8';
+const RUNTIME_BUILD = '2026-07-18-release-cleanup-v9';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -112,6 +113,18 @@ export default {
 
     if (request.method === 'GET' && pathname === '/api/health') {
       return healthWithBuildMarker(request, env, ctx);
+    }
+
+    const releaseDeleteMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/([^/]+)$/);
+    if (releaseDeleteMatch && request.method === 'DELETE') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      return withBuildHeader(await deleteRelease(
+        verified,
+        env,
+        decodeURIComponent(releaseDeleteMatch[1]),
+        decodeURIComponent(releaseDeleteMatch[2]),
+      ));
     }
 
     const prebidModeMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/prebid-mode$/);
