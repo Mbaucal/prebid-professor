@@ -39,6 +39,18 @@ jobs:
           cat sticky-css-patch.log
           exit 1
 
+      - name: Upload patched source
+        uses: actions/upload-artifact@v4
+        with:
+          name: sticky-css-patched-source
+          path: |
+            worker/releases.ts
+            worker/app-deploy.ts
+            src/components/ReleasesPanel.tsx
+            src/components/ExportPanel.tsx
+            .github/workflows/deploy-pages-release.yml
+          if-no-files-found: error
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
