@@ -17,6 +17,7 @@ type ReleaseUrls = {
   config: string;
   manifest: string;
   css: string;
+  stickyCss: string;
   divCsv: string;
   implementation: string;
 };
@@ -82,6 +83,7 @@ const ARTIFACT_ORDER = [
   'config.json',
   'manifest.json',
   'min-height.css',
+  'sticky.css',
   'div-export.csv',
   'implementation.html',
 ] as const;
@@ -112,6 +114,7 @@ function releaseArtifacts(release: Release): Record<ArtifactName, string> {
     'config.json': release.urls.config,
     'manifest.json': release.urls.manifest,
     'min-height.css': release.urls.css,
+    'sticky.css': release.urls.stickyCss,
     'div-export.csv': release.urls.divCsv,
     'implementation.html': release.urls.implementation,
   };
@@ -196,8 +199,10 @@ export default function ExportPanel({ publisherId, site }: Props) {
   const [source, setSource] = useState<ExportSource>('current');
   const [selectedReleaseId, setSelectedReleaseId] = useState('');
   const [cssText, setCssText] = useState('');
+  const [stickyCssText, setStickyCssText] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingCss, setLoadingCss] = useState(false);
+  const [loadingStickyCss, setLoadingStickyCss] = useState(false);
   const [buildingZip, setBuildingZip] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -281,6 +286,9 @@ export default function ExportPanel({ publisherId, site }: Props) {
     if (artifacts['min-height.css']) {
       lines.push(`<link rel="stylesheet" href="${artifacts['min-height.css']}">`);
     }
+    if (artifacts['sticky.css']) {
+      lines.push('<!-- ads.min.js injects sticky base styles. sticky.css is available as an optional handoff and override artifact. -->');
+    }
     if (prebidEnabled && artifacts['prebid.js']) {
       lines.push(`<script src="${artifacts['prebid.js']}"></script>`);
     }
@@ -329,6 +337,34 @@ export default function ExportPanel({ publisherId, site }: Props) {
     };
   }, [artifacts]);
 
+  useEffect(() => {
+    const url = artifacts['sticky.css'];
+    if (!url) {
+      setStickyCssText('');
+      setLoadingStickyCss(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingStickyCss(true);
+    fetch(url, { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Sticky CSS artifact returned ${response.status}.`);
+        return response.text();
+      })
+      .then((text) => {
+        if (!cancelled) setStickyCssText(text);
+      })
+      .catch(() => {
+        if (!cancelled) setStickyCssText('');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingStickyCss(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [artifacts]);
+
   async function copyText(value: string, label: string): Promise<void> {
     try {
       await navigator.clipboard.writeText(value);
@@ -369,6 +405,7 @@ export default function ExportPanel({ publisherId, site }: Props) {
         `Site ID: ${site.id}`,
         `GAM path: ${site.gamPath}`,
         `Demand mode: ${prebidEnabled ? 'GAM + Prebid' : 'GAM / AdX only'}`,
+        'Sticky styling: ads.js injects base styles automatically; sticky.css is included for review and optional external integration.',
         `Source: ${source}`,
         `Version: ${sourceVersion}`,
         `Generated package: ${new Date().toISOString()}`,
@@ -491,6 +528,18 @@ export default function ExportPanel({ publisherId, site }: Props) {
             </div>
           </div>
           <pre className="export-code compact">{loadingCss ? 'Loading CSS artifact…' : cssText || 'CSS artifact is not available for this source.'}</pre>
+        </article>
+
+        <article className="export-card">
+          <div className="export-card-heading">
+            <div><span className="panel-kicker">Sticky handoff</span><h3>Sticky CSS</h3></div>
+            <div className="export-card-actions">
+              <button disabled={!stickyCssText} onClick={() => void copyText(stickyCssText, 'sticky-css')} type="button">{copied === 'sticky-css' ? '✓ Copied' : 'Copy'}</button>
+              <button disabled={!stickyCssText} onClick={() => downloadText(stickyCssText, `sticky-${safeFileName(site.id)}.css`, 'text/css')} type="button">Download</button>
+            </div>
+          </div>
+          <p className="export-card-note">ads.js already injects the base sticky styles. Export this file only for implementation handoff or controlled overrides.</p>
+          <pre className="export-code compact">{loadingStickyCss ? 'Loading sticky CSS artifact…' : stickyCssText || 'Sticky CSS is not available for this source.'}</pre>
         </article>
 
         <article className="export-card">

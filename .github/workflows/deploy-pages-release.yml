@@ -113,6 +113,20 @@ jobs:
               --output "dist/${file}"
           done
 
+          echo "Downloading optional sticky.css"
+          if ! curl \
+            --fail \
+            --location \
+            --retry 3 \
+            --retry-all-errors \
+            --silent \
+            --show-error \
+            "${RELEASE_BASE_URL}/sticky.css" \
+            --output "dist/sticky.css"; then
+            rm -f dist/sticky.css
+            echo "sticky.css is not present on this legacy release; continuing without it."
+          fi
+
           cat > dist/_headers <<'EOF'
           /*
             Access-Control-Allow-Origin: *
