@@ -1,4 +1,5 @@
-import { createAdsTxtRequirement, importAdsTxtRequirements, type AdsTxtEnv } from './ads-txt';
+import { createAdsTxtRequirement, type AdsTxtEnv } from './ads-txt';
+import { importAdsTxtRequirementsLarge, MAX_ADS_TXT_BULK_ROWS } from './ads-txt-bulk';
 import { apiError } from './http';
 
 type ManualRequirementBody = {
@@ -12,8 +13,6 @@ type ManualRow = {
   entry: string;
   required: boolean;
 };
-
-const MAX_MANUAL_ROWS = 100;
 
 function booleanValue(value: unknown, fallback = true): boolean {
   if (typeof value === 'boolean') return value;
@@ -90,11 +89,11 @@ export async function createAdsTxtRequirementFlexible(
     return createAdsTxtRequirement(jsonRequest(request, single), env, siteId);
   }
 
-  if (rows.length > MAX_MANUAL_ROWS) {
-    return apiError(`Add at most ${MAX_MANUAL_ROWS} ads.txt entries at once.`, 422);
+  if (rows.length > MAX_ADS_TXT_BULK_ROWS) {
+    return apiError(`Add at most ${MAX_ADS_TXT_BULK_ROWS.toLocaleString('en-US')} ads.txt entries at once.`, 422);
   }
 
-  return importAdsTxtRequirements(
+  return importAdsTxtRequirementsLarge(
     jsonRequest(request, { rows, replaceExisting: false }),
     env,
     siteId,
