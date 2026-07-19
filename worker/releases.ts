@@ -126,6 +126,7 @@ const RELEASE_FILES = [
   'config.json',
   'manifest.json',
   'min-height.css',
+  'sticky.css',
   'div-export.csv',
   'implementation.html',
 ] as const;
@@ -533,6 +534,175 @@ function minHeightCss(snapshot: Snapshot): string {
   }
   return `${output.join('\n').trim()}\n`;
 }
+function cssCommentText(value: string): string {
+  return value.replace(/\*\//g, '* /').replace(/[\r\n]+/g, ' ').trim();
+}
+
+function stickyCss(snapshot: Snapshot): string {
+  const runtime = isRecord(snapshot.config.runtimeControls) ? snapshot.config.runtimeControls : {};
+  const sticky = isRecord(runtime.sticky) ? runtime.sticky : {};
+  const defaultBottom = snapshot.adUnits.some((unit) => unit.enabled === 1 && unit.code === 'Sticky')
+    ? 'Sticky'
+    : '';
+  const bottomId = typeof sticky.bottomAdUnitId === 'string'
+    ? sticky.bottomAdUnitId.trim()
+    : defaultBottom;
+  const topId = typeof sticky.topAdUnitId === 'string' ? sticky.topAdUnitId.trim() : '';
+  const bottom = bottomId ? cssEscape(bottomId) : '';
+  const top = topId ? cssEscape(topId) : '';
+  const output = [
+    '/*!',
+    ' * Prebid Professor sticky ad styles',
+    ` * Site: ${cssCommentText(snapshot.site.name)} (${cssCommentText(snapshot.site.domain)})`,
+    ` * Bottom sticky: ${cssCommentText(bottomId || 'disabled')}`,
+    ` * Top sticky: ${cssCommentText(topId || 'disabled')}`,
+    ' * ads.js injects equivalent base styles automatically.',
+    ' * Load this file only for external handoff or controlled overrides.',
+    ' */',
+  ];
+
+  if (!bottom && !top) {
+    output.push('', '/* No sticky ad unit is enabled for this site. */');
+    return `${output.join('\n')}\n`;
+  }
+
+  if (bottom) {
+    output.push(
+      '',
+      `#${bottom} {`,
+      '  box-sizing: border-box;',
+      '  position: fixed;',
+      '  left: 0;',
+      '  right: 0;',
+      '  bottom: 0;',
+      '  width: 100%;',
+      '  z-index: 2147483000;',
+      '  display: flex;',
+      '  justify-content: center;',
+      '  align-items: flex-start;',
+      '  background: rgba(247, 247, 247, 0.85);',
+      '  border-top: 1px solid #ccc;',
+      '  padding: 5px 0;',
+      '  min-height: 50px;',
+      '  opacity: 0;',
+      '  visibility: hidden;',
+      '  height: 0;',
+      '  transform: translateY(16px);',
+      '  transition: opacity 0.35s ease-out, visibility 0.35s ease-out, transform 0.35s ease-out;',
+      '  overflow: visible;',
+      '}',
+      '',
+      `#${bottom}.ad-loaded {`,
+      '  opacity: 1;',
+      '  visibility: visible;',
+      '  height: auto;',
+      '  transform: translateY(0);',
+      '}',
+      '',
+      `#${bottom} #close_sticky_ad,`,
+      'body > #close_sticky_ad {',
+      '  box-sizing: border-box;',
+      '  position: absolute !important;',
+      '  top: 6px !important;',
+      '  right: 5px !important;',
+      '  bottom: auto !important;',
+      '  width: 28px !important;',
+      '  height: 28px !important;',
+      '  display: flex !important;',
+      '  align-items: center !important;',
+      '  justify-content: center !important;',
+      '  background: #fff !important;',
+      '  border: 1px solid #888 !important;',
+      '  border-radius: 50% !important;',
+      '  color: #333 !important;',
+      '  cursor: pointer;',
+      '  font: 28px/1 Arial, Helvetica, sans-serif !important;',
+      '  text-align: center;',
+      '  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.98), 0 1px 3px rgba(0, 0, 0, 0.2) !important;',
+      '  user-select: none;',
+      '  z-index: 2147483647 !important;',
+      '}',
+      '',
+      '@media (max-width: 767px) {',
+      `  #${bottom} #close_sticky_ad,`,
+      '  body > #close_sticky_ad {',
+      '    top: -8px !important;',
+      '    right: 8px !important;',
+      '    bottom: auto !important;',
+      '  }',
+      '}',
+    );
+  }
+
+  if (top) {
+    output.push(
+      '',
+      `#${top} {`,
+      '  box-sizing: border-box;',
+      '  position: fixed;',
+      '  left: 0;',
+      '  right: 0;',
+      '  top: 0;',
+      '  width: 100%;',
+      '  z-index: 2147483000;',
+      '  display: flex;',
+      '  justify-content: center;',
+      '  align-items: flex-start;',
+      '  background: rgba(247, 247, 247, 0.85);',
+      '  border-bottom: 1px solid #ccc;',
+      '  padding: 5px 0;',
+      '  min-height: 50px;',
+      '  opacity: 0;',
+      '  visibility: hidden;',
+      '  height: 0;',
+      '  transform: translateY(-16px);',
+      '  transition: opacity 0.35s ease-out, visibility 0.35s ease-out, transform 0.35s ease-out;',
+      '  overflow: visible;',
+      '}',
+      '',
+      `#${top}.ad-loaded {`,
+      '  opacity: 1;',
+      '  visibility: visible;',
+      '  height: auto;',
+      '  transform: translateY(0);',
+      '}',
+      '',
+      `#${top} #close_sticky_top_ad {`,
+      '  box-sizing: border-box;',
+      '  position: absolute !important;',
+      '  right: 5px !important;',
+      '  bottom: 6px !important;',
+      '  top: auto !important;',
+      '  width: 28px !important;',
+      '  height: 28px !important;',
+      '  display: flex !important;',
+      '  align-items: center !important;',
+      '  justify-content: center !important;',
+      '  background: #fff !important;',
+      '  border: 1px solid #888 !important;',
+      '  border-radius: 50% !important;',
+      '  color: #333 !important;',
+      '  cursor: pointer;',
+      '  font: 28px/1 Arial, Helvetica, sans-serif !important;',
+      '  text-align: center;',
+      '  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.98), 0 1px 3px rgba(0, 0, 0, 0.2) !important;',
+      '  user-select: none;',
+      '  z-index: 2147483001 !important;',
+      '}',
+      '',
+      '@media (max-width: 767px) {',
+      `  #${top} #close_sticky_top_ad {`,
+      '    right: 8px !important;',
+      '    bottom: -8px !important;',
+      '    top: auto !important;',
+      '  }',
+      '}',
+    );
+  }
+
+  return `${output.join('\n').trim()}\n`;
+}
+
 function csvCell(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
@@ -549,7 +719,7 @@ function implementationHtml(snapshot: Snapshot, origin: string): string {
     const className = unit.type === 'BTF' ? 'wrapperAd lazyAd' : 'wrapperAd';
     return `<!-- ${unit.code} -->\n<div id="${unit.code}" class="${className}"></div>`;
   }).join('\n\n');
-  return `<!-- Prebid Professor implementation for ${snapshot.site.name} -->\n<link rel="stylesheet" href="${origin}/cdn/${snapshot.site.id}/current/min-height.css">\n<script src="${origin}/cdn/${snapshot.site.id}/current/prebid.js"></script>\n<script src="${origin}/cdn/${snapshot.site.id}/current/ads.min.js"></script>\n\n${divs}\n`;
+  return `<!-- Prebid Professor implementation for ${snapshot.site.name} -->\n<link rel="stylesheet" href="${origin}/cdn/${snapshot.site.id}/current/min-height.css">\n<!-- ads.min.js injects sticky base styles. sticky.css is an optional handoff and override artifact. -->\n<script src="${origin}/cdn/${snapshot.site.id}/current/prebid.js"></script>\n<script src="${origin}/cdn/${snapshot.site.id}/current/ads.min.js"></script>\n\n${divs}\n`;
 }
 
 async function putArtifact(bucket: R2Bucket, key: string, body: string | ArrayBuffer, fileName: string, metadata: Record<string, string>) {
@@ -597,6 +767,7 @@ function releasePayload(request: Request, row: ReleaseRow, manifest: JsonRecord 
       adsJs: absoluteUrl(request, `${base}/ads.js`), adsMinJs: absoluteUrl(request, `${base}/ads.min.js`),
       prebidJs: absoluteUrl(request, `${base}/prebid.js`), config: absoluteUrl(request, `${base}/config.json`),
       manifest: absoluteUrl(request, `${base}/manifest.json`), css: absoluteUrl(request, `${base}/min-height.css`),
+      stickyCss: absoluteUrl(request, `${base}/sticky.css`),
       divCsv: absoluteUrl(request, `${base}/div-export.csv`), implementation: absoluteUrl(request, `${base}/implementation.html`),
     },
   };
@@ -690,8 +861,8 @@ export async function generateRelease(request: Request, env: ReleaseEnv, siteId:
     };
     await Promise.all([
       add('ads.js', compiled.adsJs), add('ads.min.js', compiled.adsMinJs), add('prebid.js', snapshot.prebidBytes),
-      add('config.json', configText), add('min-height.css', minHeightCss(snapshot)), add('div-export.csv', divCsv(snapshot)),
-      add('implementation.html', implementationHtml(snapshot, origin)),
+      add('config.json', configText), add('min-height.css', minHeightCss(snapshot)), add('sticky.css', stickyCss(snapshot)),
+      add('div-export.csv', divCsv(snapshot)), add('implementation.html', implementationHtml(snapshot, origin)),
     ]);
     const manifest = {
       schemaVersion: 1, releaseId, siteId, version, status: 'draft', generatedAt: createdAt, generatedBy: actor, configHash,
@@ -755,6 +926,10 @@ async function fetchRelease(db: D1Database, siteId: string, releaseId: string): 
 async function copyToChannel(bucket: R2Bucket, siteId: string, version: string, channel: Channel): Promise<void> {
   for (const fileName of RELEASE_FILES) {
     const source = await bucket.get(releaseKey(siteId, version, fileName));
+    if (!source && fileName === 'sticky.css') {
+      await bucket.delete(channelKey(siteId, channel, fileName)).catch(() => undefined);
+      continue;
+    }
     if (!source) throw new Error(`${fileName} is missing from release ${version}.`);
     const bytes = await source.arrayBuffer();
     const headers = new Headers();

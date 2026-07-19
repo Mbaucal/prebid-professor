@@ -30,6 +30,7 @@ type ReleaseUrls = {
   config: string;
   manifest: string;
   css: string;
+  stickyCss: string;
   divCsv: string;
   implementation: string;
 };
@@ -353,7 +354,7 @@ export default function ReleasesPanel({ publisherId, siteName, onChanged }: Prop
               {(['current', 'staging'] as const).map((channel) => (
                 <section key={channel}>
                   <h4>{channel}</h4>
-                  {['ads.min.js', 'prebid.js', 'manifest.json', 'min-height.css'].map((fileName) => {
+                  {['ads.min.js', 'prebid.js', 'manifest.json', 'min-height.css', 'sticky.css'].map((fileName) => {
                     const url = channels[channel][fileName];
                     return (
                       <div className="channel-url-row" key={`${channel}-${fileName}`}>
