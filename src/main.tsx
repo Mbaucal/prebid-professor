@@ -27,6 +27,7 @@ import './export.css';
 import './mockup-builder.css';
 import './debug-console.css';
 import './ads-txt.css';
+import './global-workspaces.css';
 import './auth-account.css';
 import './admin-helpers.css';
 
