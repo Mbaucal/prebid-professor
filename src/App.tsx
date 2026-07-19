@@ -5,6 +5,7 @@ import ExportPanel from './components/ExportPanel';
 import HierarchySidebar from './components/HierarchySidebar';
 import PrebidBuildsPanel from './components/PrebidBuildsPanel';
 import ReleasesPanel from './components/ReleasesPanel';
+import MockupBuilderPanel from './components/MockupBuilderPanel';
 import type {
   HealthResponse,
   PublisherAccount,
@@ -14,7 +15,7 @@ import type {
 } from './shared/types';
 
 const navItems = ['Publishers', 'Releases', 'Prebid builds', 'Audit log', 'Settings'];
-const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Export', 'Debug', 'Ads.txt'] as const;
+const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Export', 'Mockup', 'Debug', 'Ads.txt'] as const;
 
 type PublisherTab = (typeof publisherTabs)[number];
 type ModalMode = 'create-publisher' | 'create-site' | 'edit-site' | 'duplicate-site' | null;
@@ -518,7 +519,8 @@ export default function App() {
           />
         ) : null}
         {activeTab === 'Export' && site ? <ExportPanel publisherId={site.id} site={site} /> : null}
-        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export'
+        {activeTab === 'Mockup' && site ? <MockupBuilderPanel publisherId={site.id} siteName={site.name} /> : null}
+        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export' && activeTab !== 'Mockup'
           ? renderPlaceholder(activeTab)
           : null}
       </main>
