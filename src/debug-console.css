@@ -1,0 +1,335 @@
+.debug-console-page {
+  display: grid;
+  gap: 22px;
+  padding: 24px 32px 44px;
+}
+
+.debug-console-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.debug-console-heading h2,
+.debug-command-section-heading h3,
+.debug-command-card h4 {
+  margin: 0;
+  color: #172033;
+}
+
+.debug-console-heading p {
+  max-width: 820px;
+  margin: 7px 0 0;
+  color: #64748b;
+  line-height: 1.55;
+}
+
+.debug-console-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.debug-console-error {
+  margin: 0;
+}
+
+.debug-scope-card,
+.debug-command-card,
+.debug-console-note,
+.debug-empty-state {
+  border: 1px solid #d8e0eb;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+}
+
+.debug-scope-card {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.debug-scope-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.debug-scope-grid label {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.debug-scope-grid select,
+.debug-scope-grid input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 11px;
+}
+
+.debug-scope-grid select:focus,
+.debug-scope-grid input:focus {
+  outline: 3px solid rgba(249, 115, 22, 0.14);
+  border-color: #f97316;
+}
+
+.debug-search-field {
+  grid-column: auto;
+}
+
+.debug-scope-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 15px;
+}
+
+.debug-scope-summary span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #334155;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+}
+
+.debug-scope-summary strong {
+  color: #64748b;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.debug-console-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #fffaf0;
+  border-color: #f0c36d;
+  color: #704214;
+  padding: 13px 15px;
+  line-height: 1.5;
+}
+
+.debug-console-note strong {
+  flex: 0 0 auto;
+}
+
+.debug-command-section {
+  display: grid;
+  gap: 12px;
+}
+
+.debug-command-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.debug-command-section-heading h3 {
+  font-size: 18px;
+}
+
+.debug-command-section-heading span {
+  border-radius: 999px;
+  background: #e8edf4;
+  color: #526174;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.debug-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.debug-command-card {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 13px;
+  padding: 18px;
+}
+
+.debug-command-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.debug-command-card-heading > div {
+  min-width: 0;
+}
+
+.debug-command-card-heading span {
+  display: inline-block;
+  margin-bottom: 4px;
+  color: #f05a17;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.debug-command-card h4 {
+  font-size: 17px;
+}
+
+.debug-command-card p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.debug-command-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.debug-command-scope code {
+  max-width: 100%;
+  border: 1px solid #dbe3ed;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.debug-command-preview {
+  min-width: 0;
+  border: 1px solid #dbe3ed;
+  border-radius: 10px;
+  background: #111827;
+  overflow: hidden;
+}
+
+.debug-command-preview summary {
+  cursor: pointer;
+  background: #f8fafc;
+  color: #475569;
+  padding: 9px 11px;
+  font-size: 12px;
+  font-weight: 800;
+  user-select: none;
+}
+
+.debug-command-preview[open] summary {
+  border-bottom: 1px solid #2d3748;
+}
+
+.debug-command-preview pre {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  color: #d7e2f0;
+  padding: 14px;
+  white-space: pre;
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.debug-download-button {
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.debug-download-button:hover {
+  color: #f05a17;
+}
+
+.debug-empty-state {
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  min-height: 170px;
+  color: #64748b;
+  text-align: center;
+}
+
+.debug-empty-state strong {
+  color: #172033;
+  font-size: 18px;
+}
+
+.button.success {
+  border-color: #84dca5;
+  background: #dcfce7;
+  color: #166534;
+}
+
+@media (max-width: 1280px) {
+  .debug-scope-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1000px) {
+  .debug-console-heading {
+    flex-direction: column;
+  }
+
+  .debug-console-heading-actions {
+    justify-content: flex-start;
+  }
+
+  .debug-command-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .debug-console-page {
+    padding: 18px;
+  }
+
+  .debug-scope-grid,
+  .debug-scope-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .debug-command-card-heading,
+  .debug-console-note {
+    flex-direction: column;
+  }
+
+  .debug-command-card-heading .button {
+    width: 100%;
+  }
+}

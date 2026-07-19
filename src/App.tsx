@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from './api';
 import AdsTxtPanel from './components/AdsTxtPanel';
+import DebugConsolePanel from './components/DebugConsolePanel';
 import ConfigPanel from './components/ConfigPanel';
 import ExportPanel from './components/ExportPanel';
 import HierarchySidebar from './components/HierarchySidebar';
@@ -521,10 +522,13 @@ export default function App() {
         ) : null}
         {activeTab === 'Export' && site ? <ExportPanel publisherId={site.id} site={site} /> : null}
         {activeTab === 'Mockup' && site ? <MockupBuilderPanel publisherId={site.id} siteName={site.name} /> : null}
+        {activeTab === 'Debug' && site ? (
+          <DebugConsolePanel domain={site.domain} publisherId={site.id} siteName={site.name} />
+        ) : null}
         {activeTab === 'Ads.txt' && site ? (
           <AdsTxtPanel onChanged={() => loadHierarchy(publisher?.id, site.id)} site={site} />
         ) : null}
-        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Ads.txt'
+        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
           ? renderPlaceholder(activeTab)
           : null}
       </main>
