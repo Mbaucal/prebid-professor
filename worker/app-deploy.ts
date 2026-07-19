@@ -4,12 +4,21 @@ import {
   type AuthEnv,
 } from './auth';
 import compatApp from './app-compat';
+import {
+  checkAdsTxt,
+  copyAdsTxtRequirements,
+  createAdsTxtRequirement,
+  deleteAdsTxtRequirement,
+  importAdsTxtRequirements,
+  listAdsTxtRequirements,
+  updateAdsTxtRequirement,
+} from './ads-txt';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-19-sticky-css-artifact-v11';
+const RUNTIME_BUILD = '2026-07-19-ads-txt-checker-v12';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -113,6 +122,63 @@ export default {
 
     if (request.method === 'GET' && pathname === '/api/health') {
       return healthWithBuildMarker(request, env, ctx);
+    }
+
+    const adsTxtCheckMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ads-txt\/check$/);
+    if (adsTxtCheckMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await checkAdsTxt(verified, env, decodeURIComponent(adsTxtCheckMatch[1])));
+    }
+
+    const adsTxtImportMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ads-txt\/requirements\/import$/);
+    if (adsTxtImportMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await importAdsTxtRequirements(
+        verified,
+        env,
+        decodeURIComponent(adsTxtImportMatch[1]),
+      ));
+    }
+
+    const adsTxtCopyMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ads-txt\/requirements\/copy$/);
+    if (adsTxtCopyMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await copyAdsTxtRequirements(
+        verified,
+        env,
+        decodeURIComponent(adsTxtCopyMatch[1]),
+      ));
+    }
+
+    const adsTxtItemMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ads-txt\/requirements\/([^/]+)$/);
+    if (adsTxtItemMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      const siteId = decodeURIComponent(adsTxtItemMatch[1]);
+      const requirementId = decodeURIComponent(adsTxtItemMatch[2]);
+      if (request.method === 'PATCH') {
+        return withBuildHeader(await updateAdsTxtRequirement(verified, env, siteId, requirementId));
+      }
+      if (request.method === 'DELETE') {
+        return withBuildHeader(await deleteAdsTxtRequirement(verified, env, siteId, requirementId));
+      }
+      return withBuildHeader(apiError('Method not allowed.', 405));
+    }
+
+    const adsTxtCollectionMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ads-txt\/requirements$/);
+    if (adsTxtCollectionMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      const siteId = decodeURIComponent(adsTxtCollectionMatch[1]);
+      if (request.method === 'GET') return withBuildHeader(await listAdsTxtRequirements(env, siteId));
+      if (request.method === 'POST') return withBuildHeader(await createAdsTxtRequirement(verified, env, siteId));
+      return withBuildHeader(apiError('Method not allowed.', 405));
     }
 
     const releaseDeleteMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/([^/]+)$/);

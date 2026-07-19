@@ -25,6 +25,7 @@ import './release-deletion.css';
 import './external-deployments.css';
 import './export.css';
 import './mockup-builder.css';
+import './ads-txt.css';
 import './auth-account.css';
 import './admin-helpers.css';
 
