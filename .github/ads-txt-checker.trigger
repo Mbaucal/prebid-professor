@@ -1,0 +1,1 @@
+Integrate the Ads.txt checker into the site tab and run the project build.
