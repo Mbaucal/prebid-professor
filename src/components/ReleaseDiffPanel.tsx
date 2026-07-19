@@ -85,13 +85,13 @@ function equal(left: unknown, right: unknown): boolean {
   return stableStringify(left) === stableStringify(right);
 }
 
-function cleanEntity(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(cleanEntity);
+function cleanEntity(value: unknown, depth = 0): unknown {
+  if (Array.isArray(value)) return value.map((item) => cleanEntity(item, depth + 1));
   if (!isRecord(value)) return value;
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => !VOLATILE_ENTITY_KEYS.has(key))
-      .map(([key, candidate]) => [key, cleanEntity(candidate)]),
+      .filter(([key]) => depth > 0 || !VOLATILE_ENTITY_KEYS.has(key))
+      .map(([key, candidate]) => [key, cleanEntity(candidate, depth + 1)]),
   );
 }
 
