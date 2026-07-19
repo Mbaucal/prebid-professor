@@ -18,7 +18,7 @@ import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-19-global-workspaces-v16';
+const RUNTIME_BUILD = '2026-07-19-release-diff-v17';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;

@@ -301,7 +301,7 @@ function displayValue(value: unknown): string {
   if (value === null) return 'null';
   if (typeof value === 'string') return value || '""';
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  const text = JSON.stringify(canonical(value));
+  const text = JSON.stringify(canonical(value)) ?? String(value);
   return text.length > 260 ? `${text.slice(0, 257)}…` : text;
 }
 

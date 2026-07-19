@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ExternalDeploymentsPanel from './ExternalDeploymentsPanel';
+import ReleaseDiffPanel from './ReleaseDiffPanel';
 import ReleaseDeleteButton from './ReleaseDeleteButton';
 
 type Props = {
@@ -373,6 +374,8 @@ export default function ReleasesPanel({ publisherId, siteName, onChanged }: Prop
       </div>
 
       <ExternalDeploymentsPanel publisherId={publisherId} releases={releases} />
+
+      <ReleaseDiffPanel releases={releases} siteName={siteName} />
 
       <div className="release-history-heading">
         <div><span className="panel-kicker">R2 + D1 history</span><h3>{siteName} releases</h3></div>
