@@ -59,6 +59,8 @@ type ApiFailure = {
   details?: unknown;
 };
 
+const MAX_BULK_ENTRIES = 5_000;
+
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
   const text = await response.text();
@@ -426,7 +428,9 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
     try {
       const parsed = importRowsFromText(await file.text());
       if (!parsed.length) throw new Error('No valid ads.txt rows were found in the selected file.');
-      if (parsed.length > 100) throw new Error('Import at most 100 rows at once.');
+      if (parsed.length > MAX_BULK_ENTRIES) {
+        throw new Error(`Import at most ${MAX_BULK_ENTRIES.toLocaleString('en-US')} rows at once.`);
+      }
       setImportRows(parsed);
       setImportFileName(file.name);
     } catch (fileError) {
@@ -544,7 +548,7 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
             <small>
               {editingId
                 ? 'Edit one ads.txt line.'
-                : 'Paste one or many lines. Blank lines are ignored. A # heading can set the label for the lines below it. Maximum 100 entries at once.'}
+                : 'Paste one or many lines. Blank lines are ignored. A # heading can set the label for the lines below it. Maximum 5,000 entries at once.'}
             </small>
           </label>
           <label className="ads-txt-checkbox"><input checked={required} onChange={(event) => setRequired(event.target.checked)} type="checkbox" /><span>Required {editingId || manualCount <= 1 ? 'entry' : 'entries'}</span></label>
