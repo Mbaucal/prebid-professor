@@ -6,9 +6,7 @@ import {
 import compatApp from './app-compat';
 import {
   checkAdsTxt,
-  copyAdsTxtRequirements,
   deleteAdsTxtRequirement,
-  importAdsTxtRequirements,
   listAdsTxtRequirements,
   updateAdsTxtRequirement,
 } from './ads-txt';
