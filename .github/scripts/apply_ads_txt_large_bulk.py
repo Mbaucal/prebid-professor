@@ -11,12 +11,9 @@ def replace_once(source: str, old: str, new: str, label: str) -> str:
 
 app_path = Path('worker/app-deploy.ts')
 app = app_path.read_text(encoding='utf-8')
-app = replace_once(
-    app,
-    "  copyAdsTxtRequirements,\n  deleteAdsTxtRequirement,\n  importAdsTxtRequirements,\n",
-    "  deleteAdsTxtRequirement,\n",
-    'app-deploy legacy bulk imports',
-)
+legacy_bulk_imports = "  copyAdsTxtRequirements,\n  deleteAdsTxtRequirement,\n  importAdsTxtRequirements,\n"
+if legacy_bulk_imports in app:
+    app = app.replace(legacy_bulk_imports, "  deleteAdsTxtRequirement,\n", 1)
 app = replace_once(
     app,
     "import { createAdsTxtRequirementFlexible } from './ads-txt-flexible';\n",
