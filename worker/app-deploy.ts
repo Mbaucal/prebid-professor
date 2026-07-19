@@ -7,18 +7,18 @@ import compatApp from './app-compat';
 import {
   checkAdsTxt,
   copyAdsTxtRequirements,
-  createAdsTxtRequirement,
   deleteAdsTxtRequirement,
   importAdsTxtRequirements,
   listAdsTxtRequirements,
   updateAdsTxtRequirement,
 } from './ads-txt';
+import { createAdsTxtRequirementFlexible } from './ads-txt-flexible';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-19-ads-txt-checker-v12';
+const RUNTIME_BUILD = '2026-07-19-ads-txt-multiline-v13';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -177,7 +177,9 @@ export default {
       if (verified instanceof Response) return withBuildHeader(verified);
       const siteId = decodeURIComponent(adsTxtCollectionMatch[1]);
       if (request.method === 'GET') return withBuildHeader(await listAdsTxtRequirements(env, siteId));
-      if (request.method === 'POST') return withBuildHeader(await createAdsTxtRequirement(verified, env, siteId));
+      if (request.method === 'POST') {
+        return withBuildHeader(await createAdsTxtRequirementFlexible(verified, env, siteId));
+      }
       return withBuildHeader(apiError('Method not allowed.', 405));
     }
 
