@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from './api';
 import AdsTxtPanel from './components/AdsTxtPanel';
+import AuditLogPanel from './components/AuditLogPanel';
+import GlobalPrebidBuildsPanel from './components/GlobalPrebidBuildsPanel';
+import GlobalReleasesPanel from './components/GlobalReleasesPanel';
+import SettingsPanel from './components/SettingsPanel';
 import DebugConsolePanel from './components/DebugConsolePanel';
 import ConfigPanel from './components/ConfigPanel';
 import ExportPanel from './components/ExportPanel';
@@ -16,7 +20,15 @@ import type {
   Site,
 } from './shared/types';
 
-const navItems = ['Publishers', 'Releases', 'Prebid builds', 'Audit log', 'Settings'];
+const navItems = ['Publishers', 'Releases', 'Prebid builds', 'Audit log', 'Settings'] as const;
+type GlobalSection = (typeof navItems)[number];
+const globalDescriptions: Record<GlobalSection, string> = {
+  Publishers: 'Manage publisher accounts, sites and every site-level configuration workflow.',
+  Releases: 'Review immutable releases across all publishers and sites.',
+  'Prebid builds': 'Inspect every uploaded Prebid.js build and module manifest.',
+  'Audit log': 'Review configuration, release and operational activity recorded in D1.',
+  Settings: 'Check runtime health, bindings, security and retention safeguards.',
+};
 const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Export', 'Mockup', 'Debug', 'Ads.txt'] as const;
 
 type PublisherTab = (typeof publisherTabs)[number];
@@ -97,6 +109,7 @@ export default function App() {
   const [publishers, setPublishers] = useState<PublisherAccount[]>([]);
   const [hierarchyError, setHierarchyError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState<GlobalSection>('Publishers');
   const [activePublisherId, setActivePublisherId] = useState<string | null>(null);
   const [activeSiteId, setActiveSiteId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<PublisherTab>('Overview');
@@ -173,14 +186,32 @@ export default function App() {
   );
 
   function selectPublisher(account: PublisherAccount) {
+    setActiveSection('Publishers');
     setActivePublisherId(account.id);
     setActiveSiteId(account.sites[0]?.id ?? null);
     setActiveTab('Overview');
   }
 
   function selectSite(accountId: string, selectedSite: Site) {
+    setActiveSection('Publishers');
     setActivePublisherId(accountId);
     setActiveSiteId(selectedSite.id);
+  }
+
+  function selectGlobalSection(section: GlobalSection) {
+    setActiveSection(section);
+    setModal(null);
+  }
+
+  function openSiteWorkspace(
+    publisherAccountId: string,
+    siteId: string,
+    tab: 'Overview' | 'Releases' | 'Prebid.js',
+  ) {
+    setActivePublisherId(publisherAccountId);
+    setActiveSiteId(siteId);
+    setActiveTab(tab);
+    setActiveSection('Publishers');
   }
 
   function openCreatePublisher() {
@@ -419,6 +450,7 @@ export default function App() {
     );
   }
 
+  const publisherWorkspace = activeSection === 'Publishers';
   const siteModalOpen = modal === 'create-site' || modal === 'edit-site' || modal === 'duplicate-site';
   const siteModalTitle =
     modal === 'edit-site'
@@ -436,23 +468,39 @@ export default function App() {
         </div>
 
         <nav className="main-nav" aria-label="Main navigation">
-          {navItems.map((item, index) => (
-            <button className={index === 0 ? 'nav-item active' : 'nav-item'} key={item} type="button">{item}</button>
+          {navItems.map((item) => (
+            <button
+              className={item === activeSection ? 'nav-item active' : 'nav-item'}
+              key={item}
+              onClick={() => selectGlobalSection(item)}
+              type="button"
+            >
+              {item}
+            </button>
           ))}
         </nav>
 
-        <HierarchySidebar
-          activePublisherId={publisher?.id ?? null}
-          activeSiteId={site?.id ?? null}
-          error={hierarchyError}
-          loading={loading}
-          onAddSite={openCreateSiteForPublisher}
-          onCreatePublisher={openCreatePublisher}
-          onMoveSite={moveSiteToPublisher}
-          onSelectPublisher={selectPublisher}
-          onSelectSite={selectSite}
-          publishers={publishers}
-        />
+        {publisherWorkspace ? (
+          <HierarchySidebar
+            activePublisherId={publisher?.id ?? null}
+            activeSiteId={site?.id ?? null}
+            error={hierarchyError}
+            loading={loading}
+            onAddSite={openCreateSiteForPublisher}
+            onCreatePublisher={openCreatePublisher}
+            onMoveSite={moveSiteToPublisher}
+            onSelectPublisher={selectPublisher}
+            onSelectSite={selectSite}
+            publishers={publishers}
+          />
+        ) : (
+          <div className="global-sidebar-context">
+            <span>Global workspace</span>
+            <strong>{activeSection}</strong>
+            <small>{publishers.length} publisher{publishers.length === 1 ? '' : 's'} · {totalSites} site{totalSites === 1 ? '' : 's'}</small>
+            <button onClick={() => selectGlobalSection('Publishers')} type="button">← Return to publishers</button>
+          </div>
+        )}
 
         <div className="account-card">
           <div className="avatar">S</div>
@@ -461,6 +509,8 @@ export default function App() {
       </aside>
 
       <main className="workspace">
+        {publisherWorkspace ? (
+          <>
         <header className="topbar">
           <div>
             <span className="eyebrow">Publishers / {publisher?.name ?? 'No publisher'} / {site?.name ?? 'No site'}</span>
@@ -531,6 +581,29 @@ export default function App() {
         {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
           ? renderPlaceholder(activeTab)
           : null}
+          </>
+        ) : (
+          <>
+            <header className="topbar global-topbar">
+              <div>
+                <span className="eyebrow">Global workspace / {activeSection}</span>
+                <h1>{activeSection}</h1>
+                <p>{globalDescriptions[activeSection]}</p>
+              </div>
+              <button className="button secondary" onClick={() => selectGlobalSection('Publishers')} type="button">Open publishers</button>
+            </header>
+            {activeSection === 'Releases' ? (
+              <GlobalReleasesPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
+            ) : null}
+            {activeSection === 'Prebid builds' ? (
+              <GlobalPrebidBuildsPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
+            ) : null}
+            {activeSection === 'Audit log' ? (
+              <AuditLogPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
+            ) : null}
+            {activeSection === 'Settings' ? <SettingsPanel publishers={publishers} /> : null}
+          </>
+        )}
       </main>
 
       {modal === 'create-publisher' ? (
