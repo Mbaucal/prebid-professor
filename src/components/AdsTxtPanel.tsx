@@ -170,6 +170,15 @@ function importRowsFromText(text: string): ImportRow[] {
     .filter((row) => row.entry);
 }
 
+function manualEntryCount(value: string): number {
+  return value
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+    .length;
+}
+
 function statusForRequirement(check: AdsTxtCheck | null, requirementId: string): 'found' | 'missing' | 'unchecked' {
   if (!check || check.status === 'fetch-error') return 'unchecked';
   const result = check.results.find((item) => item.id === requirementId);
@@ -219,6 +228,7 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
     }))).filter((candidate) => candidate.id !== site.id),
     [accounts, site.id],
   );
+  const manualCount = useMemo(() => manualEntryCount(entry), [entry]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -273,6 +283,16 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
   }
 
   async function saveRequirement(): Promise<void> {
+    const entryCount = manualEntryCount(entry);
+    if (!entryCount) {
+      setError('Paste at least one valid ads.txt line.');
+      return;
+    }
+    if (editingId && entryCount !== 1) {
+      setError('Edit mode accepts one ads.txt line. Cancel the edit to add multiple new lines.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -287,7 +307,13 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
       });
       resetEditor();
       setCheck(null);
-      setMessage(editingId ? 'Ads.txt requirement updated.' : 'Ads.txt requirement added.');
+      setMessage(
+        editingId
+          ? 'Ads.txt requirement updated.'
+          : entryCount === 1
+            ? 'Ads.txt requirement added.'
+            : `${entryCount} ads.txt requirements added.`,
+      );
       await load();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Ads.txt requirement could not be saved.');
@@ -499,11 +525,37 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
             <div><span className="panel-kicker">Expected line</span><h3>{editingId ? 'Edit requirement' : 'Add requirement'}</h3></div>
             {editingId ? <button className="button secondary" onClick={resetEditor} type="button">Cancel edit</button> : null}
           </div>
-          <label><span>Source label</span><input onChange={(event) => setSourceLabel(event.target.value)} placeholder="Criteo" value={sourceLabel} /></label>
-          <label><span>Full ads.txt entry</span><textarea onChange={(event) => setEntry(event.target.value)} placeholder="criteo.com, 12345, RESELLER, 9fac4a4a87c2a44f" rows={3} value={entry} /></label>
-          <label className="ads-txt-checkbox"><input checked={required} onChange={(event) => setRequired(event.target.checked)} type="checkbox" /><span>Required entry</span></label>
-          <button className="button primary" disabled={saving || !entry.trim()} onClick={() => void saveRequirement()} type="button">
-            {saving ? 'Saving…' : editingId ? 'Save changes' : 'Add entry'}
+          <label>
+            <span>Source label</span>
+            <input
+              onChange={(event) => setSourceLabel(event.target.value)}
+              placeholder="Google, Criteo… (optional when # headings are pasted)"
+              value={sourceLabel}
+            />
+          </label>
+          <label>
+            <span>{editingId ? 'Full ads.txt entry' : 'Full ads.txt entries'}</span>
+            <textarea
+              onChange={(event) => setEntry(event.target.value)}
+              placeholder={'#Google\ngoogle.com, pub-123, DIRECT, f08c47fec0942fa0\ngoogle.com, pub-456, DIRECT, f08c47fec0942fa0'}
+              rows={editingId ? 3 : 8}
+              value={entry}
+            />
+            <small>
+              {editingId
+                ? 'Edit one ads.txt line.'
+                : 'Paste one or many lines. Blank lines are ignored. A # heading can set the label for the lines below it. Maximum 100 entries at once.'}
+            </small>
+          </label>
+          <label className="ads-txt-checkbox"><input checked={required} onChange={(event) => setRequired(event.target.checked)} type="checkbox" /><span>Required {editingId || manualCount <= 1 ? 'entry' : 'entries'}</span></label>
+          <button className="button primary" disabled={saving || manualCount === 0} onClick={() => void saveRequirement()} type="button">
+            {saving
+              ? 'Saving…'
+              : editingId
+                ? 'Save changes'
+                : manualCount > 1
+                  ? `Add ${manualCount} entries`
+                  : 'Add entry'}
           </button>
         </article>
 
