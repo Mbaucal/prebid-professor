@@ -12,12 +12,13 @@ import {
 } from './ads-txt';
 import { createAdsTxtRequirementFlexible } from './ads-txt-flexible';
 import { copyAdsTxtRequirementsLarge, importAdsTxtRequirementsLarge } from './ads-txt-bulk';
+import { listAuditLog } from './audit-log';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-19-ads-txt-large-bulk-v15';
+const RUNTIME_BUILD = '2026-07-19-global-workspaces-v16';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -121,6 +122,12 @@ export default {
 
     if (request.method === 'GET' && pathname === '/api/health') {
       return healthWithBuildMarker(request, env, ctx);
+    }
+
+    if (request.method === 'GET' && pathname === '/api/audit-log') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      return withBuildHeader(await listAuditLog(verified, env));
     }
 
     const adsTxtCheckMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ads-txt\/check$/);
