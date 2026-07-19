@@ -24,6 +24,7 @@ import './releases.css';
 import './release-deletion.css';
 import './external-deployments.css';
 import './export.css';
+import './mockup-builder.css';
 import './auth-account.css';
 import './admin-helpers.css';
 
