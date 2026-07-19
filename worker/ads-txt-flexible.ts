@@ -34,6 +34,17 @@ function fallbackLabel(entry: string): string {
   return entry.split('#')[0].split(',')[0]?.trim() || 'Ads.txt';
 }
 
+function jsonRequest(request: Request, body: unknown): Request {
+  const headers = new Headers(request.headers);
+  headers.set('content-type', 'application/json; charset=utf-8');
+  headers.delete('content-length');
+  return new Request(request.url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
 function manualRows(body: ManualRequirementBody): ManualRow[] {
   const required = booleanValue(body.required, true);
   const baseLabel = cleanLabel(body.sourceLabel);
@@ -76,22 +87,16 @@ export async function createAdsTxtRequirementFlexible(
   if (rows.length <= 1) {
     const single = rows[0];
     if (!single) return createAdsTxtRequirement(request, env, siteId);
-    const normalizedRequest = new Request(request.url, {
-      method: 'POST',
-      headers: request.headers,
-      body: JSON.stringify(single),
-    });
-    return createAdsTxtRequirement(normalizedRequest, env, siteId);
+    return createAdsTxtRequirement(jsonRequest(request, single), env, siteId);
   }
 
   if (rows.length > MAX_MANUAL_ROWS) {
     return apiError(`Add at most ${MAX_MANUAL_ROWS} ads.txt entries at once.`, 422);
   }
 
-  const importRequest = new Request(request.url, {
-    method: 'POST',
-    headers: request.headers,
-    body: JSON.stringify({ rows, replaceExisting: false }),
-  });
-  return importAdsTxtRequirements(importRequest, env, siteId);
+  return importAdsTxtRequirements(
+    jsonRequest(request, { rows, replaceExisting: false }),
+    env,
+    siteId,
+  );
 }
