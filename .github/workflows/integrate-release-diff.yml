@@ -6,12 +6,20 @@ on:
       - feature/release-diff
     paths:
       - .github/release-diff.trigger
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
 
 jobs:
   integrate:
+    if: github.event_name == 'push' || github.head_ref == 'feature/release-diff'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout feature branch
