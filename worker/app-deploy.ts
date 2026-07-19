@@ -6,19 +6,18 @@ import {
 import compatApp from './app-compat';
 import {
   checkAdsTxt,
-  copyAdsTxtRequirements,
   deleteAdsTxtRequirement,
-  importAdsTxtRequirements,
   listAdsTxtRequirements,
   updateAdsTxtRequirement,
 } from './ads-txt';
 import { createAdsTxtRequirementFlexible } from './ads-txt-flexible';
+import { copyAdsTxtRequirementsLarge, importAdsTxtRequirementsLarge } from './ads-txt-bulk';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 
-const RUNTIME_BUILD = '2026-07-19-debug-console-v14';
+const RUNTIME_BUILD = '2026-07-19-ads-txt-large-bulk-v15';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -137,7 +136,7 @@ export default {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return withBuildHeader(verified);
       if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
-      return withBuildHeader(await importAdsTxtRequirements(
+      return withBuildHeader(await importAdsTxtRequirementsLarge(
         verified,
         env,
         decodeURIComponent(adsTxtImportMatch[1]),
@@ -149,7 +148,7 @@ export default {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return withBuildHeader(verified);
       if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
-      return withBuildHeader(await copyAdsTxtRequirements(
+      return withBuildHeader(await copyAdsTxtRequirementsLarge(
         verified,
         env,
         decodeURIComponent(adsTxtCopyMatch[1]),
