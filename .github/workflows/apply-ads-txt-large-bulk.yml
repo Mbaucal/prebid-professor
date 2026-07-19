@@ -1,11 +1,9 @@
 name: Apply ads.txt large bulk integration
 
 on:
-  push:
+  pull_request:
     branches:
-      - feature/ads-txt-large-bulk
-    paths:
-      - .github/ads-txt-large-bulk.trigger
+      - main
 
 permissions:
   contents: write
