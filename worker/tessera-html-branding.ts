@@ -21,6 +21,8 @@ export async function brandTesseraHtmlResponse(response: Response): Promise<Resp
 
   const headers = new Headers(response.headers);
   headers.delete('content-length');
+  headers.delete('content-encoding');
+  headers.delete('etag');
   const csp = headers.get('content-security-policy');
   if (csp) headers.set('content-security-policy', brandedCsp(csp));
 
