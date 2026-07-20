@@ -1,11 +1,12 @@
 name: Integrate site monitoring
 
 on:
-  push:
+  pull_request:
     branches:
-      - feature/site-monitoring-email
-    paths:
-      - .github/site-monitoring.trigger
+      - main
+    types:
+      - opened
+      - synchronize
 
 permissions:
   contents: write
@@ -17,7 +18,7 @@ jobs:
       - name: Checkout feature branch
         uses: actions/checkout@v4
         with:
-          ref: feature/site-monitoring-email
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
 
       - name: Set up Node.js
@@ -44,4 +45,4 @@ jobs:
             exit 0
           fi
           git commit -m "Connect site monitoring workspace"
-          git push origin HEAD:feature/site-monitoring-email
+          git push origin HEAD:${{ github.head_ref }}
