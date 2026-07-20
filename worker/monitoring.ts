@@ -508,12 +508,19 @@ async function runtimeStatus(env: MonitoringEnv, site: SiteRow): Promise<{
   return { manifestFound: Boolean(manifestObject), manifestVersion, versionMatches, artifacts, messages };
 }
 
-function severityFor(status: Omit<MonitoringStatus, 'severity'>): MonitorSeverity {
-  if (!status.currentReleaseId || !status.expectedVersion) return 'not-configured';
-  const requiredMissing = status.artifacts.some((artifact) => artifact.required && !artifact.found);
-  if (!status.manifestFound || status.versionMatches === false || requiredMissing) return 'error';
-  if (status.adsTxt?.status === 'missing' || status.adsTxt?.status === 'fetch-error') return 'error';
-  if (status.adsTxt?.status === 'empty' || (status.adsTxt?.optionalMissingCount ?? 0) > 0) return 'warning';
+function severityFor(
+  status: Omit<MonitoringStatus, 'severity'>,
+  settings: MonitoringSettings,
+): MonitorSeverity {
+  if (settings.runtimeChecks && (!status.currentReleaseId || !status.expectedVersion)) return 'not-configured';
+  if (settings.runtimeChecks) {
+    const requiredMissing = status.artifacts.some((artifact) => artifact.required && !artifact.found);
+    if (!status.manifestFound || status.versionMatches === false || requiredMissing) return 'error';
+  }
+  if (settings.adsTxtChecks) {
+    if (status.adsTxt?.status === 'missing' || status.adsTxt?.status === 'fetch-error') return 'error';
+    if (status.adsTxt?.status === 'empty' || (status.adsTxt?.optionalMissingCount ?? 0) > 0) return 'warning';
+  }
   return 'ok';
 }
 
@@ -593,7 +600,7 @@ async function performCheck(env: MonitoringEnv, siteId: string, settings?: Monit
     adsTxt,
     messages,
   };
-  const status: MonitoringStatus = { ...base, severity: severityFor(base) };
+  const status: MonitoringStatus = { ...base, severity: severityFor(base, effective) };
   const fingerprint = await adsFingerprint(adsTxt);
   await persistState(env, status, fingerprint);
   return { status, fingerprint };
