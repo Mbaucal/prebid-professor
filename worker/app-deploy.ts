@@ -17,8 +17,9 @@ import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
+import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-19-release-diff-v17';
+const RUNTIME_BUILD = '2026-07-20-tessera-branding-v18';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -212,6 +213,7 @@ export default {
       return withBuildHeader(apiError('Method not allowed.', 405));
     }
 
-    return withBuildHeader(await downstream.fetch(request, env, ctx));
+    const response = await downstream.fetch(request, env, ctx);
+    return withBuildHeader(await brandTesseraHtmlResponse(response));
   },
 } satisfies ExportedHandler<Env>;
