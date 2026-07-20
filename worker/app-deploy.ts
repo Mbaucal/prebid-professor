@@ -13,13 +13,22 @@ import {
 import { createAdsTxtRequirementFlexible } from './ads-txt-flexible';
 import { copyAdsTxtRequirementsLarge, importAdsTxtRequirementsLarge } from './ads-txt-bulk';
 import { listAuditLog } from './audit-log';
+import {
+  checkMonitoring,
+  getMonitoring,
+  previewMonitoringEmail,
+  runScheduledMonitoring,
+  sendMonitoringEmail,
+  updateMonitoring,
+  type EmailBinding,
+} from './monitoring';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-20-tessera-branding-v18';
+const RUNTIME_BUILD = '2026-07-20-site-monitoring-v19';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -27,6 +36,7 @@ interface Env extends ReleaseEnv, AuthEnv {
   GITHUB_DEPLOY_REPOSITORY?: string;
   GITHUB_DEPLOY_REF?: string;
   DEPLOY_CALLBACK_SECRET?: string;
+  EMAIL?: EmailBinding;
 }
 
 const downstream = compatApp as {
@@ -109,6 +119,7 @@ async function healthWithBuildMarker(
         ...payload,
         runtimeBuild: RUNTIME_BUILD,
         workerEntrypoint: 'worker/app-deploy.ts',
+        email: env.EMAIL ? 'configured' : 'not-bound',
       }, null, 2)}\n`,
       { status: response.status, headers },
     );
@@ -190,6 +201,30 @@ export default {
       return withBuildHeader(apiError('Method not allowed.', 405));
     }
 
+
+    const monitoringActionMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/(check|email-preview|send-test|send-now)$/);
+    if (monitoringActionMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      const siteId = decodeURIComponent(monitoringActionMatch[1]);
+      const action = monitoringActionMatch[2];
+      if (action === 'check') return withBuildHeader(await checkMonitoring(verified, env, siteId));
+      if (action === 'email-preview') return withBuildHeader(await previewMonitoringEmail(verified, env, siteId));
+      if (action === 'send-test') return withBuildHeader(await sendMonitoringEmail(verified, env, siteId, 'test'));
+      return withBuildHeader(await sendMonitoringEmail(verified, env, siteId, 'manual'));
+    }
+
+    const monitoringMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring$/);
+    if (monitoringMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      const siteId = decodeURIComponent(monitoringMatch[1]);
+      if (request.method === 'GET') return withBuildHeader(await getMonitoring(env, siteId));
+      if (request.method === 'PUT') return withBuildHeader(await updateMonitoring(verified, env, siteId));
+      return withBuildHeader(apiError('Method not allowed.', 405));
+    }
+
     const releaseDeleteMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/([^/]+)$/);
     if (releaseDeleteMatch && request.method === 'DELETE') {
       const verified = await authenticatedRequest(request, env);
@@ -215,5 +250,9 @@ export default {
 
     const response = await downstream.fetch(request, env, ctx);
     return withBuildHeader(await brandTesseraHtmlResponse(response));
+  },
+
+  scheduled(_controller, env, ctx) {
+    ctx.waitUntil(runScheduledMonitoring(env));
   },
 } satisfies ExportedHandler<Env>;
