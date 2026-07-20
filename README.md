@@ -1,6 +1,8 @@
-# Prebid Professor
+# Tessera
 
-Cloudflare-hosted dashboard and release manager for Prebid.js publisher integrations.
+Cloudflare-hosted AdOps control plane and release manager for publisher integrations.
+
+> The technical repository, Worker and deployment identifiers remain `prebid-professor` for compatibility.
 
 ## Current milestone
 
