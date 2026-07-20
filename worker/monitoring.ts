@@ -168,6 +168,7 @@ const ARTIFACT_FILES = [
   'ads.js',
   'ads.min.js',
   'prebid.js',
+  'config.json',
   'manifest.json',
   'min-height.css',
   'sticky.css',
@@ -486,7 +487,7 @@ async function runtimeStatus(env: MonitoringEnv, site: SiteRow): Promise<{
   const artifacts = await Promise.all(ARTIFACT_FILES.map(async (fileName): Promise<ArtifactStatus> => {
     const key = `${prefix}${fileName}`;
     const object = await env.BUILDS!.head(key);
-    const required = fileName !== 'prebid.js' || prebidRequired;
+    const required = fileName !== 'sticky.css' && (fileName !== 'prebid.js' || prebidRequired);
     return {
       fileName,
       key,
