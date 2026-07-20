@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import AuthAccount from './components/AuthAccount';
+import TesseraBranding from './components/TesseraBranding';
 import './styles.css';
 import './publisher-workflows.css';
 import './publisher-hierarchy.css';
@@ -29,6 +30,7 @@ import './mockup-builder.css';
 import './debug-console.css';
 import './ads-txt.css';
 import './global-workspaces.css';
+import './tessera-branding.css';
 import './auth-account.css';
 import './admin-helpers.css';
 
@@ -40,6 +42,7 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
+    <TesseraBranding />
     <App />
     <AuthAccount />
   </StrictMode>,
