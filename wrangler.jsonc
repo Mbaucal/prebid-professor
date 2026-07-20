@@ -23,6 +23,9 @@
       "bucket_name": "prebid-professor-builds"
     }
   ],
+  "triggers": {
+    "crons": ["7 * * * *"]
+  },
   "observability": {
     "enabled": true
   }

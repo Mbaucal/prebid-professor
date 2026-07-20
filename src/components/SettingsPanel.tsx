@@ -12,6 +12,7 @@ type HealthPayload = {
   database?: string;
   storage?: string;
   auth?: string;
+  email?: string;
   externalDeploy?: {
     github?: string;
     callback?: string;
@@ -132,6 +133,7 @@ export default function SettingsPanel({ publishers }: Props) {
             <div><span>Database · D1</span><strong className={`settings-status ${statusClass(health?.database)}`}>{display(health?.database)}</strong></div>
             <div><span>Artifact storage · R2</span><strong className={`settings-status ${statusClass(health?.storage)}`}>{display(health?.storage)}</strong></div>
             <div><span>Authentication</span><strong className={`settings-status ${statusClass(health?.auth)}`}>{display(health?.auth)}</strong></div>
+            <div><span>Email Service</span><strong className={`settings-status ${statusClass(health?.email)}`}>{display(health?.email)}</strong></div>
             <div><span>GitHub deployment</span><strong className={`settings-status ${statusClass(health?.externalDeploy?.github)}`}>{display(health?.externalDeploy?.github)}</strong></div>
             <div><span>Deployment callback</span><strong className={`settings-status ${statusClass(health?.externalDeploy?.callback)}`}>{display(health?.externalDeploy?.callback)}</strong></div>
           </div>
