@@ -110,7 +110,7 @@ export async function getMonitoringStatus(
   if (!site) return apiError('Site not found.', 404);
 
   const checkedAt = new Date().toISOString();
-  const published = Boolean(site.current_release_id) && Boolean(site.current_version) && site.current_version !== 'draft';
+  const published = Boolean(site.current_version) && site.current_version !== 'draft';
   const messages: string[] = [];
   let manifestVersion: string | null = null;
   let versionMatches: boolean | null = null;
@@ -118,10 +118,13 @@ export async function getMonitoringStatus(
   let artifacts: ArtifactStatus[] = [];
 
   if (!published) {
-    messages.push('No production release is assigned to this site.');
+    messages.push('No production version is assigned to this site.');
   } else if (!env.BUILDS) {
     messages.push('R2 build storage is not configured.');
   } else {
+    if (!site.current_release_id) {
+      messages.push('This legacy site has production version metadata without a release ID; current-channel artifacts are still checked.');
+    }
     const prefix = `publishers/${site.id}/current/`;
     const [manifest, config] = await Promise.all([
       readJsonObject(await env.BUILDS.get(`${prefix}manifest.json`)),
