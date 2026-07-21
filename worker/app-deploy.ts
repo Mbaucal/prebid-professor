@@ -13,6 +13,7 @@ import {
 import { createAdsTxtRequirementFlexible } from './ads-txt-flexible';
 import { copyAdsTxtRequirementsLarge, importAdsTxtRequirementsLarge } from './ads-txt-bulk';
 import { listAuditLog } from './audit-log';
+import { getMonitoringEmailPreviewData } from './monitoring-email-preview';
 import { getMonitoringStatus } from './monitoring-readonly';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
@@ -20,7 +21,7 @@ import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-21-monitoring-readonly-v20';
+const RUNTIME_BUILD = '2026-07-21-monitoring-preview-v21';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -189,6 +190,17 @@ export default {
         return withBuildHeader(await createAdsTxtRequirementFlexible(verified, env, siteId));
       }
       return withBuildHeader(apiError('Method not allowed.', 405));
+    }
+
+    const monitoringEmailDataMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/email-preview-data$/);
+    if (monitoringEmailDataMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'GET') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await getMonitoringEmailPreviewData(
+        env,
+        decodeURIComponent(monitoringEmailDataMatch[1]),
+      ));
     }
 
     const monitoringStatusMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/status$/);
