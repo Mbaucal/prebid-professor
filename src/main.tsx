@@ -31,6 +31,7 @@ import './debug-console.css';
 import './ads-txt.css';
 import './global-workspaces.css';
 import './monitoring-readonly.css';
+import './monitoring-email-preview.css';
 import './tessera-branding.css';
 import './auth-account.css';
 import './admin-helpers.css';
