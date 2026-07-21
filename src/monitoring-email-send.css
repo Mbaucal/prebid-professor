@@ -1,0 +1,50 @@
+.monitor-test-send {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #d8dee7;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.monitor-test-send-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.monitor-test-send-heading h4 {
+  margin: 4px 0 0;
+  font-size: 17px;
+}
+
+.monitor-test-send > p {
+  margin: 0;
+  color: #667184;
+  line-height: 1.55;
+}
+
+.monitor-test-send-note {
+  padding: 10px 12px;
+  border: 1px solid #ecd584;
+  border-radius: 9px;
+  color: #735414;
+  background: #fff8df;
+}
+
+.monitor-test-send-message {
+  margin: 0;
+}
+
+.monitor-test-send .button {
+  justify-self: start;
+}
+
+@media (max-width: 760px) {
+  .monitor-test-send-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
