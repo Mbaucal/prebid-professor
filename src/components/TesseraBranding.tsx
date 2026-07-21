@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-const TESSERA_LOGO_URL = '/tessera-logo.png?v=19';
+const TESSERA_LOGO_URL = '/tessera-logo.png?v=20';
 
 function ensureIcon(rel: 'icon' | 'apple-touch-icon'): void {
   let link = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
@@ -9,7 +9,7 @@ function ensureIcon(rel: 'icon' | 'apple-touch-icon'): void {
     link.rel = rel;
     document.head.appendChild(link);
   }
-  link.href = TESSERA_LOGO_URL;
+  if (link.getAttribute('href') !== TESSERA_LOGO_URL) link.href = TESSERA_LOGO_URL;
   if (rel === 'icon') {
     link.type = 'image/png';
     link.sizes = '192x192';
@@ -17,7 +17,7 @@ function ensureIcon(rel: 'icon' | 'apple-touch-icon'): void {
 }
 
 function applyBranding(): void {
-  document.title = 'Tessera';
+  if (document.title !== 'Tessera') document.title = 'Tessera';
   ensureIcon('icon');
   ensureIcon('apple-touch-icon');
 
@@ -25,15 +25,15 @@ function applyBranding(): void {
   if (brand) {
     const mark = brand.querySelector<HTMLElement>('.brand-mark');
     if (mark) {
-      mark.textContent = '';
       mark.setAttribute('aria-hidden', 'true');
       let image = mark.querySelector<HTMLImageElement>('img');
       if (!image) {
+        mark.replaceChildren();
         image = document.createElement('img');
         image.alt = '';
         mark.appendChild(image);
       }
-      image.src = TESSERA_LOGO_URL;
+      if (image.getAttribute('src') !== TESSERA_LOGO_URL) image.src = TESSERA_LOGO_URL;
     }
 
     const name = brand.querySelector<HTMLElement>('strong');
