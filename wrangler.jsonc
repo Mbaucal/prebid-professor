@@ -23,6 +23,11 @@
       "bucket_name": "prebid-professor-builds"
     }
   ],
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
   "observability": {
     "enabled": true
   }

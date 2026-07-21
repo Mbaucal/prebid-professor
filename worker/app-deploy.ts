@@ -15,6 +15,7 @@ import { copyAdsTxtRequirementsLarge, importAdsTxtRequirementsLarge } from './ad
 import { listAuditLog } from './audit-log';
 import { getMonitoringEmailPreviewData } from './monitoring-email-preview';
 import { getMonitoringEmailDraft, updateMonitoringEmailDraft } from './monitoring-email-settings';
+import { sendMonitoringTestEmail, type EmailBinding } from './monitoring-email-send';
 import { getMonitoringStatus } from './monitoring-readonly';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
@@ -22,7 +23,7 @@ import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-21-monitoring-draft-storage-v22';
+const RUNTIME_BUILD = '2026-07-21-monitoring-test-email-v23';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -30,6 +31,7 @@ interface Env extends ReleaseEnv, AuthEnv {
   GITHUB_DEPLOY_REPOSITORY?: string;
   GITHUB_DEPLOY_REF?: string;
   DEPLOY_CALLBACK_SECRET?: string;
+  EMAIL?: EmailBinding;
 }
 
 const downstream = compatApp as {
@@ -112,6 +114,7 @@ async function healthWithBuildMarker(
         ...payload,
         runtimeBuild: RUNTIME_BUILD,
         workerEntrypoint: 'worker/app-deploy.ts',
+        email: env.EMAIL ? 'configured' : 'not-bound',
       }, null, 2)}\n`,
       { status: response.status, headers },
     );
@@ -191,6 +194,18 @@ export default {
         return withBuildHeader(await createAdsTxtRequirementFlexible(verified, env, siteId));
       }
       return withBuildHeader(apiError('Method not allowed.', 405));
+    }
+
+    const monitoringEmailSendTestMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/email-send-test$/);
+    if (monitoringEmailSendTestMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await sendMonitoringTestEmail(
+        verified,
+        env,
+        decodeURIComponent(monitoringEmailSendTestMatch[1]),
+      ));
     }
 
     const monitoringEmailSettingsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/email-settings$/);

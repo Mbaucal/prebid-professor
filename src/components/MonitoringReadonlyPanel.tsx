@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Site } from '../shared/types';
+import MonitoringEmailSendTest from './MonitoringEmailSendTest';
 
 type Props = {
   site: Site;
@@ -66,6 +67,9 @@ type MonitoringPayload = {
   adsTxt: AdsTxtStatus;
   messages: string[];
   readOnly: true;
+  capabilities: {
+    email: boolean;
+  };
 };
 
 type EmailPreviewData = {
@@ -518,7 +522,7 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
         <div>
           <span className="panel-kicker">Runtime, R2, ads.txt and email preview</span>
           <h2>Monitoring</h2>
-          <p>Runtime checks remain read-only. Email templates can be previewed and optionally saved per site in Tessera, but email sending is still disabled.</p>
+          <p>Runtime checks remain read-only. Email templates can be previewed, saved per site and manually test-sent when the Cloudflare EMAIL binding is ready.</p>
         </div>
         <button className="button primary" disabled={loading} onClick={() => void load()} type="button">
           {loading ? 'Checking…' : 'Check now'}
@@ -651,7 +655,9 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
                 <span className={`monitor-readonly-pill ${serverDraft?.saved ? 'healthy' : 'warning'}`}>
                   {serverDraft?.saved ? 'SAVED TO TESSERA' : 'NOT SAVED TO TESSERA'}
                 </span>
-                <span className="monitor-readonly-pill warning">NO EMAIL SENDING</span>
+                <span className={`monitor-readonly-pill ${payload.capabilities.email ? 'healthy' : 'warning'}`}>
+                  {payload.capabilities.email ? 'MANUAL TEST READY' : 'EMAIL BINDING MISSING'}
+                </span>
               </div>
             </div>
             <p className="monitor-email-intro">Write the exact subject and message you want. You can keep a browser draft, save the template per site in Tessera, and generate a safe preview plus a downloadable ads.txt attachment.</p>
@@ -709,10 +715,25 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
                 </div>
               </div>
             ) : null}
+            <MonitoringEmailSendTest
+              attachmentContent={preview?.attachmentContent ?? ''}
+              attachmentName={preview?.attachmentName ?? ''}
+              body={preview?.body ?? ''}
+              bodyFormat={preview?.bodyFormat ?? 'plain'}
+              cc={draft.cc}
+              emailConfigured={payload.capabilities.email}
+              previewReady={Boolean(preview)}
+              replyTo={draft.replyTo}
+              senderEmail={draft.senderEmail}
+              senderName={draft.senderName}
+              siteId={site.id}
+              subject={preview?.subject ?? ''}
+              to={draft.to}
+            />
           </article>
 
           <div className="monitor-readonly-note">
-            <strong>Safe staged rollout:</strong> runtime monitoring remains read-only. Saving creates or updates only an isolated per-site email-draft record; no email is sent, no Cron runs and no release or R2 object is modified.
+            <strong>Safe staged rollout:</strong> runtime monitoring remains read-only. Only the explicit Send test email action sends a message; no Cron, reminder, recovery workflow, release mutation or R2 write is enabled.
           </div>
         </>
       ) : null}
