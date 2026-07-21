@@ -19,7 +19,7 @@ import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-20-tessera-branding-v18';
+const RUNTIME_BUILD = '2026-07-21-tessera-ui-stable';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
