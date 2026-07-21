@@ -14,6 +14,7 @@ import { createAdsTxtRequirementFlexible } from './ads-txt-flexible';
 import { copyAdsTxtRequirementsLarge, importAdsTxtRequirementsLarge } from './ads-txt-bulk';
 import { listAuditLog } from './audit-log';
 import { getMonitoringEmailPreviewData } from './monitoring-email-preview';
+import { getMonitoringEmailDraft, updateMonitoringEmailDraft } from './monitoring-email-settings';
 import { getMonitoringStatus } from './monitoring-readonly';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
@@ -21,7 +22,7 @@ import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-21-monitoring-preview-v21';
+const RUNTIME_BUILD = '2026-07-21-monitoring-draft-storage-v22';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -189,6 +190,16 @@ export default {
       if (request.method === 'POST') {
         return withBuildHeader(await createAdsTxtRequirementFlexible(verified, env, siteId));
       }
+      return withBuildHeader(apiError('Method not allowed.', 405));
+    }
+
+    const monitoringEmailSettingsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/email-settings$/);
+    if (monitoringEmailSettingsMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      const siteId = decodeURIComponent(monitoringEmailSettingsMatch[1]);
+      if (request.method === 'GET') return withBuildHeader(await getMonitoringEmailDraft(env, siteId));
+      if (request.method === 'PUT') return withBuildHeader(await updateMonitoringEmailDraft(verified, env, siteId));
       return withBuildHeader(apiError('Method not allowed.', 405));
     }
 

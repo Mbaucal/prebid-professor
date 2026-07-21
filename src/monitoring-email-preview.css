@@ -79,6 +79,14 @@
   background: #fff1df;
 }
 
+.monitor-email-statuses {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .monitor-email-actions {
   display: flex;
   align-items: center;
