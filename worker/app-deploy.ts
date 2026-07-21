@@ -13,13 +13,14 @@ import {
 import { createAdsTxtRequirementFlexible } from './ads-txt-flexible';
 import { copyAdsTxtRequirementsLarge, importAdsTxtRequirementsLarge } from './ads-txt-bulk';
 import { listAuditLog } from './audit-log';
+import { getMonitoringStatus } from './monitoring-readonly';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-21-tessera-ui-stable';
+const RUNTIME_BUILD = '2026-07-21-monitoring-readonly-v20';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -188,6 +189,18 @@ export default {
         return withBuildHeader(await createAdsTxtRequirementFlexible(verified, env, siteId));
       }
       return withBuildHeader(apiError('Method not allowed.', 405));
+    }
+
+    const monitoringStatusMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/status$/);
+    if (monitoringStatusMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'GET') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await getMonitoringStatus(
+        verified,
+        env,
+        decodeURIComponent(monitoringStatusMatch[1]),
+      ));
     }
 
     const releaseDeleteMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/([^/]+)$/);
