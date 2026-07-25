@@ -25,7 +25,6 @@ type ArtifactStatus = {
 
 export interface MonitoringReadonlyEnv extends DatabaseEnv {
   BUILDS?: R2Bucket;
-  EMAIL?: unknown;
 }
 
 const ARTIFACT_FILES = [
@@ -202,8 +201,5 @@ export async function getMonitoringStatus(
     adsTxt,
     messages: Array.from(new Set(messages)),
     readOnly: true,
-    capabilities: {
-      email: Boolean(env.EMAIL),
-    },
   });
 }
