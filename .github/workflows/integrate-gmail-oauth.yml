@@ -19,16 +19,15 @@ jobs:
         with:
           ref: feature/monitoring-readonly-v1
           fetch-depth: 0
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
       - name: Integrate Gmail OAuth
         run: python3 .github/scripts/integrate_gmail_oauth.py
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-      - name: Build dashboard and Worker
-        run: npm run build
+
       - name: Commit integrated source
         run: |
           git config user.name "Tessera Gmail Integration"
@@ -36,7 +35,13 @@ jobs:
           git add src/components/MonitoringReadonlyPanel.tsx src/components/MonitoringEmailSendTest.tsx src/main.tsx worker/app-deploy.ts
           if git diff --cached --quiet; then
             echo "Gmail OAuth integration is already committed."
-            exit 0
+          else
+            git commit -m "Enable Gmail OAuth test email flow"
+            git push origin HEAD:feature/monitoring-readonly-v1
           fi
-          git commit -m "Enable Gmail OAuth test email flow"
-          git push origin HEAD:feature/monitoring-readonly-v1
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build dashboard and Worker
+        run: npm run build
