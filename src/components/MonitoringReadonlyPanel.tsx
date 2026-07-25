@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Site } from '../shared/types';
 import MonitoringEmailSendTest from './MonitoringEmailSendTest';
 import GmailConnectionPanel from './GmailConnectionPanel';
+import MonitoringNotificationRules from './MonitoringNotificationRules';
 
 type Props = {
   site: Site;
@@ -68,9 +69,6 @@ type MonitoringPayload = {
   adsTxt: AdsTxtStatus;
   messages: string[];
   readOnly: true;
-  capabilities: {
-    email: boolean;
-  };
 };
 
 type EmailPreviewData = {
@@ -160,6 +158,7 @@ const TEMPLATE_VARIABLES = [
   '{{current_version}}',
   '{{manifest_version}}',
   '{{sender_name}}',
+  '{{notification_kind}}',
 ] as const;
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
@@ -489,7 +488,6 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
       if (!draft.subjectTemplate.trim()) warnings.push('Subject template is empty.');
       if (!draft.bodyTemplate.trim()) warnings.push('Email body template is empty.');
       if (!draft.to.trim()) warnings.push('Recipient list is empty.');
-      if (!draft.senderEmail.trim()) warnings.push('Sender email is empty.');
 
       setPreview({
         subject: renderTemplate(draft.subjectTemplate, variables),
@@ -525,7 +523,7 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
         <div>
           <span className="panel-kicker">Runtime, R2, ads.txt and email preview</span>
           <h2>Monitoring</h2>
-          <p>Runtime checks remain read-only. Email templates can be previewed, saved per site and manually test-sent when the Cloudflare EMAIL binding is ready.</p>
+          <p>Runtime checks remain read-only. Email templates can be previewed, saved per site, sent through the connected Gmail account and evaluated against staged notification rules.</p>
         </div>
         <button className="button primary" disabled={loading} onClick={() => void load()} type="button">
           {loading ? 'Checking…' : 'Check now'}
@@ -660,8 +658,8 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
                 <span className={`monitor-readonly-pill ${serverDraft?.saved ? 'healthy' : 'warning'}`}>
                   {serverDraft?.saved ? 'SAVED TO TESSERA' : 'NOT SAVED TO TESSERA'}
                 </span>
-                <span className={`monitor-readonly-pill ${payload.capabilities.email ? 'healthy' : 'warning'}`}>
-                  {payload.capabilities.email ? 'MANUAL TEST READY' : 'EMAIL BINDING MISSING'}
+                <span className={`monitor-readonly-pill ${gmailConnected ? 'healthy' : 'warning'}`}>
+                  {gmailConnected ? 'GMAIL READY' : 'GMAIL DISCONNECTED'}
                 </span>
               </div>
             </div>
@@ -669,7 +667,7 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
 
             <div className="monitor-email-form-grid">
               <label><span>Sender name</span><input onChange={(event) => updateDraft('senderName', event.target.value)} placeholder="Tessera Ads.txt" value={draft.senderName} /></label>
-              <label><span>Sender email</span><input onChange={(event) => updateDraft('senderEmail', event.target.value)} placeholder="alerts@example.com" type="email" value={draft.senderEmail} /></label>
+              <label><span>Sender account</span><input disabled value={gmailEmail ?? 'Connect Gmail above'} /></label>
               <label><span>Reply-To</span><input onChange={(event) => updateDraft('replyTo', event.target.value)} placeholder="adops@example.com" type="email" value={draft.replyTo} /></label>
               <label><span>Body format</span><select onChange={(event) => updateDraft('bodyFormat', event.target.value as BodyFormat)} value={draft.bodyFormat}><option value="plain">Plain text</option><option value="html">HTML</option></select></label>
               <label className="monitor-span-2"><span>To</span><textarea onChange={(event) => updateDraft('to', event.target.value)} placeholder="publisher@example.com\nprogrammer@example.com" value={draft.to} /></label>
@@ -696,7 +694,7 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
               <div className="monitor-preview-area">
                 {preview.warnings.length ? <div className="monitor-preview-warnings">{preview.warnings.map((warning) => <div key={warning}>{warning}</div>)}</div> : null}
                 <div className="monitor-preview-meta">
-                  <div><span>From</span><strong>{draft.senderName || '—'}{draft.senderEmail ? ` <${draft.senderEmail}>` : ''}</strong></div>
+                  <div><span>From</span><strong>{draft.senderName || '—'}{gmailEmail ? ` <${gmailEmail}>` : ''}</strong></div>
                   <div><span>To</span><strong>{draft.to || '—'}</strong></div>
                   <div><span>CC</span><strong>{draft.cc || '—'}</strong></div>
                   <div><span>Reply-To</span><strong>{draft.replyTo || '—'}</strong></div>
@@ -726,10 +724,9 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
               body={preview?.body ?? ''}
               bodyFormat={preview?.bodyFormat ?? 'plain'}
               cc={draft.cc}
-              emailConfigured={gmailConnected}
+              gmailConnected={gmailConnected}
               previewReady={Boolean(preview)}
               replyTo={draft.replyTo}
-              senderEmail={gmailEmail ?? draft.senderEmail}
               senderName={draft.senderName}
               siteId={site.id}
               subject={preview?.subject ?? ''}
@@ -737,8 +734,14 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
             />
           </article>
 
+          <MonitoringNotificationRules
+            gmailConnected={gmailConnected}
+            siteId={site.id}
+            templateSaved={Boolean(serverDraft?.saved)}
+          />
+
           <div className="monitor-readonly-note">
-            <strong>Safe staged rollout:</strong> runtime monitoring remains read-only. Only the explicit Send test email action sends a message; no Cron, reminder, recovery workflow, release mutation or R2 write is enabled.
+            <strong>Safe staged rollout:</strong> runtime monitoring remains read-only. Gmail test sends and manual rule evaluation are explicit actions; the scheduler is still disabled on this preview branch and no release or R2 object is modified.
           </div>
         </>
       ) : null}

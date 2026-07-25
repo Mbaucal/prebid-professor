@@ -15,7 +15,8 @@ import { copyAdsTxtRequirementsLarge, importAdsTxtRequirementsLarge } from './ad
 import { listAuditLog } from './audit-log';
 import { getMonitoringEmailPreviewData } from './monitoring-email-preview';
 import { getMonitoringEmailDraft, updateMonitoringEmailDraft } from './monitoring-email-settings';
-import { sendMonitoringTestEmail, type EmailBinding } from './monitoring-email-send';
+import { getMonitoringNotificationSettings, updateMonitoringNotificationSettings } from './monitoring-notification-settings';
+import { runMonitoringNotification } from './monitoring-notification-run';
 import { getMonitoringStatus } from './monitoring-readonly';
 import { disconnectGmail, finishGmailConnect, getGmailStatus, startGmailConnect, type GmailOAuthEnv } from './gmail-oauth';
 import { sendGmailTest } from './gmail-send';
@@ -25,7 +26,7 @@ import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-25-monitoring-gmail-identity-v25';
+const RUNTIME_BUILD = '2026-07-25-monitoring-notification-rules-v26';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -33,7 +34,6 @@ interface Env extends ReleaseEnv, AuthEnv {
   GITHUB_DEPLOY_REPOSITORY?: string;
   GITHUB_DEPLOY_REF?: string;
   DEPLOY_CALLBACK_SECRET?: string;
-  EMAIL?: EmailBinding;
   GOOGLE_OAUTH_CLIENT_ID?: string;
   GOOGLE_OAUTH_CLIENT_SECRET?: string;
   GMAIL_TOKEN_ENCRYPTION_KEY?: string;
@@ -119,7 +119,6 @@ async function healthWithBuildMarker(
         ...payload,
         runtimeBuild: RUNTIME_BUILD,
         workerEntrypoint: 'worker/app-deploy.ts',
-        email: env.EMAIL ? 'configured' : 'not-bound',
         gmailOAuth: {
           configured: Boolean(
             env.GOOGLE_OAUTH_CLIENT_ID
@@ -233,24 +232,34 @@ export default {
       return withBuildHeader(apiError('Method not allowed.', 405));
     }
 
+    const monitoringNotificationSettingsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/notification-settings$/);
+    if (monitoringNotificationSettingsMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      const siteId = decodeURIComponent(monitoringNotificationSettingsMatch[1]);
+      if (request.method === 'GET') return withBuildHeader(await getMonitoringNotificationSettings(env, siteId));
+      if (request.method === 'PUT') return withBuildHeader(await updateMonitoringNotificationSettings(verified, env, siteId));
+      return withBuildHeader(apiError('Method not allowed.', 405));
+    }
+
+    const monitoringNotificationRunMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/notifications\/run$/);
+    if (monitoringNotificationRunMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await runMonitoringNotification(
+        verified,
+        env,
+        decodeURIComponent(monitoringNotificationRunMatch[1]),
+      ));
+    }
+
     const monitoringGmailSendTestMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/gmail-send-test$/);
     if (monitoringGmailSendTestMatch) {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return withBuildHeader(verified);
       if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
       return withBuildHeader(await sendGmailTest(verified, env as GmailOAuthEnv));
-    }
-
-    const monitoringEmailSendTestMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/email-send-test$/);
-    if (monitoringEmailSendTestMatch) {
-      const verified = await authenticatedRequest(request, env);
-      if (verified instanceof Response) return withBuildHeader(verified);
-      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
-      return withBuildHeader(await sendMonitoringTestEmail(
-        verified,
-        env,
-        decodeURIComponent(monitoringEmailSendTestMatch[1]),
-      ));
     }
 
     const monitoringEmailSettingsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/email-settings$/);
