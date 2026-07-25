@@ -4,9 +4,8 @@ type BodyFormat = 'plain' | 'html';
 
 type Props = {
   siteId: string;
-  emailConfigured: boolean;
+  gmailConnected: boolean;
   senderName: string;
-  senderEmail: string;
   replyTo: string;
   to: string;
   cc: string;
@@ -20,12 +19,13 @@ type Props = {
 
 type SendResponse = {
   ok: true;
-  mode: 'manual-test';
+  provider: 'gmail';
   messageId: string;
-  sentAt: string;
-  recipients: string[];
+  threadId: string | null;
+  from: string;
+  to: string[];
   cc: string[];
-  attachmentName: string;
+  sentAt: string;
 };
 
 type FailurePayload = {
@@ -49,10 +49,10 @@ export default function MonitoringEmailSendTest(props: Props) {
   const [success, setSuccess] = useState<string | null>(null);
 
   async function sendTest(): Promise<void> {
-    if (!props.previewReady || !props.emailConfigured || sending) return;
+    if (!props.previewReady || !props.gmailConnected || sending) return;
     const recipients = props.to.trim() || 'the configured recipient';
     const confirmed = window.confirm(
-      `Send a real test email to ${recipients}?\n\nThis sends the rendered preview and the ads.txt attachment.`,
+      `Send a real Gmail test to ${recipients}?\n\nThis sends the rendered preview and the ads.txt attachment.`,
     );
     if (!confirmed) return;
 
@@ -72,7 +72,6 @@ export default function MonitoringEmailSendTest(props: Props) {
           body: JSON.stringify({
             message: {
               senderName: props.senderName,
-              senderEmail: props.senderEmail,
               replyTo: props.replyTo,
               to: props.to,
               cc: props.cc,
@@ -90,22 +89,22 @@ export default function MonitoringEmailSendTest(props: Props) {
       try {
         payload = text ? JSON.parse(text) as SendResponse & FailurePayload : null;
       } catch {
-        throw new Error(text || `Test email request failed with status ${response.status}.`);
+        throw new Error(text || `Gmail test request failed with status ${response.status}.`);
       }
       if (!response.ok || !payload?.ok) {
         const details = detailText(payload?.details);
-        throw new Error(`${payload?.error || `Test email request failed with status ${response.status}.`}${details ? ` ${details}` : ''}`);
+        throw new Error(`${payload?.error || `Gmail test request failed with status ${response.status}.`}${details ? ` ${details}` : ''}`);
       }
-      setSuccess(`Test email sent · ${payload.messageId}`);
+      setSuccess(`Gmail test sent from ${payload.from} · ${payload.messageId}`);
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Test email could not be sent.');
+      setError(sendError instanceof Error ? sendError.message : 'Gmail test could not be sent.');
     } finally {
       setSending(false);
     }
   }
 
-  const disabledReason = !props.emailConfigured
-    ? 'Cloudflare EMAIL binding is not configured on this preview.'
+  const disabledReason = !props.gmailConnected
+    ? 'Connect Gmail before sending a test.'
     : !props.previewReady
       ? 'Generate the email and attachment preview first.'
       : null;
@@ -114,15 +113,15 @@ export default function MonitoringEmailSendTest(props: Props) {
     <section className="monitor-test-send">
       <div className="monitor-test-send-heading">
         <div>
-          <span className="panel-kicker">Manual delivery test</span>
+          <span className="panel-kicker">Manual Gmail delivery test</span>
           <h4>Send the rendered preview</h4>
         </div>
-        <span className={`monitor-readonly-pill ${props.emailConfigured ? 'healthy' : 'warning'}`}>
-          {props.emailConfigured ? 'EMAIL BINDING READY' : 'EMAIL BINDING MISSING'}
+        <span className={`monitor-readonly-pill ${props.gmailConnected ? 'healthy' : 'warning'}`}>
+          {props.gmailConnected ? 'GMAIL CONNECTED' : 'GMAIL DISCONNECTED'}
         </span>
       </div>
       <p>
-        This sends one real test message with the generated ads.txt attachment. It does not enable schedules,
+        This sends one real Gmail message with the generated ads.txt attachment. It does not enable schedules,
         reminders, recovery messages or automatic delivery.
       </p>
       {disabledReason ? <div className="monitor-test-send-note">{disabledReason}</div> : null}
@@ -134,7 +133,7 @@ export default function MonitoringEmailSendTest(props: Props) {
         onClick={() => void sendTest()}
         type="button"
       >
-        {sending ? 'Sending test…' : 'Send test email'}
+        {sending ? 'Sending Gmail test…' : 'Send Gmail test'}
       </button>
     </section>
   );
