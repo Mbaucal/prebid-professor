@@ -25,7 +25,7 @@ import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-21-monitoring-gmail-oauth-v24';
+const RUNTIME_BUILD = '2026-07-25-monitoring-gmail-identity-v25';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -120,6 +120,13 @@ async function healthWithBuildMarker(
         runtimeBuild: RUNTIME_BUILD,
         workerEntrypoint: 'worker/app-deploy.ts',
         email: env.EMAIL ? 'configured' : 'not-bound',
+        gmailOAuth: {
+          configured: Boolean(
+            env.GOOGLE_OAUTH_CLIENT_ID
+            && env.GOOGLE_OAUTH_CLIENT_SECRET
+            && env.GMAIL_TOKEN_ENCRYPTION_KEY
+          ),
+        },
       }, null, 2)}\n`,
       { status: response.status, headers },
     );
