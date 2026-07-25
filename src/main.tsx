@@ -33,6 +33,7 @@ import './global-workspaces.css';
 import './monitoring-readonly.css';
 import './monitoring-email-preview.css';
 import './monitoring-email-send.css';
+import './gmail-connection.css';
 import './tessera-branding.css';
 import './auth-account.css';
 import './admin-helpers.css';

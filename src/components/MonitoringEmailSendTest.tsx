@@ -61,7 +61,7 @@ export default function MonitoringEmailSendTest(props: Props) {
     setSuccess(null);
     try {
       const response = await fetch(
-        `/api/publishers/${encodeURIComponent(props.siteId)}/monitoring/email-send-test`,
+        `/api/publishers/${encodeURIComponent(props.siteId)}/monitoring/gmail-send-test`,
         {
           method: 'POST',
           credentials: 'same-origin',

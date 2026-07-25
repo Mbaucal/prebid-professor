@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Site } from '../shared/types';
 import MonitoringEmailSendTest from './MonitoringEmailSendTest';
+import GmailConnectionPanel from './GmailConnectionPanel';
 
 type Props = {
   site: Site;
@@ -359,6 +360,8 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
   const [copied, setCopied] = useState<'subject' | 'body' | null>(null);
   const [serverDraft, setServerDraft] = useState<ServerDraftPayload | null>(null);
   const [serverSaving, setServerSaving] = useState(false);
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [gmailEmail, setGmailEmail] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -645,6 +648,8 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
             </article>
           ) : null}
 
+          <GmailConnectionPanel onConnectionChange={(connected, email) => { setGmailConnected(connected); setGmailEmail(email); }} />
+
           <article className="monitor-readonly-card monitor-email-builder">
             <div className="monitor-readonly-card-heading">
               <div>
@@ -721,10 +726,10 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
               body={preview?.body ?? ''}
               bodyFormat={preview?.bodyFormat ?? 'plain'}
               cc={draft.cc}
-              emailConfigured={payload.capabilities.email}
+              emailConfigured={gmailConnected}
               previewReady={Boolean(preview)}
               replyTo={draft.replyTo}
-              senderEmail={draft.senderEmail}
+              senderEmail={gmailEmail ?? draft.senderEmail}
               senderName={draft.senderName}
               siteId={site.id}
               subject={preview?.subject ?? ''}

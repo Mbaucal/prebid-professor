@@ -17,13 +17,15 @@ import { getMonitoringEmailPreviewData } from './monitoring-email-preview';
 import { getMonitoringEmailDraft, updateMonitoringEmailDraft } from './monitoring-email-settings';
 import { sendMonitoringTestEmail, type EmailBinding } from './monitoring-email-send';
 import { getMonitoringStatus } from './monitoring-readonly';
+import { disconnectGmail, finishGmailConnect, getGmailStatus, startGmailConnect, type GmailOAuthEnv } from './gmail-oauth';
+import { sendGmailTest } from './gmail-send';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-21-monitoring-test-email-v23';
+const RUNTIME_BUILD = '2026-07-21-monitoring-gmail-oauth-v24';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -32,6 +34,9 @@ interface Env extends ReleaseEnv, AuthEnv {
   GITHUB_DEPLOY_REF?: string;
   DEPLOY_CALLBACK_SECRET?: string;
   EMAIL?: EmailBinding;
+  GOOGLE_OAUTH_CLIENT_ID?: string;
+  GOOGLE_OAUTH_CLIENT_SECRET?: string;
+  GMAIL_TOKEN_ENCRYPTION_KEY?: string;
 }
 
 const downstream = compatApp as {
@@ -131,6 +136,31 @@ export default {
       return healthWithBuildMarker(request, env, ctx);
     }
 
+    if (request.method === 'GET' && pathname === '/api/integrations/gmail/callback') {
+      return withBuildHeader(await finishGmailConnect(request, env as GmailOAuthEnv));
+    }
+
+    if (pathname === '/api/integrations/gmail/status') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'GET') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await getGmailStatus(env as GmailOAuthEnv));
+    }
+
+    if (pathname === '/api/integrations/gmail/connect') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'GET') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await startGmailConnect(verified, env as GmailOAuthEnv));
+    }
+
+    if (pathname === '/api/integrations/gmail/disconnect') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await disconnectGmail(env as GmailOAuthEnv));
+    }
+
     if (request.method === 'GET' && pathname === '/api/audit-log') {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return withBuildHeader(verified);
@@ -194,6 +224,14 @@ export default {
         return withBuildHeader(await createAdsTxtRequirementFlexible(verified, env, siteId));
       }
       return withBuildHeader(apiError('Method not allowed.', 405));
+    }
+
+    const monitoringGmailSendTestMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/gmail-send-test$/);
+    if (monitoringGmailSendTestMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await sendGmailTest(verified, env as GmailOAuthEnv));
     }
 
     const monitoringEmailSendTestMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/email-send-test$/);
