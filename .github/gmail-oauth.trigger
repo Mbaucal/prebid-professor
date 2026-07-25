@@ -1,1 +1,1 @@
-Integrate Gmail OAuth connection and Gmail API test sending.
+Retry Gmail OAuth integration and preserve generated source before build validation.
