@@ -1,1 +1,1 @@
-Retry Gmail OAuth integration and preserve generated source before build validation.
+Run resilient Gmail OAuth integration with explicit source validation.
