@@ -5,10 +5,20 @@ def replace_once(path: str, old: str, new: str, label: str) -> None:
     file_path = Path(path)
     source = file_path.read_text(encoding='utf-8')
     if new in source:
+        print(f'{label}: already applied')
         return
     if old not in source:
         raise SystemExit(f'{label} anchor was not found in {path}.')
     file_path.write_text(source.replace(old, new, 1), encoding='utf-8')
+    print(f'{label}: applied')
+
+
+def require(path: str, *needles: str) -> None:
+    source = Path(path).read_text(encoding='utf-8')
+    missing = [needle for needle in needles if needle not in source]
+    if missing:
+        raise SystemExit(f'Integration validation failed in {path}: {missing}')
+
 
 replace_once(
     'worker/app-deploy.ts',
@@ -48,32 +58,32 @@ replace_once(
 )
 replace_once(
     'src/components/MonitoringReadonlyPanel.tsx',
-    "  const [serverSaving, setServerSaving] = useState(false);",
-    "  const [serverSaving, setServerSaving] = useState(false);\n  const [gmailConnected, setGmailConnected] = useState(false);\n  const [gmailEmail, setGmailEmail] = useState<string | null>(null);",
+    'const [serverSaving, setServerSaving] = useState(false);',
+    "const [serverSaving, setServerSaving] = useState(false);\n  const [gmailConnected, setGmailConnected] = useState(false);\n  const [gmailEmail, setGmailEmail] = useState<string | null>(null);",
     'gmail state',
 )
 replace_once(
     'src/components/MonitoringReadonlyPanel.tsx',
-    "          <article className=\"monitor-readonly-card monitor-email-builder\">",
-    "          <GmailConnectionPanel onConnectionChange={(connected, email) => { setGmailConnected(connected); setGmailEmail(email); }} />\n\n          <article className=\"monitor-readonly-card monitor-email-builder\">",
+    '<article className="monitor-readonly-card monitor-email-builder">',
+    "<GmailConnectionPanel onConnectionChange={(connected, email) => { setGmailConnected(connected); setGmailEmail(email); }} />\n\n          <article className=\"monitor-readonly-card monitor-email-builder\">",
     'gmail panel render',
 )
 replace_once(
     'src/components/MonitoringReadonlyPanel.tsx',
-    "               emailConfigured={payload.capabilities.email}",
-    "               emailConfigured={gmailConnected}",
+    'emailConfigured={payload.capabilities.email}',
+    'emailConfigured={gmailConnected}',
     'gmail configured prop',
 )
 replace_once(
     'src/components/MonitoringReadonlyPanel.tsx',
-    "               senderEmail={draft.senderEmail}",
-    "               senderEmail={gmailEmail ?? draft.senderEmail}",
+    'senderEmail={draft.senderEmail}',
+    'senderEmail={gmailEmail ?? draft.senderEmail}',
     'gmail sender prop',
 )
 replace_once(
     'src/components/MonitoringEmailSendTest.tsx',
-    "`/api/publishers/${encodeURIComponent(props.siteId)}/monitoring/email-send-test`,",
-    "`/api/publishers/${encodeURIComponent(props.siteId)}/monitoring/gmail-send-test`,",
+    '`/api/publishers/${encodeURIComponent(props.siteId)}/monitoring/email-send-test`,',
+    '`/api/publishers/${encodeURIComponent(props.siteId)}/monitoring/gmail-send-test`,',
     'gmail send endpoint',
 )
 replace_once(
@@ -82,3 +92,36 @@ replace_once(
     "import './monitoring-email-send.css';\nimport './gmail-connection.css';\n",
     'gmail css import',
 )
+
+require(
+    'worker/app-deploy.ts',
+    "2026-07-21-monitoring-gmail-oauth-v24",
+    "from './gmail-oauth'",
+    "from './gmail-send'",
+    "/api/integrations/gmail/callback",
+    "/api/integrations/gmail/connect",
+    "/api/integrations/gmail/status",
+    "/api/integrations/gmail/disconnect",
+    "monitoring\\/gmail-send-test",
+    'GOOGLE_OAUTH_CLIENT_ID',
+    'GOOGLE_OAUTH_CLIENT_SECRET',
+    'GMAIL_TOKEN_ENCRYPTION_KEY',
+)
+require(
+    'src/components/MonitoringReadonlyPanel.tsx',
+    "from './GmailConnectionPanel'",
+    'gmailConnected',
+    'gmailEmail',
+    '<GmailConnectionPanel',
+    'emailConfigured={gmailConnected}',
+    'senderEmail={gmailEmail ?? draft.senderEmail}',
+)
+require(
+    'src/components/MonitoringEmailSendTest.tsx',
+    '/monitoring/gmail-send-test',
+)
+require(
+    'src/main.tsx',
+    "import './gmail-connection.css';",
+)
+print('Gmail OAuth integration source validation passed.')
