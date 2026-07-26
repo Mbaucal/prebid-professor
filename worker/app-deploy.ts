@@ -26,7 +26,7 @@ import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-25-monitoring-notification-rules-v26';
+const RUNTIME_BUILD = '2026-07-26-monitoring-schema-upgrade-v27';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;

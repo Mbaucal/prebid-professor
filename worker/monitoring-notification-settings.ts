@@ -1,5 +1,6 @@
 import { apiError, getActor, json, readJson } from './http';
 import type { DatabaseEnv } from './publishers';
+import { reconcileMonitoringNotificationSchema } from './monitoring-notification-schema';
 
 export type MonitoringNotificationSettings = {
   enabled: boolean;
@@ -173,6 +174,11 @@ async function createMonitoringNotificationTables(db: D1Database): Promise<void>
       FOREIGN KEY (site_id) REFERENCES publishers(id) ON DELETE CASCADE
     )`),
   ]);
+
+  // Older preview builds created monitoring_notification_log without the
+  // provider column. CREATE TABLE IF NOT EXISTS does not upgrade that table,
+  // so reconcile known legacy columns before any SELECT or INSERT uses them.
+  await reconcileMonitoringNotificationSchema(db);
 
   // D1 prepares batch statements before execution. Create the index only after
   // its table exists, otherwise the first request can fail with "no such table".
