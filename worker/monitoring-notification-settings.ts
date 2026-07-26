@@ -75,8 +75,14 @@ export const DEFAULT_NOTIFICATION_SETTINGS: MonitoringNotificationSettings = {
   recoveryEnabled: true,
 };
 
+let schemaReady: Promise<void> | null = null;
+
 function databaseMissing(): Response {
   return apiError('D1 database binding is not configured.', 503);
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function parseJsonRecord(value: string | null | undefined): Record<string, unknown> {
@@ -129,7 +135,7 @@ async function siteExists(db: D1Database, siteId: string): Promise<boolean> {
   return Boolean(row);
 }
 
-export async function ensureMonitoringNotificationTables(db: D1Database): Promise<void> {
+async function createMonitoringNotificationTables(db: D1Database): Promise<void> {
   await db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS monitoring_notification_settings (
       site_id TEXT PRIMARY KEY,
@@ -166,9 +172,22 @@ export async function ensureMonitoringNotificationTables(db: D1Database): Promis
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       FOREIGN KEY (site_id) REFERENCES publishers(id) ON DELETE CASCADE
     )`),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_monitoring_notification_log_site
-      ON monitoring_notification_log(site_id, created_at DESC)`),
   ]);
+
+  // D1 prepares batch statements before execution. Create the index only after
+  // its table exists, otherwise the first request can fail with "no such table".
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_monitoring_notification_log_site
+    ON monitoring_notification_log(site_id, created_at DESC)`).run();
+}
+
+export async function ensureMonitoringNotificationTables(db: D1Database): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = createMonitoringNotificationTables(db).catch((error) => {
+      schemaReady = null;
+      throw error;
+    });
+  }
+  await schemaReady;
 }
 
 export async function readMonitoringNotificationSettings(
@@ -299,25 +318,32 @@ export async function getMonitoringNotificationSettings(
   siteId: string,
 ): Promise<Response> {
   if (!env.DB) return databaseMissing();
-  if (!(await siteExists(env.DB, siteId))) return apiError('Site not found.', 404);
-  await ensureMonitoringNotificationTables(env.DB);
-  const [settings, state, logs, row] = await Promise.all([
-    readMonitoringNotificationSettings(env.DB, siteId),
-    readMonitoringNotificationState(env.DB, siteId),
-    readRecentLogs(env.DB, siteId),
-    env.DB.prepare('SELECT updated_by, updated_at FROM monitoring_notification_settings WHERE site_id = ? LIMIT 1')
-      .bind(siteId).first<Pick<SettingsRow, 'updated_by' | 'updated_at'>>(),
-  ]);
-  return json({
-    ok: true,
-    settings,
-    state,
-    recent: logs,
-    saved: Boolean(row),
-    updatedBy: row?.updated_by ?? null,
-    updatedAt: row?.updated_at ?? null,
-    scheduler: 'manual-preview-only',
-  });
+  try {
+    if (!(await siteExists(env.DB, siteId))) return apiError('Site not found.', 404);
+    await ensureMonitoringNotificationTables(env.DB);
+
+    // Read sequentially. Re-entering schema creation concurrently on the first
+    // request can produce transient D1 schema/transaction errors.
+    const settings = await readMonitoringNotificationSettings(env.DB, siteId);
+    const state = await readMonitoringNotificationState(env.DB, siteId);
+    const logs = await readRecentLogs(env.DB, siteId);
+    const row = await env.DB.prepare(
+      'SELECT updated_by, updated_at FROM monitoring_notification_settings WHERE site_id = ? LIMIT 1',
+    ).bind(siteId).first<Pick<SettingsRow, 'updated_by' | 'updated_at'>>();
+
+    return json({
+      ok: true,
+      settings,
+      state,
+      recent: logs,
+      saved: Boolean(row),
+      updatedBy: row?.updated_by ?? null,
+      updatedAt: row?.updated_at ?? null,
+      scheduler: 'manual-preview-only',
+    });
+  } catch (error) {
+    return apiError('Notification rules could not be loaded.', 500, errorText(error));
+  }
 }
 
 export async function updateMonitoringNotificationSettings(
@@ -331,26 +357,30 @@ export async function updateMonitoringNotificationSettings(
   try {
     body = await readJson<{ settings?: unknown }>(request);
   } catch (error) {
-    return apiError('Notification settings JSON could not be read.', 400, error instanceof Error ? error.message : String(error));
+    return apiError('Notification settings JSON could not be read.', 400, errorText(error));
   }
   const { settings, errors } = normalizeSettings(body.settings);
   if (errors.length) return apiError('Notification settings are not valid.', 422, errors);
   const actor = getActor(request);
   const now = new Date().toISOString();
-  await ensureMonitoringNotificationTables(env.DB);
-  await env.DB.batch([
-    env.DB.prepare(`INSERT INTO monitoring_notification_settings (
-        site_id, settings_json, updated_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(site_id) DO UPDATE SET
-        settings_json = excluded.settings_json,
-        updated_by = excluded.updated_by,
-        updated_at = excluded.updated_at`)
-      .bind(siteId, JSON.stringify(settings), actor, now, now),
-    env.DB.prepare(`INSERT INTO audit_log (
-        id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-      ) VALUES (?, ?, 'monitoring.notification_settings.saved', ?, 'monitoring_notification_settings', ?, ?, ?)`)
-      .bind(crypto.randomUUID(), actor, siteId, siteId, JSON.stringify(settings), now),
-  ]);
-  return json({ ok: true, settings, saved: true, updatedBy: actor, updatedAt: now });
+  try {
+    await ensureMonitoringNotificationTables(env.DB);
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO monitoring_notification_settings (
+          site_id, settings_json, updated_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(site_id) DO UPDATE SET
+          settings_json = excluded.settings_json,
+          updated_by = excluded.updated_by,
+          updated_at = excluded.updated_at`)
+        .bind(siteId, JSON.stringify(settings), actor, now, now),
+      env.DB.prepare(`INSERT INTO audit_log (
+          id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
+        ) VALUES (?, ?, 'monitoring.notification_settings.saved', ?, 'monitoring_notification_settings', ?, ?, ?)`)
+        .bind(crypto.randomUUID(), actor, siteId, siteId, JSON.stringify(settings), now),
+    ]);
+    return json({ ok: true, settings, saved: true, updatedBy: actor, updatedAt: now });
+  } catch (error) {
+    return apiError('Notification rules could not be saved.', 500, errorText(error));
+  }
 }
