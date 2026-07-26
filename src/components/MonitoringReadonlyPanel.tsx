@@ -306,7 +306,7 @@ function correctedAdsTxt(liveContent: string, missingEntries: AdsTxtResult[]): s
   const live = liveContent.replace(/\s+$/g, '');
   const additions = groupedEntries(missingEntries);
   if (!additions) return live ? `${live}\n` : '';
-  return `${live ? `${live}\n\n` : ''}# Tessera additions\n${additions}\n`;
+  return `${live ? `${live}\n\n` : ''}${additions}\n`;
 }
 
 function triggerTextDownload(content: string, fileName: string): void {

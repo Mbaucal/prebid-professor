@@ -12,7 +12,9 @@ import {
   type MonitoringNotificationState,
 } from './monitoring-notification-settings';
 
-export interface MonitoringNotificationRunEnv extends GmailOAuthEnv {}
+export interface MonitoringNotificationRunEnv extends GmailOAuthEnv {
+  BUILDS?: R2Bucket;
+}
 
 type AdsTxtEntry = {
   sourceLabel?: string;
@@ -101,7 +103,7 @@ function correctedAdsTxt(liveContent: string, missingEntries: AdsTxtEntry[]): st
   const live = liveContent.replace(/\s+$/g, '');
   const additions = groupedEntries(missingEntries);
   if (!additions) return live ? `${live}\n` : '';
-  return `${live ? `${live}\n\n` : ''}# Tessera additions\n${additions}\n`;
+  return `${live ? `${live}\n\n` : ''}${additions}\n`;
 }
 
 function renderTemplate(template: string, variables: Record<string, string>): string {
@@ -202,9 +204,14 @@ function decide(
     if (!state.lastNotifiedAt || !state.lastNotifiedFingerprint) {
       return { kind: 'missing', reason: 'Missing entries were detected and no previous notification was sent.' };
     }
-    if (currentFingerprint !== state.lastNotifiedFingerprint && settings.notifyOnChange) {
-      return { kind: 'missing', reason: 'The missing-entry list changed since the last notification.' };
+
+    const sameFingerprint = currentFingerprint === state.lastNotifiedFingerprint;
+    if (!sameFingerprint) {
+      return settings.notifyOnChange
+        ? { kind: 'missing', reason: 'The missing-entry list changed since the last notification.' }
+        : { kind: 'none', reason: 'The missing-entry list changed, but changed-list notifications are disabled.' };
     }
+
     const elapsed = hoursSince(state.lastNotifiedAt, now);
     if (settings.reminderEnabled && elapsed !== null && elapsed >= settings.reminderHours) {
       return { kind: 'reminder', reason: `The same issue has remained unresolved for ${Math.floor(elapsed)} hour(s).` };
@@ -220,6 +227,75 @@ function decide(
   return { kind: 'none', reason: `No automatic email is sent for ads.txt status "${status}".` };
 }
 
+async function readManifestVersion(
+  env: MonitoringNotificationRunEnv,
+  siteId: string,
+): Promise<string> {
+  if (!env.BUILDS) return '';
+  const object = await env.BUILDS.get(`publishers/${siteId}/current/manifest.json`);
+  if (!object) return '';
+  try {
+    const parsed = JSON.parse(await object.text()) as unknown;
+    return isRecord(parsed) && typeof parsed.version === 'string' ? parsed.version : '';
+  } catch {
+    return '';
+  }
+}
+
+const EVALUATION_CLAIM_TTL_MS = 5 * 60 * 1000;
+
+async function ensureEvaluationClaimTable(db: D1Database): Promise<void> {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS monitoring_notification_claims (
+    site_id TEXT PRIMARY KEY,
+    token TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (site_id) REFERENCES publishers(id) ON DELETE CASCADE
+  )`).run();
+}
+
+async function acquireEvaluationClaim(db: D1Database, siteId: string): Promise<string | null> {
+  await ensureEvaluationClaimTable(db);
+  const token = crypto.randomUUID();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const expiresAt = new Date(now.getTime() + EVALUATION_CLAIM_TTL_MS).toISOString();
+  await db.prepare(`INSERT INTO monitoring_notification_claims (
+      site_id, token, expires_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(site_id) DO UPDATE SET
+      token = excluded.token,
+      expires_at = excluded.expires_at,
+      updated_at = excluded.updated_at
+    WHERE monitoring_notification_claims.expires_at <= excluded.created_at`)
+    .bind(siteId, token, expiresAt, nowIso, nowIso)
+    .run();
+  const row = await db.prepare(
+    'SELECT token FROM monitoring_notification_claims WHERE site_id = ? LIMIT 1',
+  ).bind(siteId).first<{ token: string }>();
+  return row?.token === token ? token : null;
+}
+
+async function releaseEvaluationClaim(db: D1Database, siteId: string, token: string): Promise<void> {
+  await db.prepare(
+    'DELETE FROM monitoring_notification_claims WHERE site_id = ? AND token = ?',
+  ).bind(siteId, token).run();
+}
+
+function closeHealthyIncident(
+  status: string,
+  decision: Decision,
+  state: MonitoringNotificationState,
+): MonitoringNotificationState {
+  if (status !== 'ok' || decision.kind !== 'none' || !state.lastNotifiedFingerprint) return state;
+  return {
+    ...state,
+    lastNotifiedFingerprint: null,
+    lastNotifiedAt: null,
+  };
+}
+
 function messageFor(
   draft: MonitoringEmailDraft,
   preview: PreviewData,
@@ -227,6 +303,7 @@ function messageFor(
   check: AdsTxtCheck,
   kind: Exclude<Decision['kind'], 'none'>,
   missingEntries: AdsTxtEntry[],
+  manifestVersion: string,
 ): GmailMessageInput {
   const missingText = groupedEntries(missingEntries) || 'None';
   const statusLabel = kind === 'recovery'
@@ -242,14 +319,14 @@ function messageFor(
     missing_count: String(check.requiredMissingCount ?? missingEntries.length),
     missing_entries: missingText,
     current_version: site.current_version && site.current_version !== 'draft' ? site.current_version : '',
-    manifest_version: '',
+    manifest_version: manifestVersion,
     sender_name: draft.senderName,
     notification_kind: kind,
     attachment_name: '',
   };
   const attachmentName = safeFileName(renderTemplate(draft.attachmentNameTemplate, baseVariables));
   const variables = { ...baseVariables, attachment_name: attachmentName };
-  const expectedEntries = preview.expected.filter((item) => item.required);
+  const expectedEntries = preview.expected;
   let attachmentContent = '';
   if (draft.attachmentMode === 'missing-only') {
     attachmentContent = groupedEntries(missingEntries);
@@ -288,22 +365,24 @@ export async function runMonitoringNotification(
   const actor = getActor(request);
   const checkedAt = new Date().toISOString();
   let state = await readMonitoringNotificationState(env.DB, siteId);
+  let claimToken: string | null = null;
   try {
     const [settings, check] = await Promise.all([
       readMonitoringNotificationSettings(env.DB, siteId),
       readCheck(env, siteId),
     ]);
+    const status = String(check.status ?? 'fetch-error');
     const missingEntries = uniqueEntries(check.missing ?? []);
     const currentFingerprint = await fingerprint(missingEntries);
-    const decision = decide(String(check.status ?? 'fetch-error'), currentFingerprint, state, settings, Date.now());
-    state = {
+    let decision = decide(status, currentFingerprint, state, settings, Date.now());
+    state = closeHealthyIncident(status, decision, {
       ...state,
-      lastStatus: String(check.status ?? 'fetch-error'),
+      lastStatus: status,
       lastFingerprint: currentFingerprint,
       lastCheckedAt: checkedAt,
       lastError: null,
       updatedAt: checkedAt,
-    };
+    });
 
     if (decision.kind === 'none') {
       await writeMonitoringNotificationState(env.DB, siteId, state);
@@ -319,7 +398,7 @@ export async function runMonitoringNotification(
         details: {
           actor,
           reason: decision.reason,
-          adsTxtStatus: check.status ?? 'fetch-error',
+          adsTxtStatus: status,
           missingCount: missingEntries.length,
           fingerprint: currentFingerprint,
         },
@@ -330,7 +409,78 @@ export async function runMonitoringNotification(
         decision: decision.kind,
         reason: decision.reason,
         checkedAt,
-        adsTxtStatus: check.status ?? 'fetch-error',
+        adsTxtStatus: status,
+        missingCount: missingEntries.length,
+        state,
+      });
+    }
+
+    claimToken = await acquireEvaluationClaim(env.DB, siteId);
+    if (!claimToken) {
+      const reason = 'Another notification evaluation is already in progress for this site.';
+      await appendMonitoringNotificationLog(env.DB, siteId, {
+        kind: 'check',
+        status: 'skipped',
+        provider: 'gmail',
+        messageId: null,
+        recipients: [],
+        subject: null,
+        attachmentName: null,
+        errorMessage: null,
+        details: { actor, reason, adsTxtStatus: status, missingCount: missingEntries.length },
+      });
+      return json({
+        ok: true,
+        sent: false,
+        decision: 'none',
+        reason,
+        checkedAt,
+        adsTxtStatus: status,
+        missingCount: missingEntries.length,
+        state,
+      });
+    }
+
+    // A previous request may have sent while this request waited for the claim.
+    // Re-read state and decide again after ownership is established.
+    state = await readMonitoringNotificationState(env.DB, siteId);
+    decision = decide(status, currentFingerprint, state, settings, Date.now());
+    state = closeHealthyIncident(status, decision, {
+      ...state,
+      lastStatus: status,
+      lastFingerprint: currentFingerprint,
+      lastCheckedAt: checkedAt,
+      lastError: null,
+      updatedAt: checkedAt,
+    });
+
+    if (decision.kind === 'none') {
+      await writeMonitoringNotificationState(env.DB, siteId, state);
+      await appendMonitoringNotificationLog(env.DB, siteId, {
+        kind: 'check',
+        status: 'skipped',
+        provider: 'gmail',
+        messageId: null,
+        recipients: [],
+        subject: null,
+        attachmentName: null,
+        errorMessage: null,
+        details: {
+          actor,
+          reason: decision.reason,
+          adsTxtStatus: status,
+          missingCount: missingEntries.length,
+          fingerprint: currentFingerprint,
+          reevaluatedAfterClaim: true,
+        },
+      });
+      return json({
+        ok: true,
+        sent: false,
+        decision: decision.kind,
+        reason: decision.reason,
+        checkedAt,
+        adsTxtStatus: status,
         missingCount: missingEntries.length,
         state,
       });
@@ -342,13 +492,24 @@ export async function runMonitoringNotification(
     if (!draft.subjectTemplate.trim() || !draft.bodyTemplate.trim()) {
       throw new Error('The saved email template must contain both a subject and message body.');
     }
-    const preview = await readPreviewData(env, siteId);
-    const message = messageFor(draft, preview, site, check, decision.kind, missingEntries);
+    const [preview, manifestVersion] = await Promise.all([
+      readPreviewData(env, siteId),
+      readManifestVersion(env, siteId),
+    ]);
+    const message = messageFor(
+      draft,
+      preview,
+      site,
+      check,
+      decision.kind,
+      missingEntries,
+      manifestVersion,
+    );
     const result = await sendGmailMessage(env, message);
     const nextState: MonitoringNotificationState = {
       ...state,
       lastNotifiedFingerprint: decision.kind === 'recovery' ? null : currentFingerprint,
-      lastNotifiedAt: decision.kind === 'recovery' ? state.lastNotifiedAt : result.sentAt,
+      lastNotifiedAt: decision.kind === 'recovery' ? null : result.sentAt,
       lastRecoveryAt: decision.kind === 'recovery' ? result.sentAt : state.lastRecoveryAt,
       lastError: null,
       updatedAt: result.sentAt,
@@ -366,11 +527,12 @@ export async function runMonitoringNotification(
       details: {
         actor,
         reason: decision.reason,
-        adsTxtStatus: check.status ?? 'fetch-error',
+        adsTxtStatus: status,
         missingCount: missingEntries.length,
         fingerprint: currentFingerprint,
         cc: result.cc,
         from: result.from,
+        manifestVersion,
       },
     });
     return json({
@@ -379,7 +541,7 @@ export async function runMonitoringNotification(
       decision: decision.kind,
       reason: decision.reason,
       checkedAt,
-      adsTxtStatus: check.status ?? 'fetch-error',
+      adsTxtStatus: status,
       missingCount: missingEntries.length,
       messageId: result.messageId,
       from: result.from,
@@ -408,5 +570,9 @@ export async function runMonitoringNotification(
       details: { actor },
     }).catch(() => undefined);
     return apiError('Monitoring notification evaluation failed.', 502, errorMessage);
+  } finally {
+    if (claimToken) {
+      await releaseEvaluationClaim(env.DB, siteId, claimToken).catch(() => undefined);
+    }
   }
 }

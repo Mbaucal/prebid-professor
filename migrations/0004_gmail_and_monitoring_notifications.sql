@@ -58,3 +58,12 @@ CREATE TABLE IF NOT EXISTS monitoring_notification_log (
 
 CREATE INDEX IF NOT EXISTS idx_monitoring_notification_log_site
   ON monitoring_notification_log(site_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS monitoring_notification_claims (
+  site_id TEXT PRIMARY KEY,
+  token TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (site_id) REFERENCES publishers(id) ON DELETE CASCADE
+);
