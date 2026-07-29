@@ -543,9 +543,9 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
               onClick={() => setShowDuplicates((current) => !current)}
               type="button"
             >
-              <span>Duplicates</span>
+              <span>Repeated live entries</span>
               <strong>{check.duplicateLineCount ?? 0}</strong>
-              <small>{check.duplicateLineCount ? (showDuplicates ? 'Hide lines' : 'View lines') : 'None found'}</small>
+              <small>{check.duplicateLineCount ? (showDuplicates ? 'Hide repeats' : 'View repeats') : 'None found'}</small>
             </button>
           </div>
         ) : null}
@@ -555,11 +555,11 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
             <div className="ads-txt-duplicate-heading">
               <div>
                 <span className="panel-kicker">Live file cleanup</span>
-                <h4>Duplicate ads.txt lines</h4>
+                <h4>Repeated live ads.txt entries</h4>
               </div>
-              <strong>{check.duplicateLineCount} extra cop{check.duplicateLineCount === 1 ? 'y' : 'ies'}</strong>
+              <strong>{check.duplicateLineCount} extra occurrence{check.duplicateLineCount === 1 ? '' : 's'}</strong>
             </div>
-            <p>Only duplicate lines from the live publisher file are shown below. Tessera remains read-only; remove the extra copies in the source ads.txt file.</p>
+            <p>Each card is a different ads.txt record that appears more than once in the live publisher file. The cards are not duplicates of one another. Tessera remains read-only; review the listed live line numbers in the source ads.txt file.</p>
             {check.duplicateEntries?.length ? (
               <div className="ads-txt-duplicate-list">
                 {check.duplicateEntries.map((duplicate) => (
@@ -569,12 +569,12 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
                       <span>Live lines {duplicate.lineNumbers.join(', ')}</span>
                     </div>
                     <code>{duplicate.entry}</code>
-                    <button className="button secondary" onClick={() => findSavedRequirement(duplicate.entry)} type="button">Find in saved list</button>
+                    <button className="button secondary" onClick={() => findSavedRequirement(duplicate.entry)} type="button">Search saved requirement</button>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="ads-txt-empty"><strong>Duplicate details unavailable</strong><span>Run Check now again after the latest preview deployment.</span></div>
+              <div className="ads-txt-empty"><strong>Repeat details unavailable</strong><span>Run Check now again after the latest preview deployment.</span></div>
             )}
           </div>
         ) : null}

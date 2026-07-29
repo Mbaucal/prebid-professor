@@ -111,7 +111,7 @@ Site-specific data must never leak into another site's form, build, email templa
 | Release deletion and rollback-related controls | Implemented |
 | Audit log | Implemented |
 | ads.txt requirements, import, copy, edit, delete, and live check | Implemented |
-| Saved ads.txt requirement search and live duplicate-line inspection | Staged on the current feature branch |
+| Saved ads.txt requirement search and repeated-live-entry inspection | Staged on the current feature branch |
 | Read-only runtime and artifact monitoring | Staged on the current feature branch |
 | Per-site Gmail templates and test sending | Staged on the current feature branch |
 | Per-site ads.txt notification rules | Staged on the current feature branch |
@@ -172,8 +172,8 @@ For each site whose notification rules are enabled:
 ### Ads.txt workspace additions to verify
 
 - [ ] Saved requirements can be searched by source label, ad-system domain, seller ID, or full line.
-- [ ] Clicking the live duplicate count shows only duplicate lines, occurrence counts, and live line numbers.
-- [ ] Duplicate inspection clearly remains read-only and does not imply Tessera edits the publisher file.
+- [ ] Clicking the repeated-live-entry count shows each independently repeated record, its occurrence count, and live line numbers.
+- [ ] Repeated-entry inspection clearly remains read-only and does not imply the displayed records are duplicates of one another or that Tessera edits the publisher file.
 
 ### Still required before production merge
 
@@ -265,7 +265,7 @@ Verify the saved-requirement search and live duplicate-line inspection on the fe
 - Kept the product name `Tessera` while retaining technical `prebid-professor` identifiers for compatibility.
 - Configured daily ads.txt monitoring for `06:00 UTC`.
 - Decided that healthy recovery closes incident memory without sending a recovery email.
-- Added saved-requirement search and read-only live duplicate inspection before the Monitoring branch is promoted.
+- Added saved-requirement search and read-only repeated-live-entry inspection before the Monitoring branch is promoted; clarified that each card is a separate record repeated within the live file.
 - Confirmed that healthy manual evaluation is recorded as skipped and sends no email.
 - Confirmed that the first missing alert sends exactly once and immediate unchanged re-evaluation is suppressed.
 - Kept production unchanged while the feature branch acceptance tests continue.
