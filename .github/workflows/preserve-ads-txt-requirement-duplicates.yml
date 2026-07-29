@@ -1,0 +1,81 @@
+name: Preserve ads.txt requirement duplicates
+
+on:
+  push:
+    branches:
+      - feature/monitoring-readonly-v1
+    paths:
+      - .github/ads-txt-duplicates.trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ads-txt-requirement-duplicates
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout monitoring branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/monitoring-readonly-v1
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Integrate duplicate-preserving requirements
+        run: |
+          python3 .github/scripts/preserve_ads_txt_requirement_duplicates.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('worker/ads-txt-requirement-schema.ts')
+          text = path.read_text(encoding='utf-8')
+          old = """async function finalizeActiveTable(db: D1Database): Promise<void> {
+            await db.prepare(
+              'CREATE INDEX IF NOT EXISTS idx_ads_txt_publisher ON ads_txt_requirements(publisher_id)',
+            ).run();
+            await db.prepare(`DROP TABLE IF EXISTS ${LEGACY_TABLE}`).run();
+            await db.prepare(`DROP TABLE IF EXISTS ${REPLACEMENT_TABLE}`).run();
+          }"""
+          new = """async function finalizeActiveTable(db: D1Database): Promise<void> {
+            await db.prepare(`DROP TABLE IF EXISTS ${LEGACY_TABLE}`).run();
+            await db.prepare(`DROP TABLE IF EXISTS ${REPLACEMENT_TABLE}`).run();
+            await db.prepare(
+              'CREATE INDEX IF NOT EXISTS idx_ads_txt_publisher ON ads_txt_requirements(publisher_id)',
+            ).run();
+          }"""
+          if old not in text:
+              raise SystemExit('Could not patch schema finalization order')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build dashboard and Worker
+        run: npm run build
+
+      - name: Commit integrated source
+        run: |
+          git config user.name "Tessera Ads.txt"
+          git config user.email "actions@users.noreply.github.com"
+          git add \
+            worker/ads-txt-requirement-schema.ts \
+            worker/ads-txt.ts \
+            worker/ads-txt-bulk.ts \
+            worker/app-deploy.ts \
+            src/components/AdsTxtPanel.tsx \
+            migrations/0006_ads_txt_requirement_duplicates.sql \
+            PROJECT.md
+          if git diff --cached --quiet; then
+            echo "Duplicate-preserving ads.txt requirements are already integrated."
+          else
+            git commit -m "Preserve duplicate ads.txt requirement rows"
+            git push origin HEAD:feature/monitoring-readonly-v1
+          fi
