@@ -248,6 +248,23 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
       `${requirement.sourceLabel} ${requirement.entry}`.toLowerCase().includes(query),
     );
   }, [requirements, searchQuery]);
+  const liveSearchMatches = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query || !check?.duplicateEntries?.length) return [];
+    return check.duplicateEntries
+      .flatMap((duplicate) => {
+        const canonicalMatches = duplicate.entry.toLowerCase().includes(query);
+        return (duplicate.rawOccurrences ?? [])
+          .filter((occurrence) => canonicalMatches || occurrence.line.toLowerCase().includes(query))
+          .map((occurrence) => ({
+            canonicalEntry: duplicate.entry,
+            occurrences: duplicate.occurrences,
+            lineNumber: occurrence.lineNumber,
+            line: occurrence.line,
+          }));
+      })
+      .sort((left, right) => left.lineNumber - right.lineNumber);
+  }, [check, searchQuery]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -560,7 +577,7 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
               </div>
               <strong>{check.duplicateLineCount} extra occurrence{check.duplicateLineCount === 1 ? '' : 's'}</strong>
             </div>
-            <p>Each card is a different ads.txt record that appears more than once in the live publisher file. Inline comments after # are ignored for ads.txt matching, but the exact raw live lines are shown below. The saved list intentionally contains one canonical requirement. Tessera remains read-only.</p>
+            <p>Each card is a different canonical ads.txt record that appears more than once in the live publisher file. Use the button to show every matching live occurrence together with the saved requirement below. Tessera remains read-only.</p>
             {check.duplicateEntries?.length ? (
               <div className="ads-txt-duplicate-list">
                 {check.duplicateEntries.map((duplicate) => (
@@ -570,17 +587,7 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
                       <span>Live lines {duplicate.lineNumbers.join(', ')}</span>
                     </div>
                     <code>{duplicate.entry}</code>
-                    {duplicate.rawOccurrences?.length ? (
-                      <div className="ads-txt-raw-occurrences">
-                        {duplicate.rawOccurrences.map((occurrence) => (
-                          <div key={`${occurrence.lineNumber}-${occurrence.line}`}>
-                            <span>Live line {occurrence.lineNumber}</span>
-                            <code>{occurrence.line}</code>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    <button className="button secondary" onClick={() => findSavedRequirement(duplicate.entry)} type="button">Show canonical saved requirement</button>
+                    <button className="button secondary" onClick={() => findSavedRequirement(duplicate.entry)} type="button">Show all matches in search</button>
                   </div>
                 ))}
               </div>
@@ -668,8 +675,12 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
       <article className="ads-txt-list-card" id="ads-txt-saved-requirements">
         <div className="ads-txt-card-heading">
           <div>
-            <span className="panel-kicker">Saved requirements</span>
-            <h3>{filteredRequirements.length}{searchQuery.trim() ? ` of ${requirements.length}` : ''} entr{filteredRequirements.length === 1 ? 'y' : 'ies'}</h3>
+            <span className="panel-kicker">Ads.txt search</span>
+            <h3>
+              {searchQuery.trim()
+                ? `${liveSearchMatches.length} live match${liveSearchMatches.length === 1 ? '' : 'es'} · ${filteredRequirements.length} saved`
+                : `${requirements.length} entr${requirements.length === 1 ? 'y' : 'ies'}`}
+            </h3>
           </div>
           <button className="button secondary" onClick={() => void load()} type="button">Refresh</button>
         </div>
@@ -678,13 +689,43 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
           <>
             <div className="ads-txt-list-toolbar">
               <input
-                aria-label="Search saved ads.txt requirements"
+                aria-label="Search saved and repeated live ads.txt entries"
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search source, domain, seller ID or complete line…"
+                placeholder="Search source, domain, seller ID, comment or complete line…"
                 type="search"
                 value={searchQuery}
               />
               {searchQuery ? <button className="button secondary" onClick={() => setSearchQuery('')} type="button">Clear</button> : null}
+            </div>
+
+            {searchQuery.trim() && liveSearchMatches.length ? (
+              <div className="ads-txt-live-search-panel">
+                <div className="ads-txt-live-search-heading">
+                  <div>
+                    <span className="panel-kicker">Live publisher file</span>
+                    <h4>{liveSearchMatches.length} matching live line{liveSearchMatches.length === 1 ? '' : 's'}</h4>
+                  </div>
+                  <a className="button secondary" href={check?.finalUrl || check?.url || adsTxtUrl} rel="noreferrer" target="_blank">Open live ads.txt</a>
+                </div>
+                <p>These lines exist in the live publisher file. To remove an extra occurrence, edit the source ads.txt. Do not delete the single saved requirement below unless Tessera should stop monitoring that record.</p>
+                <div className="ads-txt-live-search-list">
+                  {liveSearchMatches.map((match) => (
+                    <div key={`${match.lineNumber}-${match.line}`}>
+                      <div>
+                        <strong>Live line {match.lineNumber}</strong>
+                        <span>{match.occurrences} occurrences for this canonical record</span>
+                      </div>
+                      <code>{match.line}</code>
+                      <em>LIVE FILE · READ ONLY</em>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="ads-txt-saved-search-heading">
+              <strong>Saved requirements</strong>
+              {searchQuery.trim() ? <span>{filteredRequirements.length} match{filteredRequirements.length === 1 ? '' : 'es'}</span> : null}
             </div>
             {filteredRequirements.length ? (
               <div className="ads-txt-requirement-list">

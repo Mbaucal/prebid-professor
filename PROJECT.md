@@ -171,9 +171,9 @@ For each site whose notification rules are enabled:
 
 ### Ads.txt workspace additions to verify
 
-- [ ] Saved requirements can be searched by source label, ad-system domain, seller ID, or full line.
-- [ ] Clicking the repeated-live-entry count shows each independently repeated record, occurrence count, line numbers, and exact raw live lines including inline comments.
-- [ ] Repeated-entry inspection clearly remains read-only and does not imply the displayed records are duplicates of one another or that Tessera edits the publisher file.
+- [ ] Search shows every matching repeated live occurrence, including inline-comment variants such as `#Smato`, together with the matching canonical saved requirement.
+- [ ] The repeated-entry summary remains compact and links directly into the combined live-and-saved search results.
+- [ ] Live occurrences are clearly marked read-only, while Delete remains available only for actual saved requirements.
 
 ### Still required before production merge
 
