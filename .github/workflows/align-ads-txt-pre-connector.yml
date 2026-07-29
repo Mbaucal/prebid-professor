@@ -1,0 +1,51 @@
+name: Align ads.txt before CMS connector
+
+on:
+  push:
+    branches:
+      - feature/monitoring-readonly-v1
+    paths:
+      - .github/ads-txt-pre-connector.trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ads-txt-pre-connector-alignment-monitoring
+  cancel-in-progress: false
+
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout monitoring branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/monitoring-readonly-v1
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Align ads.txt product boundary
+        run: python3 .github/scripts/align_ads_txt_pre_connector.py
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build dashboard and Worker
+        run: npm run build
+
+      - name: Commit aligned source
+        run: |
+          git config user.name "Tessera Ads.txt"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/main.tsx src/components/AdsTxtPanel.tsx PROJECT.md
+          if git diff --cached --quiet; then
+            echo "Ads.txt pre-connector behavior is already aligned."
+          else
+            git commit -m "Gate ads.txt source editing behind CMS connector"
+            git push origin HEAD:feature/monitoring-readonly-v1
+          fi
