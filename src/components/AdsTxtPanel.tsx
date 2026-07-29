@@ -23,6 +23,7 @@ type DuplicateEntry = {
   entry: string;
   occurrences: number;
   lineNumbers: number[];
+  rawOccurrences?: Array<{ lineNumber: number; line: string }>;
 };
 
 type AdsTxtCheck = {
@@ -559,7 +560,7 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
               </div>
               <strong>{check.duplicateLineCount} extra occurrence{check.duplicateLineCount === 1 ? '' : 's'}</strong>
             </div>
-            <p>Each card is a different ads.txt record that appears more than once in the live publisher file. The cards are not duplicates of one another. Tessera remains read-only; review the listed live line numbers in the source ads.txt file.</p>
+            <p>Each card is a different ads.txt record that appears more than once in the live publisher file. Inline comments after # are ignored for ads.txt matching, but the exact raw live lines are shown below. The saved list intentionally contains one canonical requirement. Tessera remains read-only.</p>
             {check.duplicateEntries?.length ? (
               <div className="ads-txt-duplicate-list">
                 {check.duplicateEntries.map((duplicate) => (
@@ -569,7 +570,17 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
                       <span>Live lines {duplicate.lineNumbers.join(', ')}</span>
                     </div>
                     <code>{duplicate.entry}</code>
-                    <button className="button secondary" onClick={() => findSavedRequirement(duplicate.entry)} type="button">Search saved requirement</button>
+                    {duplicate.rawOccurrences?.length ? (
+                      <div className="ads-txt-raw-occurrences">
+                        {duplicate.rawOccurrences.map((occurrence) => (
+                          <div key={`${occurrence.lineNumber}-${occurrence.line}`}>
+                            <span>Live line {occurrence.lineNumber}</span>
+                            <code>{occurrence.line}</code>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <button className="button secondary" onClick={() => findSavedRequirement(duplicate.entry)} type="button">Show canonical saved requirement</button>
                   </div>
                 ))}
               </div>

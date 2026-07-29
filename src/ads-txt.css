@@ -413,6 +413,33 @@
   }
 }
 
+.ads-txt-raw-occurrences {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid #fed7aa;
+  padding-top: 9px;
+}
+
+.ads-txt-raw-occurrences > div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.ads-txt-raw-occurrences span {
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ads-txt-raw-occurrences code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: #334155;
+}
+
 @media (max-width: 760px) {
   .ads-txt-page {
     padding: 18px;

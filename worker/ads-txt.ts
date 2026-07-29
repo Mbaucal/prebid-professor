@@ -663,16 +663,18 @@ function actualAdsEntries(text: string): {
     entry: string;
     occurrences: number;
     lineNumbers: number[];
+    rawOccurrences: Array<{ lineNumber: number; line: string }>;
   }>;
 } {
   const canonical = new Set<string>();
-  const occurrences = new Map<string, { entry: string; lineNumbers: number[] }>();
+  const occurrences = new Map<string, { entry: string; lineNumbers: number[]; rawOccurrences: Array<{ lineNumber: number; line: string }> }>();
   let validCount = 0;
   let invalidCount = 0;
   let duplicateCount = 0;
 
   text.split(/\r?\n/).forEach((rawLine, index) => {
     const line = lineWithoutComment(rawLine);
+    const rawDisplay = rawLine.replace(/^\uFEFF/, '').trim();
     if (!line) return;
     try {
       const parsed = parseAdsEntry(line);
@@ -681,10 +683,12 @@ function actualAdsEntries(text: string): {
       if (current) {
         duplicateCount += 1;
         current.lineNumbers.push(index + 1);
+        current.rawOccurrences.push({ lineNumber: index + 1, line: rawDisplay });
       } else {
         occurrences.set(parsed.canonical, {
           entry: parsed.display,
           lineNumbers: [index + 1],
+          rawOccurrences: [{ lineNumber: index + 1, line: rawDisplay }],
         });
       }
       canonical.add(parsed.canonical);
@@ -699,6 +703,7 @@ function actualAdsEntries(text: string): {
       entry: item.entry,
       occurrences: item.lineNumbers.length,
       lineNumbers: item.lineNumbers,
+      rawOccurrences: item.rawOccurrences,
     }))
     .sort((left, right) => right.occurrences - left.occurrences || left.entry.localeCompare(right.entry));
 
