@@ -404,7 +404,7 @@ export async function runMonitoringNotification(
     if (decision.kind === 'none') {
       await writeMonitoringNotificationState(env.DB, siteId, state);
       await appendMonitoringNotificationLog(env.DB, siteId, {
-        kind: 'check',
+        kind: 'manual',
         status: 'skipped',
         provider: 'gmail',
         messageId: null,
@@ -436,7 +436,7 @@ export async function runMonitoringNotification(
     if (!claimToken) {
       const reason = 'Another notification evaluation is already in progress for this site.';
       await appendMonitoringNotificationLog(env.DB, siteId, {
-        kind: 'check',
+        kind: 'manual',
         status: 'skipped',
         provider: 'gmail',
         messageId: null,
@@ -474,7 +474,7 @@ export async function runMonitoringNotification(
     if (decision.kind === 'none') {
       await writeMonitoringNotificationState(env.DB, siteId, state);
       await appendMonitoringNotificationLog(env.DB, siteId, {
-        kind: 'check',
+        kind: 'manual',
         status: 'skipped',
         provider: 'gmail',
         messageId: null,
@@ -576,7 +576,7 @@ export async function runMonitoringNotification(
     };
     await writeMonitoringNotificationState(env.DB, siteId, state).catch(() => undefined);
     await appendMonitoringNotificationLog(env.DB, siteId, {
-      kind: 'check',
+      kind: 'manual',
       status: 'failed',
       provider: 'gmail',
       messageId: null,
