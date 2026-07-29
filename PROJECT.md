@@ -93,6 +93,28 @@ Publisher company/account
 
 Site-specific data must never leak into another site's form, build, email template, recipient list, release, or notification state.
 
+### Ads.txt data model distinction
+
+Tessera must treat these as two separate concepts:
+
+1. **Monitoring requirements** — canonical unique ads.txt records used only to decide whether a required seller entry is present. Inline comments are ignored for canonical matching.
+2. **Managed ads.txt source lines** — every physical line of an editable ads.txt working copy, preserving exact text, order, comments, blank lines, headings, and repeated occurrences.
+
+The current `ads_txt_requirements` list is concept 1. It must not be presented as though it were the publisher's editable source file.
+
+The requested source-editor workflow is:
+
+- fetch/import the complete current ads.txt into a managed working copy without requiring a manual full-file upload;
+- preserve both physical occurrences when one canonical record appears twice, including variants such as a line with `#Smato` and one without it;
+- search returns every matching physical source line as a separate row;
+- every source row has its own Edit and Delete action;
+- deleting one repeated source row must not delete the canonical monitoring requirement or the other occurrence;
+- monitoring continues to deduplicate canonically so repeated source lines do not create duplicate missing alerts;
+- source-line changes must be auditable and versioned;
+- the UI must clearly state whether a change affects only a Tessera draft/export or is actually published to the site's live `/ads.txt`.
+
+Direct publication requires an explicit delivery mechanism, such as a Tessera-hosted ads.txt route, publisher reverse proxy, CMS/API integration, Git-backed file, or another authenticated publishing channel. Without such an integration, Edit/Delete changes only the managed draft and generated export, not the publisher's live file.
+
 ## 5. Current product modules
 
 | Module | Current state |
@@ -112,6 +134,7 @@ Site-specific data must never leak into another site's form, build, email templa
 | Audit log | Implemented |
 | ads.txt requirements, import, copy, edit, delete, and live check | Implemented |
 | Saved ads.txt requirement search and repeated-live-entry inspection | Staged on the current feature branch |
+| Managed raw ads.txt source editor with per-occurrence Edit/Delete | Product requirement confirmed; not implemented |
 | Read-only runtime and artifact monitoring | Staged on the current feature branch |
 | Per-site Gmail templates and test sending | Staged on the current feature branch |
 | Per-site ads.txt notification rules | Staged on the current feature branch |
@@ -171,9 +194,11 @@ For each site whose notification rules are enabled:
 
 ### Ads.txt workspace additions to verify
 
-- [ ] Search shows every matching repeated live occurrence, including inline-comment variants such as `#Smato`, together with the matching canonical saved requirement.
-- [ ] The repeated-entry summary remains compact and links directly into the combined live-and-saved search results.
-- [ ] Live occurrences are clearly marked read-only, while Delete remains available only for actual saved requirements.
+- [x] Search can show every matching repeated live occurrence, including inline-comment variants such as `#Smato`, together with the matching canonical saved requirement.
+- [ ] Replace the misleading combined read-only search UX with the confirmed managed-source editor model described above.
+- [ ] Search in the managed source editor returns each physical source occurrence separately with Edit/Delete.
+- [ ] Editing or deleting a source occurrence never silently changes the canonical monitoring requirement.
+- [ ] The UI clearly distinguishes draft/export changes from actual live publication.
 
 ### Still required before production merge
 
@@ -224,7 +249,16 @@ These rules should not be weakened without an explicit product decision:
 4. Merge PR `#19` only after explicit approval.
 5. Verify the first production daily schedule safely.
 
-### Phase B — recover and prioritize the wider roadmap
+### Phase B — managed ads.txt source editor
+
+1. Introduce a separate raw source-line model; do not overload `ads_txt_requirements`.
+2. Import/sync the live file into an editable, ordered, versioned working copy.
+3. Preserve raw comments, headings, blank lines, and repeated occurrences.
+4. Add line-level search, Edit, Delete, undo/version history, and full-file preview.
+5. Add Download/Copy export first, or connect an authenticated live publishing mechanism once selected.
+6. Derive canonical monitoring requirements separately from the managed source where appropriate.
+
+### Phase C — recover and prioritize the wider roadmap
 
 Requirements remembered from earlier planning or found in the previous long chat should be added below as concrete, testable backlog items. Do not rely on chat history as the only record.
 
@@ -255,7 +289,7 @@ Dependencies:
 
 ## 12. Current next action
 
-Verify the saved-requirement search and live duplicate-line inspection on the feature preview. Then remove the temporary missing test line and confirm that the site returns to `ok` without a recovery email.
+Confirm the publishing mode for the managed ads.txt source editor: Tessera draft plus Download/Copy export, or direct publication through an authenticated publisher integration. Do not merge the current Ads.txt workspace UX as the final source-management experience.
 
 ## 13. Decision log
 
@@ -265,7 +299,9 @@ Verify the saved-requirement search and live duplicate-line inspection on the fe
 - Kept the product name `Tessera` while retaining technical `prebid-professor` identifiers for compatibility.
 - Configured daily ads.txt monitoring for `06:00 UTC`.
 - Decided that healthy recovery closes incident memory without sending a recovery email.
-- Added saved-requirement search and read-only repeated-live-entry inspection before the Monitoring branch is promoted; exact raw live occurrences are shown so comment variants such as `#smato` remain visible while matching one canonical requirement.
+- Confirmed that `ads_txt_requirements` are canonical monitoring expectations, not editable physical source lines.
+- Confirmed the need for a separate managed ads.txt source editor that preserves every raw line and repeated occurrence with line-level Edit/Delete.
+- Confirmed that direct live changes require an explicit authenticated publishing mechanism; otherwise changes remain a Tessera draft/export.
 - Confirmed that healthy manual evaluation is recorded as skipped and sends no email.
 - Confirmed that the first missing alert sends exactly once and immediate unchanged re-evaluation is suppressed.
 - Kept production unchanged while the feature branch acceptance tests continue.
