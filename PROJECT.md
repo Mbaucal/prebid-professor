@@ -111,6 +111,7 @@ Site-specific data must never leak into another site's form, build, email templa
 | Release deletion and rollback-related controls | Implemented |
 | Audit log | Implemented |
 | ads.txt requirements, import, copy, edit, delete, and live check | Implemented |
+| Saved ads.txt requirement search and live duplicate-line inspection | Staged on the current feature branch |
 | Read-only runtime and artifact monitoring | Staged on the current feature branch |
 | Per-site Gmail templates and test sending | Staged on the current feature branch |
 | Per-site ads.txt notification rules | Staged on the current feature branch |
@@ -165,6 +166,12 @@ For each site whose notification rules are enabled:
 - [x] Server-side decision and corrected attachment use one ads.txt snapshot.
 - [x] Stale status/template responses are discarded after switching sites.
 - [x] Cloudflare branch preview deploys successfully with the current monitoring code.
+
+### Ads.txt workspace additions to verify
+
+- [ ] Saved requirements can be searched by source label, ad-system domain, seller ID, or full line.
+- [ ] Clicking the live duplicate count shows only duplicate lines, occurrence counts, and live line numbers.
+- [ ] Duplicate inspection clearly remains read-only and does not imply Tessera edits the publisher file.
 
 ### Still required before production merge
 
@@ -258,5 +265,6 @@ Continue the Monitoring acceptance checklist with the **initial missing required
 - Kept the product name `Tessera` while retaining technical `prebid-professor` identifiers for compatibility.
 - Configured daily ads.txt monitoring for `06:00 UTC`.
 - Decided that healthy recovery closes incident memory without sending a recovery email.
+- Added saved-requirement search and read-only live duplicate inspection before the Monitoring branch is promoted.
 - Confirmed that healthy manual evaluation is recorded as skipped and sends no email.
 - Kept production unchanged while the feature branch acceptance tests continue.

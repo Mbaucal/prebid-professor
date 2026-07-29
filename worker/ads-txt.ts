@@ -659,26 +659,50 @@ function actualAdsEntries(text: string): {
   validCount: number;
   invalidCount: number;
   duplicateCount: number;
+  duplicateEntries: Array<{
+    entry: string;
+    occurrences: number;
+    lineNumbers: number[];
+  }>;
 } {
   const canonical = new Set<string>();
+  const occurrences = new Map<string, { entry: string; lineNumbers: number[] }>();
   let validCount = 0;
   let invalidCount = 0;
   let duplicateCount = 0;
 
-  for (const rawLine of text.split(/\r?\n/)) {
+  text.split(/\r?\n/).forEach((rawLine, index) => {
     const line = lineWithoutComment(rawLine);
-    if (!line) continue;
+    if (!line) return;
     try {
       const parsed = parseAdsEntry(line);
       validCount += 1;
-      if (canonical.has(parsed.canonical)) duplicateCount += 1;
+      const current = occurrences.get(parsed.canonical);
+      if (current) {
+        duplicateCount += 1;
+        current.lineNumbers.push(index + 1);
+      } else {
+        occurrences.set(parsed.canonical, {
+          entry: parsed.display,
+          lineNumbers: [index + 1],
+        });
+      }
       canonical.add(parsed.canonical);
     } catch {
       invalidCount += 1;
     }
-  }
+  });
 
-  return { canonical, validCount, invalidCount, duplicateCount };
+  const duplicateEntries = Array.from(occurrences.values())
+    .filter((item) => item.lineNumbers.length > 1)
+    .map((item) => ({
+      entry: item.entry,
+      occurrences: item.lineNumbers.length,
+      lineNumbers: item.lineNumbers,
+    }))
+    .sort((left, right) => right.occurrences - left.occurrences || left.entry.localeCompare(right.entry));
+
+  return { canonical, validCount, invalidCount, duplicateCount, duplicateEntries };
 }
 
 export async function checkAdsTxt(
@@ -741,6 +765,7 @@ export async function checkAdsTxt(
         validLineCount: actual.validCount,
         invalidLineCount: actual.invalidCount,
         duplicateLineCount: actual.duplicateCount,
+        duplicateEntries: actual.duplicateEntries,
         requirementCount: requirements.length,
         foundCount: results.filter((item) => item.found).length,
         requiredMissingCount: missing.length,
