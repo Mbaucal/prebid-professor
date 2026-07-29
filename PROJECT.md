@@ -70,6 +70,7 @@ The main product principles are:
 - GitHub is the source repository and Cloudflare deployment source.
 - Gmail OAuth is used for ads.txt email notifications with the minimum required identity and send scopes.
 - Cloudflare Cron is used for the daily monitoring schedule.
+- A future publishing-connector layer will support CMS/API delivery of approved ads.txt versions without coupling Tessera core logic to one CMS vendor.
 
 ## 4. Product model
 
@@ -115,6 +116,33 @@ The requested source-editor workflow is:
 
 Direct publication requires an explicit delivery mechanism, such as a Tessera-hosted ads.txt route, publisher reverse proxy, CMS/API integration, Git-backed file, or another authenticated publishing channel. Without such an integration, Edit/Delete changes only the managed draft and generated export, not the publisher's live file.
 
+### Future CMS/API publishing connector
+
+The first managed-source release will provide **Preview, Copy and Download**. Direct CMS publication is a future optional capability and must use a generic connector contract rather than CMS-specific logic inside the editor.
+
+Each connector should support:
+
+- `testConnection` — verify credentials and permissions without publishing;
+- `fetchCurrent` — read the publisher's currently managed ads.txt source where the CMS supports it;
+- `publishVersion` — publish one explicitly approved immutable Tessera version;
+- `verifyPublished` — fetch the public `/ads.txt` and verify content or checksum after publication;
+- `rollback` — restore a previously approved Tessera version;
+- optional cache purge after a successful publish.
+
+The preferred first integration is a **generic authenticated REST/webhook connector**. Tessera sends the complete approved ads.txt body, version ID, checksum, timestamp, and site identifier. A publisher can implement the endpoint in any CMS. A small WordPress reference plugin can be added later, but the core connector must remain CMS-neutral.
+
+Publisher requirements for a direct connector:
+
+- staging and production endpoint URLs;
+- an authentication method limited to ads.txt publication;
+- permission to read and replace only the ads.txt resource;
+- response containing publication status and resulting version/checksum;
+- documented cache-purge behavior;
+- rollback support or acceptance of a prior full-file version;
+- a clear statement of the current ads.txt source of truth so another CMS job does not overwrite Tessera's publication.
+
+Secrets must be stored through Cloudflare secret bindings, never in D1 plaintext, GitHub, logs, or frontend responses. Every test, publish, verification, failure, and rollback must be auditable.
+
 ## 5. Current product modules
 
 | Module | Current state |
@@ -135,6 +163,7 @@ Direct publication requires an explicit delivery mechanism, such as a Tessera-ho
 | ads.txt requirements, import, copy, edit, delete, and live check | Implemented |
 | Saved ads.txt requirement search and repeated-live-entry inspection | Staged on the current feature branch |
 | Managed raw ads.txt source editor with per-occurrence Edit/Delete | Product requirement confirmed; not implemented |
+| CMS-neutral ads.txt publishing connector framework | Future planned; not part of current PR |
 | Read-only runtime and artifact monitoring | Staged on the current feature branch |
 | Per-site Gmail templates and test sending | Staged on the current feature branch |
 | Per-site ads.txt notification rules | Staged on the current feature branch |
@@ -238,6 +267,8 @@ These rules should not be weakened without an explicit product decision:
 - Never generate a corrected ads.txt attachment from a different fetch than the decision that triggered it.
 - Every production-changing administrative action should be authenticated and auditable.
 - Generated releases should remain versioned and reproducible.
+- Never allow a CMS connector to publish automatically from an unsaved editor state; only an explicitly approved immutable version can be published.
+- Never treat a successful CMS/API response as sufficient; verify the public ads.txt after publication.
 
 ## 10. Near-term plan
 
@@ -255,10 +286,19 @@ These rules should not be weakened without an explicit product decision:
 2. Import/sync the live file into an editable, ordered, versioned working copy.
 3. Preserve raw comments, headings, blank lines, and repeated occurrences.
 4. Add line-level search, Edit, Delete, undo/version history, and full-file preview.
-5. Add Download/Copy export first, or connect an authenticated live publishing mechanism once selected.
+5. Add Download and Copy export as the first publishing mode.
 6. Derive canonical monitoring requirements separately from the managed source where appropriate.
 
-### Phase C — recover and prioritize the wider roadmap
+### Phase C — CMS/API publishing connectors
+
+1. Add a CMS-neutral publishing-connector interface.
+2. Implement a generic authenticated REST/webhook connector first.
+3. Add connection testing, approved-version publication, public verification, audit history, and rollback.
+4. Store connector credentials only as Cloudflare secrets.
+5. Provide publisher integration documentation and a reference WordPress plugin after the generic contract is stable.
+6. Keep direct publishing optional per site; Download/Copy must continue to work without a connector.
+
+### Phase D — recover and prioritize the wider roadmap
 
 Requirements remembered from earlier planning or found in the previous long chat should be added below as concrete, testable backlog items. Do not rely on chat history as the only record.
 
@@ -289,7 +329,7 @@ Dependencies:
 
 ## 12. Current next action
 
-Confirm the publishing mode for the managed ads.txt source editor: Tessera draft plus Download/Copy export, or direct publication through an authenticated publisher integration. Do not merge the current Ads.txt workspace UX as the final source-management experience.
+Finish the current Monitoring acceptance work and implement the managed ads.txt source editor with Download/Copy output. Keep CMS/API direct publication as the next optional integration phase; it must not block the editor or current Monitoring rollout.
 
 ## 13. Decision log
 
@@ -301,6 +341,8 @@ Confirm the publishing mode for the managed ads.txt source editor: Tessera draft
 - Decided that healthy recovery closes incident memory without sending a recovery email.
 - Confirmed that `ads_txt_requirements` are canonical monitoring expectations, not editable physical source lines.
 - Confirmed the need for a separate managed ads.txt source editor that preserves every raw line and repeated occurrence with line-level Edit/Delete.
+- Confirmed that the first editor release uses Preview, Copy and Download and does not require publisher CMS access.
+- Decided to add a future CMS-neutral publishing-connector framework, starting with a generic authenticated REST/webhook contract and later a reference WordPress plugin.
 - Confirmed that direct live changes require an explicit authenticated publishing mechanism; otherwise changes remain a Tessera draft/export.
 - Confirmed that healthy manual evaluation is recorded as skipped and sends no email.
 - Confirmed that the first missing alert sends exactly once and immediate unchanged re-evaluation is suppressed.
