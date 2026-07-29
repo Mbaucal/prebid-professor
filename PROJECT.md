@@ -166,6 +166,8 @@ For each site whose notification rules are enabled:
 - [x] Server-side decision and corrected attachment use one ads.txt snapshot.
 - [x] Stale status/template responses are discarded after switching sites.
 - [x] Cloudflare branch preview deploys successfully with the current monitoring code.
+- [x] A newly missing required entry sends exactly one initial email.
+- [x] Re-evaluating the unchanged missing list before the reminder interval sends no email.
 
 ### Ads.txt workspace additions to verify
 
@@ -175,8 +177,6 @@ For each site whose notification rules are enabled:
 
 ### Still required before production merge
 
-- [ ] A newly missing required entry sends exactly one initial email.
-- [ ] Re-evaluating the unchanged missing list before the reminder interval sends no email.
 - [ ] Re-evaluating after the reminder interval sends one reminder.
 - [ ] A changed missing list follows the `notifyOnChange` setting correctly.
 - [ ] Returning to a healthy state sends no email and clears the previous incident memory.
@@ -255,7 +255,7 @@ Dependencies:
 
 ## 12. Current next action
 
-Continue the Monitoring acceptance checklist with the **initial missing required entry** scenario on the feature preview. Do not run the all-site batch endpoint until the enabled-site set and email recipients have been reviewed.
+Verify the saved-requirement search and live duplicate-line inspection on the feature preview. Then remove the temporary missing test line and confirm that the site returns to `ok` without a recovery email.
 
 ## 13. Decision log
 
@@ -267,4 +267,5 @@ Continue the Monitoring acceptance checklist with the **initial missing required
 - Decided that healthy recovery closes incident memory without sending a recovery email.
 - Added saved-requirement search and read-only live duplicate inspection before the Monitoring branch is promoted.
 - Confirmed that healthy manual evaluation is recorded as skipped and sends no email.
+- Confirmed that the first missing alert sends exactly once and immediate unchanged re-evaluation is suppressed.
 - Kept production unchanged while the feature branch acceptance tests continue.
