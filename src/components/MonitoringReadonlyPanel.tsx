@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Site } from '../shared/types';
 import MonitoringEmailSendTest from './MonitoringEmailSendTest';
 import GmailConnectionPanel from './GmailConnectionPanel';
@@ -361,27 +361,36 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
   const [serverSaving, setServerSaving] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
+  const activeSiteId = useRef(site.id);
+  activeSiteId.current = site.id;
 
   const load = useCallback(async () => {
+    const requestedSiteId = site.id;
     setLoading(true);
     setError(null);
     try {
-      setPayload(await requestStatus(site.id));
+      const nextPayload = await requestStatus(requestedSiteId);
+      if (activeSiteId.current !== requestedSiteId) return;
+      setPayload(nextPayload);
     } catch (requestError) {
+      if (activeSiteId.current !== requestedSiteId) return;
       setError(requestError instanceof Error ? requestError.message : 'Monitoring could not be loaded.');
     } finally {
-      setLoading(false);
+      if (activeSiteId.current === requestedSiteId) setLoading(false);
     }
   }, [site.id]);
 
   const loadServerDraft = useCallback(async () => {
+    const requestedSiteId = site.id;
     try {
-      const savedDraft = await requestMonitoringEmailDraft(site.id);
+      const savedDraft = await requestMonitoringEmailDraft(requestedSiteId);
+      if (activeSiteId.current !== requestedSiteId) return;
       setServerDraft(savedDraft);
-      setDraft(savedDraft.saved ? savedDraft.settings : loadDraft(site.id));
+      setDraft(savedDraft.saved ? savedDraft.settings : loadDraft(requestedSiteId));
     } catch (requestError) {
+      if (activeSiteId.current !== requestedSiteId) return;
       setServerDraft(null);
-      setDraft(loadDraft(site.id));
+      setDraft(loadDraft(requestedSiteId));
       setError(requestError instanceof Error ? requestError.message : 'Saved email draft could not be loaded.');
     }
   }, [site.id]);

@@ -17,6 +17,7 @@ import { getMonitoringEmailPreviewData } from './monitoring-email-preview';
 import { getMonitoringEmailDraft, updateMonitoringEmailDraft } from './monitoring-email-settings';
 import { getMonitoringNotificationSettings, updateMonitoringNotificationSettings } from './monitoring-notification-settings';
 import { runMonitoringNotification } from './monitoring-notification-run';
+import { runMonitoringDailySchedule, runMonitoringDailyScheduleHttp } from './monitoring-scheduler';
 import { getMonitoringStatus } from './monitoring-readonly';
 import { disconnectGmail, finishGmailConnect, getGmailStatus, startGmailConnect, type GmailOAuthEnv } from './gmail-oauth';
 import { sendGmailTest } from './gmail-send';
@@ -26,7 +27,7 @@ import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-26-monitoring-premerge-v28';
+const RUNTIME_BUILD = '2026-07-29-monitoring-daily-cron-v29';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -171,6 +172,13 @@ export default {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return withBuildHeader(verified);
       return withBuildHeader(await listAuditLog(verified, env));
+    }
+
+    if (pathname === '/api/monitoring/daily/run') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await runMonitoringDailyScheduleHttp(verified, env));
     }
 
     const adsTxtCheckMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ads-txt\/check$/);
@@ -320,5 +328,9 @@ export default {
 
     const response = await downstream.fetch(request, env, ctx);
     return withBuildHeader(await brandTesseraHtmlResponse(response));
+  },
+
+  async scheduled(controller, env): Promise<void> {
+    await runMonitoringDailySchedule(env, `cloudflare-cron:${controller.cron}`);
   },
 } satisfies ExportedHandler<Env>;

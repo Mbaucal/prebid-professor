@@ -42,7 +42,7 @@ type Bundle = {
   saved: boolean;
   updatedBy: string | null;
   updatedAt: string | null;
-  scheduler: 'manual-preview-only';
+  scheduler: 'daily-cron-06-utc';
 };
 
 type RunResult = {
@@ -232,13 +232,13 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
           <span className={`monitor-readonly-pill ${settings?.enabled ? 'healthy' : 'warning'}`}>
             {settings?.enabled ? 'ENABLED' : 'DISABLED'}
           </span>
-          <span className="monitor-readonly-pill warning">PREVIEW: MANUAL EVALUATION</span>
+          <span className="monitor-readonly-pill healthy">CRON READY · 06:00 UTC</span>
         </div>
       </div>
 
       <p className="monitor-email-intro">
-        Configure the exact conditions now. On this preview branch the scheduler is intentionally disabled;
-        use Evaluate rules now to run the same decision engine manually.
+        The daily check is configured for 06:00 UTC and activates with the production deployment.
+        Use Evaluate rules now for preview testing. Healthy checks are logged without sending email.
       </p>
 
       {loading && !settings ? <div className="config-loading">Loading notification rules…</div> : null}
@@ -261,10 +261,6 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
               <span><strong>Notify when the missing list changes</strong><small>Avoids repeating an unchanged alert.</small></span>
             </label>
             <label className="monitor-rule-toggle">
-              <input checked={settings.recoveryEnabled} onChange={(event) => update('recoveryEnabled', event.target.checked)} type="checkbox" />
-              <span><strong>Send a recovery email</strong><small>Sends once after a previously notified issue becomes OK.</small></span>
-            </label>
-            <label className="monitor-rule-toggle">
               <input checked={settings.reminderEnabled} onChange={(event) => update('reminderEnabled', event.target.checked)} type="checkbox" />
               <span><strong>Repeat unresolved reminders</strong><small>Uses the interval below when the list is unchanged.</small></span>
             </label>
@@ -278,7 +274,7 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
           <div className="monitor-notification-prerequisites">
             <div><span>Gmail</span><strong className={gmailConnected ? 'ok' : 'missing'}>{gmailConnected ? 'Connected' : 'Not connected'}</strong></div>
             <div><span>Saved template</span><strong className={templateSaved ? 'ok' : 'missing'}>{templateSaved ? 'Ready' : 'Not saved'}</strong></div>
-            <div><span>Scheduler</span><strong>Manual preview only</strong></div>
+            <div><span>Scheduler</span><strong>Daily · 06:00 UTC</strong></div>
           </div>
 
           <div className="monitor-email-actions">
@@ -298,7 +294,6 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
             <div><span>Last status</span><strong>{bundle.state.lastStatus ?? '—'}</strong></div>
             <div><span>Last checked</span><strong>{formatTime(bundle.state.lastCheckedAt)}</strong></div>
             <div><span>Last notified</span><strong>{formatTime(bundle.state.lastNotifiedAt)}</strong></div>
-            <div><span>Last recovery</span><strong>{formatTime(bundle.state.lastRecoveryAt)}</strong></div>
           </div>
           {bundle.state.lastError ? <div className="form-error monitor-readonly-message">{bundle.state.lastError}</div> : null}
         </div>

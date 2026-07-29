@@ -73,7 +73,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: MonitoringNotificationSettings = {
   notifyOnChange: true,
   reminderEnabled: true,
   reminderHours: 24,
-  recoveryEnabled: true,
+  recoveryEnabled: false,
 };
 
 let schemaReady: Promise<void> | null = null;
@@ -122,7 +122,7 @@ function normalizeSettings(value: unknown): { settings: MonitoringNotificationSe
     notifyOnChange: input.notifyOnChange !== false,
     reminderEnabled: input.reminderEnabled !== false,
     reminderHours,
-    recoveryEnabled: input.recoveryEnabled !== false,
+    recoveryEnabled: false,
   };
   const errors: string[] = [];
   if (settings.reminderHours < 1 || settings.reminderHours > 720) {
@@ -206,6 +206,19 @@ export async function readMonitoringNotificationSettings(
   ).bind(siteId).first<{ settings_json: string }>();
   if (!row) return { ...DEFAULT_NOTIFICATION_SETTINGS };
   return normalizeSettings(parseJsonRecord(row.settings_json)).settings;
+}
+
+export async function listEnabledMonitoringSiteIds(db: D1Database): Promise<string[]> {
+  await ensureMonitoringNotificationTables(db);
+  const result = await db.prepare(
+    `SELECT site_id, settings_json
+     FROM monitoring_notification_settings
+     ORDER BY site_id`,
+  ).all<{ site_id: string; settings_json: string }>();
+
+  return (result.results ?? [])
+    .filter((row) => normalizeSettings(parseJsonRecord(row.settings_json)).settings.enabled)
+    .map((row) => row.site_id);
 }
 
 export async function readMonitoringNotificationState(
@@ -345,7 +358,7 @@ export async function getMonitoringNotificationSettings(
       saved: Boolean(row),
       updatedBy: row?.updated_by ?? null,
       updatedAt: row?.updated_at ?? null,
-      scheduler: 'manual-preview-only',
+      scheduler: 'daily-cron-06-utc',
     });
   } catch (error) {
     return apiError('Notification rules could not be loaded.', 500, errorText(error));

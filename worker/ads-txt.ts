@@ -686,6 +686,7 @@ export async function checkAdsTxt(
   env: AdsTxtEnv,
   siteId: string,
 ): Promise<Response> {
+  const includeInternalSnapshot = _request.headers.get('x-tessera-monitoring-snapshot') === '1';
   if (!env.DB) return databaseMissing();
   const site = await fetchSite(env.DB, siteId);
   if (!site) return apiError('Site not found.', 404);
@@ -747,6 +748,7 @@ export async function checkAdsTxt(
         results,
         missing,
         optionalMissing,
+        ...(includeInternalSnapshot ? { content: fetched.text } : {}),
       },
     });
   } catch (error) {

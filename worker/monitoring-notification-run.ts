@@ -29,6 +29,8 @@ type AdsTxtCheck = {
   finalUrl?: string | null;
   fetchedAt?: string;
   httpStatus?: number | null;
+  message?: string;
+  content?: string;
   requiredMissingCount?: number;
   missing?: AdsTxtEntry[];
 };
@@ -157,7 +159,13 @@ async function loadSavedDraft(db: D1Database, siteId: string): Promise<Monitorin
 }
 
 async function readCheck(env: MonitoringNotificationRunEnv, siteId: string): Promise<AdsTxtCheck> {
-  const response = await checkAdsTxt(new Request(`https://monitoring.internal/${encodeURIComponent(siteId)}`), env, siteId);
+  const response = await checkAdsTxt(
+    new Request(`https://monitoring.internal/${encodeURIComponent(siteId)}`, {
+      headers: { 'x-tessera-monitoring-snapshot': '1' },
+    }),
+    env,
+    siteId,
+  );
   const payload = await response.json() as { check?: unknown; error?: string };
   if (!response.ok || !isRecord(payload.check)) {
     throw new Error(payload.error || `Ads.txt checker returned HTTP ${response.status}.`);
@@ -165,8 +173,20 @@ async function readCheck(env: MonitoringNotificationRunEnv, siteId: string): Pro
   return payload.check as AdsTxtCheck;
 }
 
-async function readPreviewData(env: MonitoringNotificationRunEnv, siteId: string): Promise<PreviewData> {
-  const response = await getMonitoringEmailPreviewData(env, siteId);
+async function readPreviewData(
+  env: MonitoringNotificationRunEnv,
+  siteId: string,
+  check: AdsTxtCheck,
+): Promise<PreviewData> {
+  const response = await getMonitoringEmailPreviewData(env, siteId, {
+    fetchedAt: check.fetchedAt || new Date().toISOString(),
+    finalUrl: check.finalUrl ?? null,
+    httpStatus: check.httpStatus ?? null,
+    content: check.content ?? '',
+    error: check.status === 'fetch-error'
+      ? check.message || 'ads.txt could not be fetched.'
+      : null,
+  });
   const payload = await response.json() as PreviewData & { error?: string; details?: unknown };
   if (!response.ok || !payload.ok) {
     throw new Error(payload.error || `Email preview data returned HTTP ${response.status}.`);
@@ -219,10 +239,7 @@ function decide(
     return { kind: 'none', reason: 'The missing-entry list is unchanged and the reminder interval has not elapsed.' };
   }
   if (status === 'ok') {
-    if (settings.recoveryEnabled && state.lastNotifiedFingerprint && state.lastNotifiedAt) {
-      return { kind: 'recovery', reason: 'The site recovered after a previously notified missing-entry state.' };
-    }
-    return { kind: 'none', reason: 'Ads.txt is healthy and no recovery notification is pending.' };
+    return { kind: 'none', reason: 'Ads.txt is healthy. The daily check is recorded without sending email.' };
   }
   return { kind: 'none', reason: `No automatic email is sent for ads.txt status "${status}".` };
 }
@@ -493,7 +510,7 @@ export async function runMonitoringNotification(
       throw new Error('The saved email template must contain both a subject and message body.');
     }
     const [preview, manifestVersion] = await Promise.all([
-      readPreviewData(env, siteId),
+      readPreviewData(env, siteId, check),
       readManifestVersion(env, siteId),
     ]);
     const message = messageFor(

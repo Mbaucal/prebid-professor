@@ -3,6 +3,14 @@ import type { DatabaseEnv } from './publishers';
 
 export interface MonitoringEmailPreviewEnv extends DatabaseEnv {}
 
+export type MonitoringEmailLiveSnapshot = {
+  fetchedAt: string;
+  finalUrl: string | null;
+  httpStatus: number | null;
+  content: string;
+  error: string | null;
+};
+
 type SiteRow = {
   id: string;
   name: string;
@@ -121,6 +129,7 @@ async function fetchAdsTxt(initialUrl: string): Promise<{
 export async function getMonitoringEmailPreviewData(
   env: MonitoringEmailPreviewEnv,
   siteId: string,
+  snapshot?: MonitoringEmailLiveSnapshot,
 ): Promise<Response> {
   if (!env.DB) return apiError('D1 database binding is not configured.', 503);
 
@@ -148,22 +157,24 @@ export async function getMonitoringEmailPreviewData(
     .all<RequirementRow>();
 
   const adsTxtUrl = site.ads_txt_url || `https://${site.domain}/ads.txt`;
-  const fetchedAt = new Date().toISOString();
-  let liveContent = '';
-  let finalUrl: string | null = null;
-  let httpStatus: number | null = null;
-  let fetchError: string | null = null;
+  const fetchedAt = snapshot?.fetchedAt ?? new Date().toISOString();
+  let liveContent = snapshot?.content ?? '';
+  let finalUrl: string | null = snapshot?.finalUrl ?? null;
+  let httpStatus: number | null = snapshot?.httpStatus ?? null;
+  let fetchError: string | null = snapshot?.error ?? null;
 
-  try {
-    const fetched = await fetchAdsTxt(adsTxtUrl);
-    liveContent = fetched.content;
-    finalUrl = fetched.finalUrl;
-    httpStatus = fetched.httpStatus;
-    if (fetched.httpStatus < 200 || fetched.httpStatus >= 300) {
-      fetchError = `ads.txt returned HTTP ${fetched.httpStatus}.`;
+  if (!snapshot) {
+    try {
+      const fetched = await fetchAdsTxt(adsTxtUrl);
+      liveContent = fetched.content;
+      finalUrl = fetched.finalUrl;
+      httpStatus = fetched.httpStatus;
+      if (fetched.httpStatus < 200 || fetched.httpStatus >= 300) {
+        fetchError = `ads.txt returned HTTP ${fetched.httpStatus}.`;
+      }
+    } catch (error) {
+      fetchError = error instanceof Error ? error.message : String(error);
     }
-  } catch (error) {
-    fetchError = error instanceof Error ? error.message : String(error);
   }
 
   return json({
