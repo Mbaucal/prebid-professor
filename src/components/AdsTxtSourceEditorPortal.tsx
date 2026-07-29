@@ -37,6 +37,13 @@ function polishLegacyAdsTxtWorkspace(page: Element): void {
     if (button.textContent !== 'Edit repeated source lines') button.textContent = 'Edit repeated source lines';
   });
 
+  // The previous combined search showed live rows as read-only beside monitoring
+  // requirements. The managed source editor now owns all physical-line search
+  // and editing, so keep the legacy live panel out of the workspace.
+  page.querySelectorAll<HTMLElement>('.ads-txt-live-search-panel').forEach((panel) => {
+    if (!panel.hidden) panel.hidden = true;
+  });
+
   const requirementsCard = page.querySelector('#ads-txt-saved-requirements');
   const kicker = requirementsCard?.querySelector('.panel-kicker');
   if (kicker && kicker.textContent !== 'Monitoring requirements') kicker.textContent = 'Monitoring requirements';
