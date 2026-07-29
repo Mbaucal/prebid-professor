@@ -384,57 +384,10 @@ export async function runMonitoringNotification(
   let state = await readMonitoringNotificationState(env.DB, siteId);
   let claimToken: string | null = null;
   try {
-    const [settings, check] = await Promise.all([
-      readMonitoringNotificationSettings(env.DB, siteId),
-      readCheck(env, siteId),
-    ]);
-    const status = String(check.status ?? 'fetch-error');
-    const missingEntries = uniqueEntries(check.missing ?? []);
-    const currentFingerprint = await fingerprint(missingEntries);
-    let decision = decide(status, currentFingerprint, state, settings, Date.now());
-    state = closeHealthyIncident(status, decision, {
-      ...state,
-      lastStatus: status,
-      lastFingerprint: currentFingerprint,
-      lastCheckedAt: checkedAt,
-      lastError: null,
-      updatedAt: checkedAt,
-    });
-
-    if (decision.kind === 'none') {
-      await writeMonitoringNotificationState(env.DB, siteId, state);
-      await appendMonitoringNotificationLog(env.DB, siteId, {
-        kind: 'manual',
-        status: 'skipped',
-        provider: 'gmail',
-        messageId: null,
-        recipients: [],
-        subject: null,
-        attachmentName: null,
-        errorMessage: null,
-        details: {
-          actor,
-          reason: decision.reason,
-          adsTxtStatus: status,
-          missingCount: missingEntries.length,
-          fingerprint: currentFingerprint,
-        },
-      });
-      return json({
-        ok: true,
-        sent: false,
-        decision: decision.kind,
-        reason: decision.reason,
-        checkedAt,
-        adsTxtStatus: status,
-        missingCount: missingEntries.length,
-        state,
-      });
-    }
-
     claimToken = await acquireEvaluationClaim(env.DB, siteId);
     if (!claimToken) {
       const reason = 'Another notification evaluation is already in progress for this site.';
+      state = await readMonitoringNotificationState(env.DB, siteId);
       await appendMonitoringNotificationLog(env.DB, siteId, {
         kind: 'manual',
         status: 'skipped',
@@ -444,7 +397,7 @@ export async function runMonitoringNotification(
         subject: null,
         attachmentName: null,
         errorMessage: null,
-        details: { actor, reason, adsTxtStatus: status, missingCount: missingEntries.length },
+        details: { actor, reason, serialized: true },
       });
       return json({
         ok: true,
@@ -452,16 +405,21 @@ export async function runMonitoringNotification(
         decision: 'none',
         reason,
         checkedAt,
-        adsTxtStatus: status,
-        missingCount: missingEntries.length,
+        adsTxtStatus: state.lastStatus ?? '',
+        missingCount: 0,
         state,
       });
     }
 
-    // A previous request may have sent while this request waited for the claim.
-    // Re-read state and decide again after ownership is established.
+    const [settings, check] = await Promise.all([
+      readMonitoringNotificationSettings(env.DB, siteId),
+      readCheck(env, siteId),
+    ]);
     state = await readMonitoringNotificationState(env.DB, siteId);
-    decision = decide(status, currentFingerprint, state, settings, Date.now());
+    const status = String(check.status ?? 'fetch-error');
+    const missingEntries = uniqueEntries(check.missing ?? []);
+    const currentFingerprint = await fingerprint(missingEntries);
+    const decision = decide(status, currentFingerprint, state, settings, Date.now());
     state = closeHealthyIncident(status, decision, {
       ...state,
       lastStatus: status,
@@ -488,7 +446,7 @@ export async function runMonitoringNotification(
           adsTxtStatus: status,
           missingCount: missingEntries.length,
           fingerprint: currentFingerprint,
-          reevaluatedAfterClaim: true,
+          serialized: true,
         },
       });
       return json({
@@ -550,6 +508,7 @@ export async function runMonitoringNotification(
         cc: result.cc,
         from: result.from,
         manifestVersion,
+        serialized: true,
       },
     });
     return json({
@@ -568,13 +527,15 @@ export async function runMonitoringNotification(
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    state = {
-      ...state,
-      lastCheckedAt: checkedAt,
-      lastError: errorMessage,
-      updatedAt: checkedAt,
-    };
-    await writeMonitoringNotificationState(env.DB, siteId, state).catch(() => undefined);
+    if (claimToken) {
+      state = {
+        ...state,
+        lastCheckedAt: checkedAt,
+        lastError: errorMessage,
+        updatedAt: checkedAt,
+      };
+      await writeMonitoringNotificationState(env.DB, siteId, state).catch(() => undefined);
+    }
     await appendMonitoringNotificationLog(env.DB, siteId, {
       kind: 'manual',
       status: 'failed',
@@ -584,7 +545,7 @@ export async function runMonitoringNotification(
       subject: null,
       attachmentName: null,
       errorMessage,
-      details: { actor },
+      details: { actor, serialized: Boolean(claimToken) },
     }).catch(() => undefined);
     return apiError('Monitoring notification evaluation failed.', 502, errorMessage);
   } finally {

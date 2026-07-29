@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type NotificationSettings = {
   enabled: boolean;
@@ -129,21 +129,26 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
+  const activeSiteId = useRef(siteId);
+  activeSiteId.current = siteId;
 
   const load = useCallback(async () => {
+    const requestedSiteId = siteId;
     setLoading(true);
     setError(null);
     try {
       const payload = await requestJson<Bundle>(
-        `/api/publishers/${encodeURIComponent(siteId)}/monitoring/notification-settings?ts=${Date.now()}`,
+        `/api/publishers/${encodeURIComponent(requestedSiteId)}/monitoring/notification-settings?ts=${Date.now()}`,
         { cache: 'no-store', credentials: 'same-origin', headers: { accept: 'application/json' } },
       );
+      if (activeSiteId.current !== requestedSiteId) return;
       setBundle(payload);
       setSettings(payload.settings);
     } catch (loadError) {
+      if (activeSiteId.current !== requestedSiteId) return;
       setError(loadError instanceof Error ? loadError.message : 'Notification rules could not be loaded.');
     } finally {
-      setLoading(false);
+      if (activeSiteId.current === requestedSiteId) setLoading(false);
     }
   }, [siteId]);
 
@@ -152,6 +157,10 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
     setSettings(null);
     setRunResult(null);
     setMessage(null);
+    setError(null);
+    setSaving(false);
+    setRunning(false);
+    setLoading(true);
     void load();
   }, [load, siteId]);
 
@@ -163,39 +172,44 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
 
   async function save(): Promise<void> {
     if (!settings) return;
+    const requestedSiteId = siteId;
+    const settingsToSave = settings;
     setSaving(true);
     setError(null);
     setMessage(null);
     try {
       const payload = await requestJson<{ ok: true; settings: NotificationSettings; updatedAt: string }>(
-        `/api/publishers/${encodeURIComponent(siteId)}/monitoring/notification-settings`,
+        `/api/publishers/${encodeURIComponent(requestedSiteId)}/monitoring/notification-settings`,
         {
           method: 'PUT',
           credentials: 'same-origin',
           headers: { 'content-type': 'application/json', accept: 'application/json' },
-          body: JSON.stringify({ settings }),
+          body: JSON.stringify({ settings: settingsToSave }),
         },
       );
+      if (activeSiteId.current !== requestedSiteId) return;
       setSettings(payload.settings);
       setMessage(`Notification rules saved · ${formatTime(payload.updatedAt)}.`);
       await load();
     } catch (saveError) {
+      if (activeSiteId.current !== requestedSiteId) return;
       setError(saveError instanceof Error ? saveError.message : 'Notification rules could not be saved.');
     } finally {
-      setSaving(false);
+      if (activeSiteId.current === requestedSiteId) setSaving(false);
     }
   }
 
   async function runNow(): Promise<void> {
     if (!settings?.enabled || !gmailConnected || !templateSaved || running) return;
     if (!window.confirm('Evaluate the saved notification rules now?\n\nIf the current ads.txt state matches a rule, Tessera will send a real Gmail message.')) return;
+    const requestedSiteId = siteId;
     setRunning(true);
     setError(null);
     setMessage(null);
     setRunResult(null);
     try {
       const result = await requestJson<RunResult>(
-        `/api/publishers/${encodeURIComponent(siteId)}/monitoring/notifications/run`,
+        `/api/publishers/${encodeURIComponent(requestedSiteId)}/monitoring/notifications/run`,
         {
           method: 'POST',
           credentials: 'same-origin',
@@ -203,16 +217,18 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
           body: JSON.stringify({ mode: 'manual-preview' }),
         },
       );
+      if (activeSiteId.current !== requestedSiteId) return;
       setRunResult(result);
       setMessage(result.sent
         ? `Gmail notification sent · ${result.messageId ?? 'message accepted'}.`
         : `No email sent: ${result.reason}`);
       await load();
     } catch (runError) {
+      if (activeSiteId.current !== requestedSiteId) return;
       setError(runError instanceof Error ? runError.message : 'Notification evaluation failed.');
       await load();
     } finally {
-      setRunning(false);
+      if (activeSiteId.current === requestedSiteId) setRunning(false);
     }
   }
 

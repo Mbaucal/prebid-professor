@@ -400,6 +400,8 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
     setPreview(null);
     setDraftMessage(null);
     setServerDraft(null);
+    setPreviewing(false);
+    setServerSaving(false);
     setDraft(loadDraft(site.id));
     void load();
     void loadServerDraft();
@@ -431,19 +433,23 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
   }
 
   async function saveServerDraft(): Promise<void> {
+    const requestedSiteId = site.id;
+    const draftToSave = draft;
     setServerSaving(true);
     setError(null);
     setDraftMessage(null);
     try {
-      const savedDraft = await persistMonitoringEmailDraft(site.id, draft);
+      const savedDraft = await persistMonitoringEmailDraft(requestedSiteId, draftToSave);
+      if (activeSiteId.current !== requestedSiteId) return;
       setServerDraft(savedDraft);
       setDraft(savedDraft.settings);
-      window.localStorage.setItem(storageKey(site.id), JSON.stringify(savedDraft.settings));
+      window.localStorage.setItem(storageKey(requestedSiteId), JSON.stringify(savedDraft.settings));
       setDraftMessage(`Draft saved to Tessera${savedDraft.updatedAt ? ` · ${formatTime(savedDraft.updatedAt)}` : ''}. No email was sent.`);
     } catch (requestError) {
+      if (activeSiteId.current !== requestedSiteId) return;
       setError(requestError instanceof Error ? requestError.message : 'Email draft could not be saved to Tessera.');
     } finally {
-      setServerSaving(false);
+      if (activeSiteId.current === requestedSiteId) setServerSaving(false);
     }
   }
 
@@ -456,12 +462,16 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
 
   async function generatePreview(): Promise<void> {
     if (!payload) return;
+    const requestedSiteId = site.id;
+    const payloadSnapshot = payload;
+    const draftSnapshot = draft;
     setPreviewing(true);
     setError(null);
     setDraftMessage(null);
     try {
-      const data = await requestEmailPreviewData(site.id);
-      const missingEntries = uniqueEntries(payload.adsTxt.missing ?? []);
+      const data = await requestEmailPreviewData(requestedSiteId);
+      if (activeSiteId.current !== requestedSiteId) return;
+      const missingEntries = uniqueEntries(payloadSnapshot.adsTxt.missing ?? []);
       const expectedEntries = uniqueEntries(data.expected);
       const missingText = groupedEntries(missingEntries) || 'None';
       const baseVariables: Record<string, string> = {
@@ -469,23 +479,26 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
         site_name: data.site.name,
         domain: data.site.domain,
         ads_txt_url: data.live.finalUrl || data.site.adsTxtUrl,
-        status: adsTxtLabel(payload.adsTxt),
-        checked_at: formatTime(payload.checkedAt),
-        missing_count: String(payload.adsTxt.requiredMissingCount ?? missingEntries.length),
+        status: adsTxtLabel(payloadSnapshot.adsTxt),
+        checked_at: formatTime(payloadSnapshot.checkedAt),
+        missing_count: String(payloadSnapshot.adsTxt.requiredMissingCount ?? missingEntries.length),
         missing_entries: missingText,
-        current_version: payload.runtime.expectedVersion ?? '',
-        manifest_version: payload.runtime.manifestVersion ?? '',
-        sender_name: draft.senderName,
+        current_version: payloadSnapshot.runtime.expectedVersion ?? '',
+        manifest_version: payloadSnapshot.runtime.manifestVersion ?? '',
+        sender_name: draftSnapshot.senderName,
         attachment_name: '',
       };
-      const attachmentName = safeFileName(renderTemplate(draft.attachmentNameTemplate || '{{domain}}-ads.txt', baseVariables));
+      const attachmentName = safeFileName(renderTemplate(
+        draftSnapshot.attachmentNameTemplate || '{{domain}}-ads.txt',
+        baseVariables,
+      ));
       const variables = { ...baseVariables, attachment_name: attachmentName };
 
       let attachmentContent = '';
       const warnings: string[] = [];
-      if (draft.attachmentMode === 'missing-only') {
+      if (draftSnapshot.attachmentMode === 'missing-only') {
         attachmentContent = groupedEntries(missingEntries);
-      } else if (draft.attachmentMode === 'expected-only') {
+      } else if (draftSnapshot.attachmentMode === 'expected-only') {
         attachmentContent = groupedEntries(expectedEntries);
       } else if (data.live.error) {
         warnings.push(`Full corrected ads.txt could not be created: ${data.live.error}`);
@@ -494,14 +507,15 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
         attachmentContent = correctedAdsTxt(data.live.content, missingEntries);
       }
       if (attachmentContent && !attachmentContent.endsWith('\n')) attachmentContent += '\n';
-      if (!draft.subjectTemplate.trim()) warnings.push('Subject template is empty.');
-      if (!draft.bodyTemplate.trim()) warnings.push('Email body template is empty.');
-      if (!draft.to.trim()) warnings.push('Recipient list is empty.');
+      if (!draftSnapshot.subjectTemplate.trim()) warnings.push('Subject template is empty.');
+      if (!draftSnapshot.bodyTemplate.trim()) warnings.push('Email body template is empty.');
+      if (!draftSnapshot.to.trim()) warnings.push('Recipient list is empty.');
+      if (activeSiteId.current !== requestedSiteId) return;
 
       setPreview({
-        subject: renderTemplate(draft.subjectTemplate, variables),
-        body: renderTemplate(draft.bodyTemplate, variables),
-        bodyFormat: draft.bodyFormat,
+        subject: renderTemplate(draftSnapshot.subjectTemplate, variables),
+        body: renderTemplate(draftSnapshot.bodyTemplate, variables),
+        bodyFormat: draftSnapshot.bodyFormat,
         attachmentName,
         attachmentContent,
         variables,
@@ -509,9 +523,10 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
       });
       setDraftMessage('Preview generated. No email was sent and current form values were not saved automatically.');
     } catch (requestError) {
+      if (activeSiteId.current !== requestedSiteId) return;
       setError(requestError instanceof Error ? requestError.message : 'Email preview could not be generated.');
     } finally {
-      setPreviewing(false);
+      if (activeSiteId.current === requestedSiteId) setPreviewing(false);
     }
   }
 
@@ -750,7 +765,7 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
           />
 
           <div className="monitor-readonly-note">
-            <strong>Safe staged rollout:</strong> runtime monitoring remains read-only. Gmail test sends and manual rule evaluation are explicit actions; the scheduler is still disabled on this preview branch and no release or R2 object is modified.
+            <strong>Safe staged rollout:</strong> runtime monitoring remains read-only. Gmail test sends and manual rule evaluation are explicit actions. The daily 06:00 UTC schedule is configured; review enabled sites and recipients before promoting this version to an active deployment. No release or R2 object is modified.
           </div>
         </>
       ) : null}

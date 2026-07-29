@@ -27,7 +27,7 @@ import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-29-monitoring-log-compat-v30';
+const RUNTIME_BUILD = '2026-07-29-monitoring-review-hardening-v31';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
