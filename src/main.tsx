@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import AdsTxtConnectorPortal from './components/AdsTxtConnectorPortal';
+import AdsTxtRequirementsCollapse from './components/AdsTxtRequirementsCollapse';
 import AuthAccount from './components/AuthAccount';
 import TesseraBranding from './components/TesseraBranding';
 import './styles.css';
@@ -30,6 +31,7 @@ import './export.css';
 import './mockup-builder.css';
 import './debug-console.css';
 import './ads-txt.css';
+import './ads-txt-requirements-collapse.css';
 import './ads-txt-connector.css';
 import './global-workspaces.css';
 import './monitoring-readonly.css';
@@ -51,6 +53,7 @@ createRoot(root).render(
   <StrictMode>
     <TesseraBranding />
     <App />
+    <AdsTxtRequirementsCollapse />
     <AdsTxtConnectorPortal />
     <AuthAccount />
   </StrictMode>,
