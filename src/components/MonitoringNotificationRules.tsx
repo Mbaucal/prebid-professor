@@ -126,10 +126,12 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const activeSiteId = useRef(siteId);
+  const confirmActionRef = useRef<HTMLButtonElement | null>(null);
   activeSiteId.current = siteId;
 
   const load = useCallback(async () => {
@@ -160,9 +162,28 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
     setError(null);
     setSaving(false);
     setRunning(false);
+    setConfirmOpen(false);
     setLoading(true);
     void load();
   }, [load, siteId]);
+
+  useEffect(() => {
+    if (!confirmOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.requestAnimationFrame(() => confirmActionRef.current?.focus());
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !running) setConfirmOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [confirmOpen, running]);
 
   function update<K extends keyof NotificationSettings>(key: K, value: NotificationSettings[K]): void {
     setSettings((current) => current ? { ...current, [key]: value } : current);
@@ -201,8 +222,8 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
 
   async function runNow(): Promise<void> {
     if (!settings?.enabled || !gmailConnected || !templateSaved || running) return;
-    if (!window.confirm('Evaluate the saved notification rules now?\n\nIf the current ads.txt state matches a rule, Tessera will send a real Gmail message.')) return;
     const requestedSiteId = siteId;
+    setConfirmOpen(false);
     setRunning(true);
     setError(null);
     setMessage(null);
@@ -238,106 +259,145 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
   if (!templateSaved) disabledReasons.push('Save the email template to Tessera.');
 
   return (
-    <article className="monitor-readonly-card monitor-notification-rules">
-      <div className="monitor-readonly-card-heading">
-        <div>
-          <span className="panel-kicker">Ads.txt notification policy</span>
-          <h3>Automatic notification rules</h3>
+    <>
+      <article className="monitor-readonly-card monitor-notification-rules">
+        <div className="monitor-readonly-card-heading">
+          <div>
+            <span className="panel-kicker">Ads.txt notification policy</span>
+            <h3>Automatic notification rules</h3>
+          </div>
+          <div className="monitor-email-statuses">
+            <span className={`monitor-readonly-pill ${settings?.enabled ? 'healthy' : 'warning'}`}>
+              {settings?.enabled ? 'ENABLED' : 'DISABLED'}
+            </span>
+            <span className="monitor-readonly-pill healthy">CRON READY · 06:00 UTC</span>
+          </div>
         </div>
-        <div className="monitor-email-statuses">
-          <span className={`monitor-readonly-pill ${settings?.enabled ? 'healthy' : 'warning'}`}>
-            {settings?.enabled ? 'ENABLED' : 'DISABLED'}
-          </span>
-          <span className="monitor-readonly-pill healthy">CRON READY · 06:00 UTC</span>
-        </div>
-      </div>
 
-      <p className="monitor-email-intro">
-        The daily check is configured for 06:00 UTC and activates with the production deployment.
-        Use Evaluate rules now for preview testing. Healthy checks are logged without sending email.
-      </p>
+        <p className="monitor-email-intro">
+          The daily check is configured for 06:00 UTC and activates with the production deployment.
+          Use Evaluate rules now for preview testing. Healthy checks are logged without sending email.
+        </p>
 
-      {loading && !settings ? <div className="config-loading">Loading notification rules…</div> : null}
-      {error ? <div className="form-error monitor-readonly-message">{error}</div> : null}
-      {message ? <div className="release-success monitor-readonly-message">✓ {message}</div> : null}
+        {loading && !settings ? <div className="config-loading">Loading notification rules…</div> : null}
+        {error ? <div className="form-error monitor-readonly-message">{error}</div> : null}
+        {message ? <div className="release-success monitor-readonly-message">✓ {message}</div> : null}
 
-      {settings ? (
-        <>
-          <div className="monitor-rule-grid">
-            <label className="monitor-rule-toggle">
-              <input checked={settings.enabled} onChange={(event) => update('enabled', event.target.checked)} type="checkbox" />
-              <span><strong>Enable ads.txt notifications</strong><small>Master switch for this site.</small></span>
-            </label>
-            <label className="monitor-rule-toggle">
-              <input checked={settings.notifyOnMissing} onChange={(event) => update('notifyOnMissing', event.target.checked)} type="checkbox" />
-              <span><strong>Notify when required entries are missing</strong><small>Sends the initial missing-entry alert.</small></span>
-            </label>
-            <label className="monitor-rule-toggle">
-              <input checked={settings.notifyOnChange} onChange={(event) => update('notifyOnChange', event.target.checked)} type="checkbox" />
-              <span><strong>Notify when the missing list changes</strong><small>Avoids repeating an unchanged alert.</small></span>
-            </label>
-            <label className="monitor-rule-toggle">
-              <input checked={settings.reminderEnabled} onChange={(event) => update('reminderEnabled', event.target.checked)} type="checkbox" />
-              <span><strong>Repeat unresolved reminders</strong><small>Uses the interval below when the list is unchanged.</small></span>
-            </label>
-            <label className="monitor-rule-number">
-              <span>Reminder interval</span>
-              <div><input min={1} max={720} onChange={(event) => update('reminderHours', Number(event.target.value))} type="number" value={settings.reminderHours} /><strong>hours</strong></div>
-              <small>Allowed range: 1–720 hours.</small>
-            </label>
-          </div>
-
-          <div className="monitor-notification-prerequisites">
-            <div><span>Gmail</span><strong className={gmailConnected ? 'ok' : 'missing'}>{gmailConnected ? 'Connected' : 'Not connected'}</strong></div>
-            <div><span>Saved template</span><strong className={templateSaved ? 'ok' : 'missing'}>{templateSaved ? 'Ready' : 'Not saved'}</strong></div>
-            <div><span>Scheduler</span><strong>Daily · 06:00 UTC</strong></div>
-          </div>
-
-          <div className="monitor-email-actions">
-            <button className="button secondary" disabled={saving} onClick={() => void save()} type="button">{saving ? 'Saving…' : 'Save notification rules'}</button>
-            <button className="button primary" disabled={Boolean(disabledReasons.length) || running} onClick={() => void runNow()} type="button">{running ? 'Evaluating…' : 'Evaluate rules now'}</button>
-          </div>
-          {disabledReasons.length ? <div className="monitor-test-send-note">{disabledReasons.join(' ')}</div> : null}
-        </>
-      ) : null}
-
-      {bundle ? (
-        <div className="monitor-notification-state">
-          <div className="monitor-readonly-card-heading">
-            <div><span className="panel-kicker">Decision memory</span><h4>Current state</h4></div>
-          </div>
-          <div className="monitor-runtime-facts">
-            <div><span>Last status</span><strong>{bundle.state.lastStatus ?? '—'}</strong></div>
-            <div><span>Last checked</span><strong>{formatTime(bundle.state.lastCheckedAt)}</strong></div>
-            <div><span>Last notified</span><strong>{formatTime(bundle.state.lastNotifiedAt)}</strong></div>
-          </div>
-          {bundle.state.lastError ? <div className="form-error monitor-readonly-message">{bundle.state.lastError}</div> : null}
-        </div>
-      ) : null}
-
-      {runResult ? (
-        <div className={`monitor-run-result ${runResult.sent ? 'sent' : 'skipped'}`}>
-          <strong>{runResult.sent ? 'Email sent' : 'No email needed'}</strong>
-          <span>{runResult.reason}</span>
-          <small>{runResult.adsTxtStatus} · {runResult.missingCount} missing · {formatTime(runResult.checkedAt)}</small>
-        </div>
-      ) : null}
-
-      {bundle?.recent.length ? (
-        <div className="monitor-notification-log">
-          <div className="monitor-readonly-card-heading">
-            <div><span className="panel-kicker">Recent evaluations</span><h4>Notification history</h4></div>
-          </div>
-          {bundle.recent.map((entry) => (
-            <div key={entry.id}>
-              <span className={`monitor-dot ${entry.status === 'sent' ? 'healthy' : entry.status === 'failed' ? 'error' : 'warning'}`} />
-              <div><strong>{kindLabel(entry.kind)}</strong><small>{entry.errorMessage || entry.subject || String(entry.details.reason ?? '')}</small></div>
-              <code>{entry.status}</code>
-              <time>{formatTime(entry.createdAt)}</time>
+        {settings ? (
+          <>
+            <div className="monitor-rule-grid">
+              <label className="monitor-rule-toggle">
+                <input checked={settings.enabled} onChange={(event) => update('enabled', event.target.checked)} type="checkbox" />
+                <span><strong>Enable ads.txt notifications</strong><small>Master switch for this site.</small></span>
+              </label>
+              <label className="monitor-rule-toggle">
+                <input checked={settings.notifyOnMissing} onChange={(event) => update('notifyOnMissing', event.target.checked)} type="checkbox" />
+                <span><strong>Notify when required entries are missing</strong><small>Sends the initial missing-entry alert.</small></span>
+              </label>
+              <label className="monitor-rule-toggle">
+                <input checked={settings.notifyOnChange} onChange={(event) => update('notifyOnChange', event.target.checked)} type="checkbox" />
+                <span><strong>Notify when the missing list changes</strong><small>Avoids repeating an unchanged alert.</small></span>
+              </label>
+              <label className="monitor-rule-toggle">
+                <input checked={settings.reminderEnabled} onChange={(event) => update('reminderEnabled', event.target.checked)} type="checkbox" />
+                <span><strong>Repeat unresolved reminders</strong><small>Uses the interval below when the list is unchanged.</small></span>
+              </label>
+              <label className="monitor-rule-number">
+                <span>Reminder interval</span>
+                <div><input min={1} max={720} onChange={(event) => update('reminderHours', Number(event.target.value))} type="number" value={settings.reminderHours} /><strong>hours</strong></div>
+                <small>Allowed range: 1–720 hours.</small>
+              </label>
             </div>
-          ))}
+
+            <div className="monitor-notification-prerequisites">
+              <div><span>Gmail</span><strong className={gmailConnected ? 'ok' : 'missing'}>{gmailConnected ? 'Connected' : 'Not connected'}</strong></div>
+              <div><span>Saved template</span><strong className={templateSaved ? 'ok' : 'missing'}>{templateSaved ? 'Ready' : 'Not saved'}</strong></div>
+              <div><span>Scheduler</span><strong>Daily · 06:00 UTC</strong></div>
+            </div>
+
+            <div className="monitor-email-actions">
+              <button className="button secondary" disabled={saving} onClick={() => void save()} type="button">{saving ? 'Saving…' : 'Save notification rules'}</button>
+              <button className="button primary" disabled={Boolean(disabledReasons.length) || running} onClick={() => setConfirmOpen(true)} type="button">{running ? 'Evaluating…' : 'Evaluate rules now'}</button>
+            </div>
+            {disabledReasons.length ? <div className="monitor-test-send-note">{disabledReasons.join(' ')}</div> : null}
+          </>
+        ) : null}
+
+        {bundle ? (
+          <div className="monitor-notification-state">
+            <div className="monitor-readonly-card-heading">
+              <div><span className="panel-kicker">Decision memory</span><h4>Current state</h4></div>
+            </div>
+            <div className="monitor-runtime-facts">
+              <div><span>Last status</span><strong>{bundle.state.lastStatus ?? '—'}</strong></div>
+              <div><span>Last checked</span><strong>{formatTime(bundle.state.lastCheckedAt)}</strong></div>
+              <div><span>Last notified</span><strong>{formatTime(bundle.state.lastNotifiedAt)}</strong></div>
+            </div>
+            {bundle.state.lastError ? <div className="form-error monitor-readonly-message">{bundle.state.lastError}</div> : null}
+          </div>
+        ) : null}
+
+        {runResult ? (
+          <div className={`monitor-run-result ${runResult.sent ? 'sent' : 'skipped'}`}>
+            <strong>{runResult.sent ? 'Email sent' : 'No email needed'}</strong>
+            <span>{runResult.reason}</span>
+            <small>{runResult.adsTxtStatus} · {runResult.missingCount} missing · {formatTime(runResult.checkedAt)}</small>
+          </div>
+        ) : null}
+
+        {bundle?.recent.length ? (
+          <div className="monitor-notification-log">
+            <div className="monitor-readonly-card-heading">
+              <div><span className="panel-kicker">Recent evaluations</span><h4>Notification history</h4></div>
+            </div>
+            {bundle.recent.map((entry) => (
+              <div key={entry.id}>
+                <span className={`monitor-dot ${entry.status === 'sent' ? 'healthy' : entry.status === 'failed' ? 'error' : 'warning'}`} />
+                <div><strong>{kindLabel(entry.kind)}</strong><small>{entry.errorMessage || entry.subject || String(entry.details.reason ?? '')}</small></div>
+                <code>{entry.status}</code>
+                <time>{formatTime(entry.createdAt)}</time>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </article>
+
+      {confirmOpen ? (
+        <div
+          className="monitor-confirm-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !running) setConfirmOpen(false);
+          }}
+          role="presentation"
+        >
+          <section
+            aria-describedby="monitor-confirm-description"
+            aria-labelledby="monitor-confirm-title"
+            aria-modal="true"
+            className="monitor-confirm-dialog"
+            role="dialog"
+          >
+            <div className="monitor-confirm-icon" aria-hidden="true">✉</div>
+            <div className="monitor-confirm-copy">
+              <span className="panel-kicker">Manual notification check</span>
+              <h3 id="monitor-confirm-title">Evaluate notification rules now?</h3>
+              <p id="monitor-confirm-description">
+                Tessera will check the current live ads.txt state against the saved rules for this site.
+              </p>
+            </div>
+            <div className="monitor-confirm-warning">
+              <strong>A real Gmail message may be sent</strong>
+              <span>Email is sent only when a saved rule matches. The recipients from the saved template will be used.</span>
+            </div>
+            <div className="monitor-confirm-actions">
+              <button className="button secondary" disabled={running} onClick={() => setConfirmOpen(false)} type="button">Cancel</button>
+              <button ref={confirmActionRef} className="button primary" disabled={running} onClick={() => void runNow()} type="button">
+                {running ? 'Evaluating…' : 'Evaluate rules'}
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
-    </article>
+    </>
   );
 }
