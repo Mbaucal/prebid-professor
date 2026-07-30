@@ -18,6 +18,21 @@ function rowLabel(content: HTMLElement | null, expanded: boolean): string {
   return count ? `Show ${count} row${count === 1 ? '' : 's'}` : 'Show list';
 }
 
+function updateToggle(toggle: HTMLButtonElement, label: string, expanded: boolean): void {
+  toggle.setAttribute('aria-expanded', String(expanded));
+  if (toggle.dataset.label === label && toggle.dataset.expanded === String(expanded)) return;
+
+  const text = document.createElement('span');
+  text.textContent = label;
+  const chevron = document.createElement('span');
+  chevron.className = 'ads-txt-requirements-collapse-chevron';
+  chevron.setAttribute('aria-hidden', 'true');
+  chevron.textContent = '⌄';
+  toggle.replaceChildren(text, chevron);
+  toggle.dataset.label = label;
+  toggle.dataset.expanded = String(expanded);
+}
+
 export default function AdsTxtRequirementsCollapse() {
   useEffect(() => {
     const states = new WeakMap<HTMLElement, CardState>();
@@ -56,13 +71,12 @@ export default function AdsTxtRequirementsCollapse() {
 
       const content = savedListContent(heading);
       if (content) {
-        if (!content.id) content.id = `ads-txt-requirements-list-${Math.random().toString(36).slice(2, 9)}`;
+        if (!content.id) content.id = 'ads-txt-saved-requirements-list-content';
         content.hidden = !state.expanded;
         toggle.setAttribute('aria-controls', content.id);
       }
 
-      toggle.setAttribute('aria-expanded', String(state.expanded));
-      toggle.innerHTML = `<span>${rowLabel(content, state.expanded)}</span><span class="ads-txt-requirements-collapse-chevron" aria-hidden="true">⌄</span>`;
+      updateToggle(toggle, rowLabel(content, state.expanded), state.expanded);
 
       if (searchInput && !searchCleanups.has(searchInput)) {
         const onSearch = () => {
