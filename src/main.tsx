@@ -42,6 +42,8 @@ import './gmail-connection.css';
 import './tessera-branding.css';
 import './auth-account.css';
 import './admin-helpers.css';
+import './ads-txt-admin-guide.css';
+import './layout-fit.css';
 
 const root = document.getElementById('root');
 
