@@ -14,11 +14,11 @@ import {
   testMockAdsTxtConnector,
   verifyMockAdsTxtVersion,
   type AdsTxtConnectorEnv,
-} from './ads-txt-connector';
+} from './ads-txt-connector-safe';
 import { apiError } from './http';
 import type { ReleaseEnv } from './releases';
 
-const CONNECTOR_BUILD = '2026-07-30-ads-txt-mock-connector-v1';
+const CONNECTOR_BUILD = '2026-07-30-ads-txt-mock-connector-v2-hardened';
 
 interface Env extends ReleaseEnv, AuthEnv, AdsTxtConnectorEnv {
   ASSETS: Fetcher;
