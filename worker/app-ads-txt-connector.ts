@@ -15,16 +15,23 @@ import {
   verifyMockAdsTxtVersion,
   type AdsTxtConnectorEnv,
 } from './ads-txt-connector-safe';
+import {
+  deleteAdsTxtRealConnector,
+  getAdsTxtRealConnector,
+  saveAdsTxtRealConnector,
+  type AdsTxtRealConnectorEnv,
+} from './ads-txt-real-connector';
 import { apiError } from './http';
 import type { ReleaseEnv } from './releases';
 
-const CONNECTOR_BUILD = '2026-07-30-ads-txt-mock-connector-v2-hardened';
+const CONNECTOR_BUILD = '2026-08-02-ads-txt-cms-connection-v1';
 
-interface Env extends ReleaseEnv, AuthEnv, AdsTxtConnectorEnv {
+interface Env extends ReleaseEnv, AuthEnv, AdsTxtConnectorEnv, AdsTxtRealConnectorEnv {
   ASSETS: Fetcher;
   GOOGLE_OAUTH_CLIENT_ID?: string;
   GOOGLE_OAUTH_CLIENT_SECRET?: string;
   GMAIL_TOKEN_ENCRYPTION_KEY?: string;
+  ADS_TXT_CONNECTOR_ENCRYPTION_KEY?: string;
 }
 
 const downstream = baseApp as {
@@ -94,6 +101,26 @@ function withConnectorHeader(response: Response): Response {
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const pathname = new URL(request.url).pathname;
+
+    const realConnectionMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/ads-txt\/cms-connection$/,
+    );
+    if (realConnectionMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withConnectorHeader(verified);
+      const siteId = decodeURIComponent(realConnectionMatch[1]);
+
+      if (request.method === 'GET') {
+        return withConnectorHeader(await getAdsTxtRealConnector(env, siteId));
+      }
+      if (request.method === 'PUT') {
+        return withConnectorHeader(await saveAdsTxtRealConnector(verified, env, siteId));
+      }
+      if (request.method === 'DELETE') {
+        return withConnectorHeader(await deleteAdsTxtRealConnector(verified, env, siteId));
+      }
+      return withConnectorHeader(apiError('Method not allowed.', 405));
+    }
 
     const mockEndpointMatch = pathname.match(/^\/api\/mock-cms\/sites\/([^/]+)\/ads\.txt$/);
     if (mockEndpointMatch) {
