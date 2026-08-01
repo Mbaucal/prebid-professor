@@ -4,17 +4,17 @@ const DEVELOPER_MESSAGE = `Subject: Ads.txt API connection
 
 Hello,
 
-We want to connect Tessera to your CMS so it can replace the complete ads.txt file.
+We would like to connect our ads.txt management platform to your CMS.
 
 Please send us:
-1. The API endpoint URL that accepts and replaces the complete ads.txt file.
+1. The endpoint URL that accepts the complete ads.txt file.
 2. Whether the endpoint uses POST or PUT.
-3. The authorization method and header name, for example Bearer token or API key.
-4. Confirmation that a successful update returns HTTP 200 or 204.
+3. The authorization type and required header name, for example Bearer token or API key.
+4. The access token/API key through a secure channel.
 
-If you have a staging endpoint, please send it as well.
+A successful update should return HTTP 200 or 204.
 
-We do not need access to your CMS admin panel, hosting account, or server. The access credential should be limited only to ads.txt updates. Please send the credential through a secure channel, not by email.`;
+We do not need access to the CMS admin panel, hosting account or server.`;
 
 async function copyText(value: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
@@ -60,48 +60,32 @@ export default function AdsTxtConnectorAdminGuide() {
       </div>
 
       <p>
-        The setup should be simple. Ask the publisher developer for the three connection details below.
-        Tessera handles the ads.txt file, verification and rollback internally.
+        The developer sends the connection details. You enter them in the site's
+        <strong> Ads.txt → CMS connection</strong> section.
       </p>
 
       <div className="ads-txt-simple-requirements">
         <div>
           <span>1</span>
           <strong>Endpoint URL</strong>
-          <small>A URL that accepts and replaces the complete ads.txt file.</small>
+          <small>The address where Tessera sends the complete ads.txt file.</small>
         </div>
         <div>
           <span>2</span>
           <strong>POST or PUT</strong>
-          <small>The HTTP method their endpoint expects.</small>
+          <small>Select the method specified by the developer.</small>
         </div>
         <div>
           <span>3</span>
           <strong>Authorization</strong>
-          <small>Bearer token or API key, including the required header name.</small>
+          <small>Paste the Bearer token or API key and its header name.</small>
         </div>
       </div>
 
-      <div className="admin-helper-notice important">
-        <strong>Do not ask them for the public ads.txt URL.</strong>
-        <span>Tessera already knows it from the site's Ads.txt URL field in the platform.</span>
-      </div>
-
-      <div className="admin-helper-notice reuse">
-        <strong>You do not need to discuss checksums, JSON formats, cache purge or rollback.</strong>
-        <span>
-          Tessera will send the complete file, treat a successful HTTP 200/204 response as accepted,
-          verify the configured live ads.txt URL, and restore an earlier version by sending that complete file again.
-          If their endpoint has a special requirement, their developer can tell us.
-        </span>
-      </div>
-
       <div className="ads-txt-simple-example">
-        <span>Example of the information we need</span>
-        <code>Endpoint: https://cms.publisher.com/api/ads-txt</code>
-        <code>Method: PUT</code>
-        <code>Authorization: Authorization: Bearer &lt;token&gt;</code>
-        <code>Success: HTTP 200 or 204</code>
+        <span>Where the data is entered</span>
+        <code>Open publisher → site → Ads.txt → CMS connection</code>
+        <code>Save connection</code>
       </div>
 
       {error ? <div className="admin-helper-error ads-txt-admin-guide-error">{error}</div> : null}
