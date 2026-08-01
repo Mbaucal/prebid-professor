@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import AdsTxtConnectorPanel from './AdsTxtConnectorPanel';
+import AdsTxtCmsConnectionPanel from './AdsTxtCmsConnectionPanel';
 
-const PORTAL_ID = 'ads-txt-connector-portal';
+const PORTAL_ID = 'ads-txt-cms-connection-portal';
 
 export default function AdsTxtConnectorPortal() {
   const [host, setHost] = useState<HTMLElement | null>(null);
@@ -24,7 +24,7 @@ export default function AdsTxtConnectorPortal() {
       if (!target) {
         target = document.createElement('div');
         target.id = PORTAL_ID;
-        target.className = 'ads-txt-connector-portal';
+        target.className = 'ads-txt-cms-portal';
         page.appendChild(target);
       }
       if (target !== currentHost) {
@@ -46,5 +46,5 @@ export default function AdsTxtConnectorPortal() {
     };
   }, []);
 
-  return host ? createPortal(<AdsTxtConnectorPanel />, host) : null;
+  return host ? createPortal(<AdsTxtCmsConnectionPanel />, host) : null;
 }
