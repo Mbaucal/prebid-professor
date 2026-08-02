@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import AdsTxtPreConnectorGuard from './components/AdsTxtPreConnectorGuard';
 import AuthAccount from './components/AuthAccount';
 import TesseraBranding from './components/TesseraBranding';
 import './styles.css';
@@ -49,6 +50,7 @@ createRoot(root).render(
   <StrictMode>
     <TesseraBranding />
     <App />
+    <AdsTxtPreConnectorGuard />
     <AuthAccount />
   </StrictMode>,
 );

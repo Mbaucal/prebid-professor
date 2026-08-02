@@ -3,6 +3,14 @@ import {
   isSameOriginMutation,
   type AuthEnv,
 } from './auth';
+import {
+  addAdsTxtSourceLine,
+  deleteAdsTxtSourceLine,
+  getAdsTxtSource,
+  resetAdsTxtSourceDraft,
+  syncAdsTxtSource,
+  updateAdsTxtSourceLine,
+} from './ads-txt-source';
 import baseApp from './app';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
@@ -88,6 +96,63 @@ async function authenticatedRequest(request: Request, env: Env): Promise<Request
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const pathname = new URL(request.url).pathname;
+
+    const adsTxtSourceLineMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/ads-txt\/source\/lines\/(\d+)$/,
+    );
+    if (adsTxtSourceLineMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      const siteId = decodeURIComponent(adsTxtSourceLineMatch[1]);
+      const lineIndex = Number(adsTxtSourceLineMatch[2]);
+      if (request.method === 'PATCH') {
+        return updateAdsTxtSourceLine(verified, env, siteId, lineIndex);
+      }
+      if (request.method === 'DELETE') {
+        return deleteAdsTxtSourceLine(verified, env, siteId, lineIndex);
+      }
+      return apiError('Method not allowed.', 405);
+    }
+
+    const adsTxtSourceSyncMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/ads-txt\/source\/sync$/,
+    );
+    if (adsTxtSourceSyncMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return syncAdsTxtSource(verified, env, decodeURIComponent(adsTxtSourceSyncMatch[1]));
+    }
+
+    const adsTxtSourceResetMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/ads-txt\/source\/reset$/,
+    );
+    if (adsTxtSourceResetMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return resetAdsTxtSourceDraft(verified, env, decodeURIComponent(adsTxtSourceResetMatch[1]));
+    }
+
+    const adsTxtSourceLinesMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/ads-txt\/source\/lines$/,
+    );
+    if (adsTxtSourceLinesMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      if (request.method !== 'POST') return apiError('Method not allowed.', 405);
+      return addAdsTxtSourceLine(verified, env, decodeURIComponent(adsTxtSourceLinesMatch[1]));
+    }
+
+    const adsTxtSourceMatch = pathname.match(
+      /^\/api\/publishers\/([^/]+)\/ads-txt\/source$/,
+    );
+    if (adsTxtSourceMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return verified;
+      if (request.method !== 'GET') return apiError('Method not allowed.', 405);
+      return getAdsTxtSource(env, decodeURIComponent(adsTxtSourceMatch[1]));
+    }
 
     const importMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/imports\/(preview|apply)$/);
     if (importMatch && request.method === 'POST') {

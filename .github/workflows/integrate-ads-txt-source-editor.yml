@@ -1,0 +1,55 @@
+name: Integrate managed ads.txt source editor
+
+on:
+  push:
+    branches:
+      - feature/ads-txt-source-editor-v1
+    paths:
+      - .github/ads-txt-source-editor.trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ads-txt-source-editor-integration
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source editor branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/ads-txt-source-editor-v1
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Integrate managed source editor
+        run: python3 .github/scripts/integrate_ads_txt_source_editor.py
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build dashboard and Worker
+        run: npm run build
+
+      - name: Commit integrated source
+        run: |
+          git config user.name "Tessera Ads.txt"
+          git config user.email "actions@users.noreply.github.com"
+          git add \
+            worker/app-deploy.ts \
+            src/components/AdsTxtPanel.tsx \
+            src/main.tsx \
+            PROJECT.md
+          if git diff --cached --quiet; then
+            echo "Managed ads.txt source editor is already integrated."
+          else
+            git commit -m "Integrate managed ads.txt source editor"
+            git push origin HEAD:feature/ads-txt-source-editor-v1
+          fi
