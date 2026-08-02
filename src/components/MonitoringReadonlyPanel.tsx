@@ -362,33 +362,39 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
   const activeSiteId = useRef(site.id);
+  const statusGeneration = useRef(0);
+  const draftLoadGeneration = useRef(0);
+  const draftSaveGeneration = useRef(0);
+  const previewGeneration = useRef(0);
   activeSiteId.current = site.id;
 
   const load = useCallback(async () => {
     const requestedSiteId = site.id;
+    const generation = ++statusGeneration.current;
     setLoading(true);
     setError(null);
     try {
       const nextPayload = await requestStatus(requestedSiteId);
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || statusGeneration.current !== generation) return;
       setPayload(nextPayload);
     } catch (requestError) {
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || statusGeneration.current !== generation) return;
       setError(requestError instanceof Error ? requestError.message : 'Monitoring could not be loaded.');
     } finally {
-      if (activeSiteId.current === requestedSiteId) setLoading(false);
+      if (activeSiteId.current === requestedSiteId && statusGeneration.current === generation) setLoading(false);
     }
   }, [site.id]);
 
   const loadServerDraft = useCallback(async () => {
     const requestedSiteId = site.id;
+    const generation = ++draftLoadGeneration.current;
     try {
       const savedDraft = await requestMonitoringEmailDraft(requestedSiteId);
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || draftLoadGeneration.current !== generation) return;
       setServerDraft(savedDraft);
       setDraft(savedDraft.saved ? savedDraft.settings : loadDraft(requestedSiteId));
     } catch (requestError) {
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || draftLoadGeneration.current !== generation) return;
       setServerDraft(null);
       setDraft(loadDraft(requestedSiteId));
       setError(requestError instanceof Error ? requestError.message : 'Saved email draft could not be loaded.');
@@ -396,6 +402,10 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
   }, [site.id]);
 
   useEffect(() => {
+    statusGeneration.current += 1;
+    draftLoadGeneration.current += 1;
+    draftSaveGeneration.current += 1;
+    previewGeneration.current += 1;
     setPayload(null);
     setPreview(null);
     setDraftMessage(null);
@@ -434,22 +444,23 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
 
   async function saveServerDraft(): Promise<void> {
     const requestedSiteId = site.id;
+    const generation = ++draftSaveGeneration.current;
     const draftToSave = draft;
     setServerSaving(true);
     setError(null);
     setDraftMessage(null);
     try {
       const savedDraft = await persistMonitoringEmailDraft(requestedSiteId, draftToSave);
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || draftSaveGeneration.current !== generation) return;
       setServerDraft(savedDraft);
       setDraft(savedDraft.settings);
       window.localStorage.setItem(storageKey(requestedSiteId), JSON.stringify(savedDraft.settings));
       setDraftMessage(`Draft saved to Tessera${savedDraft.updatedAt ? ` · ${formatTime(savedDraft.updatedAt)}` : ''}. No email was sent.`);
     } catch (requestError) {
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || draftSaveGeneration.current !== generation) return;
       setError(requestError instanceof Error ? requestError.message : 'Email draft could not be saved to Tessera.');
     } finally {
-      if (activeSiteId.current === requestedSiteId) setServerSaving(false);
+      if (activeSiteId.current === requestedSiteId && draftSaveGeneration.current === generation) setServerSaving(false);
     }
   }
 
@@ -463,6 +474,7 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
   async function generatePreview(): Promise<void> {
     if (!payload) return;
     const requestedSiteId = site.id;
+    const generation = ++previewGeneration.current;
     const payloadSnapshot = payload;
     const draftSnapshot = draft;
     setPreviewing(true);
@@ -470,7 +482,7 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
     setDraftMessage(null);
     try {
       const data = await requestEmailPreviewData(requestedSiteId);
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || previewGeneration.current !== generation) return;
       const missingEntries = uniqueEntries(payloadSnapshot.adsTxt.missing ?? []);
       const expectedEntries = uniqueEntries(data.expected);
       const missingText = groupedEntries(missingEntries) || 'None';
@@ -510,7 +522,7 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
       if (!draftSnapshot.subjectTemplate.trim()) warnings.push('Subject template is empty.');
       if (!draftSnapshot.bodyTemplate.trim()) warnings.push('Email body template is empty.');
       if (!draftSnapshot.to.trim()) warnings.push('Recipient list is empty.');
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || previewGeneration.current !== generation) return;
 
       setPreview({
         subject: renderTemplate(draftSnapshot.subjectTemplate, variables),
@@ -523,10 +535,10 @@ export default function MonitoringReadonlyPanel({ site }: Props) {
       });
       setDraftMessage('Preview generated. No email was sent and current form values were not saved automatically.');
     } catch (requestError) {
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || previewGeneration.current !== generation) return;
       setError(requestError instanceof Error ? requestError.message : 'Email preview could not be generated.');
     } finally {
-      if (activeSiteId.current === requestedSiteId) setPreviewing(false);
+      if (activeSiteId.current === requestedSiteId && previewGeneration.current === generation) setPreviewing(false);
     }
   }
 

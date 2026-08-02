@@ -654,11 +654,16 @@ async function fetchAdsTxt(initialUrl: string): Promise<{
   }
 }
 
+const MAX_DUPLICATE_GROUPS = 100;
+const MAX_DUPLICATE_OCCURRENCES_PER_GROUP = 20;
+
 function actualAdsEntries(text: string): {
   canonical: Set<string>;
   validCount: number;
   invalidCount: number;
   duplicateCount: number;
+  duplicateEntryGroupCount: number;
+  duplicateEntriesTruncated: boolean;
   duplicateEntries: Array<{
     entry: string;
     occurrences: number;
@@ -697,17 +702,30 @@ function actualAdsEntries(text: string): {
     }
   });
 
-  const duplicateEntries = Array.from(occurrences.values())
+  const duplicateGroups = Array.from(occurrences.values())
     .filter((item) => item.lineNumbers.length > 1)
+    .sort((left, right) => right.lineNumbers.length - left.lineNumbers.length || left.entry.localeCompare(right.entry));
+  const duplicateEntryGroupCount = duplicateGroups.length;
+  const duplicateEntriesTruncated = duplicateEntryGroupCount > MAX_DUPLICATE_GROUPS
+    || duplicateGroups.some((item) => item.lineNumbers.length > MAX_DUPLICATE_OCCURRENCES_PER_GROUP);
+  const duplicateEntries = duplicateGroups
+    .slice(0, MAX_DUPLICATE_GROUPS)
     .map((item) => ({
       entry: item.entry,
       occurrences: item.lineNumbers.length,
-      lineNumbers: item.lineNumbers,
-      rawOccurrences: item.rawOccurrences,
-    }))
-    .sort((left, right) => right.occurrences - left.occurrences || left.entry.localeCompare(right.entry));
+      lineNumbers: item.lineNumbers.slice(0, MAX_DUPLICATE_OCCURRENCES_PER_GROUP),
+      rawOccurrences: item.rawOccurrences.slice(0, MAX_DUPLICATE_OCCURRENCES_PER_GROUP),
+    }));
 
-  return { canonical, validCount, invalidCount, duplicateCount, duplicateEntries };
+  return {
+    canonical,
+    validCount,
+    invalidCount,
+    duplicateCount,
+    duplicateEntryGroupCount,
+    duplicateEntriesTruncated,
+    duplicateEntries,
+  };
 }
 
 export async function checkAdsTxt(
@@ -770,6 +788,8 @@ export async function checkAdsTxt(
         validLineCount: actual.validCount,
         invalidLineCount: actual.invalidCount,
         duplicateLineCount: actual.duplicateCount,
+        duplicateEntryGroupCount: actual.duplicateEntryGroupCount,
+        duplicateEntriesTruncated: actual.duplicateEntriesTruncated,
         duplicateEntries: actual.duplicateEntries,
         requirementCount: requirements.length,
         foundCount: results.filter((item) => item.found).length,

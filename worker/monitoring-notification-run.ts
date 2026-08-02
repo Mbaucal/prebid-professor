@@ -383,6 +383,12 @@ export async function runMonitoringNotification(
   const checkedAt = new Date().toISOString();
   let state = await readMonitoringNotificationState(env.DB, siteId);
   let claimToken: string | null = null;
+  let evaluatedStatus = state.lastStatus ?? '';
+  let evaluatedMissingCount = 0;
+  let deliveredState: MonitoringNotificationState | null = null;
+  let deliveredResult: Awaited<ReturnType<typeof sendGmailMessage>> | null = null;
+  let deliveredDecision: Decision | null = null;
+  let deliveredAttachmentName = '';
   try {
     claimToken = await acquireEvaluationClaim(env.DB, siteId);
     if (!claimToken) {
@@ -418,6 +424,8 @@ export async function runMonitoringNotification(
     state = await readMonitoringNotificationState(env.DB, siteId);
     const status = String(check.status ?? 'fetch-error');
     const missingEntries = uniqueEntries(check.missing ?? []);
+    evaluatedStatus = status;
+    evaluatedMissingCount = missingEntries.length;
     const currentFingerprint = await fingerprint(missingEntries);
     const decision = decide(status, currentFingerprint, state, settings, Date.now());
     state = closeHealthyIncident(status, decision, {
@@ -489,6 +497,10 @@ export async function runMonitoringNotification(
       lastError: null,
       updatedAt: result.sentAt,
     };
+    deliveredState = nextState;
+    deliveredResult = result;
+    deliveredDecision = decision;
+    deliveredAttachmentName = String(message.attachmentName ?? '');
     await writeMonitoringNotificationState(env.DB, siteId, nextState);
     await appendMonitoringNotificationLog(env.DB, siteId, {
       kind: decision.kind,
@@ -528,25 +540,55 @@ export async function runMonitoringNotification(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     if (claimToken) {
-      state = {
-        ...state,
-        lastCheckedAt: checkedAt,
-        lastError: errorMessage,
-        updatedAt: checkedAt,
-      };
-      await writeMonitoringNotificationState(env.DB, siteId, state).catch(() => undefined);
+      const stateToPersist: MonitoringNotificationState = deliveredState
+        ? {
+            ...deliveredState,
+            lastError: errorMessage,
+          }
+        : {
+            ...state,
+            lastCheckedAt: checkedAt,
+            lastError: errorMessage,
+            updatedAt: checkedAt,
+          };
+      state = stateToPersist;
+      await writeMonitoringNotificationState(env.DB, siteId, stateToPersist).catch(() => undefined);
     }
     await appendMonitoringNotificationLog(env.DB, siteId, {
-      kind: 'manual',
+      kind: deliveredDecision?.kind ?? 'manual',
       status: 'failed',
       provider: 'gmail',
-      messageId: null,
-      recipients: [],
+      messageId: deliveredResult?.messageId ?? null,
+      recipients: deliveredResult?.to ?? [],
       subject: null,
-      attachmentName: null,
+      attachmentName: deliveredAttachmentName || null,
       errorMessage,
-      details: { actor, serialized: Boolean(claimToken) },
+      details: {
+        actor,
+        serialized: Boolean(claimToken),
+        emailAccepted: Boolean(deliveredState && deliveredResult),
+        sentMarkerPreserved: Boolean(deliveredState),
+      },
     }).catch(() => undefined);
+
+    if (deliveredState && deliveredResult && deliveredDecision) {
+      return json({
+        ok: true,
+        sent: true,
+        decision: deliveredDecision.kind,
+        reason: deliveredDecision.reason,
+        checkedAt,
+        adsTxtStatus: evaluatedStatus,
+        missingCount: evaluatedMissingCount,
+        messageId: deliveredResult.messageId,
+        from: deliveredResult.from,
+        recipients: deliveredResult.to,
+        attachmentName: deliveredAttachmentName,
+        state: deliveredState,
+        warning: `Gmail accepted the message, but a follow-up state or log write reported an error: ${errorMessage}`,
+      });
+    }
+
     return apiError('Monitoring notification evaluation failed.', 502, errorMessage);
   } finally {
     if (claimToken) {

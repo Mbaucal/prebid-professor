@@ -131,11 +131,17 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
   const [message, setMessage] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const activeSiteId = useRef(siteId);
+  const loadGeneration = useRef(0);
+  const saveGeneration = useRef(0);
+  const runGeneration = useRef(0);
   const confirmActionRef = useRef<HTMLButtonElement | null>(null);
+  const confirmDialogRef = useRef<HTMLElement | null>(null);
+  const confirmTriggerRef = useRef<HTMLButtonElement | null>(null);
   activeSiteId.current = siteId;
 
   const load = useCallback(async () => {
     const requestedSiteId = siteId;
+    const generation = ++loadGeneration.current;
     setLoading(true);
     setError(null);
     try {
@@ -143,18 +149,21 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
         `/api/publishers/${encodeURIComponent(requestedSiteId)}/monitoring/notification-settings?ts=${Date.now()}`,
         { cache: 'no-store', credentials: 'same-origin', headers: { accept: 'application/json' } },
       );
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || loadGeneration.current !== generation) return;
       setBundle(payload);
       setSettings(payload.settings);
     } catch (loadError) {
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || loadGeneration.current !== generation) return;
       setError(loadError instanceof Error ? loadError.message : 'Notification rules could not be loaded.');
     } finally {
-      if (activeSiteId.current === requestedSiteId) setLoading(false);
+      if (activeSiteId.current === requestedSiteId && loadGeneration.current === generation) setLoading(false);
     }
   }, [siteId]);
 
   useEffect(() => {
+    loadGeneration.current += 1;
+    saveGeneration.current += 1;
+    runGeneration.current += 1;
     setBundle(null);
     setSettings(null);
     setRunResult(null);
@@ -171,19 +180,58 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
     if (!confirmOpen) return undefined;
 
     const previousOverflow = document.body.style.overflow;
+    const trigger = confirmTriggerRef.current;
+    const backgroundElements = Array.from(document.querySelectorAll<HTMLElement>(
+      '.sidebar, .topbar, .tabbar, .monitor-readonly-card',
+    ));
+    const previousInert = backgroundElements.map((element) => element.hasAttribute('inert'));
+
     document.body.style.overflow = 'hidden';
+    backgroundElements.forEach((element) => element.setAttribute('inert', ''));
     window.requestAnimationFrame(() => confirmActionRef.current?.focus());
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !running) setConfirmOpen(false);
+      if (event.key === 'Escape' && !running) {
+        event.preventDefault();
+        setConfirmOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const dialog = confirmDialogRef.current;
+      if (!dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => !element.hasAttribute('hidden'));
+      if (!focusable.length) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKeyDown);
 
     return () => {
       document.body.style.overflow = previousOverflow;
+      backgroundElements.forEach((element, index) => {
+        if (previousInert[index]) element.setAttribute('inert', '');
+        else element.removeAttribute('inert');
+      });
       document.removeEventListener('keydown', onKeyDown);
+      window.requestAnimationFrame(() => trigger?.focus());
     };
   }, [confirmOpen, running]);
+
 
   function update<K extends keyof NotificationSettings>(key: K, value: NotificationSettings[K]): void {
     setSettings((current) => current ? { ...current, [key]: value } : current);
@@ -194,6 +242,7 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
   async function save(): Promise<void> {
     if (!settings) return;
     const requestedSiteId = siteId;
+    const generation = ++saveGeneration.current;
     const settingsToSave = settings;
     setSaving(true);
     setError(null);
@@ -208,21 +257,22 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
           body: JSON.stringify({ settings: settingsToSave }),
         },
       );
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || saveGeneration.current !== generation) return;
       setSettings(payload.settings);
       setMessage(`Notification rules saved · ${formatTime(payload.updatedAt)}.`);
       await load();
     } catch (saveError) {
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || saveGeneration.current !== generation) return;
       setError(saveError instanceof Error ? saveError.message : 'Notification rules could not be saved.');
     } finally {
-      if (activeSiteId.current === requestedSiteId) setSaving(false);
+      if (activeSiteId.current === requestedSiteId && saveGeneration.current === generation) setSaving(false);
     }
   }
 
   async function runNow(): Promise<void> {
     if (!settings?.enabled || !gmailConnected || !templateSaved || running) return;
     const requestedSiteId = siteId;
+    const generation = ++runGeneration.current;
     setConfirmOpen(false);
     setRunning(true);
     setError(null);
@@ -238,18 +288,18 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
           body: JSON.stringify({ mode: 'manual-preview' }),
         },
       );
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || runGeneration.current !== generation) return;
       setRunResult(result);
       setMessage(result.sent
         ? `Gmail notification sent · ${result.messageId ?? 'message accepted'}.`
         : `No email sent: ${result.reason}`);
       await load();
     } catch (runError) {
-      if (activeSiteId.current !== requestedSiteId) return;
+      if (activeSiteId.current !== requestedSiteId || runGeneration.current !== generation) return;
       setError(runError instanceof Error ? runError.message : 'Notification evaluation failed.');
       await load();
     } finally {
-      if (activeSiteId.current === requestedSiteId) setRunning(false);
+      if (activeSiteId.current === requestedSiteId && runGeneration.current === generation) setRunning(false);
     }
   }
 
@@ -317,7 +367,7 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
 
             <div className="monitor-email-actions">
               <button className="button secondary" disabled={saving} onClick={() => void save()} type="button">{saving ? 'Saving…' : 'Save notification rules'}</button>
-              <button className="button primary" disabled={Boolean(disabledReasons.length) || running} onClick={() => setConfirmOpen(true)} type="button">{running ? 'Evaluating…' : 'Evaluate rules now'}</button>
+              <button ref={confirmTriggerRef} className="button primary" disabled={Boolean(disabledReasons.length) || running} onClick={() => setConfirmOpen(true)} type="button">{running ? 'Evaluating…' : 'Evaluate rules now'}</button>
             </div>
             {disabledReasons.length ? <div className="monitor-test-send-note">{disabledReasons.join(' ')}</div> : null}
           </>
@@ -375,6 +425,7 @@ export default function MonitoringNotificationRules({ siteId, gmailConnected, te
             aria-labelledby="monitor-confirm-title"
             aria-modal="true"
             className="monitor-confirm-dialog"
+            ref={confirmDialogRef}
             role="dialog"
           >
             <div className="monitor-confirm-icon" aria-hidden="true">✉</div>
