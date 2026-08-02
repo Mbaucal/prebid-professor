@@ -24,13 +24,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Apply final Monitoring cleanup
         run: python3 .github/scripts/finalize_monitoring_branch.py
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build dashboard and Worker
         run: npm run build
