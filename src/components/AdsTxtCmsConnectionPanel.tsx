@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
-import type { Site } from '../shared/types';
+import type { PublisherAccount, Site } from '../shared/types';
 
 type Connection = {
   configured: boolean;
@@ -28,27 +28,24 @@ type ApiFailure = {
 
 const SITE_DETECTION_INTERVAL_MS = 750;
 
-function normalizedHost(value: string): string {
-  return value.trim().toLowerCase().replace(/^www\./, '');
-}
+function activeSiteFromPage(accounts: PublisherAccount[]): Site | null {
+  const activeButton = document.querySelector<HTMLButtonElement>(
+    '.publisher-tree-group .publisher-site-list .site-link.active:not(.add-site-link)',
+  );
+  const activeGroup = activeButton?.closest<HTMLElement>('.publisher-tree-group') ?? null;
+  if (!activeButton || !activeGroup) return null;
 
-function activeSiteFromPage(sites: Site[]): Site | null {
-  const urlInput = document.querySelector<HTMLInputElement>('.ads-txt-url-row input');
-  const adsTxtUrl = urlInput?.value.trim() ?? '';
-  if (adsTxtUrl) {
-    try {
-      const hostname = normalizedHost(new URL(adsTxtUrl).hostname);
-      const matches = sites.filter((site) => normalizedHost(site.domain) === hostname);
-      if (matches.length === 1) return matches[0];
-    } catch {
-      // Fall through to the active site in the sidebar.
-    }
-  }
+  const groups = Array.from(document.querySelectorAll<HTMLElement>('.publisher-tree-group'));
+  const accountIndex = groups.indexOf(activeGroup);
+  if (accountIndex < 0) return null;
 
-  const activeName = document.querySelector<HTMLElement>('.site-link.active span')?.textContent?.trim() ?? '';
-  if (!activeName) return null;
-  const matches = sites.filter((site) => site.name === activeName);
-  return matches.length === 1 ? matches[0] : null;
+  const siteButtons = Array.from(activeGroup.querySelectorAll<HTMLButtonElement>(
+    '.publisher-site-list .site-link:not(.add-site-link)',
+  ));
+  const siteIndex = siteButtons.indexOf(activeButton);
+  if (siteIndex < 0) return null;
+
+  return accounts[accountIndex]?.sites[siteIndex] ?? null;
 }
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
@@ -102,9 +99,11 @@ export default function AdsTxtCmsConnectionPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const sitesRef = useRef<Site[]>([]);
+  const accountsRef = useRef<PublisherAccount[]>([]);
   const activeSiteIdRef = useRef('');
   const loadGeneration = useRef(0);
+  const saveGeneration = useRef(0);
+  const removeGeneration = useRef(0);
 
   useEffect(() => {
     let disposed = false;
@@ -154,11 +153,14 @@ export default function AdsTxtCmsConnectionPanel() {
     };
 
     const detectSite = (): void => {
-      if (disposed || !sitesRef.current.length || !document.querySelector('.ads-txt-page')) return;
-      const currentSite = activeSiteFromPage(sitesRef.current);
+      if (disposed || !accountsRef.current.length || !document.querySelector('.ads-txt-page')) return;
+      const currentSite = activeSiteFromPage(accountsRef.current);
       if (!currentSite || currentSite.id === activeSiteIdRef.current) return;
 
       activeSiteIdRef.current = currentSite.id;
+      loadGeneration.current += 1;
+      saveGeneration.current += 1;
+      removeGeneration.current += 1;
       setSite(currentSite);
       setConnection(defaultConnection());
       setEndpointUrl('');
@@ -166,13 +168,15 @@ export default function AdsTxtCmsConnectionPanel() {
       setAuthType('bearer');
       setAuthHeader('Authorization');
       setCredential('');
+      setSaving(false);
+      setRemoving(false);
       void loadForSite(currentSite);
     };
 
     void api.listPublisherAccounts()
       .then((accounts) => {
         if (disposed) return;
-        sitesRef.current = accounts.flatMap((account) => account.sites);
+        accountsRef.current = accounts;
         detectSite();
       })
       .catch((loadError: unknown) => {
@@ -193,16 +197,14 @@ export default function AdsTxtCmsConnectionPanel() {
       });
     }
     intervalId = window.setInterval(detectSite, SITE_DETECTION_INTERVAL_MS);
-    document.addEventListener('input', detectSite, true);
-    document.addEventListener('change', detectSite, true);
 
     return () => {
       disposed = true;
       loadGeneration.current += 1;
+      saveGeneration.current += 1;
+      removeGeneration.current += 1;
       observer?.disconnect();
       window.clearInterval(intervalId);
-      document.removeEventListener('input', detectSite, true);
-      document.removeEventListener('change', detectSite, true);
     };
   }, []);
 
@@ -227,6 +229,7 @@ export default function AdsTxtCmsConnectionPanel() {
   async function save(): Promise<void> {
     if (!site || !readyToSave) return;
     const requestedSiteId = site.id;
+    const generation = ++saveGeneration.current;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -248,21 +251,22 @@ export default function AdsTxtCmsConnectionPanel() {
           }),
         },
       );
-      if (activeSiteIdRef.current !== requestedSiteId) return;
+      if (activeSiteIdRef.current !== requestedSiteId || saveGeneration.current !== generation) return;
       setConnection(payload.connection);
       setCredential('');
       setMessage('CMS connection saved.');
     } catch (saveError) {
-      if (activeSiteIdRef.current !== requestedSiteId) return;
+      if (activeSiteIdRef.current !== requestedSiteId || saveGeneration.current !== generation) return;
       setError(saveError instanceof Error ? saveError.message : 'CMS connection could not be saved.');
     } finally {
-      if (activeSiteIdRef.current === requestedSiteId) setSaving(false);
+      if (saveGeneration.current === generation) setSaving(false);
     }
   }
 
   async function remove(): Promise<void> {
     if (!site || !connection.configured || removing) return;
     const requestedSiteId = site.id;
+    const generation = ++removeGeneration.current;
     setRemoving(true);
     setError(null);
     setMessage(null);
@@ -272,7 +276,7 @@ export default function AdsTxtCmsConnectionPanel() {
         `/api/publishers/${encodeURIComponent(requestedSiteId)}/ads-txt/cms-connection`,
         { method: 'DELETE', credentials: 'same-origin', headers: { accept: 'application/json' } },
       );
-      if (activeSiteIdRef.current !== requestedSiteId) return;
+      if (activeSiteIdRef.current !== requestedSiteId || removeGeneration.current !== generation) return;
       const empty = defaultConnection();
       setConnection(empty);
       setEndpointUrl('');
@@ -282,10 +286,10 @@ export default function AdsTxtCmsConnectionPanel() {
       setCredential('');
       setMessage('CMS connection removed.');
     } catch (removeError) {
-      if (activeSiteIdRef.current !== requestedSiteId) return;
+      if (activeSiteIdRef.current !== requestedSiteId || removeGeneration.current !== generation) return;
       setError(removeError instanceof Error ? removeError.message : 'CMS connection could not be removed.');
     } finally {
-      if (activeSiteIdRef.current === requestedSiteId) setRemoving(false);
+      if (removeGeneration.current === generation) setRemoving(false);
     }
   }
 
