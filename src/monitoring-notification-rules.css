@@ -1,0 +1,328 @@
+.monitor-notification-rules {
+  margin-top: 20px;
+}
+
+.monitor-rule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.monitor-rule-toggle,
+.monitor-rule-number {
+  display: flex;
+  gap: 12px;
+  min-height: 86px;
+  padding: 14px;
+  border: 1px solid var(--line, #d7deea);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.monitor-rule-toggle {
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.monitor-rule-toggle input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #f37022;
+}
+
+.monitor-rule-toggle span,
+.monitor-rule-number {
+  min-width: 0;
+}
+
+.monitor-rule-toggle strong,
+.monitor-rule-number > span {
+  display: block;
+  color: #202938;
+  font-size: 14px;
+}
+
+.monitor-rule-toggle small,
+.monitor-rule-number small {
+  display: block;
+  margin-top: 5px;
+  color: #6d7788;
+  line-height: 1.4;
+}
+
+.monitor-rule-number {
+  flex-direction: column;
+  justify-content: center;
+}
+
+.monitor-rule-number > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 8px;
+}
+
+.monitor-rule-number input {
+  width: 120px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #d7deea);
+  border-radius: 9px;
+  font: inherit;
+}
+
+.monitor-rule-number > div strong {
+  color: #5e6879;
+  font-size: 13px;
+}
+
+.monitor-notification-prerequisites {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.monitor-notification-prerequisites > div {
+  padding: 12px;
+  border: 1px solid var(--line, #d7deea);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.monitor-notification-prerequisites span {
+  display: block;
+  margin-bottom: 6px;
+  color: #778195;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.monitor-notification-prerequisites strong {
+  color: #273142;
+}
+
+.monitor-notification-prerequisites strong.ok {
+  color: #147b47;
+}
+
+.monitor-notification-prerequisites strong.missing {
+  color: #b35b17;
+}
+
+.monitor-notification-state,
+.monitor-notification-log {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line, #d7deea);
+}
+
+.monitor-run-result {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 10px;
+}
+
+.monitor-run-result.sent {
+  border: 1px solid #a9e3c2;
+  background: #eefaf3;
+}
+
+.monitor-run-result.skipped {
+  border: 1px solid #f0d49a;
+  background: #fff8e8;
+}
+
+.monitor-run-result span,
+.monitor-run-result small {
+  color: #5e6879;
+}
+
+.monitor-notification-log > div:not(.monitor-readonly-card-heading) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 0;
+  border-top: 1px solid #edf0f5;
+}
+
+.monitor-notification-log > div:first-of-type {
+  border-top: 0;
+}
+
+.monitor-notification-log div > div {
+  min-width: 0;
+}
+
+.monitor-notification-log strong,
+.monitor-notification-log small {
+  display: block;
+}
+
+.monitor-notification-log small {
+  overflow: hidden;
+  color: #778195;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monitor-notification-log code {
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: #edf2f7;
+  color: #485468;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.monitor-notification-log time {
+  color: #778195;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.monitor-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(17 24 39 / 58%);
+  backdrop-filter: blur(4px);
+  animation: monitor-confirm-fade 140ms ease-out;
+}
+
+.monitor-confirm-dialog {
+  width: min(520px, 100%);
+  padding: 24px;
+  border: 1px solid #d8dee8;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 28px 70px rgb(15 23 42 / 28%);
+  animation: monitor-confirm-rise 170ms ease-out;
+}
+
+.monitor-confirm-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  border: 1px solid #f2b78f;
+  border-radius: 13px;
+  color: #8c3d12;
+  background: #fff3eb;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.monitor-confirm-copy h3 {
+  margin: 5px 0 9px;
+  color: #202938;
+  font-size: 21px;
+  line-height: 1.25;
+}
+
+.monitor-confirm-copy p {
+  margin: 0;
+  color: #657083;
+  line-height: 1.55;
+}
+
+.monitor-confirm-warning {
+  display: grid;
+  gap: 5px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #f0cf9a;
+  border-radius: 11px;
+  background: #fff8e9;
+}
+
+.monitor-confirm-warning strong {
+  color: #7b4718;
+  font-size: 13px;
+}
+
+.monitor-confirm-warning span {
+  color: #735f49;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.monitor-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.monitor-confirm-actions .button {
+  min-width: 118px;
+}
+
+.monitor-confirm-actions .button:focus-visible {
+  outline: 3px solid rgb(239 114 45 / 28%);
+  outline-offset: 2px;
+}
+
+@keyframes monitor-confirm-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes monitor-confirm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 980px) {
+  .monitor-rule-grid,
+  .monitor-notification-prerequisites {
+    grid-template-columns: 1fr;
+  }
+
+  .monitor-notification-log > div:not(.monitor-readonly-card-heading) {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .monitor-notification-log code,
+  .monitor-notification-log time {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 560px) {
+  .monitor-confirm-backdrop {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .monitor-confirm-dialog {
+    padding: 20px;
+    border-radius: 15px;
+  }
+
+  .monitor-confirm-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .monitor-confirm-actions .button {
+    width: 100%;
+    min-width: 0;
+  }
+}

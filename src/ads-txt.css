@@ -193,7 +193,8 @@
   margin-top: 18px;
 }
 
-.ads-txt-check-facts > div {
+.ads-txt-check-facts > div,
+.ads-txt-check-facts > button {
   display: grid;
   gap: 3px;
   border: 1px solid #e2e8f0;
@@ -412,6 +413,91 @@
   }
 }
 
+.ads-txt-live-search-panel {
+  display: grid;
+  gap: 13px;
+  border: 1px solid #fdba74;
+  border-radius: 11px;
+  background: #fffaf5;
+  padding: 15px;
+}
+
+.ads-txt-live-search-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.ads-txt-live-search-heading h4 {
+  margin: 2px 0 0;
+  color: #172033;
+}
+
+.ads-txt-live-search-panel > p {
+  margin: 0;
+  color: #7c2d12;
+}
+
+.ads-txt-live-search-list {
+  display: grid;
+  gap: 9px;
+}
+
+.ads-txt-live-search-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  background: #fff;
+  padding: 11px 12px;
+}
+
+.ads-txt-live-search-list > div > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ads-txt-live-search-list span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.ads-txt-live-search-list code {
+  grid-column: 1 / -1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: #334155;
+}
+
+.ads-txt-live-search-list em {
+  grid-column: 1 / -1;
+  color: #c2410c;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.ads-txt-saved-search-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 14px;
+  color: #172033;
+}
+
+.ads-txt-saved-search-heading span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 @media (max-width: 760px) {
   .ads-txt-page {
     padding: 18px;
@@ -438,5 +524,135 @@
   .ads-txt-requirement-actions {
     grid-column: 1 / -1;
     justify-content: flex-end;
+  }
+}
+
+.ads-txt-check-fact-button {
+  box-sizing: border-box;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ads-txt-check-fact-button:hover:not(:disabled),
+.ads-txt-check-fact-button.active {
+  border-color: #fb923c;
+  background: #fff7ed;
+}
+
+.ads-txt-check-fact-button:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.ads-txt-check-fact-button small {
+  color: #c2410c;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.ads-txt-duplicate-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  border: 1px solid #fdba74;
+  border-radius: 11px;
+  background: #fffaf5;
+  padding: 16px;
+}
+
+.ads-txt-duplicate-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ads-txt-duplicate-heading h4 {
+  margin: 2px 0 0;
+  color: #172033;
+}
+
+.ads-txt-duplicate-heading > strong {
+  border-radius: 999px;
+  background: #ffedd5;
+  color: #c2410c;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.ads-txt-duplicate-panel > p {
+  margin: 0;
+}
+
+.ads-txt-duplicate-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ads-txt-duplicate-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  background: #fff;
+  padding: 12px;
+}
+
+.ads-txt-duplicate-list > div > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ads-txt-duplicate-list span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.ads-txt-duplicate-list code {
+  grid-column: 1 / -1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: #334155;
+}
+
+.ads-txt-list-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.ads-txt-list-toolbar input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  padding: 10px 12px;
+}
+
+@media (max-width: 760px) {
+  .ads-txt-duplicate-heading,
+  .ads-txt-duplicate-list > div > div,
+  .ads-txt-live-search-heading,
+  .ads-txt-live-search-list > div > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ads-txt-duplicate-list > div,
+  .ads-txt-list-toolbar,
+  .ads-txt-live-search-list > div {
+    grid-template-columns: 1fr;
+  }
+
+  .ads-txt-duplicate-list .button {
+    justify-self: start;
   }
 }

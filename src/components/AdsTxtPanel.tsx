@@ -19,6 +19,13 @@ type Requirement = {
 
 type RequirementResult = Requirement & { found: boolean };
 
+type DuplicateEntry = {
+  entry: string;
+  occurrences: number;
+  lineNumbers: number[];
+  rawOccurrences?: Array<{ lineNumber: number; line: string }>;
+};
+
 type AdsTxtCheck = {
   status: 'ok' | 'missing' | 'empty' | 'fetch-error';
   url: string;
@@ -31,6 +38,7 @@ type AdsTxtCheck = {
   validLineCount?: number;
   invalidLineCount?: number;
   duplicateLineCount?: number;
+  duplicateEntries?: DuplicateEntry[];
   requirementCount?: number;
   foundCount?: number;
   requiredMissingCount?: number;
@@ -217,6 +225,8 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
   const [importFileName, setImportFileName] = useState('');
   const [check, setCheck] = useState<AdsTxtCheck | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -231,6 +241,30 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
     [accounts, site.id],
   );
   const manualCount = useMemo(() => manualEntryCount(entry), [entry]);
+  const filteredRequirements = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return requirements;
+    return requirements.filter((requirement) =>
+      `${requirement.sourceLabel} ${requirement.entry}`.toLowerCase().includes(query),
+    );
+  }, [requirements, searchQuery]);
+  const liveSearchMatches = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query || !check?.duplicateEntries?.length) return [];
+    return check.duplicateEntries
+      .flatMap((duplicate) => {
+        const canonicalMatches = duplicate.entry.toLowerCase().includes(query);
+        return (duplicate.rawOccurrences ?? [])
+          .filter((occurrence) => canonicalMatches || occurrence.line.toLowerCase().includes(query))
+          .map((occurrence) => ({
+            canonicalEntry: duplicate.entry,
+            occurrences: duplicate.occurrences,
+            lineNumber: occurrence.lineNumber,
+            line: occurrence.line,
+          }));
+      })
+      .sort((left, right) => left.lineNumber - right.lineNumber);
+  }, [check, searchQuery]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -256,6 +290,8 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
   useEffect(() => {
     setAdsTxtUrl(site.adsTxtUrl || `https://${site.domain}/ads.txt`);
     setCheck(null);
+    setSearchQuery('');
+    setShowDuplicates(false);
     void load();
   }, [load, site.adsTxtUrl, site.domain]);
 
@@ -365,6 +401,7 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
         { method: 'POST' },
       );
       setCheck(payload.check);
+      setShowDuplicates(false);
     } catch (checkError) {
       setError(checkError instanceof Error ? checkError.message : 'Ads.txt could not be checked.');
     } finally {
@@ -440,6 +477,13 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
     }
   }
 
+  function findSavedRequirement(duplicateEntry: string): void {
+    setSearchQuery(duplicateEntry);
+    window.requestAnimationFrame(() => {
+      document.getElementById('ads-txt-saved-requirements')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
   if (loading) return <div className="config-loading">Loading ads.txt requirements…</div>;
 
   return (
@@ -511,7 +555,45 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
             <div><span>HTTP</span><strong>{check.httpStatus ?? '—'}</strong></div>
             <div><span>Live entries</span><strong>{check.actualEntryCount ?? 0}</strong></div>
             <div><span>Invalid lines</span><strong>{check.invalidLineCount ?? 0}</strong></div>
-            <div><span>Duplicates</span><strong>{check.duplicateLineCount ?? 0}</strong></div>
+            <button
+              className={`ads-txt-check-fact-button ${showDuplicates ? 'active' : ''}`}
+              disabled={!check.duplicateLineCount}
+              onClick={() => setShowDuplicates((current) => !current)}
+              type="button"
+            >
+              <span>Repeated live entries</span>
+              <strong>{check.duplicateLineCount ?? 0}</strong>
+              <small>{check.duplicateLineCount ? (showDuplicates ? 'Hide repeats' : 'View repeats') : 'None found'}</small>
+            </button>
+          </div>
+        ) : null}
+
+        {check && showDuplicates && (check.duplicateLineCount ?? 0) > 0 ? (
+          <div className="ads-txt-duplicate-panel">
+            <div className="ads-txt-duplicate-heading">
+              <div>
+                <span className="panel-kicker">Live file cleanup</span>
+                <h4>Repeated live ads.txt entries</h4>
+              </div>
+              <strong>{check.duplicateLineCount} extra occurrence{check.duplicateLineCount === 1 ? '' : 's'}</strong>
+            </div>
+            <p>Each card is a different canonical ads.txt record that appears more than once in the live publisher file. Use the button to show every matching live occurrence together with the saved requirement below. Tessera remains read-only.</p>
+            {check.duplicateEntries?.length ? (
+              <div className="ads-txt-duplicate-list">
+                {check.duplicateEntries.map((duplicate) => (
+                  <div key={`${duplicate.entry}-${duplicate.lineNumbers.join('-')}`}>
+                    <div>
+                      <strong>{duplicate.occurrences} occurrences</strong>
+                      <span>Live lines {duplicate.lineNumbers.join(', ')}</span>
+                    </div>
+                    <code>{duplicate.entry}</code>
+                    <button className="button secondary" onClick={() => findSavedRequirement(duplicate.entry)} type="button">Show all matches in search</button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="ads-txt-empty"><strong>Repeat details unavailable</strong><span>Run Check now again after the latest preview deployment.</span></div>
+            )}
           </div>
         ) : null}
 
@@ -590,33 +672,86 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
         </article>
       </div>
 
-      <article className="ads-txt-list-card">
+      <article className="ads-txt-list-card" id="ads-txt-saved-requirements">
         <div className="ads-txt-card-heading">
-          <div><span className="panel-kicker">Saved requirements</span><h3>{requirements.length} entr{requirements.length === 1 ? 'y' : 'ies'}</h3></div>
+          <div>
+            <span className="panel-kicker">Ads.txt search</span>
+            <h3>
+              {searchQuery.trim()
+                ? `${liveSearchMatches.length} live match${liveSearchMatches.length === 1 ? '' : 'es'} · ${filteredRequirements.length} saved`
+                : `${requirements.length} entr${requirements.length === 1 ? 'y' : 'ies'}`}
+            </h3>
+          </div>
           <button className="button secondary" onClick={() => void load()} type="button">Refresh</button>
         </div>
 
         {requirements.length ? (
-          <div className="ads-txt-requirement-list">
-            {requirements.map((requirement) => {
-              const status = statusForRequirement(check, requirement.id);
-              return (
-                <div className={`ads-txt-requirement ${status}`} key={requirement.id}>
-                  <div className="ads-txt-requirement-status" title={status === 'found' ? 'Found in live ads.txt' : status === 'missing' ? 'Missing from live ads.txt' : 'Not checked'}>
-                    {status === 'found' ? '✓' : status === 'missing' ? '×' : '—'}
+          <>
+            <div className="ads-txt-list-toolbar">
+              <input
+                aria-label="Search saved and repeated live ads.txt entries"
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search source, domain, seller ID, comment or complete line…"
+                type="search"
+                value={searchQuery}
+              />
+              {searchQuery ? <button className="button secondary" onClick={() => setSearchQuery('')} type="button">Clear</button> : null}
+            </div>
+
+            {searchQuery.trim() && liveSearchMatches.length ? (
+              <div className="ads-txt-live-search-panel">
+                <div className="ads-txt-live-search-heading">
+                  <div>
+                    <span className="panel-kicker">Live publisher file</span>
+                    <h4>{liveSearchMatches.length} matching live line{liveSearchMatches.length === 1 ? '' : 's'}</h4>
                   </div>
-                  <div className="ads-txt-requirement-main">
-                    <div><strong>{requirement.sourceLabel}</strong><span className={requirement.required ? 'required' : 'optional'}>{requirement.required ? 'required' : 'optional'}</span></div>
-                    <code>{requirement.entry}</code>
-                  </div>
-                  <div className="ads-txt-requirement-actions">
-                    <button className="button secondary" onClick={() => editRequirement(requirement)} type="button">Edit</button>
-                    <button className="button danger subtle" disabled={saving} onClick={() => void deleteRequirement(requirement)} type="button">Delete</button>
-                  </div>
+                  <a className="button secondary" href={check?.finalUrl || check?.url || adsTxtUrl} rel="noreferrer" target="_blank">Open live ads.txt</a>
                 </div>
-              );
-            })}
-          </div>
+                <p>These lines exist in the live publisher file. To remove an extra occurrence, edit the source ads.txt. Do not delete the single saved requirement below unless Tessera should stop monitoring that record.</p>
+                <div className="ads-txt-live-search-list">
+                  {liveSearchMatches.map((match) => (
+                    <div key={`${match.lineNumber}-${match.line}`}>
+                      <div>
+                        <strong>Live line {match.lineNumber}</strong>
+                        <span>{match.occurrences} occurrences for this canonical record</span>
+                      </div>
+                      <code>{match.line}</code>
+                      <em>LIVE FILE · READ ONLY</em>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="ads-txt-saved-search-heading">
+              <strong>Saved requirements</strong>
+              {searchQuery.trim() ? <span>{filteredRequirements.length} match{filteredRequirements.length === 1 ? '' : 'es'}</span> : null}
+            </div>
+            {filteredRequirements.length ? (
+              <div className="ads-txt-requirement-list">
+                {filteredRequirements.map((requirement) => {
+                  const status = statusForRequirement(check, requirement.id);
+                  return (
+                    <div className={`ads-txt-requirement ${status}`} key={requirement.id}>
+                      <div className="ads-txt-requirement-status" title={status === 'found' ? 'Found in live ads.txt' : status === 'missing' ? 'Missing from live ads.txt' : 'Not checked'}>
+                        {status === 'found' ? '✓' : status === 'missing' ? '×' : '—'}
+                      </div>
+                      <div className="ads-txt-requirement-main">
+                        <div><strong>{requirement.sourceLabel}</strong><span className={requirement.required ? 'required' : 'optional'}>{requirement.required ? 'required' : 'optional'}</span></div>
+                        <code>{requirement.entry}</code>
+                      </div>
+                      <div className="ads-txt-requirement-actions">
+                        <button className="button secondary" onClick={() => editRequirement(requirement)} type="button">Edit</button>
+                        <button className="button danger subtle" disabled={saving} onClick={() => void deleteRequirement(requirement)} type="button">Delete</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="ads-txt-empty"><strong>No matching requirements</strong><span>Try a source name, ad-system domain, seller ID, or part of the complete line.</span></div>
+            )}
+          </>
         ) : (
           <div className="ads-txt-empty"><strong>No saved requirements</strong><span>Add a line manually, import a CSV, or copy requirements from another site.</span></div>
         )}

@@ -12,6 +12,7 @@ import HierarchySidebar from './components/HierarchySidebar';
 import PrebidBuildsPanel from './components/PrebidBuildsPanel';
 import ReleasesPanel from './components/ReleasesPanel';
 import MockupBuilderPanel from './components/MockupBuilderPanel';
+import MonitoringReadonlyPanel from './components/MonitoringReadonlyPanel';
 import type {
   HealthResponse,
   PublisherAccount,
@@ -29,7 +30,7 @@ const globalDescriptions: Record<GlobalSection, string> = {
   'Audit log': 'Review configuration, release and operational activity recorded in D1.',
   Settings: 'Check runtime health, bindings, security and retention safeguards.',
 };
-const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Export', 'Mockup', 'Debug', 'Ads.txt'] as const;
+const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Export', 'Mockup', 'Monitoring', 'Debug', 'Ads.txt'] as const;
 
 type PublisherTab = (typeof publisherTabs)[number];
 type ModalMode = 'create-publisher' | 'create-site' | 'edit-site' | 'duplicate-site' | null;
@@ -572,13 +573,14 @@ export default function App() {
         ) : null}
         {activeTab === 'Export' && site ? <ExportPanel publisherId={site.id} site={site} /> : null}
         {activeTab === 'Mockup' && site ? <MockupBuilderPanel publisherId={site.id} siteName={site.name} /> : null}
+        {activeTab === 'Monitoring' && site ? <MonitoringReadonlyPanel site={site} /> : null}
         {activeTab === 'Debug' && site ? (
           <DebugConsolePanel domain={site.domain} publisherId={site.id} siteName={site.name} />
         ) : null}
         {activeTab === 'Ads.txt' && site ? (
           <AdsTxtPanel onChanged={() => loadHierarchy(publisher?.id, site.id)} site={site} />
         ) : null}
-        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
+        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Monitoring' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
           ? renderPlaceholder(activeTab)
           : null}
           </>

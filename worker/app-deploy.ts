@@ -13,13 +13,21 @@ import {
 import { createAdsTxtRequirementFlexible } from './ads-txt-flexible';
 import { copyAdsTxtRequirementsLarge, importAdsTxtRequirementsLarge } from './ads-txt-bulk';
 import { listAuditLog } from './audit-log';
+import { getMonitoringEmailPreviewData } from './monitoring-email-preview';
+import { getMonitoringEmailDraft, updateMonitoringEmailDraft } from './monitoring-email-settings';
+import { getMonitoringNotificationSettings, updateMonitoringNotificationSettings } from './monitoring-notification-settings';
+import { runMonitoringNotification } from './monitoring-notification-run';
+import { runMonitoringDailySchedule, runMonitoringDailyScheduleHttp } from './monitoring-scheduler';
+import { getMonitoringStatus } from './monitoring-readonly';
+import { disconnectGmail, finishGmailConnect, getGmailStatus, startGmailConnect, type GmailOAuthEnv } from './gmail-oauth';
+import { sendGmailTest } from './gmail-send';
 import { apiError } from './http';
 import { getPrebidMode, updatePrebidMode } from './prebid-mode';
 import { deleteRelease } from './release-deletion';
 import type { ReleaseEnv } from './releases';
 import { brandTesseraHtmlResponse } from './tessera-html-branding';
 
-const RUNTIME_BUILD = '2026-07-21-tessera-ui-stable';
+const RUNTIME_BUILD = '2026-07-29-ads-txt-combined-search-v33';
 
 interface Env extends ReleaseEnv, AuthEnv {
   ASSETS: Fetcher;
@@ -27,6 +35,9 @@ interface Env extends ReleaseEnv, AuthEnv {
   GITHUB_DEPLOY_REPOSITORY?: string;
   GITHUB_DEPLOY_REF?: string;
   DEPLOY_CALLBACK_SECRET?: string;
+  GOOGLE_OAUTH_CLIENT_ID?: string;
+  GOOGLE_OAUTH_CLIENT_SECRET?: string;
+  GMAIL_TOKEN_ENCRYPTION_KEY?: string;
 }
 
 const downstream = compatApp as {
@@ -109,6 +120,13 @@ async function healthWithBuildMarker(
         ...payload,
         runtimeBuild: RUNTIME_BUILD,
         workerEntrypoint: 'worker/app-deploy.ts',
+        gmailOAuth: {
+          configured: Boolean(
+            env.GOOGLE_OAUTH_CLIENT_ID
+            && env.GOOGLE_OAUTH_CLIENT_SECRET
+            && env.GMAIL_TOKEN_ENCRYPTION_KEY
+          ),
+        },
       }, null, 2)}\n`,
       { status: response.status, headers },
     );
@@ -125,10 +143,42 @@ export default {
       return healthWithBuildMarker(request, env, ctx);
     }
 
+    if (request.method === 'GET' && pathname === '/api/integrations/gmail/callback') {
+      return withBuildHeader(await finishGmailConnect(request, env as GmailOAuthEnv));
+    }
+
+    if (pathname === '/api/integrations/gmail/status') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'GET') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await getGmailStatus(env as GmailOAuthEnv));
+    }
+
+    if (pathname === '/api/integrations/gmail/connect') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'GET') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await startGmailConnect(verified, env as GmailOAuthEnv));
+    }
+
+    if (pathname === '/api/integrations/gmail/disconnect') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await disconnectGmail(env as GmailOAuthEnv));
+    }
+
     if (request.method === 'GET' && pathname === '/api/audit-log') {
       const verified = await authenticatedRequest(request, env);
       if (verified instanceof Response) return withBuildHeader(verified);
       return withBuildHeader(await listAuditLog(verified, env));
+    }
+
+    if (pathname === '/api/monitoring/daily/run') {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await runMonitoringDailyScheduleHttp(verified, env));
     }
 
     const adsTxtCheckMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ads-txt\/check$/);
@@ -190,6 +240,69 @@ export default {
       return withBuildHeader(apiError('Method not allowed.', 405));
     }
 
+    const monitoringNotificationSettingsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/notification-settings$/);
+    if (monitoringNotificationSettingsMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      const siteId = decodeURIComponent(monitoringNotificationSettingsMatch[1]);
+      if (request.method === 'GET') return withBuildHeader(await getMonitoringNotificationSettings(env, siteId));
+      if (request.method === 'PUT') return withBuildHeader(await updateMonitoringNotificationSettings(verified, env, siteId));
+      return withBuildHeader(apiError('Method not allowed.', 405));
+    }
+
+    const monitoringNotificationRunMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/notifications\/run$/);
+    if (monitoringNotificationRunMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await runMonitoringNotification(
+        verified,
+        env,
+        decodeURIComponent(monitoringNotificationRunMatch[1]),
+      ));
+    }
+
+    const monitoringGmailSendTestMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/gmail-send-test$/);
+    if (monitoringGmailSendTestMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'POST') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await sendGmailTest(verified, env as GmailOAuthEnv));
+    }
+
+    const monitoringEmailSettingsMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/email-settings$/);
+    if (monitoringEmailSettingsMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      const siteId = decodeURIComponent(monitoringEmailSettingsMatch[1]);
+      if (request.method === 'GET') return withBuildHeader(await getMonitoringEmailDraft(env, siteId));
+      if (request.method === 'PUT') return withBuildHeader(await updateMonitoringEmailDraft(verified, env, siteId));
+      return withBuildHeader(apiError('Method not allowed.', 405));
+    }
+
+    const monitoringEmailDataMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/email-preview-data$/);
+    if (monitoringEmailDataMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'GET') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await getMonitoringEmailPreviewData(
+        env,
+        decodeURIComponent(monitoringEmailDataMatch[1]),
+      ));
+    }
+
+    const monitoringStatusMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/monitoring\/status$/);
+    if (monitoringStatusMatch) {
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      if (request.method !== 'GET') return withBuildHeader(apiError('Method not allowed.', 405));
+      return withBuildHeader(await getMonitoringStatus(
+        verified,
+        env,
+        decodeURIComponent(monitoringStatusMatch[1]),
+      ));
+    }
+
     const releaseDeleteMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/releases\/([^/]+)$/);
     if (releaseDeleteMatch && request.method === 'DELETE') {
       const verified = await authenticatedRequest(request, env);
@@ -215,5 +328,9 @@ export default {
 
     const response = await downstream.fetch(request, env, ctx);
     return withBuildHeader(await brandTesseraHtmlResponse(response));
+  },
+
+  async scheduled(controller, env): Promise<void> {
+    await runMonitoringDailySchedule(env, `cloudflare-cron:${controller.cron}`);
   },
 } satisfies ExportedHandler<Env>;

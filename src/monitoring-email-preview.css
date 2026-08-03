@@ -1,0 +1,240 @@
+.monitor-email-builder {
+  display: grid;
+  gap: 18px;
+}
+
+.monitor-email-intro {
+  max-width: 940px;
+  margin: 0;
+  color: #697383;
+  line-height: 1.6;
+}
+
+.monitor-email-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.monitor-email-form-grid label > span,
+.monitor-template-variables > span,
+.monitor-preview-heading > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #5d6878;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.monitor-email-form-grid input,
+.monitor-email-form-grid select,
+.monitor-email-form-grid textarea {
+  width: 100%;
+  border: 1px solid #cfd6e0;
+  border-radius: 9px;
+  padding: 10px 11px;
+  color: #202733;
+  background: #fff;
+  outline: none;
+}
+
+.monitor-email-form-grid textarea {
+  min-height: 82px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.monitor-email-form-grid .monitor-body-template {
+  min-height: 190px;
+}
+
+.monitor-email-form-grid input:focus,
+.monitor-email-form-grid select:focus,
+.monitor-email-form-grid textarea:focus {
+  border-color: #e58936;
+  box-shadow: 0 0 0 3px rgba(229, 137, 54, .13);
+}
+
+.monitor-span-2 { grid-column: span 2; }
+.monitor-span-3 { grid-column: span 3; }
+.monitor-span-4 { grid-column: 1 / -1; }
+
+.monitor-template-variables {
+  padding: 13px;
+  border: 1px dashed #cad2dd;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.monitor-template-variables > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.monitor-template-variables code {
+  padding: 5px 7px;
+  border-radius: 6px;
+  color: #735019;
+  background: #fff1df;
+}
+
+.monitor-email-statuses {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.monitor-email-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.monitor-preview-area {
+  display: grid;
+  gap: 14px;
+  padding-top: 18px;
+  border-top: 1px solid #e3e7ed;
+}
+
+.monitor-preview-warnings {
+  display: grid;
+  gap: 7px;
+  padding: 12px 14px;
+  border: 1px solid #ecd584;
+  border-radius: 9px;
+  color: #735414;
+  background: #fff8df;
+}
+
+.monitor-preview-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.monitor-preview-meta > div {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #e0e5ec;
+  border-radius: 9px;
+  background: #fafbfc;
+}
+
+.monitor-preview-meta span,
+.monitor-preview-meta strong {
+  display: block;
+}
+
+.monitor-preview-meta span {
+  color: #7b8595;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.monitor-preview-meta strong {
+  margin-top: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.monitor-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.monitor-preview-grid section {
+  min-width: 0;
+}
+
+.monitor-preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.monitor-preview-heading > span {
+  margin: 0;
+}
+
+.monitor-preview-heading button {
+  border: 1px solid #cfd6e0;
+  border-radius: 7px;
+  padding: 6px 9px;
+  color: #4b5563;
+  background: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.monitor-preview-heading button:hover {
+  border-color: #e58936;
+  color: #a74612;
+}
+
+.monitor-preview-grid pre,
+.monitor-preview-grid iframe {
+  width: 100%;
+  min-height: 260px;
+  max-height: 520px;
+  margin: 0;
+  border: 1px solid #d7dde6;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.monitor-preview-grid pre {
+  padding: 15px;
+  overflow: auto;
+  color: #1e2631;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.monitor-preview-grid iframe {
+  background: #fff;
+}
+
+@media (max-width: 1180px) {
+  .monitor-email-form-grid,
+  .monitor-preview-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .monitor-span-3,
+  .monitor-span-4 {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .monitor-email-form-grid,
+  .monitor-preview-meta,
+  .monitor-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .monitor-span-2,
+  .monitor-span-3,
+  .monitor-span-4 {
+    grid-column: auto;
+  }
+
+  .monitor-email-actions {
+    justify-content: stretch;
+  }
+
+  .monitor-email-actions .button {
+    width: 100%;
+  }
+}

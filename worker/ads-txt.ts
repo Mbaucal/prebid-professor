@@ -654,31 +654,78 @@ async function fetchAdsTxt(initialUrl: string): Promise<{
   }
 }
 
+const MAX_DUPLICATE_GROUPS = 100;
+const MAX_DUPLICATE_OCCURRENCES_PER_GROUP = 20;
+
 function actualAdsEntries(text: string): {
   canonical: Set<string>;
   validCount: number;
   invalidCount: number;
   duplicateCount: number;
+  duplicateEntryGroupCount: number;
+  duplicateEntriesTruncated: boolean;
+  duplicateEntries: Array<{
+    entry: string;
+    occurrences: number;
+    lineNumbers: number[];
+    rawOccurrences: Array<{ lineNumber: number; line: string }>;
+  }>;
 } {
   const canonical = new Set<string>();
+  const occurrences = new Map<string, { entry: string; lineNumbers: number[]; rawOccurrences: Array<{ lineNumber: number; line: string }> }>();
   let validCount = 0;
   let invalidCount = 0;
   let duplicateCount = 0;
 
-  for (const rawLine of text.split(/\r?\n/)) {
+  text.split(/\r?\n/).forEach((rawLine, index) => {
     const line = lineWithoutComment(rawLine);
-    if (!line) continue;
+    const rawDisplay = rawLine.replace(/^\uFEFF/, '').trim();
+    if (!line) return;
     try {
       const parsed = parseAdsEntry(line);
       validCount += 1;
-      if (canonical.has(parsed.canonical)) duplicateCount += 1;
+      const current = occurrences.get(parsed.canonical);
+      if (current) {
+        duplicateCount += 1;
+        current.lineNumbers.push(index + 1);
+        current.rawOccurrences.push({ lineNumber: index + 1, line: rawDisplay });
+      } else {
+        occurrences.set(parsed.canonical, {
+          entry: parsed.display,
+          lineNumbers: [index + 1],
+          rawOccurrences: [{ lineNumber: index + 1, line: rawDisplay }],
+        });
+      }
       canonical.add(parsed.canonical);
     } catch {
       invalidCount += 1;
     }
-  }
+  });
 
-  return { canonical, validCount, invalidCount, duplicateCount };
+  const duplicateGroups = Array.from(occurrences.values())
+    .filter((item) => item.lineNumbers.length > 1)
+    .sort((left, right) => right.lineNumbers.length - left.lineNumbers.length || left.entry.localeCompare(right.entry));
+  const duplicateEntryGroupCount = duplicateGroups.length;
+  const duplicateEntriesTruncated = duplicateEntryGroupCount > MAX_DUPLICATE_GROUPS
+    || duplicateGroups.some((item) => item.lineNumbers.length > MAX_DUPLICATE_OCCURRENCES_PER_GROUP);
+  const duplicateEntries = duplicateGroups
+    .slice(0, MAX_DUPLICATE_GROUPS)
+    .map((item) => ({
+      entry: item.entry,
+      occurrences: item.lineNumbers.length,
+      lineNumbers: item.lineNumbers.slice(0, MAX_DUPLICATE_OCCURRENCES_PER_GROUP),
+      rawOccurrences: item.rawOccurrences.slice(0, MAX_DUPLICATE_OCCURRENCES_PER_GROUP),
+    }));
+
+  return {
+    canonical,
+    validCount,
+    invalidCount,
+    duplicateCount,
+    duplicateEntryGroupCount,
+    duplicateEntriesTruncated,
+    duplicateEntries,
+  };
 }
 
 export async function checkAdsTxt(
@@ -686,6 +733,7 @@ export async function checkAdsTxt(
   env: AdsTxtEnv,
   siteId: string,
 ): Promise<Response> {
+  const includeInternalSnapshot = _request.headers.get('x-tessera-monitoring-snapshot') === '1';
   if (!env.DB) return databaseMissing();
   const site = await fetchSite(env.DB, siteId);
   if (!site) return apiError('Site not found.', 404);
@@ -740,6 +788,9 @@ export async function checkAdsTxt(
         validLineCount: actual.validCount,
         invalidLineCount: actual.invalidCount,
         duplicateLineCount: actual.duplicateCount,
+        duplicateEntryGroupCount: actual.duplicateEntryGroupCount,
+        duplicateEntriesTruncated: actual.duplicateEntriesTruncated,
+        duplicateEntries: actual.duplicateEntries,
         requirementCount: requirements.length,
         foundCount: results.filter((item) => item.found).length,
         requiredMissingCount: missing.length,
@@ -747,6 +798,7 @@ export async function checkAdsTxt(
         results,
         missing,
         optionalMissing,
+        ...(includeInternalSnapshot ? { content: fetched.text } : {}),
       },
     });
   } catch (error) {
