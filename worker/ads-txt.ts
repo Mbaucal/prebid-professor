@@ -79,9 +79,27 @@ function parseAdsEntry(value: unknown): NormalizedEntry {
   const raw = lineWithoutComment(String(value ?? ''));
   if (!raw) throw new Error('A complete ads.txt entry is required.');
 
+  const equalsIndex = raw.indexOf('=');
+  const commaIndex = raw.indexOf(',');
+  if (equalsIndex > 0 && (commaIndex < 0 || equalsIndex < commaIndex)) {
+    const variableName = raw.slice(0, equalsIndex).trim();
+    const variableValue = raw.slice(equalsIndex + 1).trim();
+    if (!variableName || /\s/.test(variableName)) {
+      throw new Error('The ads.txt variable name cannot contain whitespace.');
+    }
+    if (!variableValue) throw new Error('The ads.txt variable value is required.');
+
+    const normalizedName = variableName.toUpperCase();
+    return {
+      display: `${normalizedName}=${variableValue}`,
+      canonical: `variable:${normalizedName.toLowerCase()}=${variableValue}`,
+      sourceDomain: normalizedName,
+    };
+  }
+
   const fields = raw.split(',').map((field) => field.trim());
   if (fields.length < 3 || fields.length > 4) {
-    throw new Error('Use the ads.txt format: advertising-system.com, seller-id, DIRECT|RESELLER, certification-id.');
+    throw new Error('Use an ads.txt seller record or a VARIABLE=VALUE declaration.');
   }
 
   const [rawDomain, rawSellerId, rawRelationship, rawCertificationId = ''] = fields;

@@ -66,3 +66,20 @@ SELECT
   created_at,
   updated_at
 FROM ads_txt_requirements;
+
+UPDATE ads_txt_requirement_sources
+SET
+  source_label = CASE
+    WHEN TRIM(source_label) = '' OR INSTR(source_label, '=') > 0
+      THEN UPPER(TRIM(SUBSTR(monitor_entry, 1, INSTR(monitor_entry, '=') - 1)))
+    ELSE source_label
+  END,
+  canonical_entry = 'variable:'
+    || LOWER(TRIM(SUBSTR(monitor_entry, 1, INSTR(monitor_entry, '=') - 1)))
+    || '='
+    || TRIM(SUBSTR(monitor_entry, INSTR(monitor_entry, '=') + 1))
+WHERE INSTR(monitor_entry, '=') > 0
+  AND (
+    INSTR(monitor_entry, ',') = 0
+    OR INSTR(monitor_entry, '=') < INSTR(monitor_entry, ',')
+  );

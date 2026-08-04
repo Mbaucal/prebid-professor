@@ -86,9 +86,37 @@ function parseSource(value: unknown, requestedLabel: unknown, required: unknown)
   const inlineComment = (commentIndex >= 0 ? raw.slice(commentIndex + 1) : '').trim();
   if (!recordText) throw new Error('A complete ads.txt entry is required.');
 
+  const equalsIndex = recordText.indexOf('=');
+  const commaIndex = recordText.indexOf(',');
+  if (equalsIndex > 0 && (commaIndex < 0 || equalsIndex < commaIndex)) {
+    const variableName = recordText.slice(0, equalsIndex).trim();
+    const variableValue = recordText.slice(equalsIndex + 1).trim();
+    if (!variableName || /\s/.test(variableName)) {
+      throw new Error('The ads.txt variable name cannot contain whitespace.');
+    }
+    if (!variableValue) throw new Error('The ads.txt variable value is required.');
+
+    const normalizedName = variableName.toUpperCase();
+    const monitorEntry = `${normalizedName}=${variableValue}`;
+    const canonicalEntry = `variable:${normalizedName.toLowerCase()}=${variableValue}`;
+    const sourceLabel = cleanLabel(requestedLabel) || cleanLabel(inlineComment) || normalizedName;
+
+    if (sourceLabel.length > MAX_SOURCE_LABEL_LENGTH) {
+      throw new Error(`Source label must be ${MAX_SOURCE_LABEL_LENGTH} characters or fewer.`);
+    }
+
+    return {
+      sourceLabel,
+      entry: inlineComment ? `${monitorEntry} #${inlineComment}` : monitorEntry,
+      monitorEntry,
+      canonicalEntry,
+      required: booleanValue(required, true),
+    };
+  }
+
   const fields = recordText.split(',').map((field) => field.trim());
   if (fields.length < 3 || fields.length > 4) {
-    throw new Error('Use the ads.txt format: advertising-system.com, seller-id, DIRECT|RESELLER, certification-id.');
+    throw new Error('Use an ads.txt seller record or a VARIABLE=VALUE declaration.');
   }
 
   const [rawDomain, rawSellerId, rawRelationship, rawCertificationId = ''] = fields;
@@ -222,6 +250,22 @@ async function ensureTables(db: D1Database): Promise<void> {
             created_at,
             updated_at
           FROM ads_txt_requirements`),
+        db.prepare(`UPDATE ads_txt_requirement_sources
+SET
+  source_label = CASE
+    WHEN TRIM(source_label) = '' OR INSTR(source_label, '=') > 0
+      THEN UPPER(TRIM(SUBSTR(monitor_entry, 1, INSTR(monitor_entry, '=') - 1)))
+    ELSE source_label
+  END,
+  canonical_entry = 'variable:'
+    || LOWER(TRIM(SUBSTR(monitor_entry, 1, INSTR(monitor_entry, '=') - 1)))
+    || '='
+    || TRIM(SUBSTR(monitor_entry, INSTR(monitor_entry, '=') + 1))
+WHERE INSTR(monitor_entry, '=') > 0
+  AND (
+    INSTR(monitor_entry, ',') = 0
+    OR INSTR(monitor_entry, '=') < INSTR(monitor_entry, ',')
+  )`),
       ]);
     })().catch((error) => {
       tablesReady = null;
