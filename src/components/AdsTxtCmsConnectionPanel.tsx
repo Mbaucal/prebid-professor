@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import type { PublisherAccount, Site } from '../shared/types';
 
@@ -26,26 +26,85 @@ type ApiFailure = {
   details?: unknown;
 };
 
-const SITE_DETECTION_INTERVAL_MS = 750;
+type ActiveSiteMarker = {
+  publisherName: string;
+  siteName: string;
+  domain: string;
+  signature: string;
+};
 
-function activeSiteFromPage(accounts: PublisherAccount[]): Site | null {
-  const activeButton = document.querySelector<HTMLButtonElement>(
-    '.publisher-tree-group .publisher-site-list .site-link.active:not(.add-site-link)',
+type PendingMutation = 'save' | 'remove';
+
+const SITE_REFRESH_INTERVAL_MS = 5_000;
+const pendingMutations = new Map<string, PendingMutation>();
+const pendingMutationListeners = new Set<() => void>();
+
+function notifyPendingMutationListeners(): void {
+  pendingMutationListeners.forEach((listener) => listener());
+}
+
+function beginPendingMutation(siteId: string, operation: PendingMutation): boolean {
+  if (pendingMutations.has(siteId)) return false;
+  pendingMutations.set(siteId, operation);
+  notifyPendingMutationListeners();
+  return true;
+}
+
+function finishPendingMutation(siteId: string, operation: PendingMutation): void {
+  if (pendingMutations.get(siteId) !== operation) return;
+  pendingMutations.delete(siteId);
+  notifyPendingMutationListeners();
+}
+
+function normalizedText(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizedDomain(value: string): string {
+  return normalizedText(value).replace(/^www\./, '');
+}
+
+function activeSiteMarkerFromPage(): ActiveSiteMarker | null {
+  const topbar = document.querySelector<HTMLElement>('.workspace > .topbar');
+  if (!topbar) return null;
+
+  const siteName = topbar.querySelector<HTMLElement>('h1')?.textContent?.trim() ?? '';
+  const eyebrow = topbar.querySelector<HTMLElement>('.eyebrow')?.textContent?.trim() ?? '';
+  const eyebrowParts = eyebrow.split('/').map((part) => part.trim()).filter(Boolean);
+  const publisherName = eyebrowParts.length >= 2 ? eyebrowParts[1] : '';
+
+  const domain = Array.from(topbar.querySelectorAll<HTMLElement>('.publisher-meta > span'))
+    .map((element) => element.textContent?.trim() ?? '')
+    .find((value) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value)) ?? '';
+
+  if (!siteName || !domain) return null;
+  return {
+    publisherName,
+    siteName,
+    domain,
+    signature: [publisherName, siteName, domain].map(normalizedText).join('|'),
+  };
+}
+
+function resolveSite(accounts: PublisherAccount[], marker: ActiveSiteMarker): Site | null {
+  const allSites = accounts.flatMap((account) => account.sites);
+  const domainMatches = allSites.filter(
+    (candidate) => normalizedDomain(candidate.domain) === normalizedDomain(marker.domain),
   );
-  const activeGroup = activeButton?.closest<HTMLElement>('.publisher-tree-group') ?? null;
-  if (!activeButton || !activeGroup) return null;
+  if (domainMatches.length === 1) return domainMatches[0];
 
-  const groups = Array.from(document.querySelectorAll<HTMLElement>('.publisher-tree-group'));
-  const accountIndex = groups.indexOf(activeGroup);
-  if (accountIndex < 0) return null;
+  const publisherMatches = accounts.filter(
+    (account) => normalizedText(account.name) === normalizedText(marker.publisherName),
+  );
+  const namedMatches = publisherMatches.flatMap((account) => account.sites).filter(
+    (candidate) => normalizedText(candidate.name) === normalizedText(marker.siteName),
+  );
+  if (namedMatches.length === 1) return namedMatches[0];
 
-  const siteButtons = Array.from(activeGroup.querySelectorAll<HTMLButtonElement>(
-    '.publisher-site-list .site-link:not(.add-site-link)',
-  ));
-  const siteIndex = siteButtons.indexOf(activeButton);
-  if (siteIndex < 0) return null;
-
-  return accounts[accountIndex]?.sites[siteIndex] ?? null;
+  const globalNameMatches = allSites.filter(
+    (candidate) => normalizedText(candidate.name) === normalizedText(marker.siteName),
+  );
+  return globalNameMatches.length === 1 ? globalNameMatches[0] : null;
 }
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
@@ -94,24 +153,30 @@ export default function AdsTxtCmsConnectionPanel() {
   const [authHeader, setAuthHeader] = useState('Authorization');
   const [credential, setCredential] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [removing, setRemoving] = useState(false);
+  const [pendingMutation, setPendingMutation] = useState<PendingMutation | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const accountsRef = useRef<PublisherAccount[]>([]);
   const activeSiteIdRef = useRef('');
+  const currentSiteRef = useRef<Site | null>(null);
+  const lastMarkerSignatureRef = useRef('');
+  const siteEpochRef = useRef(0);
+  const detectionGeneration = useRef(0);
   const loadGeneration = useRef(0);
-  const saveGeneration = useRef(0);
-  const removeGeneration = useRef(0);
 
-  useEffect(() => {
-    let disposed = false;
-    let observer: MutationObserver | null = null;
-    let intervalId = 0;
+  const loadForSite = useCallback(async (currentSite: Site): Promise<void> => {
+    const generation = ++loadGeneration.current;
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    setCredential('');
 
-    const applyPayload = (currentSite: Site, payload: ConnectionResponse): void => {
-      if (disposed || activeSiteIdRef.current !== currentSite.id) return;
+    try {
+      const payload = await requestJson<ConnectionResponse>(
+        `/api/publishers/${encodeURIComponent(currentSite.id)}/ads-txt/cms-connection?ts=${Date.now()}`,
+        { cache: 'no-store', credentials: 'same-origin', headers: { accept: 'application/json' } },
+      );
+      if (activeSiteIdRef.current !== currentSite.id || loadGeneration.current !== generation) return;
       setConnection(payload.connection);
       setEndpointUrl(payload.connection.endpointUrl);
       setMethod(payload.connection.method);
@@ -121,73 +186,101 @@ export default function AdsTxtCmsConnectionPanel() {
         || (payload.connection.authType === 'api_key' ? 'X-API-Key' : 'Authorization'),
       );
       setCredential('');
-    };
-
-    const loadForSite = async (currentSite: Site): Promise<void> => {
-      const generation = ++loadGeneration.current;
-      setLoading(true);
-      setError(null);
-      setMessage(null);
-      setCredential('');
-
-      try {
-        const payload = await requestJson<ConnectionResponse>(
-          `/api/publishers/${encodeURIComponent(currentSite.id)}/ads-txt/cms-connection?ts=${Date.now()}`,
-          { cache: 'no-store', credentials: 'same-origin', headers: { accept: 'application/json' } },
-        );
-        if (disposed || activeSiteIdRef.current !== currentSite.id || loadGeneration.current !== generation) return;
-        applyPayload(currentSite, payload);
-      } catch (loadError) {
-        if (disposed || activeSiteIdRef.current !== currentSite.id || loadGeneration.current !== generation) return;
-        setConnection(defaultConnection());
-        setEndpointUrl('');
-        setMethod('PUT');
-        setAuthType('bearer');
-        setAuthHeader('Authorization');
-        setError(loadError instanceof Error ? loadError.message : 'CMS connection could not be loaded.');
-      } finally {
-        if (!disposed && activeSiteIdRef.current === currentSite.id && loadGeneration.current === generation) {
-          setLoading(false);
-        }
-      }
-    };
-
-    const detectSite = (): void => {
-      if (disposed || !accountsRef.current.length || !document.querySelector('.ads-txt-page')) return;
-      const currentSite = activeSiteFromPage(accountsRef.current);
-      if (!currentSite || currentSite.id === activeSiteIdRef.current) return;
-
-      activeSiteIdRef.current = currentSite.id;
-      loadGeneration.current += 1;
-      saveGeneration.current += 1;
-      removeGeneration.current += 1;
-      setSite(currentSite);
+    } catch (loadError) {
+      if (activeSiteIdRef.current !== currentSite.id || loadGeneration.current !== generation) return;
       setConnection(defaultConnection());
       setEndpointUrl('');
       setMethod('PUT');
       setAuthType('bearer');
       setAuthHeader('Authorization');
-      setCredential('');
-      setSaving(false);
-      setRemoving(false);
-      void loadForSite(currentSite);
+      setError(loadError instanceof Error ? loadError.message : 'CMS connection could not be loaded.');
+    } finally {
+      if (activeSiteIdRef.current === currentSite.id && loadGeneration.current === generation) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const syncPending = (): void => {
+      setPendingMutation(site ? pendingMutations.get(site.id) ?? null : null);
+    };
+    pendingMutationListeners.add(syncPending);
+    syncPending();
+    return () => {
+      pendingMutationListeners.delete(syncPending);
+    };
+  }, [site]);
+
+  useEffect(() => {
+    let disposed = false;
+    let observer: MutationObserver | null = null;
+    let intervalId = 0;
+    let debounceId = 0;
+
+    const detectSite = async (forceRefresh = false): Promise<void> => {
+      if (disposed || !document.querySelector('.ads-txt-page')) return;
+      const markerBefore = activeSiteMarkerFromPage();
+      if (!markerBefore) return;
+      if (
+        !forceRefresh
+        && markerBefore.signature === lastMarkerSignatureRef.current
+        && activeSiteIdRef.current
+      ) {
+        return;
+      }
+
+      const generation = ++detectionGeneration.current;
+      try {
+        const accounts = await api.listPublisherAccounts();
+        if (disposed || detectionGeneration.current !== generation) return;
+
+        const markerAfter = activeSiteMarkerFromPage();
+        if (!markerAfter) return;
+        if (markerAfter.signature !== markerBefore.signature) {
+          window.clearTimeout(debounceId);
+          debounceId = window.setTimeout(() => void detectSite(true), 50);
+          return;
+        }
+
+        const currentSite = resolveSite(accounts, markerAfter);
+        if (!currentSite) {
+          setLoading(false);
+          setError('The selected site could not be identified from the current publisher hierarchy.');
+          return;
+        }
+
+        lastMarkerSignatureRef.current = markerAfter.signature;
+        currentSiteRef.current = currentSite;
+        setSite(currentSite);
+        if (currentSite.id === activeSiteIdRef.current) return;
+
+        activeSiteIdRef.current = currentSite.id;
+        siteEpochRef.current += 1;
+        loadGeneration.current += 1;
+        setConnection(defaultConnection());
+        setEndpointUrl('');
+        setMethod('PUT');
+        setAuthType('bearer');
+        setAuthHeader('Authorization');
+        setCredential('');
+        setMessage(null);
+        setError(null);
+        void loadForSite(currentSite);
+      } catch (siteError) {
+        if (disposed || detectionGeneration.current !== generation) return;
+        setLoading(false);
+        setError(siteError instanceof Error ? siteError.message : 'Sites could not be loaded.');
+      }
     };
 
-    void api.listPublisherAccounts()
-      .then((accounts) => {
-        if (disposed) return;
-        accountsRef.current = accounts;
-        detectSite();
-      })
-      .catch((loadError: unknown) => {
-        if (!disposed) {
-          setLoading(false);
-          setError(loadError instanceof Error ? loadError.message : 'Sites could not be loaded.');
-        }
-      });
+    const scheduleDetection = (): void => {
+      window.clearTimeout(debounceId);
+      debounceId = window.setTimeout(() => void detectSite(false), 50);
+    };
 
     const root = document.getElementById('root');
-    observer = new MutationObserver(detectSite);
+    observer = new MutationObserver(scheduleDetection);
     if (root) {
       observer.observe(root, {
         attributes: true,
@@ -196,23 +289,26 @@ export default function AdsTxtCmsConnectionPanel() {
         subtree: true,
       });
     }
-    intervalId = window.setInterval(detectSite, SITE_DETECTION_INTERVAL_MS);
+    intervalId = window.setInterval(() => void detectSite(true), SITE_REFRESH_INTERVAL_MS);
+    void detectSite(true);
 
     return () => {
       disposed = true;
+      detectionGeneration.current += 1;
       loadGeneration.current += 1;
-      saveGeneration.current += 1;
-      removeGeneration.current += 1;
       observer?.disconnect();
       window.clearInterval(intervalId);
+      window.clearTimeout(debounceId);
     };
-  }, []);
+  }, [loadForSite]);
 
+  const saving = pendingMutation === 'save';
+  const removing = pendingMutation === 'remove';
   const readyToSave = useMemo(() => {
-    if (!site || !endpointUrl.trim() || saving || removing || loading) return false;
+    if (!site || !endpointUrl.trim() || pendingMutation || loading) return false;
     if (authType === 'none') return true;
     return Boolean(authHeader.trim() && credential.trim());
-  }, [authHeader, authType, credential, endpointUrl, loading, removing, saving, site]);
+  }, [authHeader, authType, credential, endpointUrl, loading, pendingMutation, site]);
 
   function changeAuthType(value: 'none' | 'bearer' | 'api_key'): void {
     setAuthType(value);
@@ -224,15 +320,20 @@ export default function AdsTxtCmsConnectionPanel() {
 
   async function save(): Promise<void> {
     if (!site || !readyToSave) return;
-    const requestedSiteId = site.id;
-    const generation = ++saveGeneration.current;
-    setSaving(true);
+    const requestedSite = site;
+    const requestedEpoch = siteEpochRef.current;
+    if (!beginPendingMutation(requestedSite.id, 'save')) {
+      setError('Another CMS connection change is already in progress for this site.');
+      return;
+    }
+
+    loadGeneration.current += 1;
     setError(null);
     setMessage(null);
 
     try {
       const payload = await requestJson<ConnectionResponse>(
-        `/api/publishers/${encodeURIComponent(requestedSiteId)}/ads-txt/cms-connection`,
+        `/api/publishers/${encodeURIComponent(requestedSite.id)}/ads-txt/cms-connection`,
         {
           method: 'PUT',
           credentials: 'same-origin',
@@ -247,32 +348,40 @@ export default function AdsTxtCmsConnectionPanel() {
           }),
         },
       );
-      if (activeSiteIdRef.current !== requestedSiteId || saveGeneration.current !== generation) return;
+      if (activeSiteIdRef.current !== requestedSite.id || siteEpochRef.current !== requestedEpoch) return;
       setConnection(payload.connection);
       setCredential('');
       setMessage('CMS connection saved.');
     } catch (saveError) {
-      if (activeSiteIdRef.current !== requestedSiteId || saveGeneration.current !== generation) return;
+      if (activeSiteIdRef.current !== requestedSite.id || siteEpochRef.current !== requestedEpoch) return;
       setError(saveError instanceof Error ? saveError.message : 'CMS connection could not be saved.');
     } finally {
-      if (saveGeneration.current === generation) setSaving(false);
+      finishPendingMutation(requestedSite.id, 'save');
+      if (activeSiteIdRef.current === requestedSite.id && siteEpochRef.current !== requestedEpoch) {
+        void loadForSite(currentSiteRef.current ?? requestedSite);
+      }
     }
   }
 
   async function remove(): Promise<void> {
-    if (!site || !connection.configured || removing) return;
-    const requestedSiteId = site.id;
-    const generation = ++removeGeneration.current;
-    setRemoving(true);
+    if (!site || !connection.configured || pendingMutation) return;
+    const requestedSite = site;
+    const requestedEpoch = siteEpochRef.current;
+    if (!beginPendingMutation(requestedSite.id, 'remove')) {
+      setError('Another CMS connection change is already in progress for this site.');
+      return;
+    }
+
+    loadGeneration.current += 1;
     setError(null);
     setMessage(null);
 
     try {
       await requestJson<{ ok: true; deleted: boolean }>(
-        `/api/publishers/${encodeURIComponent(requestedSiteId)}/ads-txt/cms-connection`,
+        `/api/publishers/${encodeURIComponent(requestedSite.id)}/ads-txt/cms-connection`,
         { method: 'DELETE', credentials: 'same-origin', headers: { accept: 'application/json' } },
       );
-      if (activeSiteIdRef.current !== requestedSiteId || removeGeneration.current !== generation) return;
+      if (activeSiteIdRef.current !== requestedSite.id || siteEpochRef.current !== requestedEpoch) return;
       const empty = defaultConnection();
       setConnection(empty);
       setEndpointUrl('');
@@ -282,10 +391,13 @@ export default function AdsTxtCmsConnectionPanel() {
       setCredential('');
       setMessage('CMS connection removed.');
     } catch (removeError) {
-      if (activeSiteIdRef.current !== requestedSiteId || removeGeneration.current !== generation) return;
+      if (activeSiteIdRef.current !== requestedSite.id || siteEpochRef.current !== requestedEpoch) return;
       setError(removeError instanceof Error ? removeError.message : 'CMS connection could not be removed.');
     } finally {
-      if (removeGeneration.current === generation) setRemoving(false);
+      finishPendingMutation(requestedSite.id, 'remove');
+      if (activeSiteIdRef.current === requestedSite.id && siteEpochRef.current !== requestedEpoch) {
+        void loadForSite(currentSiteRef.current ?? requestedSite);
+      }
     }
   }
 
@@ -381,7 +493,7 @@ export default function AdsTxtCmsConnectionPanel() {
               {saving ? 'Saving…' : connection.configured ? 'Save changes' : 'Save connection'}
             </button>
             {connection.configured ? (
-              <button className="button danger" disabled={removing || saving} onClick={() => void remove()} type="button">
+              <button className="button danger" disabled={Boolean(pendingMutation)} onClick={() => void remove()} type="button">
                 {removing ? 'Removing…' : 'Remove connection'}
               </button>
             ) : null}
