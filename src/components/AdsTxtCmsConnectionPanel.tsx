@@ -208,15 +208,11 @@ export default function AdsTxtCmsConnectionPanel() {
     };
   }, []);
 
-  const credentialRequired = authType !== 'none'
-    && (!connection.credentialSet || connection.authType !== authType);
-
   const readyToSave = useMemo(() => {
     if (!site || !endpointUrl.trim() || saving || removing || loading) return false;
     if (authType === 'none') return true;
-    if (!authHeader.trim()) return false;
-    return !credentialRequired || Boolean(credential.trim());
-  }, [authHeader, authType, credential, credentialRequired, endpointUrl, loading, removing, saving, site]);
+    return Boolean(authHeader.trim() && credential.trim());
+  }, [authHeader, authType, credential, endpointUrl, loading, removing, saving, site]);
 
   function changeAuthType(value: 'none' | 'bearer' | 'api_key'): void {
     setAuthType(value);
@@ -246,7 +242,7 @@ export default function AdsTxtCmsConnectionPanel() {
             method,
             authType,
             authHeader: authHeader.trim(),
-            ...(credential.trim() ? { credential: credential.trim() } : {}),
+            ...(authType !== 'none' ? { credential: credential.trim() } : {}),
             enabled: true,
           }),
         },
@@ -367,16 +363,14 @@ export default function AdsTxtCmsConnectionPanel() {
                 <input
                   autoComplete="new-password"
                   onChange={(event) => setCredential(event.target.value)}
-                  placeholder={connection.credentialSet && connection.authType === authType
-                    ? 'Saved securely — leave blank to keep it'
+                  placeholder={connection.configured
+                    ? 'Enter it again to save changes'
                     : 'Paste the credential here'}
                   type="password"
                   value={credential}
                 />
                 <small>
-                  {connection.credentialSet && connection.authType === authType
-                    ? 'Enter a new value only when replacing the saved credential.'
-                    : 'The credential is encrypted before it is stored.'}
+                  The saved credential is never displayed. Enter it again whenever you save changes.
                 </small>
               </label>
             </>
