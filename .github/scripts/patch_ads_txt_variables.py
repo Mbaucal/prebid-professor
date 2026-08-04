@@ -7,6 +7,23 @@ def replace_function(source: str, start_marker: str, end_marker: str, replacemen
     return source[:start] + replacement + source[end:]
 
 
+variable_backfill_sql = r'''UPDATE ads_txt_requirement_sources
+SET
+  source_label = CASE
+    WHEN TRIM(source_label) = '' OR INSTR(source_label, '=') > 0
+      THEN UPPER(TRIM(SUBSTR(monitor_entry, 1, INSTR(monitor_entry, '=') - 1)))
+    ELSE source_label
+  END,
+  canonical_entry = 'variable:'
+    || LOWER(TRIM(SUBSTR(monitor_entry, 1, INSTR(monitor_entry, '=') - 1)))
+    || '='
+    || TRIM(SUBSTR(monitor_entry, INSTR(monitor_entry, '=') + 1))
+WHERE INSTR(monitor_entry, '=') > 0
+  AND (
+    INSTR(monitor_entry, ',') = 0
+    OR INSTR(monitor_entry, '=') < INSTR(monitor_entry, ',')
+  );'''
+
 source_path = Path('worker/ads-txt-requirement-sources.ts')
 source = source_path.read_text()
 source_parse = r'''function parseSource(value: unknown, requestedLabel: unknown, required: unknown): NormalizedSource {
@@ -97,6 +114,14 @@ source = replace_function(
     'function normalizeInput(',
     source_parse,
 )
+runtime_backfill_marker = """          FROM ads_txt_requirements`),
+      ]);"""
+runtime_backfill_replacement = """          FROM ads_txt_requirements`),
+        db.prepare(`""" + variable_backfill_sql.removesuffix(';') + """`),
+      ]);"""
+if runtime_backfill_marker not in source:
+    raise SystemExit('Runtime backfill insertion point not found')
+source = source.replace(runtime_backfill_marker, runtime_backfill_replacement, 1)
 source_path.write_text(source)
 
 legacy_path = Path('worker/ads-txt.ts')
@@ -162,6 +187,10 @@ legacy = replace_function(
     legacy_parse,
 )
 legacy_path.write_text(legacy)
+
+migration_path = Path('migrations/0006_ads_txt_requirement_sources.sql')
+migration = migration_path.read_text().rstrip() + '\n\n' + variable_backfill_sql + '\n'
+migration_path.write_text(migration)
 
 docs_path = Path('docs/ADS_TXT_DUPLICATE_REQUIREMENTS.md')
 docs = docs_path.read_text()
