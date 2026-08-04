@@ -118,17 +118,21 @@ async function releaseConnectorClaim(
   ).bind(siteId, token).run();
 }
 
-function auditStatement(
+function claimedAuditStatement(
   db: D1Database,
   actor: string,
   action: string,
   siteId: string,
   details: Record<string, unknown>,
   createdAt: string,
+  claimToken: string,
 ): D1PreparedStatement {
   return db.prepare(`INSERT INTO audit_log (
       id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-    ) VALUES (?, ?, ?, ?, 'ads_txt_connector', ?, ?, ?)`)
+    )
+    SELECT ?, ?, ?, ?, 'ads_txt_connector', ?, ?, ?
+    FROM ads_txt_real_connector_claims
+    WHERE site_id = ? AND token = ?`)
     .bind(
       crypto.randomUUID(),
       actor,
@@ -137,6 +141,8 @@ function auditStatement(
       siteId,
       JSON.stringify(details),
       createdAt,
+      siteId,
+      claimToken,
     );
 }
 
@@ -281,12 +287,14 @@ export async function saveAdsTxtRealConnector(
     const now = new Date().toISOString();
     const actor = getActor(request);
     const enabled = input.enabled === false ? 0 : 1;
-
-    await db.batch([
+    const [writeResult] = await db.batch([
       db.prepare(`INSERT INTO ads_txt_real_connectors (
           site_id, endpoint_url, method, auth_type, auth_header, credential_encrypted,
           enabled, updated_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        )
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        FROM ads_txt_real_connector_claims
+        WHERE site_id = ? AND token = ?
         ON CONFLICT(site_id) DO UPDATE SET
           endpoint_url = excluded.endpoint_url,
           method = excluded.method,
@@ -307,8 +315,10 @@ export async function saveAdsTxtRealConnector(
           actor,
           existing?.created_at ?? now,
           now,
+          siteId,
+          claimToken,
         ),
-      auditStatement(db, actor, 'ads_txt_connector.connection_saved', siteId, {
+      claimedAuditStatement(db, actor, 'ads_txt_connector.connection_saved', siteId, {
         endpointUrl,
         method,
         authType,
@@ -316,8 +326,12 @@ export async function saveAdsTxtRealConnector(
         credentialChanged: authType !== 'none',
         credentialRequiredOnEverySave: authType !== 'none',
         enabled: enabled === 1,
-      }, now),
+      }, now, claimToken),
     ]);
+
+    if ((writeResult.meta?.changes ?? 0) < 1) {
+      return apiError('The CMS connection change expired before it could be saved. Try again.', 409);
+    }
 
     return json({
       ok: true,
@@ -348,14 +362,24 @@ export async function deleteAdsTxtRealConnector(
 
     const now = new Date().toISOString();
     const actor = getActor(request);
-    await db.batch([
-      db.prepare('DELETE FROM ads_txt_real_connectors WHERE site_id = ?').bind(siteId),
-      auditStatement(db, actor, 'ads_txt_connector.connection_deleted', siteId, {
+    const [deleteResult] = await db.batch([
+      db.prepare(`DELETE FROM ads_txt_real_connectors
+        WHERE site_id = ?
+          AND EXISTS (
+            SELECT 1 FROM ads_txt_real_connector_claims
+            WHERE site_id = ? AND token = ?
+          )`)
+        .bind(siteId, siteId, claimToken),
+      claimedAuditStatement(db, actor, 'ads_txt_connector.connection_deleted', siteId, {
         endpointUrl: existing.endpoint_url,
         method: existing.method,
         authType: existing.auth_type,
-      }, now),
+      }, now, claimToken),
     ]);
+
+    if ((deleteResult.meta?.changes ?? 0) < 1) {
+      return apiError('The CMS connection change expired before it could be removed. Try again.', 409);
+    }
     return json({ ok: true, deleted: true });
   } finally {
     await releaseConnectorClaim(db, siteId, claimToken).catch(() => undefined);
