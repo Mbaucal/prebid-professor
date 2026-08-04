@@ -8,6 +8,7 @@ Tessera keeps two complementary views of ads.txt requirements:
 ## Behavior
 
 - Manual add, import and copy do not remove repeated source rows.
+- Plain-text and CSV imports preserve inline comments such as `#Smaato`; full-line `# Partner` headings become the label for following rows.
 - Each source row has independent Edit and Delete actions.
 - If any source row for a canonical record is required, the canonical Monitoring row is required.
 - Removing one source row does not remove the canonical Monitoring row while another source still requires that record.
