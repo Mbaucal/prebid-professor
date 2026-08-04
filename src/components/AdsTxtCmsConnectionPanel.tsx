@@ -218,17 +218,32 @@ export default function AdsTxtCmsConnectionPanel() {
     let intervalId = 0;
     let debounceId = 0;
 
+    const invalidateIdentity = (marker: ActiveSiteMarker): void => {
+      lastMarkerSignatureRef.current = marker.signature;
+      activeSiteIdRef.current = '';
+      currentSiteRef.current = null;
+      siteEpochRef.current += 1;
+      loadGeneration.current += 1;
+      setSite(null);
+      setConnection(defaultConnection());
+      setEndpointUrl('');
+      setMethod('PUT');
+      setAuthType('bearer');
+      setAuthHeader('Authorization');
+      setCredential('');
+      setMessage(null);
+      setError(null);
+      setLoading(true);
+    };
+
     const detectSite = async (forceRefresh = false): Promise<void> => {
       if (disposed || !document.querySelector('.ads-txt-page')) return;
       const markerBefore = activeSiteMarkerFromPage();
       if (!markerBefore) return;
-      if (
-        !forceRefresh
-        && markerBefore.signature === lastMarkerSignatureRef.current
-        && activeSiteIdRef.current
-      ) {
-        return;
-      }
+
+      const markerChanged = markerBefore.signature !== lastMarkerSignatureRef.current;
+      if (markerChanged) invalidateIdentity(markerBefore);
+      if (!forceRefresh && !markerChanged && activeSiteIdRef.current) return;
 
       const generation = ++detectionGeneration.current;
       try {
