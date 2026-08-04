@@ -18,10 +18,10 @@ Tessera keeps two complementary views of ads.txt requirements:
 
 Migration `0006_ads_txt_requirement_sources.sql` is additive. It creates the source table and backfills current rows without rebuilding or replacing the existing canonical table.
 
-## Concurrency
+## Concurrency and atomicity
 
-Source mutations use a per-site D1 claim. Reads used by PATCH and DELETE occur while the claim is held, and every source write, canonical reconciliation and audit insert requires the current, unexpired claim token.
+Source mutations use a per-site D1 claim. Reads used by PATCH and DELETE occur while the claim is held. Every batch checks ownership both before and after the source write, canonical reconciliation and audit insert. If the claim is missing or expires, a database assertion fails and D1 rolls back the entire batch instead of leaving the source and Monitoring tables out of sync.
 
 ## Site duplication
 
-When a site is duplicated with `copyAdsTxtRequirements`, Tessera copies the complete source-row set after the existing site duplication succeeds and then reconciles the target canonical Monitoring table.
+When a site is duplicated with `copyAdsTxtRequirements`, Tessera copies the complete source-row set after the existing site duplication succeeds and then reconciles the target canonical Monitoring table. If that second phase fails, Tessera automatically deletes the newly created site so the operator can retry without an orphaned or incomplete duplicate.
