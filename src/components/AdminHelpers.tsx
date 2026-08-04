@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import AdsTxtConnectorAdminGuide from './AdsTxtConnectorAdminGuide';
 
 type Props = {
   open: boolean;
@@ -108,7 +109,7 @@ export default function AdminHelpers({ open, onClose, adminEmail }: Props) {
           <div>
             <span className="panel-kicker">Operations library</span>
             <h2 id="admin-helper-title">Admin helpers</h2>
-            <p>Safe copyable snippets and the checklist for adding a new Cloudflare Pages destination.</p>
+            <p>Deployment, security and publisher-integration checklists with safe copyable examples.</p>
           </div>
           <button aria-label="Close helpers" className="admin-helper-close" onClick={onClose} type="button">×</button>
         </header>
@@ -116,6 +117,8 @@ export default function AdminHelpers({ open, onClose, adminEmail }: Props) {
         {copyError ? <div className="admin-helper-error">{copyError}</div> : null}
 
         <div className="admin-helper-grid">
+          <AdsTxtConnectorAdminGuide />
+
           <article className="admin-helper-card token-card">
             <div className="admin-helper-card-heading">
               <div>

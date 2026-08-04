@@ -1,0 +1,85 @@
+.admin-helper-card.ads-txt-admin-guide {
+  grid-column: 1 / -1;
+}
+
+.ads-txt-admin-guide .admin-helper-card-heading > button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #bec9d8;
+  border-radius: 9px;
+  color: #33445a;
+  background: #ffffff;
+  font-weight: 800;
+}
+
+.ads-txt-admin-guide .admin-helper-card-heading > button:hover,
+.ads-txt-admin-guide .admin-helper-card-heading > button:focus-visible {
+  border-color: #f2762e;
+  outline: none;
+}
+
+.ads-txt-simple-requirements {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0 0;
+}
+
+.ads-txt-simple-requirements > div {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 5px 10px;
+  min-height: 104px;
+  padding: 14px;
+  border: 1px solid #dce3ed;
+  border-radius: 12px;
+  background: #f9fbfd;
+}
+
+.ads-txt-simple-requirements > div > span {
+  grid-row: 1 / span 2;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #8a3b10;
+  background: #ffe1cc;
+  font-weight: 900;
+}
+
+.ads-txt-simple-requirements strong,
+.ads-txt-simple-requirements small {
+  display: block;
+}
+
+.ads-txt-simple-requirements strong {
+  color: #273142;
+  font-size: 14px;
+}
+
+.ads-txt-simple-requirements small {
+  color: #697587;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ads-txt-admin-guide-error {
+  margin: 14px 0 0;
+}
+
+@media (max-width: 860px) {
+  .ads-txt-simple-requirements {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .ads-txt-admin-guide .admin-helper-card-heading {
+    display: grid;
+  }
+
+  .ads-txt-admin-guide .admin-helper-card-heading > button {
+    justify-self: start;
+  }
+}
