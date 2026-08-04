@@ -150,65 +150,80 @@ function toPublicSource(row: SourceRow) {
   };
 }
 
+function storedSource(row: SourceRow): NormalizedSource {
+  return {
+    sourceLabel: row.source_label,
+    entry: row.entry,
+    monitorEntry: row.monitor_entry,
+    canonicalEntry: row.canonical_entry,
+    required: row.required === 1,
+  };
+}
+
 async function ensureTables(db: D1Database): Promise<void> {
   if (!tablesReady) {
-    tablesReady = db.batch([
-      db.prepare(`CREATE TABLE IF NOT EXISTS ads_txt_requirement_sources (
-        id TEXT PRIMARY KEY,
-        publisher_id TEXT NOT NULL,
-        source_label TEXT NOT NULL,
-        entry TEXT NOT NULL,
-        monitor_entry TEXT NOT NULL,
-        canonical_entry TEXT NOT NULL,
-        required INTEGER NOT NULL DEFAULT 1,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (publisher_id) REFERENCES publishers(id) ON DELETE CASCADE
-      )`),
-      db.prepare(`CREATE INDEX IF NOT EXISTS idx_ads_txt_sources_publisher
-        ON ads_txt_requirement_sources(publisher_id, sort_order, created_at, id)`),
-      db.prepare(`CREATE INDEX IF NOT EXISTS idx_ads_txt_sources_canonical
-        ON ads_txt_requirement_sources(publisher_id, canonical_entry)`),
-      db.prepare(`CREATE TABLE IF NOT EXISTS ads_txt_requirement_source_claims (
-        publisher_id TEXT PRIMARY KEY,
-        token TEXT NOT NULL,
-        expires_at TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (publisher_id) REFERENCES publishers(id) ON DELETE CASCADE
-      )`),
-      db.prepare(`CREATE TABLE IF NOT EXISTS ads_txt_requirement_source_assertions (
-        id TEXT PRIMARY KEY,
-        valid INTEGER NOT NULL CHECK (valid = 1)
-      )`),
-      db.prepare(`INSERT OR IGNORE INTO ads_txt_requirement_sources (
-          id, publisher_id, source_label, entry, monitor_entry, canonical_entry,
-          required, sort_order, created_at, updated_at
-        )
-        SELECT
-          id,
-          publisher_id,
-          COALESCE(NULLIF(TRIM(source_label), ''),
-            TRIM(SUBSTR(entry, 1, INSTR(entry || ',', ',') - 1))),
-          TRIM(entry),
-          TRIM(CASE
-            WHEN INSTR(entry, '#') > 0 THEN SUBSTR(entry, 1, INSTR(entry, '#') - 1)
-            ELSE entry
-          END),
-          LOWER(REPLACE(TRIM(CASE
-            WHEN INSTR(entry, '#') > 0 THEN SUBSTR(entry, 1, INSTR(entry, '#') - 1)
-            ELSE entry
-          END), ' ', '')),
-          required,
-          ROW_NUMBER() OVER (
-            PARTITION BY publisher_id
-            ORDER BY required DESC, source_label COLLATE NOCASE, entry COLLATE NOCASE, id
-          ) - 1,
-          created_at,
-          updated_at
-        FROM ads_txt_requirements`),
-    ]).then(() => undefined).catch((error) => {
+    tablesReady = (async () => {
+      await db.batch([
+        db.prepare(`CREATE TABLE IF NOT EXISTS ads_txt_requirement_sources (
+          id TEXT PRIMARY KEY,
+          publisher_id TEXT NOT NULL,
+          source_label TEXT NOT NULL,
+          entry TEXT NOT NULL,
+          monitor_entry TEXT NOT NULL,
+          canonical_entry TEXT NOT NULL,
+          required INTEGER NOT NULL DEFAULT 1,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (publisher_id) REFERENCES publishers(id) ON DELETE CASCADE
+        )`),
+        db.prepare(`CREATE TABLE IF NOT EXISTS ads_txt_requirement_source_claims (
+          publisher_id TEXT PRIMARY KEY,
+          token TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (publisher_id) REFERENCES publishers(id) ON DELETE CASCADE
+        )`),
+        db.prepare(`CREATE TABLE IF NOT EXISTS ads_txt_requirement_source_assertions (
+          id TEXT PRIMARY KEY,
+          valid INTEGER NOT NULL CHECK (valid = 1)
+        )`),
+      ]);
+
+      await db.batch([
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_ads_txt_sources_publisher
+          ON ads_txt_requirement_sources(publisher_id, sort_order, created_at, id)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_ads_txt_sources_canonical
+          ON ads_txt_requirement_sources(publisher_id, canonical_entry)`),
+        db.prepare(`INSERT OR IGNORE INTO ads_txt_requirement_sources (
+            id, publisher_id, source_label, entry, monitor_entry, canonical_entry,
+            required, sort_order, created_at, updated_at
+          )
+          SELECT
+            id,
+            publisher_id,
+            COALESCE(NULLIF(TRIM(source_label), ''),
+              TRIM(SUBSTR(entry, 1, INSTR(entry || ',', ',') - 1))),
+            TRIM(entry),
+            TRIM(CASE
+              WHEN INSTR(entry, '#') > 0 THEN SUBSTR(entry, 1, INSTR(entry, '#') - 1)
+              ELSE entry
+            END),
+            LOWER(REPLACE(TRIM(CASE
+              WHEN INSTR(entry, '#') > 0 THEN SUBSTR(entry, 1, INSTR(entry, '#') - 1)
+              ELSE entry
+            END), ' ', '')),
+            required,
+            ROW_NUMBER() OVER (
+              PARTITION BY publisher_id
+              ORDER BY required DESC, source_label COLLATE NOCASE, entry COLLATE NOCASE, id
+            ) - 1,
+            created_at,
+            updated_at
+          FROM ads_txt_requirements`),
+      ]);
+    })().catch((error) => {
       tablesReady = null;
       throw error;
     });
@@ -748,11 +763,7 @@ export async function copyAdsTxtRequirementSources(
     if (source.length > MAX_ADS_TXT_SOURCE_ROWS) {
       return apiError(`Copy at most ${MAX_ADS_TXT_SOURCE_ROWS.toLocaleString('en-US')} ads.txt rows at once.`, 422);
     }
-    const normalized = source.map((row) => normalizeInput({
-      sourceLabel: row.source_label,
-      entry: row.entry,
-      required: row.required === 1,
-    }));
+    const normalized = source.map(storedSource);
     const replaceExisting = booleanValue(body.replaceExisting, false);
     const canonicalCount = new Set(normalized.map((row) => row.canonicalEntry)).size;
     await persistMany(
@@ -796,11 +807,7 @@ export async function copyAdsTxtSourcesForDuplicatedSite(
   if (!await siteExists(env.DB, targetSiteId)) throw new Error('Duplicated target site not found.');
 
   const source = await sourceRows(env.DB, sourceSiteId);
-  const normalized = source.map((row) => normalizeInput({
-    sourceLabel: row.source_label,
-    entry: row.entry,
-    required: row.required === 1,
-  }));
+  const normalized = source.map(storedSource);
   const canonicalCount = new Set(normalized.map((row) => row.canonicalEntry)).size;
 
   await persistMany(
