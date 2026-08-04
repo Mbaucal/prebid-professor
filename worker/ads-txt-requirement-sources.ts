@@ -796,7 +796,6 @@ export async function copyAdsTxtSourcesForDuplicatedSite(
   if (!await siteExists(env.DB, targetSiteId)) throw new Error('Duplicated target site not found.');
 
   const source = await sourceRows(env.DB, sourceSiteId);
-  if (!source.length) return;
   const normalized = source.map((row) => normalizeInput({
     sourceLabel: row.source_label,
     entry: row.entry,

@@ -172,9 +172,7 @@ function importRowsFromText(text: string): ImportRow[] {
   const imported: ImportRow[] = [];
   let activeLabel = '';
   for (const row of rows) {
-    const joined = row.length >= 3 && /^(direct|reseller)$/i.test(row[2] ?? '')
-      ? row.slice(0, 4).join(', ')
-      : row.join(', ');
+    const joined = row.join(', ');
     const entry = joined.replace(/^\uFEFF/, '').trim();
     if (!entry) continue;
     if (entry.startsWith('#')) {
