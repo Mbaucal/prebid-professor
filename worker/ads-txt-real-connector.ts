@@ -215,24 +215,17 @@ export async function saveAdsTxtRealConnector(
   const existing = await connectorRow(db, siteId);
   const credential = String(input.credential ?? '').trim();
   if (credential.length > 8_192) return apiError('Credential is too long.', 422);
+  if (authType !== 'none' && !credential) {
+    return apiError('Enter the Bearer token or API key every time you save the connection.', 422);
+  }
 
-  const authTypeChanged = Boolean(existing && existing.auth_type !== authType);
-  let credentialEncrypted = authType === 'none'
-    ? null
-    : authTypeChanged
-      ? null
-      : existing?.credential_encrypted ?? null;
-
-  if (authType !== 'none' && credential) {
+  let credentialEncrypted: string | null = null;
+  if (authType !== 'none') {
     const secret = encryptionSecret(env);
     if (!secret) {
       return apiError('Credential encryption is not configured on the Worker.', 503);
     }
     credentialEncrypted = await encryptToken(secret, credential);
-  }
-
-  if (authType !== 'none' && !credentialEncrypted) {
-    return apiError('Enter the Bearer token or API key before saving the connection.', 422);
   }
 
   const now = new Date().toISOString();
@@ -270,7 +263,8 @@ export async function saveAdsTxtRealConnector(
       method,
       authType,
       authHeader: authHeader || null,
-      credentialChanged: Boolean(credential),
+      credentialChanged: authType !== 'none',
+      credentialRequiredOnEverySave: authType !== 'none',
       enabled: enabled === 1,
     }, now),
   ]);
