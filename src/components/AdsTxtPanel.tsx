@@ -159,25 +159,32 @@ function importRowsFromText(text: string): ImportRow[] {
     return rows
       .slice(1)
       .map((row) => {
-        const entry = lineWithoutComment(row[entryIndex] ?? '');
+        const entry = String(row[entryIndex] ?? '').replace(/^\uFEFF/, '').trim();
         return {
-          entry,
-          sourceLabel: (sourceIndex >= 0 ? row[sourceIndex] : '')?.trim() || labelFromEntry(entry),
+          entry: entry.startsWith('#') ? '' : entry,
+          sourceLabel: sourceIndex >= 0 ? String(row[sourceIndex] ?? '').trim() : '',
           required: requiredIndex >= 0 ? parseBoolean(row[requiredIndex] ?? '', true) : true,
         };
       })
       .filter((row) => row.entry);
   }
 
-  return rows
-    .map((row) => {
-      const joined = row.length >= 3 && /^(direct|reseller)$/i.test(row[2] ?? '')
-        ? row.slice(0, 4).join(', ')
-        : row.join(', ');
-      const entry = lineWithoutComment(joined);
-      return { entry, sourceLabel: labelFromEntry(entry), required: true };
-    })
-    .filter((row) => row.entry);
+  const imported: ImportRow[] = [];
+  let activeLabel = '';
+  for (const row of rows) {
+    const joined = row.length >= 3 && /^(direct|reseller)$/i.test(row[2] ?? '')
+      ? row.slice(0, 4).join(', ')
+      : row.join(', ');
+    const entry = joined.replace(/^\uFEFF/, '').trim();
+    if (!entry) continue;
+    if (entry.startsWith('#')) {
+      const heading = entry.replace(/^#+\s*/, '').trim();
+      if (heading) activeLabel = heading;
+      continue;
+    }
+    imported.push({ entry, sourceLabel: activeLabel, required: true });
+  }
+  return imported;
 }
 
 function manualEntryCount(value: string): number {
