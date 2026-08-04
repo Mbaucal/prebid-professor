@@ -10,7 +10,7 @@ This release stores the connection details required for a future direct ads.txt 
 - Authorization header name
 - Encrypted credential
 
-The credential is never returned to the browser after saving. The UI receives only a `credentialSet` flag.
+The credential is never returned to the browser after saving. When Bearer token or API key authorization is selected, the credential must be entered again every time the connection settings are saved.
 
 ## Current safety boundary
 
@@ -32,6 +32,7 @@ The public ads.txt URL is already configured per site in Tessera.
 
 - Settings are isolated by immutable site ID.
 - Credentials are encrypted before D1 storage.
+- Credentials are required again on every authenticated Save or Save changes action.
 - `ADS_TXT_CONNECTOR_ENCRYPTION_KEY` is preferred; `GMAIL_TOKEN_ENCRYPTION_KEY` is accepted as a compatibility fallback.
 - Save and delete actions require an authenticated same-origin request.
 - Save and delete actions are written to the audit log without exposing the credential.
