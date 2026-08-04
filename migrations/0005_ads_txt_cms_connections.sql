@@ -11,3 +11,12 @@ CREATE TABLE IF NOT EXISTS ads_txt_real_connectors (
   updated_at TEXT NOT NULL,
   FOREIGN KEY (site_id) REFERENCES publishers(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS ads_txt_real_connector_claims (
+  site_id TEXT PRIMARY KEY,
+  token TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (site_id) REFERENCES publishers(id) ON DELETE CASCADE
+);
