@@ -27,6 +27,11 @@ CREATE TABLE IF NOT EXISTS ads_txt_requirement_source_claims (
   FOREIGN KEY (publisher_id) REFERENCES publishers(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS ads_txt_requirement_source_assertions (
+  id TEXT PRIMARY KEY,
+  valid INTEGER NOT NULL CHECK (valid = 1)
+);
+
 INSERT OR IGNORE INTO ads_txt_requirement_sources (
   id,
   publisher_id,

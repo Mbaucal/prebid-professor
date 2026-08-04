@@ -178,6 +178,10 @@ async function ensureTables(db: D1Database): Promise<void> {
         updated_at TEXT NOT NULL,
         FOREIGN KEY (publisher_id) REFERENCES publishers(id) ON DELETE CASCADE
       )`),
+      db.prepare(`CREATE TABLE IF NOT EXISTS ads_txt_requirement_source_assertions (
+        id TEXT PRIMARY KEY,
+        valid INTEGER NOT NULL CHECK (valid = 1)
+      )`),
       db.prepare(`INSERT OR IGNORE INTO ads_txt_requirement_sources (
           id, publisher_id, source_label, entry, monitor_entry, canonical_entry,
           required, sort_order, created_at, updated_at
@@ -293,6 +297,27 @@ function claimExistsSql(alias = 'c'): string {
       AND ${alias}.token = ?
       AND ${alias}.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
   )`;
+}
+
+function claimAssertionStatement(
+  db: D1Database,
+  siteId: string,
+  claimToken: string,
+  assertionId: string,
+): D1PreparedStatement {
+  return db.prepare(`INSERT INTO ads_txt_requirement_source_assertions (id, valid)
+    SELECT ?, CASE WHEN ${claimExistsSql()} THEN 1 ELSE 0 END`)
+    .bind(assertionId, siteId, claimToken);
+}
+
+function cleanupAssertionsStatement(
+  db: D1Database,
+  assertionIds: string[],
+): D1PreparedStatement {
+  const placeholders = assertionIds.map(() => '?').join(', ');
+  return db.prepare(`DELETE FROM ads_txt_requirement_source_assertions
+    WHERE id IN (${placeholders})`)
+    .bind(...assertionIds);
 }
 
 function auditStatement(
@@ -453,7 +478,12 @@ async function persistMany(
       createdAt: now,
       updatedAt: now,
     }));
-    const statements: D1PreparedStatement[] = [];
+    const startAssertionId = crypto.randomUUID();
+    const endAssertionId = crypto.randomUUID();
+    const statements: D1PreparedStatement[] = [
+      claimAssertionStatement(db, siteId, claimToken, startAssertionId),
+    ];
+    const insertIndexes: number[] = [];
 
     if (replaceExisting) {
       statements.push(
@@ -463,14 +493,22 @@ async function persistMany(
       );
     }
     for (const chunk of chunkStoredRows(storedRows)) {
+      insertIndexes.push(statements.length);
       statements.push(bulkInsertStatement(db, siteId, chunk, claimToken));
     }
     statements.push(...reconcileStatements(db, siteId, claimToken, now));
     statements.push(auditStatement(db, actor, action, siteId, siteId, details, now, claimToken));
+    statements.push(claimAssertionStatement(db, siteId, claimToken, endAssertionId));
+    statements.push(cleanupAssertionsStatement(db, [startAssertionId, endAssertionId]));
 
     const results = await db.batch(statements);
-    const changed = results.reduce((total, result) => total + Number(result.meta?.changes ?? 0), 0);
-    if (changed < 1) throw new Error('The ads.txt requirement change expired before it could be saved. Try again.');
+    const inserted = insertIndexes.reduce(
+      (total, index) => total + Number(results[index]?.meta?.changes ?? 0),
+      0,
+    );
+    if (inserted !== storedRows.length) {
+      throw new Error('Not all ads.txt requirement rows were saved. Try again.');
+    }
   } finally {
     await releaseClaim(db, siteId, claimToken).catch(() => undefined);
   }
@@ -566,7 +604,10 @@ export async function updateAdsTxtRequirementSource(
 
     const actor = getActor(request);
     const now = new Date().toISOString();
+    const startAssertionId = crypto.randomUUID();
+    const endAssertionId = crypto.randomUUID();
     const results = await db.batch([
+      claimAssertionStatement(db, siteId, claimToken, startAssertionId),
       db.prepare(`UPDATE ads_txt_requirement_sources
         SET source_label = ?, entry = ?, monitor_entry = ?, canonical_entry = ?,
             required = ?, updated_at = ?
@@ -581,12 +622,16 @@ export async function updateAdsTxtRequirementSource(
         before: toPublicSource(current),
         after: normalized,
       }, now, claimToken),
+      claimAssertionStatement(db, siteId, claimToken, endAssertionId),
+      cleanupAssertionsStatement(db, [startAssertionId, endAssertionId]),
     ]);
-    if (Number(results[0]?.meta?.changes ?? 0) < 1) {
-      return apiError('The ads.txt requirement change expired before it could be saved. Try again.', 409);
+    if (Number(results[1]?.meta?.changes ?? 0) < 1) {
+      return apiError('The ads.txt requirement change could not be saved. Try again.', 409);
     }
     const updated = await sourceRow(db, siteId, sourceId);
     return json({ ok: true, requirement: updated ? toPublicSource(updated) : null });
+  } catch (error) {
+    return apiError('Ads.txt requirement could not be updated.', 409, error instanceof Error ? error.message : String(error));
   } finally {
     await releaseClaim(db, siteId, claimToken).catch(() => undefined);
   }
@@ -609,7 +654,10 @@ export async function deleteAdsTxtRequirementSource(
 
     const actor = getActor(request);
     const now = new Date().toISOString();
+    const startAssertionId = crypto.randomUUID();
+    const endAssertionId = crypto.randomUUID();
     const results = await db.batch([
+      claimAssertionStatement(db, siteId, claimToken, startAssertionId),
       db.prepare(`DELETE FROM ads_txt_requirement_sources
         WHERE publisher_id = ? AND id = ? AND ${claimExistsSql()}`)
         .bind(siteId, sourceId, siteId, claimToken),
@@ -617,11 +665,15 @@ export async function deleteAdsTxtRequirementSource(
       auditStatement(db, actor, 'ads_txt_requirement_source.deleted', siteId, sourceId, {
         requirement: toPublicSource(current),
       }, now, claimToken),
+      claimAssertionStatement(db, siteId, claimToken, endAssertionId),
+      cleanupAssertionsStatement(db, [startAssertionId, endAssertionId]),
     ]);
-    if (Number(results[0]?.meta?.changes ?? 0) < 1) {
-      return apiError('The ads.txt requirement change expired before it could be removed. Try again.', 409);
+    if (Number(results[1]?.meta?.changes ?? 0) < 1) {
+      return apiError('The ads.txt requirement could not be removed. Try again.', 409);
     }
     return json({ ok: true, deletedId: sourceId });
+  } catch (error) {
+    return apiError('Ads.txt requirement could not be removed.', 409, error instanceof Error ? error.message : String(error));
   } finally {
     await releaseClaim(db, siteId, claimToken).catch(() => undefined);
   }

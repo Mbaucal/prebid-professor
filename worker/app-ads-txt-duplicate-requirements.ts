@@ -119,10 +119,33 @@ export default {
             verified.headers.get('x-user-email') ?? 'unknown',
           );
         } catch (error) {
+          const copyError = error instanceof Error ? error.message : String(error);
+          const rollbackHeaders = new Headers(verified.headers);
+          rollbackHeaders.delete('content-length');
+          rollbackHeaders.delete('content-type');
+          const rollbackUrl = new URL(`/api/sites/${encodeURIComponent(targetSiteId)}`, verified.url);
+          let rollbackError = '';
+          try {
+            const rollbackResponse = await downstream.fetch(
+              new Request(rollbackUrl, { method: 'DELETE', headers: rollbackHeaders }),
+              env,
+              ctx,
+            );
+            if (!rollbackResponse.ok) {
+              rollbackError = `Rollback returned HTTP ${rollbackResponse.status}.`;
+            }
+          } catch (rollbackFailure) {
+            rollbackError = rollbackFailure instanceof Error
+              ? rollbackFailure.message
+              : String(rollbackFailure);
+          }
+
           return withBuildHeader(apiError(
-            'The site was duplicated, but its complete ads.txt partner rows could not be copied.',
+            rollbackError
+              ? 'The site was duplicated, but its ads.txt partner rows could not be copied and automatic rollback failed. Manual cleanup is required.'
+              : 'The complete ads.txt partner rows could not be copied, so the duplicated site was rolled back.',
             502,
-            error instanceof Error ? error.message : String(error),
+            rollbackError ? { copyError, rollbackError, targetSiteId } : { copyError, rolledBackSiteId: targetSiteId },
           ));
         }
       }
