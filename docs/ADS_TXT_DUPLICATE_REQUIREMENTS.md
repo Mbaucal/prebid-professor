@@ -8,7 +8,7 @@ Tessera keeps two complementary views of ads.txt requirements:
 ## Behavior
 
 - Manual add, import and copy do not remove repeated source rows.
-- Plain-text and CSV imports preserve inline comments such as `#Smaato`; full-line `# Partner` headings become the label for following rows.
+- Plain-text and CSV imports preserve inline comments such as `#Smaato`, including comments containing commas; full-line `# Partner` headings become the label for following rows.
 - Each source row has independent Edit and Delete actions.
 - If any source row for a canonical record is required, the canonical Monitoring row is required.
 - Removing one source row does not remove the canonical Monitoring row while another source still requires that record.
@@ -25,4 +25,4 @@ Source mutations use a per-site D1 claim. Reads used by PATCH and DELETE occur w
 
 ## Site duplication
 
-When a site is duplicated with `copyAdsTxtRequirements`, Tessera copies the complete source-row set after the existing site duplication succeeds and then reconciles the target canonical Monitoring table. If that second phase fails, Tessera automatically deletes the newly created site so the operator can retry without an orphaned or incomplete duplicate.
+When a site is duplicated with `copyAdsTxtRequirements`, Tessera copies the complete source-row set after the existing site duplication succeeds and then reconciles the target canonical Monitoring table. An empty source snapshot also clears any canonical rows copied during the first phase. If the second phase fails, Tessera automatically deletes the newly created site so the operator can retry without an orphaned or incomplete duplicate.
