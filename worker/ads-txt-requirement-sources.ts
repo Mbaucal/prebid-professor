@@ -289,7 +289,9 @@ async function releaseClaim(db: D1Database, siteId: string, token: string): Prom
 function claimExistsSql(alias = 'c'): string {
   return `EXISTS (
     SELECT 1 FROM ads_txt_requirement_source_claims ${alias}
-    WHERE ${alias}.publisher_id = ? AND ${alias}.token = ?
+    WHERE ${alias}.publisher_id = ?
+      AND ${alias}.token = ?
+      AND ${alias}.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
   )`;
 }
 
@@ -541,12 +543,10 @@ export async function updateAdsTxtRequirementSource(
 ): Promise<Response> {
   const db = await ready(env, siteId);
   if (db instanceof Response) return db;
-  const current = await sourceRow(db, siteId, sourceId);
-  if (!current) return apiError('Ads.txt requirement not found.', 404);
 
-  let normalized: NormalizedSource;
+  let input: SourceInput;
   try {
-    normalized = normalizeInput(await readJson<SourceInput>(request), current);
+    input = await readJson<SourceInput>(request);
   } catch (error) {
     return apiError('Ads.txt requirement could not be updated.', 422, error instanceof Error ? error.message : String(error));
   }
@@ -554,6 +554,16 @@ export async function updateAdsTxtRequirementSource(
   const claimToken = await acquireClaim(db, siteId);
   if (!claimToken) return apiError('Another ads.txt requirement change is already in progress for this site.', 409);
   try {
+    const current = await sourceRow(db, siteId, sourceId);
+    if (!current) return apiError('Ads.txt requirement not found.', 404);
+
+    let normalized: NormalizedSource;
+    try {
+      normalized = normalizeInput(input, current);
+    } catch (error) {
+      return apiError('Ads.txt requirement could not be updated.', 422, error instanceof Error ? error.message : String(error));
+    }
+
     const actor = getActor(request);
     const now = new Date().toISOString();
     const results = await db.batch([
@@ -590,12 +600,13 @@ export async function deleteAdsTxtRequirementSource(
 ): Promise<Response> {
   const db = await ready(env, siteId);
   if (db instanceof Response) return db;
-  const current = await sourceRow(db, siteId, sourceId);
-  if (!current) return apiError('Ads.txt requirement not found.', 404);
 
   const claimToken = await acquireClaim(db, siteId);
   if (!claimToken) return apiError('Another ads.txt requirement change is already in progress for this site.', 409);
   try {
+    const current = await sourceRow(db, siteId, sourceId);
+    if (!current) return apiError('Ads.txt requirement not found.', 404);
+
     const actor = getActor(request);
     const now = new Date().toISOString();
     const results = await db.batch([
@@ -719,6 +730,43 @@ export async function copyAdsTxtRequirementSources(
   } catch (error) {
     return apiError('Ads.txt requirements could not be copied.', 422, error instanceof Error ? error.message : String(error));
   }
+}
+
+export async function copyAdsTxtSourcesForDuplicatedSite(
+  env: AdsTxtEnv,
+  sourceSiteId: string,
+  targetSiteId: string,
+  actor: string,
+): Promise<void> {
+  if (!env.DB) throw new Error('D1 database binding is not configured yet.');
+  await ensureTables(env.DB);
+  if (!await siteExists(env.DB, sourceSiteId)) throw new Error('Source site not found.');
+  if (!await siteExists(env.DB, targetSiteId)) throw new Error('Duplicated target site not found.');
+
+  const source = await sourceRows(env.DB, sourceSiteId);
+  if (!source.length) return;
+  const normalized = source.map((row) => normalizeInput({
+    sourceLabel: row.source_label,
+    entry: row.entry,
+    required: row.required === 1,
+  }));
+  const canonicalCount = new Set(normalized.map((row) => row.canonicalEntry)).size;
+
+  await persistMany(
+    env.DB,
+    targetSiteId,
+    normalized,
+    true,
+    actor,
+    'ads_txt_requirement_sources.site_duplicated',
+    {
+      sourceSiteId,
+      targetSiteId,
+      copied: normalized.length,
+      canonicalRecords: canonicalCount,
+      repeatedRowsPreserved: normalized.length - canonicalCount,
+    },
+  );
 }
 
 export async function checkAdsTxtRequirementSources(

@@ -6,6 +6,7 @@ import {
 import baseApp from './app-ads-txt-cms-connection';
 import {
   checkAdsTxtRequirementSources,
+  copyAdsTxtSourcesForDuplicatedSite,
   copyAdsTxtRequirementSources,
   createAdsTxtRequirementSources,
   deleteAdsTxtRequirementSource,
@@ -93,6 +94,40 @@ function withBuildHeader(response: Response): Response {
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const pathname = new URL(request.url).pathname;
+
+    const siteDuplicateMatch = pathname.match(/^\/api\/sites\/([^/]+)\/duplicate$/);
+    const legacyDuplicateMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/duplicate$/);
+    const duplicateMatch = siteDuplicateMatch ?? legacyDuplicateMatch;
+    if (duplicateMatch && request.method === 'POST') {
+      let input: { id?: unknown; copyAdsTxtRequirements?: unknown } = {};
+      try {
+        input = await request.clone().json() as typeof input;
+      } catch {
+        // Let the existing duplication route return its normal validation error.
+      }
+
+      const verified = await authenticatedRequest(request, env);
+      if (verified instanceof Response) return withBuildHeader(verified);
+      const response = await downstream.fetch(verified, env, ctx);
+      const targetSiteId = String(input.id ?? '').trim();
+      if (response.ok && input.copyAdsTxtRequirements === true && targetSiteId) {
+        try {
+          await copyAdsTxtSourcesForDuplicatedSite(
+            env,
+            decodeURIComponent(duplicateMatch[1]),
+            targetSiteId,
+            verified.headers.get('x-user-email') ?? 'unknown',
+          );
+        } catch (error) {
+          return withBuildHeader(apiError(
+            'The site was duplicated, but its complete ads.txt partner rows could not be copied.',
+            502,
+            error instanceof Error ? error.message : String(error),
+          ));
+        }
+      }
+      return withBuildHeader(response);
+    }
 
     const checkMatch = pathname.match(/^\/api\/publishers\/([^/]+)\/ads-txt\/check$/);
     if (checkMatch) {
