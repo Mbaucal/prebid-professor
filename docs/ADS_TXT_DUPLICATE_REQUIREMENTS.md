@@ -17,11 +17,15 @@ Tessera keeps two complementary views of ads.txt requirements:
 
 ## Migration safety
 
-Migration `0006_ads_txt_requirement_sources.sql` is additive. It creates the source table and backfills current rows without rebuilding or replacing the existing canonical table.
+Migration `0006_ads_txt_requirement_sources.sql` is additive. It creates the source table and backfills current rows without rebuilding or replacing the existing canonical table. The Worker runtime fallback performs bootstrap in two stages: tables first, followed by indexes and backfill, so a deployment remains safe even before the migration command is run manually.
 
 ## Concurrency and atomicity
 
 Source mutations use a per-site D1 claim. Reads used by PATCH and DELETE occur while the claim is held. Every batch checks ownership both before and after the source write, canonical reconciliation and audit insert. If the claim is missing or expires, a database assertion fails and D1 rolls back the entire batch instead of leaving the source and Monitoring tables out of sync.
+
+## Legacy rows
+
+Copy and site-duplication operations use the fields already stored in the source table rather than reparsing them. This preserves older malformed rows so they remain visible and editable instead of blocking the complete copy operation.
 
 ## Site duplication
 
