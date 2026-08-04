@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 path = Path('worker/ads-txt-requirement-sources.ts')
@@ -107,14 +108,16 @@ new_ensure = """async function ensureTables(db: D1Database): Promise<void> {
 """
 source = source[:ensure_start] + new_ensure + source[site_exists_start:]
 
-old_map = """source.map((row) => normalizeInput({
-      sourceLabel: row.source_label,
-      entry: row.entry,
-      required: row.required === 1,
-    }))"""
-map_count = source.count(old_map)
+map_pattern = re.compile(
+    r"source\.map\(\(row\) => normalizeInput\(\{\s*"
+    r"sourceLabel: row\.source_label,\s*"
+    r"entry: row\.entry,\s*"
+    r"required: row\.required === 1,\s*"
+    r"\}\)\)",
+    re.MULTILINE,
+)
+source, map_count = map_pattern.subn('source.map(storedSource)', source)
 if map_count != 2:
     raise SystemExit(f'Expected 2 stored-source normalization maps, found {map_count}')
-source = source.replace(old_map, 'source.map(storedSource)')
 
 path.write_text(source)
