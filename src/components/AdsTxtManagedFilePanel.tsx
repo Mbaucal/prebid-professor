@@ -198,10 +198,27 @@ export default function AdsTxtManagedFilePanel() {
     let intervalId = 0;
     let debounceId = 0;
 
+    const clearResolvedSite = (message: string, loadingState = false): void => {
+      activeSiteIdRef.current = '';
+      loadGeneration.current += 1;
+      setSite(null);
+      setFile(null);
+      setPreviewOpen(false);
+      setCopied(false);
+      setMessage(null);
+      setRefreshing(false);
+      setLoading(loadingState);
+      setError(message);
+    };
+
     const detectSite = async (force = false): Promise<void> => {
       if (disposed || !document.querySelector('.ads-txt-page')) return;
       const markerBefore = activeSiteMarkerFromPage();
-      if (!markerBefore) return;
+      if (!markerBefore) {
+        markerSignatureRef.current = '';
+        clearResolvedSite('The selected site could not be identified.');
+        return;
+      }
       const changed = markerBefore.signature !== markerSignatureRef.current;
       if (changed) {
         markerSignatureRef.current = markerBefore.signature;
@@ -223,7 +240,11 @@ export default function AdsTxtManagedFilePanel() {
         const accounts = await api.listPublisherAccounts();
         if (disposed || detectionGeneration.current !== generation) return;
         const markerAfter = activeSiteMarkerFromPage();
-        if (!markerAfter) return;
+        if (!markerAfter) {
+          markerSignatureRef.current = '';
+          clearResolvedSite('The selected site could not be identified.');
+          return;
+        }
         if (markerAfter.signature !== markerBefore.signature) {
           window.clearTimeout(debounceId);
           debounceId = window.setTimeout(() => void detectSite(true), 50);
@@ -232,8 +253,8 @@ export default function AdsTxtManagedFilePanel() {
 
         const currentSite = resolveSite(accounts, markerAfter);
         if (!currentSite) {
-          setLoading(false);
-          setError('The selected site could not be identified.');
+          markerSignatureRef.current = markerAfter.signature;
+          clearResolvedSite('The selected site could not be identified.');
           return;
         }
 
@@ -251,8 +272,7 @@ export default function AdsTxtManagedFilePanel() {
         void loadForSite(currentSite);
       } catch (siteError) {
         if (disposed || detectionGeneration.current !== generation) return;
-        setLoading(false);
-        setError(siteError instanceof Error ? siteError.message : 'Sites could not be loaded.');
+        clearResolvedSite(siteError instanceof Error ? siteError.message : 'Sites could not be loaded.');
       }
     };
 
