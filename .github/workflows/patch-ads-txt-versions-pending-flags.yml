@@ -1,0 +1,52 @@
+name: Patch ads.txt versions pending flags
+
+on:
+  push:
+    branches:
+      - feature/ads-txt-versions-v1
+    paths:
+      - .github/patch-ads-txt-versions-pending-flags.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/ads-txt-versions-v1
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Reset stale pending state
+        run: python3 .github/scripts/patch_ads_txt_versions_pending_flags.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dashboard and Worker
+        run: npm run build
+
+      - name: Check patch formatting
+        run: git diff --check
+
+      - name: Remove one-time integration files
+        run: |
+          rm -f .github/scripts/patch_ads_txt_versions_pending_flags.py
+          rm -f .github/workflows/patch-ads-txt-versions-pending-flags.yml
+          rm -f .github/patch-ads-txt-versions-pending-flags.trigger
+
+      - name: Commit pending-state fix
+        run: |
+          git config user.name "Tessera Ads.txt"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Reset ads.txt version actions on site changes" || exit 0
+          git push origin HEAD:feature/ads-txt-versions-v1
