@@ -4,6 +4,7 @@ import App from './App';
 import AdsTxtCmsConnectionPortal from './components/AdsTxtCmsConnectionPortal';
 import AdsTxtManagedFilePortal from './components/AdsTxtManagedFilePortal';
 import AdsTxtRequirementsCollapse from './components/AdsTxtRequirementsCollapse';
+import AdsTxtVersionsPortal from './components/AdsTxtVersionsPortal';
 import AuthAccount from './components/AuthAccount';
 import TesseraBranding from './components/TesseraBranding';
 import './styles.css';
@@ -34,6 +35,7 @@ import './debug-console.css';
 import './ads-txt.css';
 import './ads-txt-requirements-collapse.css';
 import './ads-txt-managed-file.css';
+import './ads-txt-versions.css';
 import './ads-txt-cms-connection.css';
 import './global-workspaces.css';
 import './monitoring-readonly.css';
@@ -58,6 +60,7 @@ createRoot(root).render(
     <App />
     <AdsTxtRequirementsCollapse />
     <AdsTxtManagedFilePortal />
+    <AdsTxtVersionsPortal />
     <AdsTxtCmsConnectionPortal />
     <AuthAccount />
   </StrictMode>,
