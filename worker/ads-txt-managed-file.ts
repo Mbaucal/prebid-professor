@@ -25,7 +25,11 @@ function normalized(value: string): string {
 }
 
 function cleanHeading(value: string): string {
-  return value.trim().replace(/^#+\s*/, '').trim();
+  return value
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/^\s*#+\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function splitEntry(value: string): {
