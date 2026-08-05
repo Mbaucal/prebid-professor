@@ -11,6 +11,7 @@ Tessera keeps two complementary views of ads.txt requirements:
 - Plain-text and CSV imports preserve inline comments such as `#Smaato`, including comments containing commas; full-line `# Partner` headings become the label for following rows.
 - Ads.txt variable declarations are valid records. Tessera preserves and monitors `OWNERDOMAIN=novosti.rs`, `MANAGERDOMAIN=...`, `CONTACT=...`, `SUBDOMAIN=...`, `INVENTORYPARTNERDOMAIN=...` and future `VARIABLE=VALUE` records instead of rejecting them as malformed seller rows.
 - Variable names are matched case-insensitively while their values and optional inline comments remain visible in the saved source row.
+- Canonical matching trims whitespace around comma-separated fields but preserves meaningful whitespace inside a seller ID or certification ID.
 - Each source row has independent Edit and Delete actions.
 - If any source row for a canonical record is required, the canonical Monitoring row is required.
 - Removing one source row does not remove the canonical Monitoring row while another source still requires that record.
