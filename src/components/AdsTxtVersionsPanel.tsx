@@ -247,6 +247,9 @@ export default function AdsTxtVersionsPanel() {
       setCurrentFile(null);
       setDetails({});
       setPreviewId(null);
+      setHistoryOpen(false);
+      setSaving(false);
+      setActionId(null);
       setNote('');
       setMessage(null);
       setLoading(false);
@@ -272,6 +275,9 @@ export default function AdsTxtVersionsPanel() {
         setCurrentFile(null);
         setDetails({});
         setPreviewId(null);
+        setHistoryOpen(false);
+        setSaving(false);
+        setActionId(null);
         setNote('');
         setMessage(null);
         setError(null);
@@ -312,6 +318,9 @@ export default function AdsTxtVersionsPanel() {
         setCurrentFile(null);
         setDetails({});
         setPreviewId(null);
+        setHistoryOpen(false);
+        setSaving(false);
+        setActionId(null);
         setNote('');
         setMessage(null);
         setError(null);
