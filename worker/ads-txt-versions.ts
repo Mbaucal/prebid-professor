@@ -325,10 +325,13 @@ export async function createAdsTxtVersion(
     );
   }
 
-  const saved = await versionRow(db, siteId, id);
+  const saved = await versionRow(db, siteId, id)
+    ?? await versionByChecksum(db, siteId, current.file.checksum);
   if (!saved) {
-    await env.BUILDS!.delete(objectKey).catch(() => undefined);
-    return apiError('The saved version metadata could not be loaded.', 500);
+    return apiError(
+      'The version was stored, but its metadata could not be reloaded. Refresh version history and try again.',
+      500,
+    );
   }
 
   return json({

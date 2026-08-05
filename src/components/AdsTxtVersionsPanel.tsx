@@ -369,8 +369,9 @@ export default function AdsTxtVersionsPanel() {
       );
       if (activeSiteIdRef.current !== requestedSiteId) return;
       setNote('');
-      setMessage(payload.message || `Version ${payload.version.versionNumber} saved.`);
       await loadForSite(site);
+      if (activeSiteIdRef.current !== requestedSiteId) return;
+      setMessage(payload.message || `Version ${payload.version.versionNumber} saved.`);
       setHistoryOpen(true);
     } catch (saveError) {
       if (activeSiteIdRef.current !== requestedSiteId) return;
@@ -486,18 +487,28 @@ export default function AdsTxtVersionsPanel() {
               />
               <small>{note.length}/{MAX_NOTE_LENGTH} characters</small>
             </label>
-            <button
-              className="button primary"
-              disabled={saving || !currentFile?.rowCount || Boolean(matchingVersion)}
-              onClick={() => void saveCurrentVersion()}
-              type="button"
-            >
-              {saving
-                ? 'Saving version…'
-                : matchingVersion
-                  ? `Already saved as v${matchingVersion.versionNumber}`
-                  : 'Save current version'}
-            </button>
+            <div className="ads-txt-version-create-actions">
+              <button
+                className="button secondary"
+                disabled={saving || loading}
+                onClick={() => void loadForSite(site)}
+                type="button"
+              >
+                Refresh status
+              </button>
+              <button
+                className="button primary"
+                disabled={saving || !currentFile?.rowCount || Boolean(matchingVersion)}
+                onClick={() => void saveCurrentVersion()}
+                type="button"
+              >
+                {saving
+                  ? 'Saving version…'
+                  : matchingVersion
+                    ? `Already saved as v${matchingVersion.versionNumber}`
+                    : 'Save current version'}
+              </button>
+            </div>
           </div>
 
           <div className="ads-txt-versions-facts">

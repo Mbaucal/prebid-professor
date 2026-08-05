@@ -111,7 +111,13 @@
   outline: 3px solid rgb(242 118 46 / 13%);
 }
 
-.ads-txt-version-create .button {
+.ads-txt-version-create-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ads-txt-version-create-actions .button {
   min-height: 42px;
 }
 
