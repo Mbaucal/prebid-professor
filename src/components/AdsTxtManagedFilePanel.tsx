@@ -203,6 +203,19 @@ export default function AdsTxtManagedFilePanel() {
       const markerBefore = activeSiteMarkerFromPage();
       if (!markerBefore) return;
       const changed = markerBefore.signature !== markerSignatureRef.current;
+      if (changed) {
+        markerSignatureRef.current = markerBefore.signature;
+        activeSiteIdRef.current = '';
+        loadGeneration.current += 1;
+        setSite(null);
+        setFile(null);
+        setPreviewOpen(false);
+        setCopied(false);
+        setMessage(null);
+        setError(null);
+        setLoading(true);
+        setRefreshing(false);
+      }
       if (!force && !changed && activeSiteIdRef.current) return;
 
       const generation = ++detectionGeneration.current;
@@ -294,7 +307,7 @@ export default function AdsTxtManagedFilePanel() {
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
     setMessage('Managed ads.txt downloaded.');
   }
 
@@ -358,6 +371,7 @@ export default function AdsTxtManagedFilePanel() {
           </div>
 
           <button
+            aria-controls="ads-txt-managed-file-preview"
             aria-expanded={previewOpen}
             className="ads-txt-managed-file-toggle"
             disabled={!file.content}
@@ -370,7 +384,7 @@ export default function AdsTxtManagedFilePanel() {
           </button>
 
           {previewOpen ? (
-            <pre className="ads-txt-managed-file-preview">{file.content}</pre>
+            <pre className="ads-txt-managed-file-preview" id="ads-txt-managed-file-preview">{file.content}</pre>
           ) : null}
 
           {!file.content ? (
