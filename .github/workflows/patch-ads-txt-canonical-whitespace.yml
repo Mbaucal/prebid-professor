@@ -1,0 +1,52 @@
+name: Patch ads.txt canonical whitespace
+
+on:
+  push:
+    branches:
+      - feature/ads-txt-duplicate-requirements-v1
+    paths:
+      - .github/patch-ads-txt-canonical-whitespace.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/ads-txt-duplicate-requirements-v1
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Apply canonical whitespace fix
+        run: python3 .github/scripts/patch_ads_txt_canonical_whitespace.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dashboard and Worker
+        run: npm run build
+
+      - name: Check patch formatting
+        run: git diff --check
+
+      - name: Remove one-time patch files
+        run: |
+          rm -f .github/scripts/patch_ads_txt_canonical_whitespace.py
+          rm -f .github/workflows/patch-ads-txt-canonical-whitespace.yml
+          rm -f .github/patch-ads-txt-canonical-whitespace.trigger
+
+      - name: Commit canonical whitespace fix
+        run: |
+          git config user.name "Tessera Ads.txt"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Preserve seller ID whitespace in ads.txt canonical keys" || exit 0
+          git push origin HEAD:feature/ads-txt-duplicate-requirements-v1
