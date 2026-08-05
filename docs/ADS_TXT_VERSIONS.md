@@ -8,6 +8,7 @@ Ads.txt versions save immutable copies of the managed file before publishing.
 2. Add an optional short note.
 3. Click **Save current version**.
 4. Open version history to preview, copy or download the saved file.
+5. Use **Refresh status** after changing managed rows or when another browser tab saves a version.
 
 Saving a version does not contact the publisher endpoint and does not change the live ads.txt file.
 
@@ -24,7 +25,9 @@ Saving a version does not contact the publisher endpoint and does not change the
 - The server generates the snapshot from the current managed rows; it does not trust file content supplied by the browser.
 - Version creation requires an authenticated same-origin request.
 - The version file is immutable after creation.
-- D1 metadata and the R2 object are cleaned up when version creation fails.
+- D1 metadata and the R2 object are cleaned up when creation fails before metadata is committed.
+- If metadata was committed but the immediate response cannot reload it, the stored R2 object is retained and the operator can use **Refresh status**.
+- Switching sites clears pending save and history actions so one site's state cannot remain active on another site.
 - Audit log entries never contain the full ads.txt file.
 
 ## Future publishing
