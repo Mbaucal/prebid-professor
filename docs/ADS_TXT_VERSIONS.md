@@ -18,11 +18,13 @@ Saving a version does not contact the publisher endpoint and does not change the
 - Exact file content is stored in R2 under a per-site version key.
 - Each site has sequential version numbers.
 - The same checksum can be saved only once per site, so repeated clicks do not create duplicate versions.
-- Up to 50 recent versions are returned in the operator history.
+- Up to 50 recent versions are displayed in history.
+- The server checks the current checksum against every saved version, including versions older than the visible 50-row history window.
 
 ## Safety
 
 - The server generates the snapshot from the current managed rows; it does not trust file content supplied by the browser.
+- The browser sends the checksum of the file the operator reviewed. If the managed file changes before Save is processed, the Worker rejects the request and asks the operator to refresh status.
 - Version creation requires an authenticated same-origin request.
 - The version file is immutable after creation.
 - D1 metadata and the R2 object are cleaned up when creation fails before metadata is committed.
