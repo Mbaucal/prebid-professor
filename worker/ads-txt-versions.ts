@@ -48,6 +48,7 @@ type ManagedFilePayload = {
 
 type CreateVersionInput = {
   note?: unknown;
+  expectedChecksum?: unknown;
 };
 
 let tablesReady: Promise<void> | null = null;
@@ -197,21 +198,39 @@ export async function listAdsTxtVersions(
   const db = await ready(env, siteId);
   if (db instanceof Response) return db;
 
-  const result = await db.prepare(`SELECT
-      id, site_id, version_number, status, object_key, checksum,
-      row_count, canonical_count, repeated_row_count, heading_count,
-      line_count, byte_size, note, created_by, generated_at, created_at
-    FROM ads_txt_versions
-    WHERE site_id = ?
-    ORDER BY version_number DESC
-    LIMIT ?`)
-    .bind(siteId, MAX_VERSION_LIST)
-    .all<VersionRow>();
+  const current = await managedFile(env, siteId);
+  if (current instanceof Response) return current;
+
+  const [result, countRow, currentVersion] = await Promise.all([
+    db.prepare(`SELECT
+        id, site_id, version_number, status, object_key, checksum,
+        row_count, canonical_count, repeated_row_count, heading_count,
+        line_count, byte_size, note, created_by, generated_at, created_at
+      FROM ads_txt_versions
+      WHERE site_id = ?
+      ORDER BY version_number DESC
+      LIMIT ?`)
+      .bind(siteId, MAX_VERSION_LIST)
+      .all<VersionRow>(),
+    db.prepare('SELECT COUNT(*) AS total FROM ads_txt_versions WHERE site_id = ?')
+      .bind(siteId)
+      .first<{ total: number }>(),
+    current.file.checksum
+      ? versionByChecksum(db, siteId, current.file.checksum)
+      : Promise.resolve(null),
+  ]);
 
   return json({
     ok: true,
     siteId,
+    totalVersions: Number(countRow?.total ?? 0),
     versions: (result.results ?? []).map(publicVersion),
+    currentFile: {
+      checksum: current.file.checksum,
+      rowCount: current.file.rowCount,
+      byteSize: current.file.byteSize,
+    },
+    currentVersion: currentVersion ? publicVersion(currentVersion) : null,
   });
 }
 
@@ -239,10 +258,25 @@ export async function createAdsTxtVersion(
     return apiError(`Version note must be ${MAX_VERSION_NOTE_LENGTH} characters or fewer.`, 422);
   }
 
+  const expectedChecksum = String(input.expectedChecksum ?? '').trim();
+  if (!expectedChecksum) {
+    return apiError('Refresh version status before saving the current file.', 428);
+  }
+
   const current = await managedFile(env, siteId);
   if (current instanceof Response) return current;
   if (!current.file.content || current.file.rowCount < 1) {
     return apiError('Add at least one managed ads.txt row before saving a version.', 422);
+  }
+  if (current.file.checksum !== expectedChecksum) {
+    return apiError(
+      'The managed ads.txt file changed after you reviewed it. Click Refresh status and save again.',
+      409,
+      {
+        expectedChecksum,
+        currentChecksum: current.file.checksum,
+      },
+    );
   }
 
   const existing = await versionByChecksum(db, siteId, current.file.checksum);
