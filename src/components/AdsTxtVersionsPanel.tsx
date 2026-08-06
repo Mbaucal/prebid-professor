@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { PublisherAccount, Site } from '../shared/types';
 
@@ -34,12 +34,10 @@ type CurrentManagedFile = {
 type VersionsResponse = {
   ok: true;
   siteId: string;
+  totalVersions: number;
   versions: VersionMeta[];
-};
-
-type ManagedFileResponse = {
-  ok: true;
-  file: CurrentManagedFile;
+  currentFile: CurrentManagedFile;
+  currentVersion: VersionMeta | null;
 };
 
 type VersionResponse = {
@@ -178,7 +176,9 @@ function shortChecksum(value: string): string {
 export default function AdsTxtVersionsPanel() {
   const [site, setSite] = useState<Site | null>(null);
   const [versions, setVersions] = useState<VersionMeta[]>([]);
+  const [versionCount, setVersionCount] = useState(0);
   const [currentFile, setCurrentFile] = useState<CurrentManagedFile | null>(null);
+  const [currentVersion, setCurrentVersion] = useState<VersionMeta | null>(null);
   const [details, setDetails] = useState<Record<string, VersionDetail>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -194,12 +194,7 @@ export default function AdsTxtVersionsPanel() {
   const detectionGeneration = useRef(0);
   const loadGeneration = useRef(0);
 
-  const matchingVersion = useMemo(
-    () => currentFile
-      ? versions.find((version) => version.checksum === currentFile.checksum) ?? null
-      : null,
-    [currentFile, versions],
-  );
+  const matchingVersion = currentVersion;
 
   const loadForSite = useCallback(async (currentSite: Site): Promise<void> => {
     const generation = ++loadGeneration.current;
@@ -208,23 +203,21 @@ export default function AdsTxtVersionsPanel() {
     setMessage(null);
 
     try {
-      const [versionPayload, managedPayload] = await Promise.all([
-        requestJson<VersionsResponse>(
-          `/api/publishers/${encodeURIComponent(currentSite.id)}/ads-txt/versions?ts=${Date.now()}`,
-          { cache: 'no-store', credentials: 'same-origin', headers: { accept: 'application/json' } },
-        ),
-        requestJson<ManagedFileResponse>(
-          `/api/publishers/${encodeURIComponent(currentSite.id)}/ads-txt/managed-file?ts=${Date.now()}`,
-          { cache: 'no-store', credentials: 'same-origin', headers: { accept: 'application/json' } },
-        ),
-      ]);
+      const payload = await requestJson<VersionsResponse>(
+        `/api/publishers/${encodeURIComponent(currentSite.id)}/ads-txt/versions?ts=${Date.now()}`,
+        { cache: 'no-store', credentials: 'same-origin', headers: { accept: 'application/json' } },
+      );
       if (activeSiteIdRef.current !== currentSite.id || loadGeneration.current !== generation) return;
-      setVersions(versionPayload.versions);
-      setCurrentFile(managedPayload.file);
+      setVersions(payload.versions);
+      setVersionCount(payload.totalVersions);
+      setCurrentFile(payload.currentFile);
+      setCurrentVersion(payload.currentVersion);
     } catch (loadError) {
       if (activeSiteIdRef.current !== currentSite.id || loadGeneration.current !== generation) return;
       setVersions([]);
+      setVersionCount(0);
       setCurrentFile(null);
+      setCurrentVersion(null);
       setError(loadError instanceof Error ? loadError.message : 'Ads.txt versions could not be loaded.');
     } finally {
       if (activeSiteIdRef.current === currentSite.id && loadGeneration.current === generation) {
@@ -244,7 +237,9 @@ export default function AdsTxtVersionsPanel() {
       loadGeneration.current += 1;
       setSite(null);
       setVersions([]);
+      setVersionCount(0);
       setCurrentFile(null);
+      setCurrentVersion(null);
       setDetails({});
       setPreviewId(null);
       setHistoryOpen(false);
@@ -272,7 +267,9 @@ export default function AdsTxtVersionsPanel() {
         loadGeneration.current += 1;
         setSite(null);
         setVersions([]);
+        setVersionCount(0);
         setCurrentFile(null);
+        setCurrentVersion(null);
         setDetails({});
         setPreviewId(null);
         setHistoryOpen(false);
@@ -315,7 +312,9 @@ export default function AdsTxtVersionsPanel() {
         activeSiteIdRef.current = currentSite.id;
         loadGeneration.current += 1;
         setVersions([]);
+        setVersionCount(0);
         setCurrentFile(null);
+        setCurrentVersion(null);
         setDetails({});
         setPreviewId(null);
         setHistoryOpen(false);
@@ -361,7 +360,9 @@ export default function AdsTxtVersionsPanel() {
 
   async function saveCurrentVersion(): Promise<void> {
     if (!site || saving || !currentFile?.rowCount || matchingVersion) return;
-    const requestedSiteId = site.id;
+    const requestedSite = site;
+    const requestedSiteId = requestedSite.id;
+    const reviewedChecksum = currentFile.checksum;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -373,12 +374,15 @@ export default function AdsTxtVersionsPanel() {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'content-type': 'application/json', accept: 'application/json' },
-          body: JSON.stringify({ note: note.trim() }),
+          body: JSON.stringify({
+            note: note.trim(),
+            expectedChecksum: reviewedChecksum,
+          }),
         },
       );
       if (activeSiteIdRef.current !== requestedSiteId) return;
       setNote('');
-      await loadForSite(site);
+      await loadForSite(requestedSite);
       if (activeSiteIdRef.current !== requestedSiteId) return;
       setMessage(payload.message || `Version ${payload.version.versionNumber} saved.`);
       setHistoryOpen(true);
@@ -456,9 +460,13 @@ export default function AdsTxtVersionsPanel() {
     ? 'NO MANAGED FILE'
     : matchingVersion
       ? `CURRENT DRAFT = V${matchingVersion.versionNumber}`
-      : versions.length
+      : versionCount
         ? 'UNSAVED CHANGES'
         : 'NO SAVED VERSIONS';
+
+  const historySummary = versionCount > versions.length
+    ? `Showing ${versions.length} of ${versionCount} saved versions`
+    : `${versionCount} saved version${versionCount === 1 ? '' : 's'}`;
 
   return (
     <article className="ads-txt-versions-card">
@@ -499,7 +507,7 @@ export default function AdsTxtVersionsPanel() {
             <div className="ads-txt-version-create-actions">
               <button
                 className="button secondary"
-                disabled={saving || loading}
+                disabled={saving || loading || Boolean(actionId)}
                 onClick={() => void loadForSite(site)}
                 type="button"
               >
@@ -521,7 +529,7 @@ export default function AdsTxtVersionsPanel() {
           </div>
 
           <div className="ads-txt-versions-facts">
-            <div><span>Saved versions</span><strong>{versions.length}</strong></div>
+            <div><span>Saved versions</span><strong>{versionCount}</strong></div>
             <div><span>Current rows</span><strong>{currentFile?.rowCount ?? 0}</strong></div>
             <div><span>Current size</span><strong>{formatBytes(currentFile?.byteSize ?? 0)}</strong></div>
             <div><span>Current checksum</span><strong>{currentFile ? shortChecksum(currentFile.checksum) : '—'}</strong></div>
@@ -536,7 +544,7 @@ export default function AdsTxtVersionsPanel() {
             type="button"
           >
             <span>{historyOpen ? 'Hide version history' : 'Show version history'}</span>
-            <small>{versions.length} saved version{versions.length === 1 ? '' : 's'}</small>
+            <small>{historySummary}</small>
             <strong>{historyOpen ? '⌃' : '⌄'}</strong>
           </button>
 
