@@ -1,0 +1,30 @@
+name: Runtime bridge tests
+
+on:
+  pull_request:
+    paths:
+      - 'worker/runtime/**'
+      - 'worker/runtime-compiler.ts'
+      - 'tests/runtime/**'
+      - 'scripts/verify-reference-bridge.mjs'
+      - 'scripts/verify-runtime-browser.py'
+      - '.github/workflows/runtime-bridge-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate mapping and scoped compiler compatibility
+        run: node --test tests/runtime/reference-bridge.test.mjs tests/runtime/consent-timer.test.mjs
+      - name: Parse the trusted compiler without running a browser or writing data
+        run: node --experimental-strip-types -e "import('./worker/runtime-compiler.ts').then(m => { if (typeof m.compileRuntime !== 'function') process.exit(1); })"
+      - name: Check browser verification script syntax
+        run: python3 -m py_compile scripts/verify-runtime-browser.py
