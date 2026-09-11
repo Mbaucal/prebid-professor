@@ -1,3 +1,4 @@
+import { isStoredBuiltinDraft, STORED_DRAFT_BLOCK } from './runtime/stored-draft-safety.mjs';
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
 
@@ -545,6 +546,7 @@ export async function dispatchExternalDeployment(
     .bind(siteId, releaseId)
     .first<ReleaseRow>();
   if (!release) return apiError('Release not found.', 404);
+  if (isStoredBuiltinDraft(release)) return apiError(STORED_DRAFT_BLOCK, 409);
   if (release.status === 'failed') return apiError('A failed release cannot be deployed.', 409);
   if (channel === 'production' && release.status !== 'production') {
     return apiError('External production deploy requires an internally published production release.', 409);
