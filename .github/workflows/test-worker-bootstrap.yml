@@ -1,0 +1,36 @@
+name: Test Worker bootstrap checks
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ops/test-worker/**
+      - tests/cloudflare/test-worker-bootstrap.test.mjs
+      - .github/workflows/test-worker-bootstrap.yml
+  push:
+    branches: [main]
+    paths:
+      - ops/test-worker/**
+      - tests/cloudflare/test-worker-bootstrap.test.mjs
+      - .github/workflows/test-worker-bootstrap.yml
+permissions:
+  contents: read
+jobs:
+  bootstrap-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Verify test-only bindings and no application side effects
+        run: node --test tests/cloudflare/test-worker-bootstrap.test.mjs
+      - name: Install locked tools
+        run: npm ci
+      - name: Compile test Worker without authentication or deployment
+        env:
+          CI: 'true'
+          WRANGLER_SEND_METRICS: 'false'
+        run: npx --no-install wrangler deploy --config ops/test-worker/wrangler.jsonc --dry-run --outdir .generated/test-worker-dry-run
