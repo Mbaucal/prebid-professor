@@ -9,7 +9,7 @@ export const runtimeDescriptor = validateRuntimeDescriptor(rawDescriptor);
 const HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' };
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: HEADERS });
 
-export async function readPreviewSnapshot(db, siteId) {
+export async function readPreviewSnapshot(db, siteId, { includePrebid = false } = {}) {
   if (!db) throw new Error('D1 is not configured.');
   const queries = [
     'SELECT id, name, domain, gam_path FROM publishers WHERE id = ? LIMIT 1',
@@ -20,12 +20,14 @@ export async function readPreviewSnapshot(db, siteId) {
     'SELECT name, map_json FROM size_maps WHERE publisher_id = ? ORDER BY name',
     'SELECT rule_key, rule_json FROM unit_rules WHERE publisher_id = ? ORDER BY rule_key',
   ];
+  if (includePrebid) queries.push("SELECT id, publisher_id, version, file_key, modules_json, status, uploaded_at FROM prebid_builds WHERE publisher_id = ? AND status = 'current' ORDER BY uploaded_at DESC, id LIMIT 2");
   // A single read-only transaction: no writes, initialization, migrations or R2 access.
   const rows = await db.batch(queries.map((sql) => db.prepare(sql).bind(siteId)));
   if (rows.some((row) => row.success === false)) throw new Error('Site settings could not be read.');
   const results = rows.map((row) => row.results ?? []);
   if (!results[0][0] || !results[1][0]) throw new Error('Site or saved configuration was not found.');
-  return { site: results[0][0], config: results[1][0], units: results[2], bidders: results[3], overrides: results[4], maps: results[5], rules: results[6] };
+  const snapshot = { site: results[0][0], config: results[1][0], units: results[2], bidders: results[3], overrides: results[4], maps: results[5], rules: results[6] };
+  return includePrebid ? { ...snapshot, prebidBuilds: results[7] } : snapshot;
 }
 function timestamp() { return new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15); }
 export function generatePreview(snapshot, takeOver, pin, buildTimestamp = timestamp()) {

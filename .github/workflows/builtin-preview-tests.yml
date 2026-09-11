@@ -16,3 +16,5 @@ jobs:
           node-version: 22
       - name: Verify bundled source and run preview tests
         run: npm run test:builtin
+      - name: Verify read-only Prebid artifact inspection and integration
+        run: node --experimental-strip-types --test tests/runtime/prebid-artifact-check.test.mjs tests/runtime/prebid-preflight-service.test.mjs tests/runtime/builtin-prebid-integration.test.mjs
