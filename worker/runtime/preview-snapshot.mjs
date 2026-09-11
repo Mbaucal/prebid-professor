@@ -70,15 +70,18 @@ export function previewInput(snapshot, descriptor, buildTimestamp, takeOver = { 
   if (!units.length) throw new Error('Add at least one enabled ad unit before generating a preview.');
   const seen = new Set();
   for (const unit of units) {
-    if (!/^[A-Za-z][A-Za-z0-9_:-]*$/.test(unit.code) || seen.has(unit.code)) throw new Error('Ad unit IDs must be unique and safe.');
+    if (!/^[A-Za-z][A-Za-z0-9_:-]*$/.test(unit.code) || seen.has(unit.code) || BLOCKED.has(unit.code)) throw new Error('Ad unit IDs must be unique and safe.');
     seen.add(unit.code);
     if (!['ATF', 'BTF'].includes(unit.type)) throw new Error(`Unsupported ad unit type: ${unit.code}.`);
     if (unit.media_type && unit.media_type !== 'banner') throw new Error(`This preview supports banner units only (${unit.code}).`);
   }
   const maps = {};
-  for (const row of snapshot.maps ?? []) maps[row.name] = mapRows(row.map_json, row.name);
+  for (const row of snapshot.maps ?? []) {
+    if (BLOCKED.has(row.name)) throw new Error('Unsafe size map name.');
+    maps[row.name] = mapRows(row.map_json, row.name);
+  }
   const explicitUnits = units.map((unit) => {
-    if (!unit.size_map_key || !maps[unit.size_map_key]) throw new Error(`${unit.code} needs a saved size map.`);
+    if (!unit.size_map_key || !Object.hasOwn(maps, unit.size_map_key)) throw new Error(`${unit.code} needs a saved size map.`);
     const union = new Map();
     for (const bp of maps[unit.size_map_key]) for (const pair of bp.sizes) union.set(JSON.stringify(pair), pair);
     if (!union.size) throw new Error(`${unit.code} has no enabled sizes.`);
@@ -87,7 +90,10 @@ export function previewInput(snapshot, descriptor, buildTimestamp, takeOver = { 
   });
 
   const basic = {};
-  for (const row of snapshot.rules ?? []) basic[row.rule_key] = parsed(row.rule_json, `Rule ${row.rule_key}`);
+  for (const row of snapshot.rules ?? []) {
+    if (BLOCKED.has(row.rule_key)) throw new Error('Unsafe rule key.');
+    basic[row.rule_key] = parsed(row.rule_json, `Rule ${row.rule_key}`);
+  }
   const advanced = object(config.advancedUnitRules ?? {}, 'advancedUnitRules');
   const rules = {};
   for (const key of new Set([...Object.keys(basic), ...Object.keys(advanced)])) {
@@ -143,7 +149,12 @@ export function previewInput(snapshot, descriptor, buildTimestamp, takeOver = { 
 }
 
 export async function digest(value) {
-  const bytes = new TextEncoder().encode(typeof value === 'string' ? value : JSON.stringify(value));
+  // Object field insertion order is not a configuration change. Arrays retain order.
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value, (_key, item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+    return Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]]));
+  });
+  const bytes = new TextEncoder().encode(serialized);
   const hash = await crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
