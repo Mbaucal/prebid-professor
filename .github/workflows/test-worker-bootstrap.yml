@@ -29,8 +29,9 @@ jobs:
         run: node --test tests/cloudflare/test-worker-bootstrap.test.mjs
       - name: Install locked tools
         run: npm ci
-      - name: Compile test Worker without authentication or deployment
+      - name: Compile test Worker from its dedicated root without authentication or deployment
+        working-directory: ops/test-worker
         env:
           CI: 'true'
           WRANGLER_SEND_METRICS: 'false'
-        run: npx --no-install wrangler deploy --config ops/test-worker/wrangler.jsonc --dry-run --outdir .generated/test-worker-dry-run
+        run: npx --no-install wrangler deploy --config wrangler.jsonc --dry-run --outdir ../../.generated/test-worker-dry-run

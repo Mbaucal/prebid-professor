@@ -21,10 +21,10 @@ Production `prebid-professor`, D1 `7ef68f78-0fd8-4937-a774-d2fd1d5353e6` and R2 
 
 Review this PR and its tests first. Use Cloudflare Workers Builds with repository `Mbaucal/prebid-professor` and Worker name `prebid-professor-test`. Stop if that Worker already exists and its ownership/history is unclear. Do not edit the existing production project's build settings.
 
-Use repository-root working directory and these explicit commands:
+Set **Root directory** to `ops/test-worker`, so the project's default Wrangler file is the test config rather than the production config. Use these explicit commands from that directory:
 
-- Build: `node --test tests/cloudflare/test-worker-bootstrap.test.mjs`
-- Deploy: `npx wrangler deploy --config ops/test-worker/wrangler.jsonc`
+- Build: `npm --prefix ../.. ci && node --test ../../tests/cloudflare/test-worker-bootstrap.test.mjs`
+- Deploy: `npx --no-install wrangler deploy --config wrangler.jsonc`
 - Branch: the reviewed branch containing these files; use `main` only after this standalone PR is actually merged.
 
 For this first setup, do not enable non-production-branch preview builds. Do not accept a default root `npm run build` / `npm run deploy` configuration or an automatic root Wrangler rewrite. This bootstrap is a standalone Worker, **not** a Vite build. It has its own explicit config and imports no application files.
