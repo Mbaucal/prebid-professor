@@ -1,0 +1,52 @@
+name: Integrate stored draft guards (one time)
+on:
+  push:
+    branches: [feature/builtin-runtime-foundation-v1]
+    paths: [.github/workflows/integrate-stored-draft-guards.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    if: github.repository == 'Mbaucal/prebid-professor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/builtin-runtime-foundation-v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Integrate the locally verified narrow guards
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import_line = "import { isStoredBuiltinDraft, STORED_DRAFT_BLOCK } from './runtime/stored-draft-safety.mjs';\n"
+          needle = "  if (!release) return apiError('Release not found.', 404);"
+          guard = "\n  if (isStoredBuiltinDraft(release)) return apiError(STORED_DRAFT_BLOCK, 409);"
+          for name in ['releases.ts', 'external-deployments.ts', 'release-deletion.ts']:
+              path = Path('worker') / name
+              source = path.read_text()
+              if source.count(needle) != 1:
+                  raise SystemExit('Unexpected guard insertion point in ' + name)
+              if import_line not in source:
+                  source = import_line + source
+              if needle + guard not in source:
+                  source = source.replace(needle, needle + guard, 1)
+              path.write_text(source)
+          PY
+      - name: Exercise actual legacy paths without any real network or storage writes
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/stored-draft-legacy-guards.test.mjs
+      - name: Install exact dependencies and verify app/Worker bundle
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+          git diff --check
+      - name: Commit verified guards and remove this one-time workflow
+        run: |
+          rm .github/workflows/integrate-stored-draft-guards.yml
+          git config user.name "Tessera verification"
+          git config user.email "actions@users.noreply.github.com"
+          git add worker/releases.ts worker/external-deployments.ts worker/release-deletion.ts .github/workflows/integrate-stored-draft-guards.yml
+          git commit -m "Block legacy actions on reserved built-in draft packages"
+          git push origin HEAD:feature/builtin-runtime-foundation-v1
