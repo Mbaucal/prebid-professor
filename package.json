@@ -18,7 +18,8 @@
   "dependencies": {
     "fflate": "^0.8.2",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "terser": "5.44.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "latest",
