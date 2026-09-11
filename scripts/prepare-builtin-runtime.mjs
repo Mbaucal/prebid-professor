@@ -45,12 +45,14 @@ export async function prepareBuiltinRuntime(root = ROOT) {
     'worker/runtime-compiler.ts', 'worker/runtime/reference-bridge.mjs',
     'worker/runtime/consent-timer.mjs', 'worker/runtime/version-pin.mjs',
     'worker/runtime/preview-snapshot.mjs',
+    'worker/runtime/artifact-candidate.mjs', 'worker/runtime/artifact-styles.mjs',
+    'worker/runtime/artifact-minifier.mjs', 'worker/runtime/prebid-artifact-check.mjs', 'package-lock.json',
   ];
   const components = [{ path: 'reference391.mjs', sha256: MODULE_SHA256 }];
   for (const path of sourceFiles) components.push({ path, sha256: sha256(await readFile(resolve(root, path))) });
   components.sort((a, b) => a.path.localeCompare(b.path, 'en'));
   const descriptor = {
-    id: 'tessera-reference391-preview-1', version: '3.9.1-tessera.preview.1',
+    id: 'tessera-reference391-preview-2', version: '3.9.1-tessera.preview.2',
     codeSha256: sha256(JSON.stringify(components)), configSchemaVersion: 1, channel: 'preview',
     capabilities: ['config-preview', 'gpt-only', 'takeover', 'advanced-refresh'],
   };

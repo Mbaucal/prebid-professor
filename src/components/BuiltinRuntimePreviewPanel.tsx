@@ -68,6 +68,40 @@ export default function BuiltinRuntimePreviewPanel({ publisherId }: { publisherI
       if (mounted.current && id === requestId.current && !controller.signal.aborted) setError(failure instanceof Error ? failure.message : 'Generation failed.');
     } finally { if (mounted.current && id === requestId.current) setBusy(false); }
   }
+  async function downloadCandidate() {
+    if (!settings || !takeOver || !approved || busy || loading || settings.validationIssue) return;
+    pending.current?.abort();
+    const controller = new AbortController(); pending.current = controller;
+    const id = ++requestId.current;
+    setBusy(true); setError(''); setMessage(''); setResult(null); setPreviewOpen(false);
+    try {
+      const response = await fetch(`/api/publishers/${encodeURIComponent(publisherId)}/builtin-runtime-bundle`, {
+        method: 'POST', cache: 'no-store', credentials: 'same-origin', signal: controller.signal,
+        headers: { 'content-type': 'application/json', accept: 'application/zip' },
+        body: JSON.stringify({ reviewHash: settings.reviewHash, runtimeVersion: settings.runtime.version,
+          runtimeSha256: settings.runtime.codeSha256, allowPreview: approved, takeOver }),
+      });
+      if (!response.ok) {
+        const problem = await response.json() as { error?: string };
+        throw new Error(problem.error || 'The candidate bundle could not be generated.');
+      }
+      if (!response.headers.get('content-type')?.includes('application/zip') ||
+          response.headers.get('x-tessera-site-id') !== publisherId ||
+          response.headers.get('x-tessera-runtime-sha256') !== settings.runtime.codeSha256) {
+        throw new Error('The candidate identity could not be verified. No file was downloaded.');
+      }
+      const blob = await response.blob();
+      if (!mounted.current || id !== requestId.current || controller.signal.aborted) return;
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a'); anchor.href = objectUrl;
+      anchor.download = `${publisherId}-tessera-candidate.zip`;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      setMessage('Candidate ZIP downloaded: JS, CSS, configuration and checksums. Nothing was saved or published. Review only — not a production release.');
+    } catch (failure) {
+      if (mounted.current && id === requestId.current && !controller.signal.aborted) setError(failure instanceof Error ? failure.message : 'Candidate download failed.');
+    } finally { if (mounted.current && id === requestId.current) setBusy(false); }
+  }
   async function copy() {
     if (!result) return;
     const id = requestId.current;
@@ -86,8 +120,8 @@ export default function BuiltinRuntimePreviewPanel({ publisherId }: { publisherI
   return <article className="builtin-runtime-card">
     <header><div><span className="panel-kicker">Built-in runtime</span><h2>Generate without a template upload</h2>
       <p>Review the selected site's saved configuration with the bundled 3.9.1 runtime.</p></div>
-      <span className="builtin-preview-badge">SOURCE PREVIEW</span></header>
-    <div className="builtin-runtime-notice">This step generates source for inspection only. It does not save a runtime selection, create a release or publish anything. The existing production Generate flow is unchanged.</div>
+      <span className="builtin-preview-badge">REVIEW CANDIDATE</span></header>
+    <div className="builtin-runtime-notice">This step generates source or a JS/CSS candidate ZIP for inspection only. It does not save a runtime selection, create a release or publish anything. The existing production Generate flow is unchanged. Candidate ZIPs require a verified current Prebid build unless GPT-only is selected.</div>
     {loading ? <p>Loading site settings…</p> : null}
     {error ? <div className="form-error" role="alert">{error}</div> : null}
     {message ? <div className="builtin-runtime-success" role="status">{message}</div> : null}
@@ -112,7 +146,8 @@ export default function BuiltinRuntimePreviewPanel({ publisherId }: { publisherI
       </fieldset>
       <label className="builtin-checkbox"><input type="checkbox" checked={approved} disabled={busy} onChange={(event) => setApproved(event.target.checked)} />I am reviewing a Preview runtime, not publishing a production release.</label>
       <div className="builtin-runtime-actions"><button type="button" className="button secondary" onClick={() => void load()} disabled={busy || loading}>Refresh settings</button>
-        <button type="button" className="button primary" onClick={() => void generate()} disabled={busy || loading || !approved || Boolean(settings.validationIssue)}>{busy ? 'Generating…' : 'Generate preview'}</button></div>
+        <button type="button" className="button primary" onClick={() => void generate()} disabled={busy || loading || !approved || Boolean(settings.validationIssue)}>{busy ? 'Working…' : 'Generate preview'}</button>
+        <button type="button" className="button secondary" onClick={() => void downloadCandidate()} disabled={busy || loading || !approved || Boolean(settings.validationIssue)}>Download candidate ZIP</button></div>
     </> : !loading ? <button className="button secondary" type="button" onClick={() => void load()}>Retry</button> : null}
     {result ? <section className="builtin-runtime-result"><strong>{(result.byteSize / 1024).toFixed(1)} KB · SHA-256 {result.checksum.slice(0, 16)}</strong>
       {result.warnings.map((warning, index) => <p key={index}>{warning}</p>)}

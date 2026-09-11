@@ -18,30 +18,12 @@ jobs:
         run: npm run test:builtin
       - name: Verify read-only Prebid artifact inspection and integration
         run: node --experimental-strip-types --test tests/runtime/prebid-artifact-check.test.mjs tests/runtime/prebid-preflight-service.test.mjs tests/runtime/builtin-prebid-integration.test.mjs
-      - name: Prepare exact minifier dependency lock for review
-        run: npm install --ignore-scripts --save-exact terser@5.44.0
-      - name: Archive verification inputs
+      - name: Archive tracked sources for reproducible offline verification
         run: |
           mkdir -p verification-artifacts
           git archive --format=zip --output=verification-artifacts/verified-source.zip HEAD
           git rev-parse HEAD > verification-artifacts/commit.txt
-          cp package.json package-lock.json verification-artifacts/
-          python3 - <<'PY'
-          import json, pathlib, zipfile
-          root = pathlib.Path('node_modules'); todo = ['terser']; seen = set()
-          with zipfile.ZipFile('verification-artifacts/minifier-dependencies.zip', 'w', zipfile.ZIP_DEFLATED) as z:
-              while todo:
-                  name = todo.pop()
-                  if name in seen: continue
-                  seen.add(name)
-                  folder = root / name
-                  manifest = json.loads((folder / 'package.json').read_text())
-                  todo.extend(manifest.get('dependencies', {}).keys())
-                  for path in sorted(folder.rglob('*')):
-                      if path.is_file() and not path.is_symlink(): z.write(path, path.as_posix())
-          print('Archived exact installed minifier dependencies:', ', '.join(sorted(seen)))
-          PY
-          sha256sum verification-artifacts/*.zip > verification-artifacts/checksums.txt
+          sha256sum verification-artifacts/verified-source.zip > verification-artifacts/checksums.txt
       - name: Retain verification source snapshot
         uses: actions/upload-artifact@v4
         with:

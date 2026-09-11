@@ -1,0 +1,55 @@
+name: Artifact candidate tests
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install exact locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Prepare the checksum-locked runtime
+        run: node scripts/prepare-builtin-runtime.mjs
+      - name: Check candidate artifacts and read-only ZIP API
+        run: node --experimental-strip-types --test tests/runtime/artifact-candidate.test.mjs tests/runtime/artifact-bundle-service.test.mjs
+      - name: Generate final readable and minified browser fixtures
+        run: node --experimental-strip-types scripts/verify-artifact-candidate.mjs .generated/artifact-candidate-verification
+      - name: Install pinned browser verification tools
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+          CHROME=$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')
+          sudo ln -sf "$CHROME" /usr/bin/chromium
+          echo "CHROMIUM_PATH=$CHROME" >> "$GITHUB_ENV"
+      - name: Browser regression on readable JavaScript
+        run: python scripts/verify-runtime-browser.py .generated/artifact-candidate-verification/readable
+      - name: Browser regression on minified JavaScript
+        run: python scripts/verify-runtime-browser.py .generated/artifact-candidate-verification/minified
+      - name: Verify exported and injected CSS agree
+        run: python scripts/verify-artifact-layout.py .generated/artifact-candidate-verification
+      - name: Retain regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-candidate-evidence
+          path: |
+            .generated/artifact-candidate-verification/*-report.json
+            .generated/artifact-candidate-verification/readable/*-report.json
+            .generated/artifact-candidate-verification/readable/*.png
+            .generated/artifact-candidate-verification/minified/*-report.json
+            .generated/artifact-candidate-verification/minified/*.png
+            .generated/artifact-candidate-verification/packages/standard/
+          retention-days: 14
+          if-no-files-found: warn
