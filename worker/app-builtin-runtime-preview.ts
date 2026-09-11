@@ -1,3 +1,4 @@
+import { blockStoredDraftCdn } from './runtime/stored-draft-safety.mjs';
 import baseApp from './app-ads-txt-managed-file';
 import { getAuthenticatedUser, isSameOriginMutation, type AuthEnv } from './auth';
 import { handleBuiltinPreview, readPreviewSnapshot, runtimeDescriptor } from './runtime/builtin-preview-service.mjs';
@@ -12,6 +13,8 @@ const downstream = baseApp as {
 };
 export default {
   async fetch(request, env, ctx): Promise<Response> {
+    const draftBlock = blockStoredDraftCdn(request);
+    if (draftBlock) return draftBlock;
     const url = new URL(request.url);
     const match = url.pathname.match(/^\/api\/publishers\/([^/]+)\/(builtin-runtime-preview|builtin-runtime-prebid-check|builtin-runtime-bundle)$/);
     if (!match) return downstream.fetch(request, env, ctx);

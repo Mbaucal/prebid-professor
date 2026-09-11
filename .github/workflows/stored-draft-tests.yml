@@ -25,7 +25,7 @@ jobs:
       - name: Real SQLite storage and injected R2 fault tests
         run: node --experimental-strip-types --test tests/runtime/draft-release-store.test.mjs
       - name: Exercise actual legacy promotion, deletion and dispatch guards
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/stored-draft-legacy-guards.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/stored-draft-legacy-guards.test.mjs tests/runtime/stored-draft-cdn.test.mjs
       - name: Save fixtures, restart in a separate process and read exact packages
         run: |
           node --experimental-strip-types scripts/verify-artifact-candidate.mjs .generated/artifact-candidate-verification
