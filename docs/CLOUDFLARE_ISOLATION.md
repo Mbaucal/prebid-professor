@@ -1,72 +1,69 @@
 # MBA-19 — Cloudflare isolation and continuation checkpoint
 
-## Verified boundary (11 September 2026)
+## Current checkpoint — owner-reported test storage, bootstrap deployment pending
 
-The supplied Bindings screenshot shows `prebid-professor` with `DB → prebid-professor-db`, `BUILDS → prebid-professor-builds` and `ASSETS`. It does not identify the active version or PR #26's effective preview resources. Do not ask Marko for the same screenshot again. A separate preview hostname does not establish separate data.
+The production baseline audit is complete. Marko then confirmed creating **prebid-professor-test-db** and **prebid-professor-test-builds**, and supplied D1 ID **d27843e4-a53c-403a-baed-04a193f6d5c6** on 11 September 2026. **Do not ask him to recreate these resources or provide this ID again.** These are owner-reported identities, not independent verification of new storage or test isolation.
 
-The built-in runtime remains in draft PR #26. Its stored-draft adapter is locally tested, but the remote Save route, writer and migration are not enabled. This operations PR does not change application/Worker code, Wrangler, dependencies, migrations, cron, auth, bindings or public routes. A normal repository integration may build a main commit, but this tooling never issues a deployment command.
+`ops/tessera-isolation-plan.json` is a checkpoint/proposal, NOT a deploy configuration. It now records the supplied ID and separate owner-report/verification status. Its `provisioned:false` refers to the complete test Worker environment remaining undeployed/unverified; it does not deny the reported creation of D1/R2. No test version UUID or deployed URL is known yet.
 
-`ops/tessera-isolation-plan.json` is a proposal, NOT a Wrangler file. Test names/IDs/URL are not provisioned or verified. Never replace null IDs with guessed values or clone production credentials/data to test resources.
+The standalone bootstrap in **ops/test-worker** uses only the new test resources and serves a static notice and `/health`. It has no application imports, data reads/writes, cron, email or CMS. The production root Wrangler/Vite/application files are unchanged. A normal existing repository integration may build a main commit; merging preparation is not a test deployment and does not itself prove isolation.
 
-## User setup completed; live access not yet verified
+Use the full dashboard instructions in [ops/test-worker/README.md](../ops/test-worker/README.md). On the current form **Advanced settings → Path** is the project/root directory: **ops/test-worker**. After PR #28 is actually merged, the default **main** branch contains the bootstrap. No branch-selector hunt is needed. Keep non-production builds off, use the explicit test build/deploy commands, and create a new build token instead of changing the existing Rei salon token or the read-only audit token. No runtime Secret is needed for this inert shell.
 
-The environment screenshot shows `tessera-isolation-audit`, Selected branches and tags, one branch `main`, zero tags and a saved-rule banner. Required-reviewer controls are not shown. Do not change the private repository's visibility/plan to obtain this control.
+The unfinished built-in runtime PR #26 and Ads.txt versions PR #25 remain separate. The remote Save writer/application initialization is not enabled by this bootstrap. A healthy bootstrap endpoint does not establish D1/R2 ownership, availability or isolation.
 
-For this limited metadata read, use the observed main-only environment, manual `workflow_dispatch` on main, and a dedicated single-account Workers Scripts Read token with a seven-day lifetime. This is not independent reviewer approval: administrators/main writers remain trusted. It is not a model for write/deployment credentials.
+## Completed production baseline — historical evidence, not a task to repeat
 
-Marko subsequently confirmed that both values below were saved. This is a user report, not proof of successful token authentication, exact permissions or environment enforcement. Do not read or request their secret values.
+Actual Cloudflare metadata was read at **2026-09-11T21:06:11.487Z**, run **34647641518**, main **a490b021ab77626e2169f82832a1a50356eb35ce**. Evidence is retained in Linear MBA-19; artifact **10283225234** has limited retention.
 
-- Environment variable `CF_ACCOUNT_ID`: the correct Cloudflare account ID, not Zone/D1 ID or email.
-- Environment Secret `CLOUDFLARE_AUDIT_API_TOKEN`: a separate Account → Workers Scripts → Read token for that specific account. Store the token only, without `Bearer `.
+- Production Worker: `prebid-professor`.
+- Active deployment: `78861b13-7dbb-4aba-94b1-909db6d1145a`.
+- Active version: `6d7c963b-a282-40de-80a5-c7e7e619ded7` at 100%.
+- D1 ID: `7ef68f78-0fd8-4937-a774-d2fd1d5353e6`. Its name `prebid-professor-db` was separately shown in the owner screenshot.
+- R2: `prebid-professor-builds`.
 
-No Workers Edit, D1 Edit, R2 write, global API key, production deploy credential or Gmail/admin password is needed. Revoke the temporary token after use. Never send it through chat, Linear, PR comments, workflow inputs or screenshots.
+The audit intentionally compared production with itself, so `same_worker_as_production`, shared D1/R2, one cron and integration-review blockers were expected. This was not an authentication failure and not evidence about another preview Worker. Do not disable production cron, delete integrations or alter production bindings to get a green result. Do not repeat this self-audit as an operator task.
 
-## First run — obtain real version IDs without copying screenshots
+## Read-only audit access already set up
 
-After this reviewed operations PR is on main:
+The owner created GitHub environment **tessera-isolation-audit**, limited to the **main** branch, and saved:
 
-1. GitHub → Actions → Cloudflare isolation audit → Run workflow.
-2. Branch: `main`.
-3. Operation: `discover_versions`.
-4. Worker: `prebid-professor` (the actual Worker already shown by Marko).
-5. Leave `test_version_id` empty and run.
+- Environment variable `CF_ACCOUNT_ID` for this Cloudflare account.
+- Environment Secret `CLOUDFLARE_AUDIT_API_TOKEN`, a dedicated single-account Workers Scripts Read token.
 
-Discovery uses GET requests for that Worker's active deployment, the first page of its version list, then its deployment again to reject drift. It exports only version UUIDs, version numbers, normalized dates and explicit preview/traffic flags. It never copies author details, annotations, raw bindings or credentials. It is NOT an account-wide inventory and does NOT choose the latest version as the test target.
+The completed metadata run proves that those credentials worked for the read at that time, not that the token will never expire or that it has an independently verified permission inventory. No secret value was read or requested. The instructed lifetime was seven days; revoke the temporary token when the audit work is finished. Never broaden this token for deploy/provisioning or store its value in chat, Linear, source, inputs or screenshots.
 
-A green `versions_discovered` means the list was read. `isolationChecked:false`, `completeVersionInventory:false`, `remoteWritesAuthorized:false` and `launchApproved:false` remain explicit. It does not establish that PR #26 is deployed, that a preview hostname routes to a particular version or that storage is isolated. Use a proven exact target in the second step; do not infer one merely from recency. If the intended version is absent from the first page, obtain its exact identity separately.
+The environment's main-only rule was observed, not independent reviewer approval. Administrators/main writers remain trusted. Repository visibility was later observed as public through GitHub metadata; earlier private-repository wording is not a guarantee. Do not change repository visibility or plan to obtain a control, and do not include sensitive data in reports.
 
-## Second run — exact-version isolation audit
+## Next audit — the NEW test Worker only, after actual deployment
 
-Run the same workflow on main with Operation `audit`, the exact test Worker script name and full Cloudflare version UUID. Branch names, short version prefixes and hostnames are not version UUIDs. An audit of a version on `prebid-professor` itself is allowed for diagnosis but intentionally reports the same-Worker policy blocker; it is not a separate test environment.
+Once the bootstrap is deployed, obtain its full version UUID and URL from the real Cloudflare deployment. If the UUID is already known, directly run:
 
-The audit:
+1. GitHub → Actions → **Cloudflare isolation audit** → **Run workflow**.
+2. Branch **main**.
+3. **operation = audit**.
+4. **test_worker = prebid-professor-test**.
+5. **test_version_id = the actual TEST deployment's full version UUID**.
 
-1. Reads the production Worker's active deployment and all its weighted versions.
-2. Reads the exact requested test version's resource bindings and that Worker's cron schedules.
-3. Rereads production deployment and test schedules to reject drift.
-4. Compares every D1 ID and R2 name, including aliases and the repository's known production baseline. Missing/ambiguous/inherited/additional resources, cron and integration bindings require review.
+**Override the historical workflow default `prebid-professor`; it is production.** Do not copy the production UUID above into a test audit. If discovery is necessary, run **operation=discover_versions**, **test_worker=prebid-professor-test** with an empty version field, then select the proven exact test version. No account-wide inventory or automatic newest-version selection is performed.
 
-The cron parser preserves the official `{ schedules: [] }` result shape and additionally accepts the direct-array variant raised in review. Only this endpoint accepts both forms; missing or malformed schedules never mean an empty list. This is compatibility hardening, not evidence of which form the user's account currently returns.
+A successful discovery is not isolation evidence. The audit reads the currently active production deployment as a comparison baseline internally, the exact requested test version and test schedules, then rereads deployment/schedule metadata to reject drift. It compares D1 IDs/R2 names, including aliases and known production identities. Missing, ambiguous, inherited or extra bindings, cron and integrations require review.
 
-All requests are GET to api.cloudflare.com, redirects are refused and response reads are bounded. No SQL rows, R2 object contents, publisher endpoints or Worker application requests are used. Plain-text/JSON/Secret binding values and raw API errors are never emitted.
+The cron parser accepts the official `{ schedules: [] }` object and the supported direct-array variant. Missing/malformed schedules do not mean no cron. All requests are GET to api.cloudflare.com with redirects refused and bounded reads. No SQL rows, R2 file contents, publisher endpoints or Worker application requests are used; secret/plain-text/JSON binding values and raw API errors are not exported.
 
-`resource_separation_observed` is only point-in-time resource evidence. `remoteWritesAuthorized:false` and `launchApproved:false` ALWAYS remain. `blocked` means concrete resource/policy issues; `unverified` means insufficient evidence or a failed read. Both return exit code 2. Discovery and audit are separate modes, not interchangeable approvals.
+`resource_separation_observed` is point-in-time evidence only. `remoteWritesAuthorized:false` and `launchApproved:false` always remain. `blocked` means concrete policy/resource findings; `unverified` means insufficient evidence or failed reads. Both return exit 2. Retain exact mode, timestamp, Worker/version identities and result in MBA-19 and START HERE, not just the expiring artifact.
 
 ## Workflow security and evidence
 
-The PR/main automatic jobs run synthetic tests without Cloudflare credentials. The credentialed job is manual, main-only, and checks out the exact dispatched SHA with persisted Git credentials disabled. Never run credentialed PR-head code. Unfinished runtime PR #26 does not need to be merged for this operation.
+Automatic PR/main jobs run synthetic tests without Cloudflare credentials. The credentialed job is manually dispatched on main and checks out the dispatched SHA with persisted Git credentials disabled. Never execute credentialed PR-head code or merge unfinished runtime PR #26 for this operation.
 
-Reports remain private repository Actions artifacts for seven days. Copy relevant identities, mode, date/version and result into MBA-19 and the Linear START HERE document; do not rely on expiring artifacts alone. Do not upload raw API responses. A successful local/offline test is not a hosted audit.
-
-The currently available GitHub connector supports run reads/retries but has no workflow-dispatch action. The owner may need to click Run workflow once; no token should be pasted to compensate for that limitation.
-
-CLI: set `CF_AUDIT_OPERATION` to `discover_versions` or `audit` and the environment values above locally. Audit additionally requires `CF_TEST_VERSION_ID`. Missing credentials or unknown operations return unverified before network calls. There is no provisioning/deploy mode.
+Reports are access-controlled GitHub Actions artifacts with seven-day retention, not a reason to publish secrets. The connector previously supported reads/retries but not initial workflow dispatch, so the owner may need to click Run workflow. Do not request a pasted token to work around a tooling limitation. CLI operation remains read-only; there is no provisioning/deploy mode in the audit tool.
 
 ## Remaining isolated platform gates
 
-If separate resources do not exist, provision new test Worker/D1/private R2 after ownership/name checks. Do not replace production bindings. Use schema-only reviewed initialization and synthetic rows, separate test login Secrets, no cron or integration tokens and no custom public routes. Legacy migrations contain seed data and must not run blindly against an existing database.
+Do not recreate the reported test D1/R2. Confirm actual bootstrap deployment, exact test bindings and resource ownership/privacy first. Then review test-only schema initialization and minimal synthetic `.invalid` data, separate test authentication, no cron/outbound integrations and explicit Save/list/download boundaries. Legacy migrations contain seed data and must not be run blindly against an existing database. No production data or credentials may be copied.
 
-Record the exact deployed test version and hostname, run the exact audit, verify safe test data/auth/outbound behavior and backup/cleanup, then connect only reviewed authenticated Save/list/download routes. The caller's test-store flag is not isolation evidence. Direct Cloudflare provisioning has not occurred.
+A test-store flag or bootstrap 200 response is not isolation evidence, and test isolation is not authorization for live publisher publication. Record the actual test version and hostname before activating the test writer.
 
 ## Regression tests
 
@@ -74,14 +71,16 @@ Record the exact deployed test version and hostname, run the exact audit, verify
 node --test tests/cloudflare/*.test.mjs
 ```
 
-The original 48 synthetic tests are retained. The additional contract/discovery suite contains 36 tests, executed locally with no real Cloudflare access. CI must verify the combined suite for the exact head before merge. Tests cover both cron shapes, malformed results, drift, sanitization, no automatic version selection and explicit audit UUID requirements.
+The audit suites contain 48 original plus 36 contract/discovery tests. The bootstrap adds 19 static route/config tests and credential-free Wrangler dry-run compilation. CI must pass for the current head; these are offline checks, not a new hosted audit.
 
-## Official contracts consulted
+## Official contracts
 
 - https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/list/
 - https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/versions/methods/get/
 - https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/versions/methods/list/
 - https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/schedules/methods/get/
+- https://developers.cloudflare.com/workers/ci-cd/builds/configuration/
+- https://developers.cloudflare.com/workers/ci-cd/builds/build-branches/
 - https://developers.cloudflare.com/workers/wrangler/environments/
 - https://developers.cloudflare.com/workers/versions-and-deployments/preview-urls/
 - https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments
