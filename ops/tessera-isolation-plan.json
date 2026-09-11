@@ -2,6 +2,8 @@
   "kind": "proposal-only-not-wrangler-config",
   "issue": "MBA-19",
   "provisioned": false,
+  "provisioningStatus": "test-storage-owner-reported-worker-pending",
+  "provisionedMeaning": "The complete test Worker environment is not deployed and verified. This does not mean the owner-reported D1/R2 need to be created again.",
   "remoteWritesEnabled": false,
   "productionDoNotChange": {
     "worker": "prebid-professor",
@@ -14,17 +16,35 @@
   "proposedTestResources": {
     "worker": "prebid-professor-test",
     "database": "prebid-professor-test-db",
-    "databaseId": null,
+    "databaseId": "d27843e4-a53c-403a-baed-04a193f6d5c6",
     "bucket": "prebid-professor-test-builds",
     "versionId": null,
     "verifiedUrl": null
   },
+  "ownerReportedStorage": {
+    "reportedAt": "2026-09-11",
+    "databaseCreated": true,
+    "bucketCreated": true,
+    "source": "Owner confirmation and supplied D1 database ID; recorded in Linear MBA-19",
+    "independentlyVerified": false,
+    "doNotRequestRecreation": true
+  },
+  "completedProductionBaseline": {
+    "observedAt": "2026-09-11T21:06:11.487Z",
+    "source": "Cloudflare metadata audit run 34647641518; evidence retained in Linear MBA-19",
+    "worker": "prebid-professor",
+    "versionId": "6d7c963b-a282-40de-80a5-c7e7e619ded7",
+    "databaseId": "7ef68f78-0fd8-4937-a774-d2fd1d5353e6",
+    "bucketName": "prebid-professor-builds",
+    "isTestIsolationEvidence": false
+  },
   "activationRequirements": [
-    "Verify actual active production version(s) and exact test version resource bindings",
-    "Confirm ownership of proposed names before creating resources; do not reuse unknown pre-existing resources",
-    "Use new D1 and private R2 resources, never clone production records or credential material",
-    "Start with cron disabled, no public custom routes and no Gmail/CMS/deployment credentials",
-    "Use separate test administrator credentials through protected Secrets, not source control",
+    "Production baseline audit is complete; do not repeat the production self-audit as an operator task",
+    "Verify the exact deployed prebid-professor-test version uses the owner-reported test D1 ID and private test R2 bucket",
+    "Do not recreate the reported test D1/R2 or reuse unknown resources; independently verify ownership and bindings",
+    "Never clone production records or credential material",
+    "Start with cron disabled, no custom routes and no Gmail/CMS/deployment runtime credentials",
+    "Use separate test administrator credentials through protected Secrets when the application is enabled, not for the inert bootstrap",
     "Review schema-only initialization and minimal synthetic .invalid seed site",
     "Verify a backup before any approved mutation of existing data",
     "Review authenticated draft routes, quotas, retention and safe site deletion before enabling a writer"
