@@ -1,0 +1,59 @@
+name: Stored draft release tests
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  stored-draft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install locked dependencies without lifecycle hooks
+        run: npm ci --ignore-scripts
+      - name: Prepare checksum-locked runtime
+        run: node scripts/prepare-builtin-runtime.mjs
+      - name: Real SQLite storage and injected R2 fault tests
+        run: node --experimental-strip-types --test tests/runtime/draft-release-store.test.mjs
+      - name: Exercise actual legacy promotion, deletion and dispatch guards
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/stored-draft-legacy-guards.test.mjs
+      - name: Save fixtures, restart in a separate process and read exact packages
+        run: |
+          node --experimental-strip-types scripts/verify-artifact-candidate.mjs .generated/artifact-candidate-verification
+          node --experimental-strip-types scripts/verify-stored-draft.mjs .generated/artifact-candidate-verification .generated/stored-draft-verification
+      - name: Install pinned browser verification tools
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+          CHROME=$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')
+          sudo ln -sf "$CHROME" /usr/bin/chromium
+          echo "CHROMIUM_PATH=$CHROME" >> "$GITHUB_ENV"
+      - name: Browser regression on files READ BACK from the stored package
+        run: |
+          python scripts/verify-runtime-browser.py .generated/stored-draft-verification/reopened/readable
+          python scripts/verify-runtime-browser.py .generated/stored-draft-verification/reopened/minified
+          python scripts/verify-artifact-layout.py .generated/stored-draft-verification/reopened
+      - name: Keep synthetic evidence, not local databases or publisher credentials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stored-draft-evidence
+          path: |
+            .generated/stored-draft-verification/stored-draft-report.json
+            .generated/stored-draft-verification/report.html
+            .generated/stored-draft-verification/reopened/*-report.json
+            .generated/stored-draft-verification/reopened/readable/*-report.json
+            .generated/stored-draft-verification/reopened/readable/*.png
+            .generated/stored-draft-verification/reopened/minified/*-report.json
+            .generated/stored-draft-verification/reopened/minified/*.png
+          retention-days: 14
+          if-no-files-found: error
