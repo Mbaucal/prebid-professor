@@ -24,14 +24,17 @@ class AuditError extends Error {
 }
 const fail = (code) => { throw new AuditError(code); };
 
-export function validateInput(input) {
-  if (!object(input) || !ACCOUNT.test(input.accountId ?? '')) fail('invalid_account_id');
-  if (!WORKER.test(input.testWorker ?? '')) fail('invalid_test_worker');
-  if (!UUID.test(input.testVersionId ?? '')) fail('exact_test_version_required');
+function validateAccess(input) {
+  if (!object(input) || typeof input.accountId !== 'string' || !ACCOUNT.test(input.accountId)) fail('invalid_account_id');
+  if (typeof input.testWorker !== 'string' || !WORKER.test(input.testWorker)) fail('invalid_test_worker');
   // Token is read from the caller environment, never a command-line argument or a URL.
   if (typeof input.token !== 'string' || input.token.length < 16 || input.token.length > 8192 || /\s/.test(input.token)) fail('read_only_token_required');
-  return { accountId: input.accountId.toLowerCase(), testWorker: input.testWorker,
-    testVersionId: input.testVersionId.toLowerCase(), token: input.token };
+  return { accountId: input.accountId.toLowerCase(), testWorker: input.testWorker, token: input.token };
+}
+export function validateInput(input) {
+  const config = validateAccess(input);
+  if (typeof input.testVersionId !== 'string' || !UUID.test(input.testVersionId)) fail('exact_test_version_required');
+  return { ...config, testVersionId: input.testVersionId.toLowerCase() };
 }
 
 /** Cloudflare lists the actively serving deployment first. All traffic versions count. */
@@ -83,9 +86,12 @@ export function inspectVersion(result, expectedId, role) {
     expectedBindingsPresent: databases.some((r) => r.binding === 'DB') && buckets.some((r) => r.binding === 'BUILDS') };
 }
 
-function readSchedules(result) {
-  if (!Array.isArray(result?.schedules) || result.schedules.some((row) => typeof row?.cron !== 'string')) fail('schedules_not_available');
-  return result.schedules.map((row) => row.cron).sort();
+export function readSchedules(result) {
+  // Preserve the documented { schedules: [] } shape; also accept the direct-array
+  // variant raised in review. Never interpret a missing/malformed result as no cron.
+  const rows = Array.isArray(result) ? result : object(result) ? result.schedules : null;
+  if (!Array.isArray(rows) || rows.length > 1000 || rows.some((row) => !object(row) || typeof row.cron !== 'string' || !row.cron.trim() || row.cron.length > 256)) fail('schedules_not_available');
+  return rows.map((row) => row.cron).sort();
 }
 
 export function compareResources(production, test, testWorker, scheduleCount) {
@@ -111,7 +117,7 @@ export function compareResources(production, test, testWorker, scheduleCount) {
 /** Controlled API client: a fixed origin, GET only, no redirects and bounded responses. */
 function metadataClient({ accountId, token }, fetchImpl) {
   return async (worker, suffix) => {
-    if (!WORKER.test(worker) || !/^(deployments|schedules|versions\/[0-9a-f-]{36})$/.test(suffix)) fail('forbidden_metadata_path');
+    if (!WORKER.test(worker) || !/^(deployments|schedules|versions(?:\/[0-9a-f-]{36})?)$/.test(suffix)) fail('forbidden_metadata_path');
     const url = `${API}/accounts/${accountId}/workers/scripts/${worker}/${suffix}`;
     let response;
     try { response = await fetchImpl(url, { method: 'GET', redirect: 'error',
@@ -134,7 +140,11 @@ function metadataClient({ accountId, token }, fetchImpl) {
     let payload;
     try { payload = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
     catch { fail('invalid_metadata_json'); }
-    if (payload?.success !== true || !object(payload.result)) fail('unsuccessful_metadata_response');
+    if (payload?.success !== true) fail('unsuccessful_metadata_response');
+    // Only schedules may use a bare result array; version/deployment/list responses
+    // retain their endpoint-specific object contract.
+    if (suffix === 'schedules') readSchedules(payload.result);
+    else if (!object(payload.result)) fail('unsuccessful_metadata_response');
     return payload.result;
   };
 }
@@ -163,10 +173,55 @@ export async function auditIsolation(input, { fetchImpl = globalThis.fetch, now 
   }
 }
 
+/** First-run helper. No guessed version ID, no automatic latest-version selection.
+ * Only the first API page is returned; this is not a full account inventory/audit.
+ */
+export async function discoverVersions(input, { fetchImpl = globalThis.fetch, now = () => new Date().toISOString() } = {}) {
+  try {
+    const config = validateAccess(input);
+    const get = metadataClient(config, fetchImpl);
+    const before = activeDeployment(await get(config.testWorker, 'deployments'));
+    const result = await get(config.testWorker, 'versions');
+    if (!Array.isArray(result.items) || result.items.length > 100) fail('version_list_not_available');
+    const ids = new Set();
+    const versions = result.items.map((row) => {
+      if (!object(row) || typeof row.id !== 'string' || !UUID.test(row.id) || !Number.isSafeInteger(row.number) || row.number < 1) fail('unreadable_version_list');
+      const id = row.id.toLowerCase();
+      if (ids.has(id)) fail('unreadable_version_list');
+      ids.add(id);
+      // Dates are validated and normalized; annotations/author data are not copied.
+      const date = row.metadata?.created_on;
+      let createdOn = null;
+      if (date !== undefined) {
+        if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(date) || !Number.isFinite(Date.parse(date))) fail('unreadable_version_list');
+        createdOn = new Date(date).toISOString();
+      }
+      return { versionId: id, number: row.number, createdOn,
+        previewAvailable: typeof row.metadata?.hasPreview === 'boolean' ? row.metadata.hasPreview : null,
+        servingTraffic: before.versions.some((version) => version.versionId === id) };
+    });
+    const after = activeDeployment(await get(config.testWorker, 'deployments'));
+    if (JSON.stringify(before) !== JSON.stringify(after)) fail('deployment_changed_during_discovery');
+    return { schemaVersion: 1, status: 'versions_discovered', evidence: 'cloudflare_get_version_list',
+      observedAt: now(), worker: config.testWorker, activeDeployment: before, versions,
+      completeVersionInventory: false, isolationChecked: false, remoteWritesAuthorized: false, launchApproved: false,
+      notice: 'First API page only. No bindings or secrets exported. Identify the intended version before running an exact-version audit; discovery does not establish isolation.' };
+  } catch (error) {
+    return { schemaVersion: 1, status: 'unverified', isolationChecked: false, remoteWritesAuthorized: false, launchApproved: false,
+      error: error instanceof AuditError ? error.code : 'discovery_failed',
+      notice: 'No version selection or isolation conclusion. No changes were requested.' };
+  }
+}
+
+export async function runOperation(operation, input, options) {
+  if (operation === 'discover_versions') return discoverVersions(input, options);
+  if (operation === 'audit') return auditIsolation(input, options);
+  return { schemaVersion: 1, status: 'unverified', error: 'invalid_operation', remoteWritesAuthorized: false, launchApproved: false };
+}
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const report = await auditIsolation({ accountId: process.env.CF_ACCOUNT_ID,
-    testWorker: process.env.CF_TEST_WORKER, testVersionId: process.env.CF_TEST_VERSION_ID,
-    token: process.env.CLOUDFLARE_AUDIT_API_TOKEN });
+  const report = await runOperation(process.env.CF_AUDIT_OPERATION || 'audit', {
+    accountId: process.env.CF_ACCOUNT_ID, testWorker: process.env.CF_TEST_WORKER,
+    testVersionId: process.env.CF_TEST_VERSION_ID, token: process.env.CLOUDFLARE_AUDIT_API_TOKEN });
   process.stdout.write(JSON.stringify(report, null, 2) + '\n');
-  process.exitCode = report.status === 'resource_separation_observed' ? 0 : 2;
+  process.exitCode = ['resource_separation_observed', 'versions_discovered'].includes(report.status) ? 0 : 2;
 }

@@ -1,80 +1,89 @@
 # MBA-19 — Cloudflare isolation and continuation checkpoint
 
-## Current verified boundary (11 September 2026)
+## Verified boundary (11 September 2026)
 
-The supplied Bindings screenshot shows `prebid-professor` with `DB → prebid-professor-db`, `BUILDS → prebid-professor-builds` and `ASSETS`. It does not identify the active version or PR #26's effective preview resources. The screenshot has already been supplied; do not ask Marko for the same screen again. A separate preview hostname does not establish separate data.
+The supplied Bindings screenshot shows `prebid-professor` with `DB → prebid-professor-db`, `BUILDS → prebid-professor-builds` and `ASSETS`. It does not identify the active version or PR #26's effective preview resources. Do not ask Marko for the same screenshot again. A separate preview hostname does not establish separate data.
 
-The built-in runtime is in draft PR #26, not main. Its stored-draft adapter is locally tested, but the remote Save route, live writer and migration are not enabled. Do not connect it to the current shared resources merely because its caller flag says test store.
+The built-in runtime remains in draft PR #26. Its stored-draft adapter is locally tested, but the remote Save route, writer and migration are not enabled. This operations PR does not change application/Worker code, Wrangler, dependencies, migrations, cron, auth, bindings or public routes. A normal repository integration may build a main commit, but this tooling never issues a deployment command.
 
-`ops/tessera-isolation-plan.json` is a proposal, NOT a Wrangler deployment file. Its test Worker/database/bucket names have not been provisioned or verified. Null IDs must not be replaced with invented identifiers. Neither this change nor the audit modifies production bindings, application code, migrations, auth, cron or public routes.
+`ops/tessera-isolation-plan.json` is a proposal, NOT a Wrangler file. Test names/IDs/URL are not provisioned or verified. Never replace null IDs with guessed values or clone production credentials/data to test resources.
 
-## What this tooling actually does
+## User setup completed; live access not yet verified
 
-`scripts/cloudflare/audit-isolation.mjs` reads only Cloudflare metadata using a dedicated read-only API token:
+The environment screenshot shows `tessera-isolation-audit`, Selected branches and tags, one branch `main`, zero tags and a saved-rule banner. Required-reviewer controls are not shown. Do not change the private repository's visibility/plan to obtain this control.
 
-1. Read the production Worker's actively serving deployment (first in the deployments response).
-2. Inspect every production version in the traffic split, not just one.
-3. Read the exact requested test version's bindings and test Worker's cron schedules.
-4. Reread production deployment and schedules; reject a changing snapshot.
-5. Compare all D1 IDs/R2 names, including aliases, against current production and the repository's known production baseline. Require expected `DB`/`BUILDS` bindings and flag unknown/inherited resources, shared Worker, cron and integration bindings.
+For this limited metadata read, use the observed main-only environment, manual `workflow_dispatch` on main, and a dedicated single-account Workers Scripts Read token with a seven-day lifetime. This is not independent reviewer approval: administrators/main writers remain trusted. It is not a model for write/deployment credentials.
 
-All requests are GET to `api.cloudflare.com`, redirects are refused, responses are size/time bounded. It does not read SQL rows, R2 file content, execute the Worker or call publisher URLs. Values of plain-text/JSON/secret bindings and API error bodies are never written into reports or logs. Resource identifiers are operational metadata and the report should stay in the project/private CI artifact.
+Marko subsequently confirmed that both values below were saved. This is a user report, not proof of successful token authentication, exact permissions or environment enforcement. Do not read or request their secret values.
 
-Result `resource_separation_observed` is only point-in-time resource evidence. **remoteWritesAuthorized is always false.** It does not prove safe test data, credential separation, test hostname routing, lack of network side effects, backup, cleanup or permission to publish. `blocked` means a concrete resource/policy problem; `unverified` means insufficient evidence or a failed read. Both return exit code 2.
+- Environment variable `CF_ACCOUNT_ID`: the correct Cloudflare account ID, not Zone/D1 ID or email.
+- Environment Secret `CLOUDFLARE_AUDIT_API_TOKEN`: a separate Account → Workers Scripts → Read token for that specific account. Store the token only, without `Bearer `.
 
-## Observed GitHub environment and protection limits
+No Workers Edit, D1 Edit, R2 write, global API key, production deploy credential or Gmail/admin password is needed. Revoke the temporary token after use. Never send it through chat, Linear, PR comments, workflow inputs or screenshots.
 
-Marko supplied the environment configuration screenshot on 11 September 2026. It shows `tessera-isolation-audit`, **Selected branches and tags**, exactly one allowed branch `main`, zero tags, and a successful saved-rule banner. Environment secrets and variables are still empty in that screenshot. Required-reviewer controls are not shown. This is screenshot evidence, not an API or runner test of the environment's enforcement.
+## First run — obtain real version IDs without copying screenshots
 
-The previous instruction to require the owner as an environment reviewer must not be assumed available. GitHub documents that required reviewers for private repositories are not available on Free/Pro/Team. Do not change the repository's visibility or require a paid upgrade solely for this metadata audit.
+After this reviewed operations PR is on main:
 
-For this limited read-only audit, the proposed setup uses the observed **main-only environment**, the existing **manual workflow_dispatch/main-only job**, a dedicated single-account Workers Scripts Read token and a **seven-day token lifetime**. This is not equivalent to independent reviewer approval: trusted repository administrators/main writers can change workflows and access an environment secret. Do not apply this exception to a deployment/write credential. When an approval gate is available and appropriate, add it separately without claiming it already exists.
+1. GitHub → Actions → Cloudflare isolation audit → Run workflow.
+2. Branch: `main`.
+3. Operation: `discover_versions`.
+4. Worker: `prebid-professor` (the actual Worker already shown by Marko).
+5. Leave `test_version_id` empty and run.
 
-## How to run safely
+Discovery uses GET requests for that Worker's active deployment, the first page of its version list, then its deployment again to reject drift. It exports only version UUIDs, version numbers, normalized dates and explicit preview/traffic flags. It never copies author details, annotations, raw bindings or credentials. It is NOT an account-wide inventory and does NOT choose the latest version as the test target.
 
-The PR tests run with synthetic responses and NO Cloudflare credentials. For an actual read, review/merge the standalone operations PR first; the workflow-dispatch job is deliberately restricted to main and is not available before the workflow exists on the default branch. This must not require merging unfinished runtime PR #26. Preparing the main-restricted environment settings is separate from authorizing a live run; do not execute credentialed PR-head code or select an unreviewed branch.
+A green `versions_discovered` means the list was read. `isolationChecked:false`, `completeVersionInventory:false`, `remoteWritesAuthorized:false` and `launchApproved:false` remain explicit. It does not establish that PR #26 is deployed, that a preview hostname routes to a particular version or that storage is isolated. Use a proven exact target in the second step; do not infer one merely from recency. If the intended version is absent from the first page, obtain its exact identity separately.
 
-Use the existing GitHub environment **tessera-isolation-audit**, restricted to branch `main`. Store:
+## Second run — exact-version isolation audit
 
-- environment variable `CF_ACCOUNT_ID`: the verified Cloudflare account ID;
-- environment Secret `CLOUDFLARE_AUDIT_API_TOKEN`: a new token limited to **Account → Workers Scripts → Read** for that specific account, expiring in seven days.
+Run the same workflow on main with Operation `audit`, the exact test Worker script name and full Cloudflare version UUID. Branch names, short version prefixes and hostnames are not version UUIDs. An audit of a version on `prebid-professor` itself is allowed for diagnosis but intentionally reports the same-Worker policy blocker; it is not a separate test environment.
 
-### Operator setup
+The audit:
 
-1. In the correct Cloudflare account, use dashboard Search (`Cmd/Ctrl+K`) → `Copy account ID`. This is not a Zone ID, D1 ID or email address. In GitHub's existing environment choose **Add environment variable**, Name `CF_ACCOUNT_ID`, Value the copied account ID.
-2. In Cloudflare choose **My Profile → API Tokens → Create Token → Create Custom Token**. Name it `Tessera isolation audit`. Set only **Account → Workers Scripts → Read**. Under Account Resources choose **Include → Specific account** and the account that contains `prebid-professor`. Set expiry seven days from creation. Review the summary before creating it.
-3. Copy the token directly into GitHub's **Add environment secret**, Name `CLOUDFLARE_AUDIT_API_TOKEN`. The value is only the token, without a `Bearer ` prefix. Do not put it under variables or repository-wide secrets.
-4. Confirm completion without sharing the token or an unmasked screenshot. Creation/storage is not yet verified merely because these instructions were supplied. After the reviewed audit, revoke the temporary token when it is no longer needed.
+1. Reads the production Worker's active deployment and all its weighted versions.
+2. Reads the exact requested test version's resource bindings and that Worker's cron schedules.
+3. Rereads production deployment and test schedules to reject drift.
+4. Compares every D1 ID and R2 name, including aliases and the repository's known production baseline. Missing/ambiguous/inherited/additional resources, cron and integration bindings require review.
 
-No Workers Edit, D1 Edit, R2 write, global API key, Gmail token or administrator password is required for the audit. Never paste the token into chat, Linear, issue comments or workflow inputs. Do not repurpose an existing production deployment credential. Read access remains sensitive; it is not permission-free access to the account.
+The cron parser preserves the official `{ schedules: [] }` result shape and additionally accepts the direct-array variant raised in review. Only this endpoint accepts both forms; missing or malformed schedules never mean an empty list. This is compatibility hardening, not evidence of which form the user's account currently returns.
 
-Only after the operations PR is reviewed and merged, run **Actions → Cloudflare isolation audit → Run workflow** on main, supplying the actual test Worker script name and its complete version UUID from Cloudflare. The same Worker name may be inspected to diagnose today's preview, but that deliberately yields a blocker for the proposed separate-Worker test policy. Do not substitute a branch name, short version prefix or guessed hostname for a version UUID.
+All requests are GET to api.cloudflare.com, redirects are refused and response reads are bounded. No SQL rows, R2 object contents, publisher endpoints or Worker application requests are used. Plain-text/JSON/Secret binding values and raw API errors are never emitted.
 
-The sanitized report is retained as a private repository Actions artifact for 7 days. Copy its important resource identities, date/version and result to MBA-19 and the Linear continuation document; do not rely solely on expiring artifacts. Raw API responses must not be uploaded.
+`resource_separation_observed` is only point-in-time resource evidence. `remoteWritesAuthorized:false` and `launchApproved:false` ALWAYS remain. `blocked` means concrete resource/policy issues; `unverified` means insufficient evidence or a failed read. Both return exit code 2. Discovery and audit are separate modes, not interchangeable approvals.
 
-A developer can also run the CLI in their own environment with `CF_ACCOUNT_ID`, `CLOUDFLARE_AUDIT_API_TOKEN`, `CF_TEST_WORKER` and `CF_TEST_VERSION_ID` set locally. The CLI has no provisioning/deploy mode. Missing credentials return `unverified` before a network call.
+## Workflow security and evidence
 
-## What is still needed for an isolated test platform
+The PR/main automatic jobs run synthetic tests without Cloudflare credentials. The credentialed job is manual, main-only, and checks out the exact dispatched SHA with persisted Git credentials disabled. Never run credentialed PR-head code. Unfinished runtime PR #26 does not need to be merged for this operation.
 
-If no separate test environment exists, create new resources using the proposal after ownership/name checks. Do not replace production bindings or copy production DB/R2/Secrets. Start with synthetic test rows, separate login Secrets, no cron, no integration tokens and no custom public routes. Initialization must be schema-only and reviewed; the legacy migrations include seed data and should not be run blindly against an existing database.
+Reports remain private repository Actions artifacts for seven days. Copy relevant identities, mode, date/version and result into MBA-19 and the Linear START HERE document; do not rely on expiring artifacts alone. Do not upload raw API responses. A successful local/offline test is not a hosted audit.
 
-Then bind/deploy the explicit reviewed candidate in that isolated Worker, record its exact version/URL, run the metadata check, validate data/auth/outbound protections and only then connect the reviewed Save/list/download API/UI. Actual cloud account creation requires authorized account access not supplied by this tooling. The current connector directory did not provide a Cloudflare app; no live inventory/provisioning was performed when this change was authored.
+The currently available GitHub connector supports run reads/retries but has no workflow-dispatch action. The owner may need to click Run workflow once; no token should be pasted to compensate for that limitation.
 
-## Tests
+CLI: set `CF_AUDIT_OPERATION` to `discover_versions` or `audit` and the environment values above locally. Audit additionally requires `CF_TEST_VERSION_ID`. Missing credentials or unknown operations return unverified before network calls. There is no provisioning/deploy mode.
+
+## Remaining isolated platform gates
+
+If separate resources do not exist, provision new test Worker/D1/private R2 after ownership/name checks. Do not replace production bindings. Use schema-only reviewed initialization and synthetic rows, separate test login Secrets, no cron or integration tokens and no custom public routes. Legacy migrations contain seed data and must not run blindly against an existing database.
+
+Record the exact deployed test version and hostname, run the exact audit, verify safe test data/auth/outbound behavior and backup/cleanup, then connect only reviewed authenticated Save/list/download routes. The caller's test-store flag is not isolation evidence. Direct Cloudflare provisioning has not occurred.
+
+## Regression tests
 
 ```sh
-node --test tests/cloudflare/isolation-audit.test.mjs
+node --test tests/cloudflare/*.test.mjs
 ```
 
-The 48 synthetic tests cover traffic splits, alias/shared storage, missing/ambiguous fields, drift, unknown bindings, cron, input validation, output sanitization, API failures and size limits. This is not a hosted Cloudflare audit or a production security certification. The subsequent environment-setup documentation edit does not add new test results.
+The original 48 synthetic tests are retained. The additional contract/discovery suite contains 36 tests, executed locally with no real Cloudflare access. CI must verify the combined suite for the exact head before merge. Tests cover both cron shapes, malformed results, drift, sanitization, no automatic version selection and explicit audit UUID requirements.
 
 ## Official contracts consulted
 
-- https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/list/ — first deployment is actively serving traffic.
-- https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/versions/methods/get/ — exact version resource bindings, Workers Scripts Read.
-- https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/schedules/methods/get/ — cron metadata.
-- https://developers.cloudflare.com/workers/wrangler/environments/ — environment bindings must be explicitly configured.
-- https://developers.cloudflare.com/workers/versions-and-deployments/preview-urls/ — version/alias URLs are not a separate storage policy.
-- https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments — environment secrets, branch rules and private-repository reviewer limitations.
-- https://developers.cloudflare.com/fundamentals/api/get-started/create-token/ — permissions, account resources, TTL and handling the generated token.
-- https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/ — copy the correct account ID.
+- https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/list/
+- https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/versions/methods/get/
+- https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/versions/methods/list/
+- https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/schedules/methods/get/
+- https://developers.cloudflare.com/workers/wrangler/environments/
+- https://developers.cloudflare.com/workers/versions-and-deployments/preview-urls/
+- https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments
+- https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow
+- https://developers.cloudflare.com/fundamentals/api/get-started/create-token/

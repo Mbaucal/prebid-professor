@@ -17,13 +17,20 @@ on:
       - .github/workflows/cloudflare-isolation-audit.yml
   workflow_dispatch:
     inputs:
+      operation:
+        description: First run discover_versions; audit requires an exact version UUID
+        required: true
+        type: choice
+        options: [discover_versions, audit]
+        default: discover_versions
       test_worker:
-        description: Exact Worker script name, not a hostname or branch alias
+        description: Exact Worker name to read; no deployment is performed
         required: true
         type: string
+        default: prebid-professor
       test_version_id:
-        description: Exact Cloudflare version UUID to inspect
-        required: true
+        description: Leave empty for discovery; full UUID required only for audit
+        required: false
         type: string
 
 permissions:
@@ -41,7 +48,7 @@ jobs:
         with:
           node-version: 22
       - name: Test isolation audit with synthetic responses only
-        run: node --test tests/cloudflare/isolation-audit.test.mjs
+        run: node --test tests/cloudflare/*.test.mjs
 
   read-cloudflare-metadata:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
@@ -57,9 +64,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Read exact version bindings without changing Cloudflare
+      - name: Read selected Cloudflare metadata without changing Cloudflare
         env:
           CF_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+          CF_AUDIT_OPERATION: ${{ inputs.operation }}
           CF_TEST_WORKER: ${{ inputs.test_worker }}
           CF_TEST_VERSION_ID: ${{ inputs.test_version_id }}
           CLOUDFLARE_AUDIT_API_TOKEN: ${{ secrets.CLOUDFLARE_AUDIT_API_TOKEN }}
