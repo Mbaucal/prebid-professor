@@ -1,0 +1,32 @@
+{
+  "kind": "proposal-only-not-wrangler-config",
+  "issue": "MBA-19",
+  "provisioned": false,
+  "remoteWritesEnabled": false,
+  "productionDoNotChange": {
+    "worker": "prebid-professor",
+    "databaseBinding": "DB",
+    "databaseName": "prebid-professor-db",
+    "databaseIdFromRepositoryNotLiveApi": "7ef68f78-0fd8-4937-a774-d2fd1d5353e6",
+    "bucketBinding": "BUILDS",
+    "bucketName": "prebid-professor-builds"
+  },
+  "proposedTestResources": {
+    "worker": "prebid-professor-test",
+    "database": "prebid-professor-test-db",
+    "databaseId": null,
+    "bucket": "prebid-professor-test-builds",
+    "versionId": null,
+    "verifiedUrl": null
+  },
+  "activationRequirements": [
+    "Verify actual active production version(s) and exact test version resource bindings",
+    "Confirm ownership of proposed names before creating resources; do not reuse unknown pre-existing resources",
+    "Use new D1 and private R2 resources, never clone production records or credential material",
+    "Start with cron disabled, no public custom routes and no Gmail/CMS/deployment credentials",
+    "Use separate test administrator credentials through protected Secrets, not source control",
+    "Review schema-only initialization and minimal synthetic .invalid seed site",
+    "Verify a backup before any approved mutation of existing data",
+    "Review authenticated draft routes, quotas, retention and safe site deletion before enabling a writer"
+  ]
+}
