@@ -1,3 +1,6 @@
+import { assertWorkspaceSiteScope } from './site-draft.mjs';
+import { getSiteDraft, saveSiteDraft } from './site-draft-service.mjs';
+import { siteDraftPage, siteDraftScript } from './site-draft-page.mjs';
 import { zipSync } from 'fflate';
 import { getAuthenticatedUser, handleLogin, handleLogout } from '../auth.ts';
 import { runtimeDescriptor, readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
@@ -30,18 +33,14 @@ function store(env) {
 async function snapshot(env) {
   const value = await readPreviewSnapshot(env.DB.withSession('first-primary'),TEST_SITE,{includePrebid:true});
   const {prebidBuilds,...settings}=value;
-  const config=JSON.parse(settings.config.config_json);
-  if (settings.site.id!==TEST_SITE || settings.site.domain!=='example.invalid' || settings.site.gam_path!=='/123/test/'
-      || config.enablePrebid!==false || settings.bidders.length || settings.overrides.length || prebidBuilds.length) {
-    throw new WorkspaceError(409,'This first workspace accepts only the synthetic GPT-only test site.');
-  }
+  assertWorkspaceSiteScope(value);
   return settings;
 }
 async function candidate(settings, buildTimestamp, takeOverEnabled) {
   // The reference bridge deliberately requires an explicit interstitial fallback.
-  // This is the synthetic site's path, never a real publisher path inherited from production.
+  // Use the saved TEST-copy GAM path. No production configuration is imported.
   return buildArtifactCandidate({snapshot:settings,pin:await selectedWorkspacePin(settings),
-    buildTimestamp,takeOver:{enabled:takeOverEnabled,codelessAdUnitPath:'/123/test/Interstitial'},prebid:null});
+    buildTimestamp,takeOver:{enabled:takeOverEnabled,codelessAdUnitPath:settings.site.gam_path+'Interstitial'},prebid:null});
 }
 async function list(env) {
   const result=await env.DB.withSession('first-primary').prepare('SELECT release_id,package_sha256,state,created_at,note,descriptor_json FROM builtin_draft_uploads WHERE publisher_id=? ORDER BY created_at DESC,release_id LIMIT 20').bind(TEST_SITE).all();
@@ -75,10 +74,12 @@ async function route(request,env) {
   if (path==='/workspace.js' && request.method==='GET') return new Response(workspaceScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   if (path==='/runtime-selection' && request.method==='GET' && !url.search) return html(runtimeSelectionPage());
   if (path==='/runtime-selection.js' && request.method==='GET' && !url.search) return new Response(runtimeSelectionScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
+  if (path==='/site-settings' && request.method==='GET' && !url.search) return html(siteDraftPage());
+  if (path==='/site-settings.js' && request.method==='GET' && !url.search) return new Response(siteDraftScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   // No legacy fallback: publish, CMS, Gmail, deletion, arbitrary sites and public CDN routes do not exist.
   const fileMatch=path.match(/^\/test-api\/releases\/(builtin-draft-[a-f0-9]{64})(\/download)?$/);
-  const known=(request.method==='GET' && ['/test-api/status','/test-api/releases','/test-api/runtime-selection'].includes(path)) || (request.method==='GET' && fileMatch)
-    || (request.method==='POST' && ['/test-api/setup','/test-api/generate','/test-api/save','/test-api/runtime-selection'].includes(path));
+  const known=(request.method==='GET' && ['/test-api/status','/test-api/releases','/test-api/runtime-selection','/test-api/site-settings'].includes(path)) || (request.method==='GET' && fileMatch)
+    || (request.method==='POST' && ['/test-api/setup','/test-api/generate','/test-api/save','/test-api/runtime-selection','/test-api/site-settings'].includes(path));
   if (!known || url.search) throw new WorkspaceError(404,'This operation is not available in the test workspace.');
   if (path==='/test-api/status') return json({...(await inspectTestSchema(env.DB)),runtime:{version:runtimeDescriptor.version,sha256:runtimeDescriptor.codeSha256},publishable:false});
   if (path==='/test-api/setup') {
@@ -87,6 +88,10 @@ async function route(request,env) {
     return json(await initializeTestSchema(env.DB,actor.email));
   }
   if (!(await inspectTestSchema(env.DB)).ready) throw new WorkspaceError(409,'Prepare test data first.');
+  if (path==='/test-api/site-settings') {
+    if(request.method==='GET')return json(await getSiteDraft(env));
+    return json(await saveSiteDraft(env,actor.email,await jsonBody(request,['expectedRevision','acknowledge','draft'],262144)));
+  }
   if (path==='/test-api/runtime-selection') {
     if (request.method==='GET') return json(await readRuntimeSelectionSettings(env));
     const body=await jsonBody(request,['expectedRevision','selection']);

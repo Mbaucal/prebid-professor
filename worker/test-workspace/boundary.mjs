@@ -31,7 +31,9 @@ export function sameOrigin(request, origin) {
     throw new WorkspaceError(403, 'Same-origin request required.');
   }
 }
-export async function boundedText(request) {
+export async function boundedText(request, maxBytes = 16384) {
+  // Server-selected cap: only the site editor opts into the larger JSON budget.
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 262144) throw new TypeError('Invalid request size limit.');
   const reader = request.body?.getReader();
   if (!reader) throw new WorkspaceError(400, 'Request body is required.');
   const chunks = []; let size = 0;
@@ -39,7 +41,7 @@ export async function boundedText(request) {
     for (;;) {
       const { value, done } = await reader.read(); if (done) break;
       size += value.byteLength;
-      if (size > 16384) { await reader.cancel(); throw new WorkspaceError(413, 'Request exceeds 16 KB.'); }
+      if (size > maxBytes) { await reader.cancel(); throw new WorkspaceError(413, `Request exceeds ${maxBytes / 1024} KB.`); }
       chunks.push(value);
     }
   } finally { reader.releaseLock(); }
@@ -48,12 +50,12 @@ export async function boundedText(request) {
   try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
   catch { throw new WorkspaceError(400, 'UTF-8 input is required.'); }
 }
-export async function jsonBody(request, allowed) {
+export async function jsonBody(request, allowed, maxBytes = 16384) {
   if ((request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase() !== 'application/json') {
     throw new WorkspaceError(415, 'JSON body is required.');
   }
   let value;
-  const text = await boundedText(request);
+  const text = await boundedText(request, maxBytes);
   try { value = JSON.parse(text); } catch { throw new WorkspaceError(400, 'Invalid JSON.'); }
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => !allowed.includes(key))) {
     throw new WorkspaceError(422, 'Unknown request field. Source code and uploaded files are not accepted.');
