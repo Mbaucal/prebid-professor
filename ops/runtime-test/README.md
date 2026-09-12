@@ -1,27 +1,45 @@
 # Isolated test workspace — MBA-53
 
-This is a separate, initially disabled entrypoint built on PR #26. It reuses the approved generator, existing authentication primitives (with separate test credentials/session namespace) and immutable draft storage. It never imports/delegates to the production application router. This is NOT a production-ready release or all of Tessera's screens.
+This standalone entrypoint is built on PR #26. It reuses the approved generator, authentication primitives with separate test credentials/session namespace, and immutable draft storage. It never imports or delegates to the production application router. This is NOT all of Tessera's screens or a production release.
 
 ## Scope
 
-A synthetic example.invalid site; GPT-only generation, optional approved TakeOver code, text-only preview, reviewed Save and verified historical ZIP download. No actual ad requests from the workspace. No CMS, email, publisher publish, delete, bulk upload, general site management or cron. The HTML inside a downloaded candidate is an implementation example which can request ads if separately served; do not install it live.
+A synthetic example.invalid site; GPT-only generation, optional approved TakeOver code, text-only preview, reviewed Save and verified historical ZIP download. No actual ad requests from the workspace. No CMS, email, publisher publish, deletion, bulk upload, general site management or cron. The HTML inside a downloaded candidate can request ads if separately served; do not install it live.
 
-`POST /test-api/setup` is explicit, authenticated and same-origin. It accepts only an empty database, creates checksum-locked schema without the legacy publisher seeds, and creates one synthetic site as a single D1 batch. GET requests never initialize. Recognized schemas are reusable; other/nonempty databases are refused. Storage quota: 20 intents/packages, enforced by a SQL trigger including partial uploads. No automatic cleanup or destructive reset.
+`POST /test-api/setup` is explicit, authenticated and same-origin. It accepts only an empty database, creates checksum-locked schema without production seeds, and creates one synthetic site as one D1 batch. GET requests never initialize. Recognized schemas are reusable; other/nonempty databases are refused. Twenty-package quota includes partial upload intents. No automatic cleanup or destructive reset.
 
-Generate performs no R2 write. It returns a 20-minute signed receipt binding the authenticated actor, origin, configuration, runtime, deterministic timestamp, TakeOver choice and exact package hash. Save accepts that receipt, not uploaded code/files, rechecks current settings and regenerates the same deterministic bytes for hash equality before using the existing idempotent store. Failed/uncertain storage remains tracked for retry. Historical reads return and verify saved bytes, not a new generation.
+Generate performs no R2 write. A 20-minute signed review receipt binds the actor, origin, configuration, runtime, timestamp, TakeOver choice and exact package hash. Save accepts that receipt, not uploaded files, and compares the deterministic regenerated package before using the immutable store. Historical reads verify saved bytes without regenerating. Failed/uncertain storage is retained for exact retry.
 
-## Activation is NOT performed by this PR
+## Explicit TEST activation — owner setup confirmed 12 September 2026
 
-The existing test bootstrap/main deployment stays unchanged. This branch must first pass the route, schema, storage, auth, browser and Worker compile checks. Review the generated schema and effective resources before enabling setup writes. The prior bootstrap audit is not a hosted test of this new entry.
+Marko confirmed saving the three separate runtime TEST_* Secrets on the EXISTING test Worker and supplied its Visit URL: https://prebid-professor-test.mbaucal.workers.dev/ . Their values were not requested or read. This owner confirmation does not prove a hosted login or effective bindings. Do not repeat resource/Secret creation or the unchanged bootstrap audit.
 
-For the later approved TEST deployment only: use this reviewed feature branch, root `ops/runtime-test`, build `npm --prefix ../.. ci --ignore-scripts && node ../../scripts/prepare-builtin-runtime.mjs && node ../../scripts/prepare-test-workspace.mjs`, deploy `npx --no-install wrangler deploy --config wrangler.jsonc`. Do not change production's root or branch. Non-production preview builds stay off.
+`wrangler.jsonc` stays disabled with an empty origin. `wrangler.active.jsonc` is the explicitly selected test-only activation configuration: only TEST_WORKSPACE_ENABLED and TEST_PUBLIC_ORIGIN differ. Neither file contains passwords or session keys. The offline allowlist checker rejects different worker/account/storage/entrypoint/route/cron/extra bindings or plaintext credentials. It validates DECLARATIONS, not hosted resources.
 
-Current config is intentionally disabled (`TEST_WORKSPACE_ENABLED=false`, `TEST_PUBLIC_ORIGIN` empty). Activation must explicitly set the confirmed exact HTTPS test origin and enable flag in the reviewed test config; the router accepts only prebid-professor-test.mbaucal.workers.dev, not production or version preview hosts. That allowlist is a deployment constraint, NOT evidence the URL was contacted/verified.
+Only after the exact branch head passes CI, change **prebid-professor-test → Settings → Build**:
 
-Separate runtime credentials: `TEST_ADMIN_EMAIL`, `TEST_ADMIN_PASSWORD` (at least 12 characters), `TEST_SESSION_SECRET` (random, at least 32 characters). Store secret values in the test Worker's Secrets only, never repository variables/chat/Linear. Do not reuse production ADMIN_PASSWORD or SESSION_SECRET. The existing read-only audit token is unrelated and remains read-only. Missing/wrong/disabled configuration fails before database access.
+| Setting | Value |
+| --- | --- |
+| Git branch / production branch for THIS TEST Worker | `feature/isolated-runtime-workspace-v1` |
+| Root directory | `ops/runtime-test` |
+| Build command | `npm --prefix ../.. ci --ignore-scripts && node ../../scripts/check-test-activation.mjs && node ../../scripts/prepare-builtin-runtime.mjs && node ../../scripts/prepare-test-workspace.mjs` |
+| Deploy command | `npx --no-install wrangler deploy --config wrangler.active.jsonc` |
+| Non-production branch builds | OFF |
+| Build token | Keep the existing `prebid-professor-test build token` |
 
-A later operator test signs in, explicitly prepares the empty test database once, generates, reviews/saves, repeats Save (one package), refreshes and reopens/downloads the same release. The current draft code does not authorize deployment or Marko testing yet. Do not repeat the already completed bootstrap/metadata setup.
+No production Worker, main merge, new token, Build variables or new Secret is required. The dashboard label 'production branch' belongs to this TEST Worker; it does not mean the live application. Do not run the repository-root `npm run build` / `npm run deploy` here. Do not create another Worker. Do not override origin/enable in dashboard plaintext variables; the explicit config is the source of those settings.
 
-Limitations: first workspace is fixed synthetic GPT-only, no Prebid upload, no general configuration editor, no production promotion. Authentication reuses the current signed-session implementation; global brute-force/rate-limit review and deployed CPU/storage behavior still need verification before activation beyond a controlled admin test. Test cookie is host-only and uses a test-specific signing namespace.
+Save all settings together BEFORE triggering a fresh build from the selected feature branch. Do not retry an old main-branch bootstrap build to test a feature-branch checkout. When the owner confirms settings saved, a reviewed documentation-only commit on the selected branch can trigger the connected test build; a GitHub CI success is not Cloudflare deployment proof. Verify the resulting build's branch and root.
 
-Official API contracts: https://developers.cloudflare.com/d1/worker-api/d1-database/ ; https://developers.cloudflare.com/d1/best-practices/read-replication/ ; https://developers.cloudflare.com/workers/configuration/secrets/ .
+After successful deployment, record the actual Current Version ID and check that version's effective test DB/R2, no routes/crons/integrations, and private bucket access BEFORE the first explicit setup. Saving runtime Secrets may itself have changed the bootstrap version. Never reuse the old bootstrap UUID as proof for this deployment. Keep the prior test version for test-only code rollback; never delete/reset test storage to roll back code.
+
+Then the owner signs in with the already configured test credentials, clicks Prepare empty test database once, generates a package, acknowledges review, saves it twice (one release), reloads, reopens and downloads the original ZIP. Until this hosted check passes, MBA-53 stays In Progress and no publisher/live readiness is claimed.
+
+## Verification and limits
+
+The integrated workflow runs Node auth/schema/storage/config tests, two credential-free Wrangler dry-runs, a byte-for-byte comparison of the disabled and active compiled Worker modules, local workerd with Miniflare D1/R2 including restart, and loopback Chromium UI checks. Local fixtures provide independent synthetic credentials and storage. Passing these tests is not hosted resource isolation, real ad delivery, independent security approval or permission to publish to production.
+
+The bootstrap's prior metadata separation result remains version-specific. Global authentication/rate-limit review, hosted CPU/budget behavior, real Prebid/site editing and production promotion remain outside this controlled synthetic admin test. Known dependency warnings are tracked in MBA-52.
+
+Official build settings: https://developers.cloudflare.com/workers/ci-cd/builds/configuration/
+Runtime Secrets: https://developers.cloudflare.com/workers/configuration/secrets/

@@ -33,18 +33,24 @@ jobs:
           python-version: '3.12'
       - name: Install locked tools without lifecycle scripts
         run: npm ci --ignore-scripts
+      - name: Check both declared test configurations without credentials or network
+        run: node scripts/check-test-activation.mjs
       - name: Prepare locked built-in generator and schema without accessing any database
         run: |
           node scripts/prepare-builtin-runtime.mjs
           node scripts/prepare-test-workspace.mjs
       - name: Exercise real authentication, compiler, SQL schema and stored-draft HTTP workflow
-        run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs
-      - name: Compile isolated Worker without credentials or deployment
+        run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs
+      - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:
           CI: 'true'
           WRANGLER_SEND_METRICS: 'false'
-        run: npx --no-install wrangler deploy --config wrangler.jsonc --dry-run --outdir ../../.generated/test-workspace-dry-run
+        run: |
+          npx --no-install wrangler deploy --config wrangler.jsonc --dry-run --outdir ../../.generated/test-workspace-dry-run
+          npx --no-install wrangler deploy --config wrangler.active.jsonc --dry-run --outdir ../../.generated/test-workspace-active-dry-run
+      - name: Require the active config to compile to the exact Worker bytes tested below
+        run: node scripts/check-test-activation.mjs --compare-bundles
       - name: Verify compiled Worker with LOCAL Miniflare D1 and R2 including restart
         env:
           WRANGLER_SEND_METRICS: 'false'
