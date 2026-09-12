@@ -1,7 +1,7 @@
 name: Isolated test workspace checks
 on:
   pull_request:
-    branches: [main, feature/builtin-runtime-foundation-v1]
+    branches: [main, feature/builtin-runtime-foundation-v1, feature/isolated-runtime-workspace-v1]
     paths:
       - worker/**
       - ops/runtime-test/**
@@ -40,7 +40,7 @@ jobs:
           node scripts/prepare-builtin-runtime.mjs
           node scripts/prepare-test-workspace.mjs
       - name: Exercise real authentication, compiler, SQL schema and stored-draft HTTP workflow
-        run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs tests/runtime/site-runtime-selection.test.mjs tests/runtime/runtime-selection-cas.test.mjs tests/runtime/test-runtime-selection.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:
@@ -54,12 +54,14 @@ jobs:
       - name: Verify compiled Worker with LOCAL Miniflare D1 and R2 including restart
         env:
           WRANGLER_SEND_METRICS: 'false'
-        run: node scripts/verify-workerd-workspace.mjs
+        run: |
+          node scripts/verify-workerd-workspace.mjs
+          node scripts/verify-workerd-selection.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
-      - name: Browser Generate, Save, repeat Save, reload, reopen and byte-identical download
+      - name: Browser settings, stale-tab protection, Generate, Save, reopen and exact download
         run: python scripts/verify-test-workspace.py
       - name: Keep only synthetic report and screenshots, never sessions or databases
         if: always()

@@ -2,7 +2,10 @@ import { zipSync } from 'fflate';
 import { getAuthenticatedUser, handleLogin, handleLogout } from '../auth.ts';
 import { runtimeDescriptor, readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
-import { pinRuntime } from '../runtime/version-pin.mjs';
+import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
+import { SelectionWriteError } from './selection-transaction.mjs';
+import { readRuntimeSelectionSettings, saveRuntimeSelectionSettings, selectedWorkspacePin } from './runtime-selection.mjs';
+import { runtimeSelectionPage, runtimeSelectionScript } from './runtime-selection-page.mjs';
 import { buildArtifactCandidate } from '../runtime/artifact-candidate.mjs';
 import { describeCandidate, saveDraftRelease, readDraftRelease } from '../runtime/draft-release-store.mjs';
 import { WorkspaceError, workspaceBoundary, sameOrigin, boundedText, jsonBody, TEST_SITE } from './boundary.mjs';
@@ -37,7 +40,7 @@ async function snapshot(env) {
 async function candidate(settings, buildTimestamp, takeOverEnabled) {
   // The reference bridge deliberately requires an explicit interstitial fallback.
   // This is the synthetic site's path, never a real publisher path inherited from production.
-  return buildArtifactCandidate({snapshot:settings,pin:pinRuntime(runtimeDescriptor,{allowPreview:true}),
+  return buildArtifactCandidate({snapshot:settings,pin:await selectedWorkspacePin(settings),
     buildTimestamp,takeOver:{enabled:takeOverEnabled,codelessAdUnitPath:'/123/test/Interstitial'},prebid:null});
 }
 async function list(env) {
@@ -70,10 +73,12 @@ async function route(request,env) {
   if (path==='/api/auth/logout' && request.method==='POST') return handleLogout(request);
   if (path==='/' && request.method==='GET') return html(workspacePage(actor.email));
   if (path==='/workspace.js' && request.method==='GET') return new Response(workspaceScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
+  if (path==='/runtime-selection' && request.method==='GET' && !url.search) return html(runtimeSelectionPage());
+  if (path==='/runtime-selection.js' && request.method==='GET' && !url.search) return new Response(runtimeSelectionScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   // No legacy fallback: publish, CMS, Gmail, deletion, arbitrary sites and public CDN routes do not exist.
   const fileMatch=path.match(/^\/test-api\/releases\/(builtin-draft-[a-f0-9]{64})(\/download)?$/);
-  const known=(request.method==='GET' && ['/test-api/status','/test-api/releases'].includes(path)) || (request.method==='GET' && fileMatch)
-    || (request.method==='POST' && ['/test-api/setup','/test-api/generate','/test-api/save'].includes(path));
+  const known=(request.method==='GET' && ['/test-api/status','/test-api/releases','/test-api/runtime-selection'].includes(path)) || (request.method==='GET' && fileMatch)
+    || (request.method==='POST' && ['/test-api/setup','/test-api/generate','/test-api/save','/test-api/runtime-selection'].includes(path));
   if (!known || url.search) throw new WorkspaceError(404,'This operation is not available in the test workspace.');
   if (path==='/test-api/status') return json({...(await inspectTestSchema(env.DB)),runtime:{version:runtimeDescriptor.version,sha256:runtimeDescriptor.codeSha256},publishable:false});
   if (path==='/test-api/setup') {
@@ -82,6 +87,11 @@ async function route(request,env) {
     return json(await initializeTestSchema(env.DB,actor.email));
   }
   if (!(await inspectTestSchema(env.DB)).ready) throw new WorkspaceError(409,'Prepare test data first.');
+  if (path==='/test-api/runtime-selection') {
+    if (request.method==='GET') return json(await readRuntimeSelectionSettings(env));
+    const body=await jsonBody(request,['expectedRevision','selection']);
+    return json(await saveRuntimeSelectionSettings(env,actor.email,body));
+  }
   if (path==='/test-api/releases') return json({releases:await list(env)});
   if (fileMatch) {
     const saved=await readDraftRelease(store(env),{siteId:TEST_SITE,releaseId:fileMatch[1]});
@@ -116,7 +126,7 @@ export default {
   async fetch(request,env) {
     try { return await route(request,env); }
     catch(error) {
-      if(error instanceof WorkspaceError)return json({error:error.message},error.status);
+      if(error instanceof WorkspaceError || error instanceof RuntimeSelectionError || error instanceof SelectionWriteError)return json({error:error.message},error.status);
       if(String(error?.message).includes('TEST_DRAFT_QUOTA'))return json({error:'The test workspace has reached its 20-package limit. Existing files are retained.'},409);
       return json({error:'The test operation could not be verified. Nothing was published. Retry the same reviewed package after checking test storage.'},503);
     }
