@@ -45,6 +45,10 @@ jobs:
           CI: 'true'
           WRANGLER_SEND_METRICS: 'false'
         run: npx --no-install wrangler deploy --config wrangler.jsonc --dry-run --outdir ../../.generated/test-workspace-dry-run
+      - name: Verify compiled Worker with LOCAL Miniflare D1 and R2 including restart
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: node scripts/verify-workerd-workspace.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0
