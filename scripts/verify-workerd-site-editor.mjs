@@ -7,6 +7,7 @@ import { mkdtemp,readdir,readFile,mkdir,writeFile,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Miniflare } from 'miniflare';
+import { generatedLiteral } from '../tests/support/generated-literal.mjs';
 const origin='https://prebid-professor-test.mbaucal.workers.dev';
 const directory=await mkdtemp(join(tmpdir(),'tessera-selection-workerd-'));
 const compiled='.generated/test-workspace-active-dry-run';
@@ -65,7 +66,7 @@ try{
   const unchanged=await json('/test-api/site-settings',{...inputDraft,expectedRevision:current.revision,draft:current.draft});
   check('Repeated normalized edit is a no-op',unchanged.changed===false);
   const generated=await json('/test-api/generate',{acknowledge:true,takeOverEnabled:true});
-  check('Compiled generator consumes edited positions, sizes and TakeOver fallback',generated.adsJs.includes('InText1')&&generated.adsJs.includes('300,600')&&generated.adsJs.includes('/123/pilot/Interstitial'));
+  check('Compiled generator consumes edited positions, sizes and TakeOver fallback',generatedLiteral(generated.adsJs,'EXPLICIT_UNITS').some(u=>u.id==='InText1')&&JSON.stringify(generatedLiteral(generated.adsJs,'SIZE_MAPS_RAW').display[0].sizes)==='[[300,600],[300,250]]'&&generatedLiteral(generated.adsJs,'TAKEOVER_CODELESS_AD_UNIT_PATH')==='/123/pilot/Interstitial');
   const release=await json('/test-api/save',{receipt:generated.receipt,acknowledge:true,note:'Local compiled site editor'});
   const path='/test-api/releases/'+release.draft.id+'/download';
   const first=await call(path);assert.equal(first.status,200);const hash=sha(new Uint8Array(await first.arrayBuffer()));

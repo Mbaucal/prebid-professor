@@ -84,7 +84,8 @@ export function readSiteDraft(saved) {
   })}));}catch(error){if(error instanceof WorkspaceError)throw error;fail('Saved size maps need review.',409);}
   const draft={site:{name:saved.site.name,domain:saved.site.domain,gamPath:saved.site.gam_path},
     units:saved.units.map((u)=>{if(u.media_type!=='banner')fail('This editor supports banner positions only.',409);return {code:u.code,type:u.type,sizeMap:u.size_map_key,enabled:u.enabled===1};}),
-    maps,bottomStickyId:config.runtimeControls?.sticky?.bottomAdUnitId??(saved.units.some((u)=>u.code==='Sticky')?'Sticky':'')};
+    maps,bottomStickyId:Object.hasOwn(config.runtimeControls?.sticky??{},'bottomAdUnitId')
+      ? (config.runtimeControls.sticky.bottomAdUnitId||'') : (saved.units.some((u)=>u.enabled===1&&u.code==='Sticky')?'Sticky':'')};
   return normalizeSiteDraft(draft);
 }
 export async function planSiteDraft(saved,input) {

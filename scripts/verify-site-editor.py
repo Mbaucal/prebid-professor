@@ -3,6 +3,7 @@ All target traffic INCLUDING redirect chains is resolved to loopback TLS.
 No Cloudflare API, real credentials, external ad libraries or publisher requests.
 """
 import json
+import re
 import pathlib
 import subprocess
 import tempfile
@@ -86,7 +87,7 @@ def exercise(page):
     page.locator('#generate').click()
     page.locator('#review').wait_for(state='visible',timeout=90000)
     source=page.locator('#source').text_content()
-    check('Generated code contains saved position, size and GAM path','InText1' in source and '/123/pilot/' in source and '300,600' in source)
+    check('Generated code contains saved position, size and GAM path','InText1' in source and '/123/pilot/' in source and re.search(r'\b300\s*,\s*600\b',source) is not None)
     check('Generated code was not executed',page.evaluate('typeof window.takeOverDebug')=='undefined')
     page.locator('#ack').check()
     page.locator('#save').click()
