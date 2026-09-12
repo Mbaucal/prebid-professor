@@ -17,6 +17,10 @@ assert.equal(names.length, 1, 'Expected one compiled Worker module from the cred
 const script = await readFile(join(compiled, names[0]), 'utf8');
 const sourceSha256 = createHash('sha256').update(script).digest('hex');
 const config = JSON.parse(await readFile('ops/runtime-test/wrangler.jsonc', 'utf8'));
+const lock = JSON.parse(await readFile('package-lock.json', 'utf8'));
+const installed = JSON.parse(await readFile('node_modules/miniflare/package.json', 'utf8'));
+assert.equal(installed.version, lock.packages['node_modules/miniflare'].version, 'Use the lockfile Miniflare, not a newly downloaded version');
+assert(installed.version.startsWith('5.'), 'Review persistence options when changing Miniflare major version');
 assert.equal(config.name, 'prebid-professor-test');
 assert.equal(config.vars.TEST_WORKSPACE_ENABLED, 'false', 'Verification must not activate the committed deployment');
 const origin = 'https://prebid-professor-test.mbaucal.workers.dev'; // dispatchFetch stays local
@@ -38,9 +42,12 @@ function start() {
     name: 'local-tessera-workspace-verification', modules: true, script,
     compatibilityDate: config.compatibility_date, host: '127.0.0.1', port: 0,
     cf: false, bindings,
+    // Miniflare 5 uses one shared persistence root. Legacy d1Persist/r2Persist
+    // options are ignored by this version and would invalidate the restart test.
+    resourcePersistencePath: directory,
     // These identifiers select LOCAL storage only; no API token or remote connector exists.
-    d1Databases: { DB: 'local-workspace-database' }, d1Persist: join(directory, 'd1'),
-    r2Buckets: { BUILDS: 'local-workspace-files' }, r2Persist: join(directory, 'r2'),
+    d1Databases: { DB: 'local-workspace-database' },
+    r2Buckets: { BUILDS: 'local-workspace-files' },
     outboundService: () => { externalAttempts++; return new Response('External requests are disabled in local verification.', { status: 503 }); },
   });
 }
@@ -115,6 +122,7 @@ try {
   const firstZip = await zip(id);
   checked('Downloaded ads.js matches the original reviewed source', new TextDecoder().decode(firstZip.files['ads.js']) === generated.adsJs);
   checked('Nine-file package omits Prebid in GPT-only mode', Object.keys(firstZip.files).length === 9 && !firstZip.files['prebid.js']);
+  checked('The selected local persistence directory is actually populated', (await readdir(directory)).length > 0);
 
   phase = 'restart';
   await mf.dispose(); mf = null;
@@ -141,7 +149,7 @@ try {
   checked('No outbound application fetch was attempted', externalAttempts === 0);
 
   const report = { scope: 'LOCAL workerd + Miniflare D1/R2 persisted to temporary disk; NOT hosted Cloudflare',
-    compiledSha256: sourceSha256, checks, events, externalAttempts, passed: checks.length, failed: 0,
+    miniflareVersion: installed.version, compiledSha256: sourceSha256, checks, events, externalAttempts, passed: checks.length, failed: 0,
     productionChanged: false, hostedTest: false, credentialsInArtifact: false };
   await mkdir('.generated/test-workspace-evidence', { recursive: true });
   await writeFile('.generated/test-workspace-evidence/workerd.json', JSON.stringify(report, null, 2));
