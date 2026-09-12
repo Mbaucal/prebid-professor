@@ -1,17 +1,31 @@
-import { statements, tables, schemaSha256 } from '../../.generated/test-workspace-schema.mjs';
+import { statements, schemaSha256 } from '../../.generated/test-workspace-schema.mjs';
 import { WorkspaceError, TEST_DATABASE, TEST_BUCKET, TEST_SITE } from './boundary.mjs';
 export { schemaSha256 };
 function session(db) {
   if (!db || typeof db.withSession !== 'function') throw new WorkspaceError(503, 'Test database is not connected.');
   return db.withSession('first-primary');
 }
+// SQLite retains CREATE SQL with insignificant whitespace changes. Preserve
+// quoted strings verbatim, rather than normalizing away a changed constraint.
+function normalizedDdl(sql) {
+  if (typeof sql !== 'string') return null;
+  return (sql.match(/'(?:[^']|'')*'|"(?:[^"]|"")*"|`(?:[^`]|``)*`|\[[^\]]*\]|\s+|[^\s'"`\[]+/g) || [])
+    .map((token) => /^\s+$/.test(token) ? ' ' : token).join('').trim().replace(/;$/, '');
+}
+const expectedObjects = statements.map((sql) => {
+  const match = sql.match(/^CREATE (TABLE|INDEX|TRIGGER) (\w+)/);
+  if (!match) throw new Error('Unexpected prepared schema object.');
+  return { name: match[2], type: match[1].toLowerCase(), sql: normalizedDdl(sql) };
+}).sort((a,b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 export async function inspectTestSchema(db) {
   const current = session(db);
-  const result = await current.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' ORDER BY name").all();
+  const result = await current.prepare("SELECT name,type,sql FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' ORDER BY name").all();
   if (result.success === false || !Array.isArray(result.results)) throw new WorkspaceError(503,'Test schema could not be checked.');
-  const names = result.results.map((row) => row.name);
-  if (!names.length) return { ready:false, empty:true };
-  if (JSON.stringify(names) !== JSON.stringify(tables)) throw new WorkspaceError(409,'This database is not an empty or recognized test workspace. Nothing was initialized.');
+  if (!result.results.length) return { ready:false, empty:true };
+  const actual = result.results.map((row) => ({name:row.name,type:row.type,sql:normalizedDdl(row.sql)}));
+  if (JSON.stringify(actual) !== JSON.stringify(expectedObjects)) {
+    throw new WorkspaceError(409,'The current test schema, indexes or safety guards do not match the reviewed version. Nothing was initialized.');
+  }
   const marker = await current.prepare('SELECT * FROM tessera_test_environment WHERE id=1').first();
   if (marker?.schema_sha256 !== schemaSha256 || marker?.database_id !== TEST_DATABASE || marker?.bucket_name !== TEST_BUCKET) {
     throw new WorkspaceError(409,'Test database identity does not match this workspace.');
@@ -35,8 +49,8 @@ export async function initializeTestSchema(db, actor) {
     current.prepare('INSERT INTO unit_rules (id,publisher_id,rule_key,rule_json) VALUES (?,?,?,?)').bind('test-default-rule',TEST_SITE,'__DEFAULT__',JSON.stringify({timeout:1500,refresh:{enabled:false}})),
     current.prepare('INSERT INTO audit_log (id,actor,action,publisher_id,details_json) VALUES (?,?,?,?,?)').bind('test-workspace-initialized',actor,'test_workspace.initialized',TEST_SITE,JSON.stringify({schemaSha256,synthetic:true})),
   ];
-  // All strict CREATEs, guards and synthetic inserts commit as one D1 batch.
-  // A concurrent initializer loses the CREATE race; no IF NOT EXISTS masks it.
+  // Strict CREATEs and the synthetic seed commit as one D1 batch. No automatic
+  // repairs or IF NOT EXISTS that could hide a concurrent/unknown initializer.
   await current.batch(writes);
   const verified = await inspectTestSchema(db);
   if (!verified.ready) throw new WorkspaceError(503,'Test schema initialization could not be verified.');
