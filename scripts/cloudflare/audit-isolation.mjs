@@ -4,6 +4,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { inspectWorkspaceBindings, WORKSPACE_IDENTITY } from './test-workspace-binding-profile.mjs';
 
 const API = 'https://api.cloudflare.com/client/v4';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -79,11 +80,14 @@ export function inspectVersion(result, expectedId, role) {
   }
   if (databases.filter((r) => r.binding === 'DB').length !== 1 || buckets.filter((r) => r.binding === 'BUILDS').length !== 1) issues.push('required_resource_binding_missing');
   if (role === 'test' && (databases.length !== 1 || buckets.length !== 1)) issues.push('unexpected_test_storage_binding');
-  if (externalBindingCount) issues.push('test_integration_binding_needs_review');
+  const workspace = role === 'test' ? inspectWorkspaceBindings(bindings) : null;
+  if (workspace) issues.push(...workspace.issues);
+  else if (externalBindingCount) issues.push('test_integration_binding_needs_review');
   // Do not emit arbitrary binding names: only resource IDs and expected-binding flags.
   return { versionId: expectedId.toLowerCase(), databaseIds: unique(databases.map((r) => r.id)),
     bucketNames: unique(buckets.map((r) => r.bucket)), issues: unique(issues),
-    expectedBindingsPresent: databases.some((r) => r.binding === 'DB') && buckets.some((r) => r.binding === 'BUILDS') };
+    expectedBindingsPresent: databases.some((r) => r.binding === 'DB') && buckets.some((r) => r.binding === 'BUILDS'),
+    ...(workspace ? { testConfiguration: workspace.summary } : {}) };
 }
 
 export function readSchedules(result) {
@@ -157,10 +161,20 @@ export async function auditIsolation(input, { fetchImpl = globalThis.fetch, now 
     const production = [];
     for (const row of before.versions) production.push(inspectVersion(await get(PRODUCTION.worker, `versions/${row.versionId}`), row.versionId, 'production'));
     const test = inspectVersion(await get(config.testWorker, `versions/${config.testVersionId}`), config.testVersionId, 'test');
+    // The workspace profile additionally requires this exact version to serve all test traffic.
+    const testBefore = test.testConfiguration ? activeDeployment(await get(config.testWorker, 'deployments')) : null;
     const schedulesBefore = readSchedules(await get(config.testWorker, 'schedules'));
     const after = activeDeployment(await get(PRODUCTION.worker, 'deployments'));
     const schedulesAfter = readSchedules(await get(config.testWorker, 'schedules'));
-    if (JSON.stringify(before) !== JSON.stringify(after) || JSON.stringify(schedulesBefore) !== JSON.stringify(schedulesAfter)) fail('deployment_or_schedule_changed_during_audit');
+    const testAfter = testBefore ? activeDeployment(await get(config.testWorker, 'deployments')) : null;
+    if (JSON.stringify(before) !== JSON.stringify(after) || JSON.stringify(schedulesBefore) !== JSON.stringify(schedulesAfter) || JSON.stringify(testBefore) !== JSON.stringify(testAfter)) fail('deployment_or_schedule_changed_during_audit');
+    if (testBefore) {
+      test.deployment = testBefore;
+      test.requestedVersionServingAllTraffic = testBefore.versions.length === 1 && testBefore.versions[0].versionId === config.testVersionId && testBefore.versions[0].percentage === 100;
+      if (!test.requestedVersionServingAllTraffic) test.issues.push('test_selected_version_not_sole_active');
+      if (config.accountId !== WORKSPACE_IDENTITY.accountId || config.testWorker !== WORKSPACE_IDENTITY.worker) test.issues.push('test_workspace_identity_mismatch');
+      test.issues = unique(test.issues);
+    }
     return { schemaVersion: 1, evidence: 'cloudflare_get_metadata', observedAt: now(),
       production: { worker: PRODUCTION.worker, deployment: before, versions: production },
       test: { worker: config.testWorker, ...test },
