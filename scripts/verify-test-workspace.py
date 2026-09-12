@@ -29,8 +29,10 @@ def check(name,condition):
     checks.append({'name':name,'passed':True})
 
 def exercise(page):
-    page.goto(origin+'/')
+    navigation=page.goto(origin+'/')
     page.wait_for_url(origin+'/login')
+    policy=navigation.header_value('content-security-policy') or ''
+    check('CSP remains enabled without unsafe-eval',"script-src 'self'" in policy and 'unsafe-eval' not in policy)
     expect(page.get_by_role('heading',name='Sign in to test')).to_be_visible()
     check('Signed-out redirect reaches LOCAL test login',not nonlocal_responses)
     page.locator('#email').fill('tester@example.invalid')
@@ -50,10 +52,15 @@ def exercise(page):
     page.locator('#ack').check()
     page.locator('#note').fill('Browser test · TakeOver')
     page.locator('#save').click()
-    page.locator('#releases article').wait_for(state='visible',timeout=90000)
-    page.wait_for_function("!document.querySelector('#save').disabled")
-    page.locator('#save').click()
-    page.wait_for_function("document.querySelector('#message').textContent.includes('already saved')",timeout=90000)
+    expect(page.locator('#releases article')).to_have_count(1,timeout=90000)
+    # Locator assertions retry without evaluating a string predicate in the
+    # page. Do NOT bypass or relax the application's Content Security Policy.
+    expect(page.locator('#save')).to_be_enabled(timeout=90000)
+    with page.expect_response(lambda r: urllib.parse.urlsplit(r.url).path=='/test-api/save' and r.request.method=='POST',timeout=90000) as repeated:
+        page.locator('#save').click()
+    check('Repeated Save reaches the authenticated API',repeated.value.status==200)
+    expect(page.locator('#message')).to_contain_text('already saved',timeout=90000)
+    expect(page.locator('#save')).to_be_enabled(timeout=90000)
     check('Repeated Save creates one release',page.locator('#releases article').count()==1)
     page.reload()
     page.get_by_role('button',name='Open saved release').wait_for(state='visible')
