@@ -10,7 +10,10 @@ import { inspectTestSchema, initializeTestSchema } from './schema.mjs';
 import { issueReceipt, verifyReceipt } from './receipt.mjs';
 import { loginPage, workspacePage, workspaceScript } from './page.mjs';
 
-const headers = { 'cache-control':'private, no-store', 'referrer-policy':'no-referrer',
+// HTML form navigation under no-referrer sends Origin:null. same-origin keeps
+// legitimate form Origin while still suppressing cross-origin referrers.
+// The mutation guard continues to reject missing/null/foreign Origin values.
+const headers = { 'cache-control':'private, no-store', 'referrer-policy':'same-origin',
   'x-content-type-options':'nosniff', 'x-robots-tag':'noindex, nofollow, noarchive',
   'content-security-policy':"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" };
 const json = (value,status=200) => new Response(JSON.stringify(value),{status,headers:{...headers,'content-type':'application/json; charset=utf-8'}});
