@@ -32,8 +32,10 @@ async function snapshot(env) {
   return settings;
 }
 async function candidate(settings, buildTimestamp, takeOverEnabled) {
+  // The reference bridge deliberately requires an explicit interstitial fallback.
+  // This is the synthetic site's path, never a real publisher path inherited from production.
   return buildArtifactCandidate({snapshot:settings,pin:pinRuntime(runtimeDescriptor,{allowPreview:true}),
-    buildTimestamp,takeOver:{enabled:takeOverEnabled},prebid:null});
+    buildTimestamp,takeOver:{enabled:takeOverEnabled,codelessAdUnitPath:'/123/test/Interstitial'},prebid:null});
 }
 async function list(env) {
   const result=await env.DB.withSession('first-primary').prepare('SELECT release_id,package_sha256,state,created_at,note,descriptor_json FROM builtin_draft_uploads WHERE publisher_id=? ORDER BY created_at DESC,release_id LIMIT 20').bind(TEST_SITE).all();
@@ -46,9 +48,9 @@ async function list(env) {
 }
 async function route(request,env) {
   const {origin,auth}=workspaceBoundary(request,env);
+  if (!['GET','POST'].includes(request.method)) throw new WorkspaceError(405,'Method not allowed.');
   sameOrigin(request,origin);
   const url=new URL(request.url), path=url.pathname;
-  if (!['GET','POST'].includes(request.method)) throw new WorkspaceError(405,'Method not allowed.');
   if (path==='/login' && request.method==='GET') return html(loginPage());
   if (path==='/api/auth/login' && request.method==='POST') {
     const text=await boundedText(request);

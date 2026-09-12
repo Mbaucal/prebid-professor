@@ -19,7 +19,9 @@ export function workspaceStore() {
   const db={
     withSession(constraint){assert.equal(constraint,'first-primary');return db;},
     prepare(sql){const prepare=(args)=>({sql,args,bind(...values){return prepare(values);},async run(){return execute(sql,args);},async all(){return execute(sql,args);},async first(){return execute(sql,args).results[0]??null;}});return prepare([]);},
-    async batch(items){log.batches++;sqlite.exec('BEGIN IMMEDIATE');let result;try{result=items.map((item,index)=>{if(index===faults.batchAt)throw Error('injected schema failure');return execute(item.sql,item.args);});sqlite.exec('COMMIT');}catch(error){sqlite.exec('ROLLBACK');throw error;}if(faults.batchAfter)throw Error('response lost after commit');return result;},
+    async batch(items){log.batches++;sqlite.exec('BEGIN IMMEDIATE');let result;try{result=items.map((item,index)=>{if(index===faults.batchAt)throw Error('injected schema failure');return execute(item.sql,item.args);});sqlite.exec('COMMIT');}catch(error){sqlite.exec('ROLLBACK');throw error;}
+      // Inject loss after the release registration commit, not an earlier SELECT snapshot.
+      if(faults.batchAfter && items.some((item)=>/^INSERT INTO releases /.test(item.sql)))throw Error('response lost after commit');return result;},
   };
   const bucket={
     async get(key){log.gets.push(key);assert.match(key,/^publishers\/test-site\/releases\/builtin-draft-[a-f0-9]{64}\//);const value=objects.get(key);if(!value)return null;const copy=value.slice();return {size:copy.length,async arrayBuffer(){return copy.buffer;}};},
