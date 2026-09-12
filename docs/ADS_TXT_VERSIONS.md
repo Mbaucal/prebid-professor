@@ -1,0 +1,37 @@
+# Ads.txt versions
+
+Ads.txt versions save immutable copies of the managed file before publishing.
+
+## Operator workflow
+
+1. Review the Managed ads.txt file.
+2. Add an optional short note.
+3. Click **Save current version**.
+4. Open version history to preview, copy or download the saved file.
+5. Use **Refresh status** after changing managed rows or when another browser tab saves a version.
+
+Saving a version does not contact the publisher endpoint and does not change the live ads.txt file.
+
+## Storage
+
+- Version metadata is stored in D1.
+- Exact file content is stored in R2 under a per-site version key.
+- Each site has sequential version numbers.
+- The same checksum can be saved only once per site, so repeated clicks do not create duplicate versions.
+- Up to 50 recent versions are displayed in history.
+- The server checks the current checksum against every saved version, including versions older than the visible 50-row history window.
+
+## Safety
+
+- The server generates the snapshot from the current managed rows; it does not trust file content supplied by the browser.
+- The browser sends the checksum of the file the operator reviewed. If the managed file changes before Save is processed, the Worker rejects the request and asks the operator to refresh status.
+- Version creation requires an authenticated same-origin request.
+- The version file is immutable after creation.
+- D1 metadata and the R2 object are cleaned up when creation fails before metadata is committed.
+- If metadata was committed but the immediate response cannot reload it, the stored R2 object is retained and the operator can use **Refresh status**.
+- Switching sites clears pending save and history actions so one site's state cannot remain active on another site.
+- Audit log entries never contain the full ads.txt file.
+
+## Future publishing
+
+A later CMS publishing module will publish one selected immutable version rather than a changing draft. Verification and rollback will therefore refer to exact version IDs and checksums.

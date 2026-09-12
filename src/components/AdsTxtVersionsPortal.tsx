@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import AdsTxtManagedFilePanel from './AdsTxtManagedFilePanel';
+import AdsTxtVersionsPanel from './AdsTxtVersionsPanel';
 
-const PORTAL_ID = 'ads-txt-managed-file-portal';
-const VERSIONS_PORTAL_ID = 'ads-txt-versions-portal';
+const PORTAL_ID = 'ads-txt-versions-portal';
+const MANAGED_PORTAL_ID = 'ads-txt-managed-file-portal';
 const CMS_PORTAL_ID = 'ads-txt-cms-connection-portal';
 
-export default function AdsTxtManagedFilePortal() {
+export default function AdsTxtVersionsPortal() {
   const [host, setHost] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -25,15 +25,18 @@ export default function AdsTxtManagedFilePortal() {
       if (!target) {
         target = document.createElement('div');
         target.id = PORTAL_ID;
-        target.className = 'ads-txt-managed-file-portal';
+        target.className = 'ads-txt-versions-portal';
       }
 
-      const versionsPortal = page.querySelector<HTMLElement>(`#${VERSIONS_PORTAL_ID}`);
       const cmsPortal = page.querySelector<HTMLElement>(`#${CMS_PORTAL_ID}`);
-      const anchor = versionsPortal ?? cmsPortal;
-      if (anchor) {
-        if (target.parentElement !== page || target.nextElementSibling !== anchor) {
-          page.insertBefore(target, anchor);
+      const managedPortal = page.querySelector<HTMLElement>(`#${MANAGED_PORTAL_ID}`);
+      if (cmsPortal) {
+        if (target.parentElement !== page || target.nextElementSibling !== cmsPortal) {
+          page.insertBefore(target, cmsPortal);
+        }
+      } else if (managedPortal) {
+        if (target.parentElement !== page || managedPortal.nextElementSibling !== target) {
+          managedPortal.insertAdjacentElement('afterend', target);
         }
       } else if (target.parentElement !== page) {
         page.appendChild(target);
@@ -58,5 +61,5 @@ export default function AdsTxtManagedFilePortal() {
     };
   }, []);
 
-  return host ? createPortal(<AdsTxtManagedFilePanel />, host) : null;
+  return host ? createPortal(<AdsTxtVersionsPanel />, host) : null;
 }
