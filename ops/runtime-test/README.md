@@ -41,6 +41,12 @@ The owner has now confirmed saving all of the test Build settings above. This do
 
 The confirmation is not a successful deployment or hosted test result. Next inspect the new Cloudflare build and actual deployed version, then complete the pre-setup checks and the owner login/Generate/Save/download test above. No additional Secret or infrastructure creation is required.
 
+## Git reconnection checkpoint — 12 September 2026
+
+The dashboard subsequently reported a disconnected Git account. Marko now reports that connection issue resolved. His latest deployment screenshot still shows the bootstrap and three Secret-only revisions, not a workspace code deployment. The previous `99d344c` head has successful GitHub Actions but no Cloudflare check/status at the time of this checkpoint.
+
+This documentation-only follow-up supplies one fresh push on the selected TEST branch after the reported repair. It changes no application code, configuration, schema or production files. Confirm the resulting Cloudflare build before claiming deployment; do not repeat pushes or resource/Secret setup blindly if the build does not appear.
+
 ## Verification and limits
 
 The integrated workflow runs Node auth/schema/storage/config tests, two credential-free Wrangler dry-runs, a byte-for-byte comparison of the disabled and active compiled Worker modules, local workerd with Miniflare D1/R2 including restart, and loopback Chromium UI checks. Local fixtures provide independent synthetic credentials and storage. Passing these tests is not hosted resource isolation, real ad delivery, independent security approval or permission to publish to production.
