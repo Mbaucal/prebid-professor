@@ -1,9 +1,12 @@
 """Real Chromium -> actual Worker handler -> real local SQLite, fake R2.
+All target traffic INCLUDING redirect chains is resolved to loopback TLS.
 No Cloudflare API, real credentials, external ad libraries or publisher requests.
 """
 import json
 import pathlib
 import subprocess
+import tempfile
+import ssl
 import time
 import urllib.request
 import urllib.error
@@ -12,14 +15,15 @@ import zipfile
 import io
 from playwright.sync_api import sync_playwright, expect
 
-origin='https://prebid-professor-test.mbaucal.workers.dev'
+hostname='prebid-professor-test.mbaucal.workers.dev'
+origin='https://'+hostname
 out=pathlib.Path('.generated/test-workspace-evidence')
 out.mkdir(parents=True,exist_ok=True)
-process=subprocess.Popen(['node','--experimental-strip-types','scripts/test-workspace-server.mjs'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 checks=[]
 external=[]
 http_events=[]
 page_errors=[]
+nonlocal_responses=[]
 def check(name,condition):
     assert condition,name
     checks.append({'name':name,'passed':True})
@@ -28,7 +32,7 @@ def exercise(page):
     page.goto(origin+'/')
     page.wait_for_url(origin+'/login')
     expect(page.get_by_role('heading',name='Sign in to test')).to_be_visible()
-    check('Signed-out user sees separate test login',True)
+    check('Signed-out redirect reaches LOCAL test login',not nonlocal_responses)
     page.locator('#email').fill('tester@example.invalid')
     page.locator('#password').fill('Local-fixture-only-password-927!')
     page.get_by_role('button',name='Sign in',exact=True).click()
@@ -67,69 +71,76 @@ def exercise(page):
     page.set_viewport_size({'width':390,'height':844})
     check('Mobile workspace has no horizontal overflow',page.evaluate('document.documentElement.scrollWidth<=innerWidth'))
     page.screenshot(path=str(out/'mobile.png'),full_page=True)
-    check('No external ad or third-party requests',not external)
+    check('No external ad or third-party requests',not external and not nonlocal_responses)
     page.locator('#logout').click()
     page.wait_for_url(origin+'/login')
     expect(page.get_by_role('heading',name='Sign in to test')).to_be_visible()
-    check('Logout returns to test login',True)
+    check('Logout returns to LOCAL test login',not nonlocal_responses)
     check('No page JavaScript errors',not page_errors)
 
-try:
-    for attempt in range(80):
-        if process.poll() is not None:
-            raise RuntimeError('Local workspace server exited: '+process.stderr.read().decode())
-        try:
-            urllib.request.urlopen('http://127.0.0.1:8877/login',timeout=1).read()
-            break
-        except (urllib.error.URLError,TimeoutError):
-            time.sleep(.25)
-    else:
-        raise RuntimeError('Local workspace server did not start')
-    with sync_playwright() as playwright:
-        browser=playwright.chromium.launch(headless=True)
-        context=browser.new_context(viewport={'width':1280,'height':900},accept_downloads=True)
-        def handle(route):
-            request=route.request
-            if not request.url.startswith(origin+'/'):
-                external.append(urllib.parse.urlsplit(request.url).hostname)
-                route.abort()
-                return
-            headers={k:v for k,v in request.all_headers().items() if k.lower() not in ['host','content-length','connection','accept-encoding']}
-            url='http://127.0.0.1:8877'+request.url[len(origin):]
-            call=urllib.request.Request(url,data=request.post_data_buffer,headers=headers,method=request.method)
-            class NoRedirect(urllib.request.HTTPRedirectHandler):
-                def redirect_request(self,*args,**kwargs): return None
+with tempfile.TemporaryDirectory(prefix='tessera-local-tls-') as tls:
+    key=pathlib.Path(tls)/'key.pem'
+    cert=pathlib.Path(tls)/'cert.pem'
+    # Ephemeral test certificate is never committed or included in artifacts.
+    subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1',
+                    '-keyout',str(key),'-out',str(cert),'-subj','/CN='+hostname,
+                    '-addext','subjectAltName=DNS:'+hostname],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    process=subprocess.Popen(['node','--experimental-strip-types','scripts/test-workspace-server.mjs',str(key),str(cert)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    try:
+        for attempt in range(80):
+            if process.poll() is not None:
+                raise RuntimeError('Local workspace server exited: '+process.stderr.read().decode())
             try:
-                response=urllib.request.build_opener(NoRedirect).open(call,timeout=90)
-            except urllib.error.HTTPError as error:
-                response=error
-            body=response.read()
-            # urllib has decoded HTTP chunk framing. Let Playwright set a fresh
-            # body length rather than forwarding Node's transfer-encoding header.
-            response_headers={k:v for k,v in response.headers.items() if k.lower() not in ['transfer-encoding','content-length','connection','keep-alive','content-encoding']}
-            http_events.append({'method':request.method,'path':urllib.parse.urlsplit(request.url).path,'status':response.code})
-            route.fulfill(status=response.code,headers=response_headers,body=body)
-        context.route('**/*',handle)
-        page=context.new_page()
-        page.on('pageerror',lambda error:page_errors.append(str(error)[:500]))
-        try:
-            exercise(page)
-        except Exception:
-            # Only synthetic UI text and method/path/status. No input values,
-            # request bodies, authentication headers, cookies or review receipts.
-            page.screenshot(path=str(out/'failure.png'),full_page=True)
-            diagnostic={'scope':'LOCAL HARNESS ONLY','path':urllib.parse.urlsplit(page.url).path,
-                        'visibleText':page.locator('body').inner_text()[:3000],
-                        'http':http_events,'pageErrors':page_errors,'checks':checks,'failed':1}
-            (out/'failure.json').write_text(json.dumps(diagnostic,indent=2))
-            print(json.dumps(diagnostic,indent=2))
-            raise
-        finally:
-            browser.close()
-    report={'scope':'local Worker handler + SQLite + fake R2, real Chromium; NOT a hosted Cloudflare test','checks':checks,'externalRequests':external,'passed':len(checks),'failed':0}
-    (out/'report.json').write_text(json.dumps(report,indent=2))
-    print(json.dumps(report,indent=2))
-finally:
-    process.terminate()
-    try: process.wait(timeout=5)
-    except subprocess.TimeoutExpired: process.kill()
+                response=urllib.request.urlopen('https://127.0.0.1:8877/login',context=ssl._create_unverified_context(),timeout=1)
+                assert response.headers.get('x-tessera-local-fixture')=='sqlite-fake-r2'
+                response.read()
+                break
+            except (urllib.error.URLError,TimeoutError):
+                time.sleep(.25)
+        else:
+            raise RuntimeError('Local workspace server did not start')
+        with sync_playwright() as playwright:
+            # Interception alone does not capture all redirect hops. Pin DNS at
+            # the network layer; every other hostname fails resolution.
+            browser=playwright.chromium.launch(headless=True,args=[
+                '--no-proxy-server','--disable-quic',
+                '--host-resolver-rules=MAP '+hostname+' 127.0.0.1:8877, MAP * ~NOTFOUND'])
+            context=browser.new_context(viewport={'width':1280,'height':900},accept_downloads=True,ignore_https_errors=True,service_workers='block')
+            def handle(route):
+                if not route.request.url.startswith(origin+'/'):
+                    external.append(urllib.parse.urlsplit(route.request.url).hostname)
+                    route.abort()
+                else:
+                    route.continue_()
+            context.route('**/*',handle)
+            page=context.new_page()
+            def inspect_response(response):
+                path=urllib.parse.urlsplit(response.url).path
+                local=response.header_value('x-tessera-local-fixture')=='sqlite-fake-r2'
+                if not local:
+                    nonlocal_responses.append(path)
+                http_events.append({'method':response.request.method,'path':path,'status':response.status,'localFixture':local})
+            page.on('response',inspect_response)
+            page.on('pageerror',lambda error:page_errors.append(str(error)[:500]))
+            try:
+                exercise(page)
+            except Exception:
+                # Synthetic visible UI only; never input values, request bodies,
+                # authentication headers/cookies, review receipts or TLS keys.
+                page.screenshot(path=str(out/'failure.png'),full_page=True)
+                diagnostic={'scope':'LOCAL LOOPBACK TLS HARNESS','path':urllib.parse.urlsplit(page.url).path,
+                            'visibleText':page.locator('body').inner_text()[:3000],
+                            'http':http_events,'pageErrors':page_errors,'checks':checks,'failed':1}
+                (out/'failure.json').write_text(json.dumps(diagnostic,indent=2))
+                print(json.dumps(diagnostic,indent=2))
+                raise
+            finally:
+                browser.close()
+        report={'scope':'loopback TLS + actual Worker handler + SQLite + fake R2, real Chromium; NOT a hosted Cloudflare test',
+                'checks':checks,'externalRequests':external,'nonlocalResponses':nonlocal_responses,'http':http_events,'passed':len(checks),'failed':0}
+        (out/'report.json').write_text(json.dumps(report,indent=2))
+        print(json.dumps(report,indent=2))
+    finally:
+        process.terminate()
+        try: process.wait(timeout=5)
+        except subprocess.TimeoutExpired: process.kill();process.wait()
