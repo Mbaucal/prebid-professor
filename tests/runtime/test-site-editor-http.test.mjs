@@ -30,3 +30,20 @@ for(const initial of ['',null])test('explicit sticky OFF survives editor save an
   assert.equal((await save(f,cookie,s)).r.status,200);const g=await generate(f,cookie);assert.equal(g.r.status,200,JSON.stringify(g.data));
   assert.equal(generatedLiteral(g.data.adsJs,'STICKY_TARGET_ID'),'');
 });
+
+test('maximum-count valid editor draft larger than 16KB is accepted',async()=>{
+  const{f,cookie}=await ready(),s=await state(f,cookie);
+  const mapName=(i)=>'Map'+String(i).padStart(2,'0')+'X'.repeat(59);
+  s.draft.maps=Array.from({length:32},(_,i)=>({name:mapName(i),breakpoints:Array.from({length:12},(_,j)=>({minWidth:j*900,sizes:Array.from({length:12},(_,k)=>[10000,10000-k])}))}));
+  s.draft.units=Array.from({length:100},(_,i)=>({code:'Ad'+String(i).padStart(3,'0')+'X'.repeat(59),type:'BTF',sizeMap:mapName(i%32),enabled:true}));s.draft.bottomStickyId='';
+  const body={expectedRevision:s.revision,acknowledge:true,draft:s.draft};const bytes=new TextEncoder().encode(JSON.stringify(body)).length;
+  assert(bytes>16384 && bytes<262144);const result=await save(f,cookie,s);assert.equal(result.r.status,200,JSON.stringify(result.data));
+  const read=await state(f,cookie);assert.equal(read.draft.units.length,100);assert.equal(read.draft.maps.length,32);
+});
+test('site editor rejects over 256KB without changing the saved revision',async()=>{
+  const{f,cookie}=await ready(),before=await state(f,cookie);const tooBig=structuredClone(before);tooBig.draft.site.name='X'.repeat(262145);
+  assert.equal((await save(f,cookie,tooBig)).r.status,413);assert.equal((await state(f,cookie)).revision,before.revision);
+});
+test('other test endpoints retain the existing 16KB JSON limit',async()=>{
+  const{f,cookie}=await ready();assert.equal((await req(f,'/test-api/generate',cookie,{acknowledge:true,takeOverEnabled:false,extra:'X'.repeat(16385)})).r.status,413);
+});

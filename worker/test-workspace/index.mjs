@@ -90,7 +90,7 @@ async function route(request,env) {
   if (!(await inspectTestSchema(env.DB)).ready) throw new WorkspaceError(409,'Prepare test data first.');
   if (path==='/test-api/site-settings') {
     if(request.method==='GET')return json(await getSiteDraft(env));
-    return json(await saveSiteDraft(env,actor.email,await jsonBody(request,['expectedRevision','acknowledge','draft'])));
+    return json(await saveSiteDraft(env,actor.email,await jsonBody(request,['expectedRevision','acknowledge','draft'],262144)));
   }
   if (path==='/test-api/runtime-selection') {
     if (request.method==='GET') return json(await readRuntimeSelectionSettings(env));
