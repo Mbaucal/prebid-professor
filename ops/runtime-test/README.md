@@ -35,6 +35,12 @@ After successful deployment, record the actual Current Version ID and check that
 
 Then the owner signs in with the already configured test credentials, clicks Prepare empty test database once, generates a package, acknowledges review, saves it twice (one release), reloads, reopens and downloads the original ZIP. Until this hosted check passes, MBA-53 stays In Progress and no publisher/live readiness is claimed.
 
+## Test build handoff — 12 September 2026
+
+The owner has now confirmed saving all of the test Build settings above. This documentation-only checkpoint is pushed to the selected feature branch to request a fresh connected TEST build, without retrying a checkout from main. The application, active configuration, storage schema and production files are unchanged from reviewed head `69e41299217df456643d202ea740ff92b9d54c9c`.
+
+The confirmation is not a successful deployment or hosted test result. Next inspect the new Cloudflare build and actual deployed version, then complete the pre-setup checks and the owner login/Generate/Save/download test above. No additional Secret or infrastructure creation is required.
+
 ## Verification and limits
 
 The integrated workflow runs Node auth/schema/storage/config tests, two credential-free Wrangler dry-runs, a byte-for-byte comparison of the disabled and active compiled Worker modules, local workerd with Miniflare D1/R2 including restart, and loopback Chromium UI checks. Local fixtures provide independent synthetic credentials and storage. Passing these tests is not hosted resource isolation, real ad delivery, independent security approval or permission to publish to production.
