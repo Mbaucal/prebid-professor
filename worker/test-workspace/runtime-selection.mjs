@@ -1,3 +1,4 @@
+import { assertWorkspaceSiteScope } from './site-draft.mjs';
 /** Authenticated TEST settings service. The router enforces host, session,
  * same-origin, methods and request size before calling these functions.
  * No Prebid upload, production-site editing, schema migration or publication.
@@ -13,12 +14,7 @@ import { commitTestRuntimeSelection } from './selection-transaction.mjs';
 async function savedSettings(env) {
   if (!(await inspectTestSchema(env.DB)).ready) throw new WorkspaceError(409,'Prepare the empty test database on the Generate screen first.');
   const saved = await readPreviewSnapshot(env.DB.withSession('first-primary'),TEST_SITE,{includePrebid:true});
-  let config;
-  try { config = JSON.parse(saved.config.config_json); } catch { throw new WorkspaceError(409,'Saved TEST settings need review.'); }
-  if (saved.site.id !== TEST_SITE || saved.site.domain !== 'example.invalid' || saved.site.gam_path !== '/123/test/'
-      || config?.enablePrebid !== false || saved.bidders.length || saved.overrides.length || saved.prebidBuilds.length) {
-    throw new WorkspaceError(409,'This first settings editor accepts only the synthetic GPT-only test site.');
-  }
+  const config=assertWorkspaceSiteScope(saved);
   return {saved,config};
 }
 export async function readRuntimeSelectionSettings(env) {

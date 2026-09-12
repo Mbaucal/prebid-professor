@@ -1,3 +1,4 @@
+import { assertWorkspaceSiteScope } from './site-draft.mjs';
 /** MBA-54: internal TEST-only compare-and-swap. No HTTP route, initialization,
  * migrations, R2 access or production fallback. The authenticated service supplies
  * its own saved snapshot and the validated selection planner's configJson.
@@ -28,7 +29,7 @@ function plain(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     && [null,Object.prototype].includes(Object.getPrototypeOf(value)) && Object.getOwnPropertySymbols(value).length === 0;
 }
-function reviewedProjections(snapshot) {
+export function reviewedProjections(snapshot) {
   if (!plain(snapshot) || Object.keys(snapshot).sort().join('|') !== specs.map(([key])=>key).sort().join('|')) {
     fail('invalid_snapshot','Use the complete server-read TEST snapshot, including Prebid records.');
   }
@@ -48,9 +49,7 @@ function reviewedProjections(snapshot) {
     result.push({ json:JSON.stringify(values),
       sql:`(SELECT json_group_array(json_array(${columns.join(',')})) FROM (SELECT ${columns.join(',')} FROM ${table} WHERE ${where})) = ?` });
   }
-  if (own(snapshot.site,'id') !== SITE || own(snapshot.site,'domain') !== 'example.invalid' || own(snapshot.site,'gam_path') !== '/123/test/') {
-    fail('test_site_required','Only the isolated synthetic TEST site can be edited.');
-  }
+  try { assertWorkspaceSiteScope(snapshot); } catch { fail('test_site_required','Only the isolated approved TEST draft can be edited.'); }
   if (new TextEncoder().encode(result.map((row)=>row.json).join('')).byteLength > MAX_BYTES) fail('invalid_snapshot','Saved TEST settings are too large.');
   return result;
 }
