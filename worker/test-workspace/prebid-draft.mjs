@@ -8,7 +8,7 @@ export function fields(value, keys, label) {
       || Object.getOwnPropertySymbols(value).length || Object.keys(value).length !== keys.length
       || Object.keys(value).some((key) => !keys.includes(key) || !Object.hasOwn(Object.getOwnPropertyDescriptor(value,key),'value'))) fail(`Check ${label} fields.`);
 }
-function params(input) {
+export function params(input) {
   let count = 0;
   const visit = (value, depth) => {
     if (++count > 1500 || depth > 8) fail('Bidder parameters are too complex.');
@@ -33,7 +33,7 @@ function params(input) {
   if (new TextEncoder().encode(JSON.stringify(result)).length > 12000) fail('One parameter object must be no larger than 12 KB.');
   return result;
 }
-export function normalizePrebidDraft(input, units) {
+export function normalizePrebidDraft(input, units, {planning = false} = {}) {
   fields(input,['enablePrebid','buildId','bidders','overrides'],'Prebid settings');
   if (typeof input.enablePrebid !== 'boolean' || (input.buildId !== null && !/^test-pb-[a-f0-9]{64}$/.test(input.buildId))) fail('Choose a stored TEST build and an explicit Prebid mode.');
   if (!Array.isArray(input.bidders) || input.bidders.length > SUPPORTED_BIDDERS.length || !Array.isArray(input.overrides) || input.overrides.length > 200) fail('Too many bidder rows.');
@@ -55,7 +55,7 @@ export function normalizePrebidDraft(input, units) {
     return {bidder:row.bidder,scopeType:row.scopeType,scopeKey:row.scopeKey,params:params(row.params),enabled:row.enabled};
   }).sort((a,b) => { const x=[a.bidder,a.scopeType,a.scopeKey].join('|'), y=[b.bidder,b.scopeType,b.scopeKey].join('|'); return x<y?-1:x>y?1:0; });
   if (input.enablePrebid) {
-    if (!input.buildId || !bidders.some((b)=>b.enabled)) fail('Choose a Prebid file and enable at least one bidder.');
+    if ((!planning && !input.buildId) || !bidders.some((b)=>b.enabled)) fail(planning ? 'Enable at least one bidder for the planned build.' : 'Choose a Prebid file and enable at least one bidder.');
     for (const bidder of bidders.filter((b)=>b.enabled)) {
       if (!Object.keys(bidder.params).length && !overrides.some((o)=>o.enabled&&o.bidder===bidder.bidder&&Object.keys(o.params).length)) fail('Each enabled bidder needs partner parameters, either globally or in an override.');
     }

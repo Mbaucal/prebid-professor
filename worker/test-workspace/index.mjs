@@ -1,6 +1,7 @@
 import { prebidPage, prebidScript } from './prebid-page.mjs';
-import { getPrebidSettings, savePrebidSettings, prebidSnapshot, prebidStore } from './prebid-settings.mjs';
+import { getPrebidSettings, savePrebidSettings, prebidSnapshot, prebidStore, previewBuildPlan, saveBuildPlan } from './prebid-settings.mjs';
 import { readPrebidUpload, storePrebidFile } from './prebid-files.mjs';
+import { prebidVersions } from './prebid-versions.mjs';
 import { assertWorkspaceSiteScope } from './site-draft.mjs';
 import { getSiteDraft, saveSiteDraft } from './site-draft-service.mjs';
 import { siteDraftPage, siteDraftScript } from './site-draft-page.mjs';
@@ -82,10 +83,11 @@ async function route(request,env) {
   if (path==='/site-settings.js' && request.method==='GET' && !url.search) return new Response(siteDraftScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   if(path==='/prebid-settings'&&request.method==='GET'&&!url.search)return html(prebidPage());
   if(path==='/prebid-settings.js'&&request.method==='GET'&&!url.search)return new Response(prebidScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
+  if(path==='/test-api/prebid/versions'&&request.method==='GET'&&!url.search)return json(await prebidVersions());
   // No legacy fallback: publish, CMS, Gmail, deletion, arbitrary sites and public CDN routes do not exist.
   const fileMatch=path.match(/^\/test-api\/releases\/(builtin-draft-[a-f0-9]{64})(\/download)?$/);
   const known=(request.method==='GET' && ['/test-api/status','/test-api/releases','/test-api/runtime-selection','/test-api/site-settings','/test-api/prebid-settings'].includes(path)) || (request.method==='GET' && fileMatch)
-    || (request.method==='POST' && ['/test-api/setup','/test-api/generate','/test-api/save','/test-api/runtime-selection','/test-api/site-settings','/test-api/prebid-settings','/test-api/prebid/upload'].includes(path));
+    || (request.method==='POST' && ['/test-api/setup','/test-api/generate','/test-api/save','/test-api/runtime-selection','/test-api/site-settings','/test-api/prebid-settings','/test-api/prebid/upload','/test-api/prebid/plan','/test-api/prebid/plan/save'].includes(path));
   if (!known || url.search) throw new WorkspaceError(404,'This operation is not available in the test workspace.');
   if (path==='/test-api/status') return json({...(await inspectTestSchema(env.DB)),runtime:{version:runtimeDescriptor.version,sha256:runtimeDescriptor.codeSha256},publishable:false});
   if (path==='/test-api/setup') {
@@ -100,8 +102,10 @@ async function route(request,env) {
   }
   if(path==='/test-api/prebid-settings'){
     if(request.method==='GET')return json(await getPrebidSettings(env));
-    return json(await savePrebidSettings(env,actor.email,await jsonBody(request,['expectedRevision','acknowledge','draft'],262144)));
+    return json(await savePrebidSettings(env,actor.email,await jsonBody(request,['expectedRevision','acknowledge','draft','version','options'],262144)));
   }
+  if(path==='/test-api/prebid/plan')return json(await previewBuildPlan(env,await jsonBody(request,['expectedRevision','draft','version','options'],262144)));
+  if(path==='/test-api/prebid/plan/save')return json(await saveBuildPlan(env,actor.email,await jsonBody(request,['expectedRevision','acknowledge','draft','version','options'],262144)));
   if (path==='/test-api/site-settings') {
     if(request.method==='GET')return json(await getSiteDraft(env));
     return json(await saveSiteDraft(env,actor.email,await jsonBody(request,['expectedRevision','acknowledge','draft'],262144)));
