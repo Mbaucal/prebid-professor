@@ -13,12 +13,17 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Archive tracked source only
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Archive tracked source and locked ZIP dependency
         run: |
           mkdir -p "$RUNNER_TEMP/tracked-source"
           git archive --format=zip HEAD -o "$RUNNER_TEMP/tracked-source/tracked-source.zip"
+          zip -qr "$RUNNER_TEMP/tracked-source/zip-dependency.zip" node_modules/fflate
           git rev-parse HEAD > "$RUNNER_TEMP/tracked-source/commit.txt"
-          sha256sum "$RUNNER_TEMP/tracked-source/tracked-source.zip" > "$RUNNER_TEMP/tracked-source/checksums.txt"
+          sha256sum "$RUNNER_TEMP/tracked-source/"*.zip > "$RUNNER_TEMP/tracked-source/checksums.txt"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: prebid-plan-source
