@@ -140,7 +140,7 @@ export function previewInput(snapshot, descriptor, buildTimestamp, takeOver = { 
     floors: { enabled: floors.enabled !== false, hardFloor: number(floors.hardFloor, 0.04, 'Hard floor', 0, 1000),
       currency: String(floors.currency ?? 'EUR'), bidderFloors: numericMap(floors.bidderFloors, 'bidderFloors'), rules: numericMap(floors.rules, 'floorRules') },
     takeOver: object(takeOver, 'takeOver'),
-    currencyConversion: { enabled: true, url: 'https://cdn.jsdelivr.net/gh/prebid/currency-file@1/latest.json' },
+    currencyConversion: { enabled: runtime.currencyConversion?.enabled !== false, url: 'https://cdn.jsdelivr.net/gh/prebid/currency-file@1/latest.json' },
   };
   if (schain.enabled !== false && Array.isArray(schain.nodes) && schain.nodes.length) {
     options.schain = { ver: String(schain.version ?? '1.0'), complete: schain.complete === 0 ? 0 : 1, nodes: schain.nodes };

@@ -35,10 +35,13 @@ jobs:
         run: node scripts/verify-workerd-prebid.mjs
       - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
       - run: python scripts/verify-prebid-editor.py
+      - run: python scripts/verify-prebid-config.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: prebid-editor-evidence
-          path: .generated/prebid-editor-evidence/
+          path: |
+            .generated/prebid-editor-evidence/
+            .generated/prebid-config-evidence/
           if-no-files-found: ignore
           retention-days: 14

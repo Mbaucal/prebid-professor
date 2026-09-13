@@ -6,7 +6,7 @@
  */
 import { validateRuntimeDescriptor, pinRuntime, assertPinnedRuntime } from './version-pin.mjs';
 import { previewInput, digest } from './preview-snapshot.mjs';
-import { prebidRequirements, inspectPrebidArtifact } from './prebid-artifact-check.mjs';
+import { prebidRequirements, inspectPrebidArtifact, prebidFailureMessage } from './prebid-artifact-check.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const SITE = /^[a-z0-9][a-z0-9-]{0,97}$/;
@@ -126,7 +126,7 @@ async function checkedPrebid(siteId, builds, buildId, requirements, bucket) {
   let report;
   try { report = await inspectPrebidArtifact({siteId,builds,requirements},readOnlyBucket); }
   catch { fail('prebid_verification_failed','The selected Prebid artifact could not be verified.'); }
-  if (report.status !== 'checked' || !bytes) fail('prebid_verification_failed','The selected Prebid artifact, checksum or required modules could not be verified.');
+  if (report.status !== 'checked' || !bytes) fail('prebid_verification_failed',prebidFailureMessage(report));
   return { pin:{...report.build,modules:[...report.declaredModules]}, report, bytes };
 }
 

@@ -78,13 +78,18 @@ export async function readPrebidFile(store, id) {
   const row = await db.prepare(`SELECT ${columns} FROM prebid_builds WHERE id=? AND publisher_id=?`).bind(id, TEST_SITE).first();
   if (!row) fail(409, 'The selected Prebid file is no longer available. Reload saved settings.');
   validRecord(row);
-  const object = await bucket.get(row.file_key);
+  let object;
+  try { object = await bucket.get(row.file_key); }
+  catch { fail(503, 'The saved Prebid file could not be read. Retry the same file.'); }
   if (!object || !Number.isSafeInteger(object.size) || object.size < 1 || object.size > MAX_PREBID_UPLOAD) fail(409, 'The stored Prebid file is missing or has an invalid size.');
-  const buffer = await object.arrayBuffer();
+  let buffer;
+  try { buffer = await object.arrayBuffer(); }
+  catch { fail(503, 'The saved Prebid file body could not be read. Retry the same file.'); }
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength !== object.size) fail(409, 'The stored Prebid file length does not match its metadata.');
   const checked = await inspectUpload(new Uint8Array(buffer));
-  if (checked.id !== row.id || checked.version !== row.version || JSON.stringify(checked.modules) !== row.modules_json
-      || object.customMetadata?.sha256 !== checked.sha256 || object.customMetadata?.version !== checked.version) fail(409, 'The saved Prebid bytes or metadata changed. No replacement was made.');
+  if (checked.id !== row.id || object.customMetadata?.sha256 !== checked.sha256) fail(409, 'The saved Prebid bytes do not match the upload checksum. No replacement was made.');
+  if (checked.version !== row.version || object.customMetadata?.version !== checked.version) fail(409, 'The saved Prebid version differs from its stored metadata. No replacement was made.');
+  if (JSON.stringify(checked.modules) !== row.modules_json) fail(409, 'The saved Prebid module header differs from its stored metadata. No replacement was made.');
   return { row, checked };
 }
 export async function storePrebidFile(store, input, actor) {
