@@ -19,8 +19,11 @@ available with their original bytes; history does not recreate old generators.
    The source commit identifies the preceding commit containing the engine change.
 3. Retain every previous record unchanged. Do not reuse a version number for
    different source bytes. `check-runtime-release-history.mjs` compares the register
-   with the PR base, and runtime preparation checks the latest recorded checksum
-   against the actual generator dependency closure.
+   with the PR base. It reads each recorded source commit's declared file list and
+   verifies its checksum against those exact Git blobs, without executing its
+   code. CI checks out the full history so an unknown or unrelated source commit
+   fails this check. Runtime preparation also checks the latest recorded checksum
+   against the actual generator dependency closure in the working tree.
 4. Run relevant verification, review and deploy TEST. Viewing the new release
    never upgrades a site's saved choice. A user explicitly selects it before
    generating a new package. Preserve other site and Prebid settings.

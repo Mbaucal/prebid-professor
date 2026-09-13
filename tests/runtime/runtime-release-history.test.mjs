@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runtimeReleaseHistory, assertRuntimeReleaseSource } from '../../worker/runtime/runtime-release-history.mjs';
-import { checkRuntimeReleaseHistory } from '../../scripts/check-runtime-release-history.mjs';
+import { checkRuntimeReleaseHistory, verifyRuntimeReleaseProvenance } from '../../scripts/check-runtime-release-history.mjs';
+import { createHash } from 'node:crypto';
 const history=()=>structuredClone(runtimeReleaseHistory);
 const next=()=>({...history()[0],id:'tessera-reference391-preview-3',version:'3.9.1-tessera.preview.3',codeSha256:'a'.repeat(64),title:'A documented upgrade'});
 test('historical register can be initialized and retained unchanged',()=>{
@@ -29,4 +30,17 @@ test('new releases require notes, exact identity and newest-first order',()=>{
 test('an undocumented source change blocks runtime preparation',()=>{
   assert.doesNotThrow(()=>assertRuntimeReleaseSource(history()[0].codeSha256));
   assert.throws(()=>assertRuntimeReleaseSource('f'.repeat(64)),/Register a new exact runtime version/);
+});
+test('recorded commit must exist and reproduce its declared source checksum',()=>{
+  const moduleHash='d'.repeat(64),source='export const value=42;',hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+  const components=[{path:'reference391.mjs',sha256:moduleHash},{path:'worker/engine.mjs',sha256:hash(source)}];
+  const release={...next(),codeSha256:hash(JSON.stringify(components))};
+  const readSource=(commit,path)=>{
+    assert.equal(commit,release.sourceCommit);
+    if(path==='scripts/prepare-builtin-runtime.mjs')return `export const MODULE_SHA256='${moduleHash}';function prepare(){const sourceFiles=['worker/engine.mjs'];}`;
+    assert.equal(path,'worker/engine.mjs');return source;
+  };
+  assert.doesNotThrow(()=>verifyRuntimeReleaseProvenance([release],readSource));
+  assert.throws(()=>verifyRuntimeReleaseProvenance([{...release,codeSha256:'e'.repeat(64)}],readSource),/does not match runtime/);
+  assert.throws(()=>verifyRuntimeReleaseProvenance([release],()=>{throw Error('Unknown source commit');}),/Unknown source commit/);
 });
