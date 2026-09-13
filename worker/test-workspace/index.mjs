@@ -81,7 +81,13 @@ async function route(request,env) {
   if (path==='/runtime-selection.js' && request.method==='GET' && !url.search) return new Response(runtimeSelectionScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   if (path==='/site-settings' && request.method==='GET' && !url.search) return html(siteDraftPage());
   if (path==='/site-settings.js' && request.method==='GET' && !url.search) return new Response(siteDraftScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
-  if(path==='/prebid-settings'&&request.method==='GET'&&!url.search)return html(prebidPage());
+  if(path==='/prebid-settings'&&request.method==='GET'&&!url.search){
+    const response=html(prebidPage());
+    // Data-only CORS fallback when the server cannot reach the public catalog.
+    // No external scripts, ad requests, credentials, or caller-provided URLs.
+    response.headers.set('content-security-policy',headers['content-security-policy'].replace("connect-src 'self'","connect-src 'self' https://js-download.prebid.org/versions"));
+    return response;
+  }
   if(path==='/prebid-settings.js'&&request.method==='GET'&&!url.search)return new Response(prebidScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   if(path==='/test-api/prebid/versions'&&request.method==='GET'&&!url.search)return json(await prebidVersions());
   // No legacy fallback: publish, CMS, Gmail, deletion, arbitrary sites and public CDN routes do not exist.

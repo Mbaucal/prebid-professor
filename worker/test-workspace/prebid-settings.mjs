@@ -49,7 +49,8 @@ export async function saveBuildPlan(env,actor,body){
   const after=structuredClone(snapshot);
   after.config.config_json=JSON.stringify({...config,testPrebidPlan:publicPlan(plan)});
   const result=await commitPrebidSettings(prebidStore(env),{before:snapshot,after,selectedRow:null,planOnly:true},actor);
-  return {...result,plan:publicPlan(plan),selectionChanged:false};
+  // Return exactly the committed revision, never rebase the form onto a later tab's edit.
+  return {...result,revision:await digest(after),plan:publicPlan(plan),selectionChanged:false};
 }
 export async function preparePrebidSettings(env, body) {
   const withPlan=Object.hasOwn(body,'version')||Object.hasOwn(body,'options');
