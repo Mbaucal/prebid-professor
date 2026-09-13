@@ -1,0 +1,22 @@
+name: TEST Prebid source snapshot
+on:
+  push:
+    branches: [feature/test-prebid-editor-v1]
+    paths: [.github/workflows/prebid-source-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Archive tracked source only
+        run: git archive --format=zip --output=tracked-source.zip HEAD
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: prebid-tracked-source
+          path: tracked-source.zip
+          retention-days: 1
