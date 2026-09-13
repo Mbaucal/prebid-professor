@@ -95,7 +95,12 @@ def exercise(page):
     page.locator('#review').wait_for(state='visible',timeout=90000)
     source=page.locator('#source').text_content()
     check('Generated code contains saved position, size and GAM path','InText1' in source and '/123/pilot/' in source and re.search(r'\b300\s*,\s*600\b',source) is not None)
-    check('Generated source retains manual-only desktop closing and custom mobile size',bool(re.search(r'TAKEOVER_AUTO_CLOSE_DESKTOP_SEC\s*=\s*0\s*;',source)) and bool(re.search(r'TAKEOVER_MOBILE_SIZE\s*=\s*\[320,\s*250\]',source)))
+    # Parse literal values instead of depending on generated whitespace; never execute ads.js.
+    extracted=subprocess.run(['node','--input-type=module','-e',
+        "import {readFileSync} from 'node:fs';import {generatedLiteral} from './tests/support/generated-literal.mjs';const source=readFileSync(0,'utf8');console.log(JSON.stringify({seconds:generatedLiteral(source,'TAKEOVER_AUTO_CLOSE_DESKTOP_SEC'),size:generatedLiteral(source,'TAKEOVER_MOBILE_SIZE')}));"],
+        input=source,text=True,capture_output=True,check=True)
+    values=json.loads(extracted.stdout)
+    check('Generated source retains manual-only desktop closing and custom mobile size',values=={'seconds':0,'size':[320,250]})
     check('Generated code was not executed',page.evaluate('typeof window.takeOverDebug')=='undefined')
     page.locator('#ack').check()
     page.locator('#save').click()

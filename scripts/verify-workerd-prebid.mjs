@@ -53,6 +53,7 @@ try{
   check('Transaction leaves no assertion rows behind',leftover.n===0);
   const draftState=await json('/test-api/site-settings');
   check('Compiled editor reads only the isolated TEST copy',draftState.siteId==='test-site'&&draftState.prebidEditable===false);
+  draftState.draft.takeOver.enabled=true;
   draftState.draft.site={name:'Pilot test copy',domain:'pilot.example.invalid',gamPath:'/123/pilot/'};
   draftState.draft.units.push({code:'InText1',type:'BTF',sizeMap:'display',enabled:true});
   draftState.draft.maps[0].breakpoints[0].sizes=[[300,600],[300,250]];
@@ -65,7 +66,7 @@ try{
   check('Read-back contains the changed path and added position',current.draft.site.gamPath==='/123/pilot/'&&current.draft.units.length===3);
   const unchanged=await json('/test-api/site-settings',{...inputDraft,expectedRevision:current.revision,draft:current.draft});
   check('Repeated normalized edit is a no-op',unchanged.changed===false);
-  const generated=await json('/test-api/generate',{acknowledge:true,takeOverEnabled:true});
+  const generated=await json('/test-api/generate',{acknowledge:true});
   check('Compiled generator consumes edited positions, sizes and TakeOver fallback',generatedLiteral(generated.adsJs,'EXPLICIT_UNITS').some(u=>u.id==='InText1')&&JSON.stringify(generatedLiteral(generated.adsJs,'SIZE_MAPS_RAW').display[0].sizes)==='[[300,600],[300,250]]'&&generatedLiteral(generated.adsJs,'TAKEOVER_CODELESS_AD_UNIT_PATH')==='/123/pilot/Interstitial');
   const release=await json('/test-api/save',{receipt:generated.receipt,acknowledge:true,note:'Local compiled site editor'});
   const path='/test-api/releases/'+release.draft.id+'/download';
@@ -89,7 +90,7 @@ try{
   check('Compiled stale tab cannot overwrite saved Prebid choice',true);
   const activePb=await json('/test-api/prebid-settings');
   check('Reload validates checksum and module metadata from actual local R2',activePb.draft.enablePrebid&&activePb.validationIssue===null);
-  const pg=await json('/test-api/generate',{acknowledge:true,takeOverEnabled:true});
+  const pg=await json('/test-api/generate',{acknowledge:true});
   check('Compiled generation includes selected Prebid file and configured bidder',pg.descriptor.files.length===10&&generatedLiteral(pg.adsJs,'HAS_PREBID')===true&&generatedLiteral(pg.adsJs,'BIDDERS')[0].params.mid===123);
   const pr=await json('/test-api/save',{receipt:pg.receipt,acknowledge:true,note:'Local Prebid package'});
   const pp='/test-api/releases/'+pr.draft.id+'/download';
@@ -106,7 +107,7 @@ try{
   const restartPb=await json('/test-api/prebid-settings');
   check('File choice, bidders and exact metadata survive workerd restart',restartPb.draft.buildId===archive.file.id&&restartPb.draft.bidders[0].params.mid===123&&!restartPb.validationIssue);
   await json('/test-api/prebid-settings',{expectedRevision:restartPb.revision,acknowledge:true,draft:{...restartPb.draft,enablePrebid:false}});
-  const offPb=await json('/test-api/prebid-settings'),offGenerated=await json('/test-api/generate',{acknowledge:true,takeOverEnabled:false});
+  const offPb=await json('/test-api/prebid-settings'),offGenerated=await json('/test-api/generate',{acknowledge:true});
   check('Switching off retains library and parameters but excludes prebid.js from next package',offPb.files.length===2&&offPb.draft.bidders.length===1&&offGenerated.descriptor.files.length===9);
   check('No outbound fetch was attempted',outbound===0);
   const report={scope:'LOCAL compiled workerd + Miniflare D1/R2; NOT hosted Cloudflare',compiledSha256:sha(script),checks,passed:checks.length,failed:0,outbound,hostedTest:false};
