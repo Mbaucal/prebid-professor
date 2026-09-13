@@ -23,7 +23,7 @@ jobs:
           python-version: '3.12'
       - run: npm ci --ignore-scripts
       - run: node scripts/check-test-activation.mjs && node scripts/prepare-builtin-runtime.mjs && node scripts/prepare-test-workspace.mjs
-      - run: node --experimental-strip-types --test tests/runtime/test-prebid-settings.test.mjs tests/runtime/test-prebid-http.test.mjs
+      - run: node --experimental-strip-types --test tests/runtime/test-prebid-*.test.mjs
       - name: Compile TEST only; no deployment
         working-directory: ops/runtime-test
         env:

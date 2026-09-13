@@ -38,7 +38,11 @@ export async function preparePrebidSettings(env, body) {
   if(typeof body.expectedRevision!=='string'||await digest(before)!==body.expectedRevision)throw new WorkspaceError(409,'Settings changed. Reload saved settings before saving.');
   const draft=normalizePrebidDraft(body.draft,before.units),after=structuredClone(before);
   let selected=null;
-  if(draft.buildId)selected=await readPrebidFile(prebidStore(env),draft.buildId);
+  // OFF does not consume file bytes. Preserve the already-current record so an
+  // unavailable/corrupt object cannot trap the user in enabled mode. Choosing a
+  // different file still verifies it, even while OFF; ON always verifies bytes.
+  if(!draft.enablePrebid && draft.buildId && draft.buildId===before.prebidBuilds[0]?.id)selected={row:structuredClone(before.prebidBuilds[0])};
+  else if(draft.buildId)selected=await readPrebidFile(prebidStore(env),draft.buildId);
   else if(before.prebidBuilds.length)throw new WorkspaceError(422,'Keep the stored file selected when turning Prebid off. Uploaded files are retained.');
   after.bidders=draft.bidders.map((b)=>({bidder:b.bidder,params_json:JSON.stringify(b.params),enabled:b.enabled?1:0}));
   after.overrides=draft.overrides.map((o)=>({bidder:o.bidder,scope_type:o.scopeType,scope_key:o.scopeKey,params_json:JSON.stringify(o.params),enabled:o.enabled?1:0}));
