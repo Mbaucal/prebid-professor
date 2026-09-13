@@ -22,8 +22,6 @@ jobs:
         with:
           python-version: '3.12'
       - run: npm ci --ignore-scripts
-      - name: Temporary locked offline test dependency
-        run: mkdir -p .generated/prebid-editor-evidence && zip -q -r .generated/prebid-editor-evidence/fflate-tool.zip node_modules/fflate
       - run: node scripts/check-test-activation.mjs && node scripts/prepare-builtin-runtime.mjs && node scripts/prepare-test-workspace.mjs
       - run: node --experimental-strip-types --test tests/runtime/test-prebid-settings.test.mjs tests/runtime/test-prebid-http.test.mjs
       - name: Compile TEST only; no deployment
