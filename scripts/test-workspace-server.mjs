@@ -6,7 +6,11 @@ import { workspaceStore, ORIGIN } from '../tests/support/test-workspace-store.mj
 const [keyPath,certPath]=process.argv.slice(2);
 if(!keyPath||!certPath)throw Error('Ephemeral LOCAL TLS files are required.');
 const fixture=workspaceStore({prebidFiles:true});
-globalThis.fetch=()=>{throw Error('Outbound requests are forbidden in workspace verification');};
+globalThis.fetch=(url)=>{
+  // Deterministic public catalog fixture; no request ever leaves this process.
+  if(url==='https://js-download.prebid.org/versions')return Promise.resolve(Response.json({versions:['11.34.0','11.11.0']}));
+  throw Error('Outbound requests are forbidden in workspace verification');
+};
 const server=createServer({key:readFileSync(keyPath),cert:readFileSync(certPath)},async(req,res)=>{
   try {
     const parts=[];let size=0;

@@ -40,3 +40,32 @@ Sources inspected 2026-09-13:
 
 TEST deployment and final evidence must be confirmed before requesting the new
 user round-trip. Main and production are outside this change.
+
+## Catalog outage recovery and shorter flow
+
+Catalog loading is automatic and owns only its retry button. A failure never sets
+`stale` or disables download/save/editing. If the same-origin lookup fails, a
+bounded CORS GET reads the same fixed official public endpoint directly, without
+credentials, referrer, request body or site parameters. Only the Prebid page CSP
+permits that exact data URL; external scripts remain blocked. Both routes use the
+same size, timeout, redirect and version validation. A failed fallback is an
+inline note. Version selection always remains explicit.
+
+`Save & download prebid-config.json` stores the pending preparation and downloads
+its exact returned configuration in one action. It needs no separate save or
+checkbox; the button and adjacent text explicitly state TEST preparation saving.
+Final activation retains its TEST checkbox. The response includes the revision
+of the committed snapshot, so the page keeps its form fields and cannot adopt a
+concurrent edit from another tab. A save failure still marks the form uncertain;
+a successful catalog retry must never clear that protection.
+
+Build options, module details, other versions and save-for-later are collapsible.
+The main flow is three numbered steps. Opening the builder obtains a fresh plan
+in a single click and closes the new tab on failure. This operation is read-only;
+only a real revision conflict, not a read outage, makes its form stale.
+
+New browser checks reproduce the reported 503, a delayed lookup while editing,
+the public fallback, combined save/export, and a catalog retry after an uncertain
+write. Public catalog responses in the harness are inert fixtures; no external
+request or user setting is used. The actual server-to-Prebid failure reported by
+the user is not independently diagnosed; recovery does not depend on its cause.

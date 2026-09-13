@@ -68,3 +68,18 @@ test('existing disabled User ID records and private settings are retained throug
 test('supply chain and all supported User IDs derive requirements from actual normalized input',()=>{const p=prebidRequirements({core:{bidders:[{bidder:'ix'}],userSync:{userIds:['sharedId','id5Id','teadsId','criteo','lotamePanoramaId'].map(name=>({name}))}},options:{enablePrebid:true,floors:{enabled:false},currencyConversion:{enabled:false},schain:{nodes:[{}]}}});assert.deepEqual(p.modules,['consentManagementTcf','criteoIdSystem','id5IdSystem','ixBidAdapter','lotamePanoramaIdSystem','schain','sharedIdSystem','tcfControl','teadsIdSystem','userId']);});
 test('public verification messages drop raw storage failures and unknown issue content',()=>{const s=prebidFailureMessage({missingModules:['openxBidAdapter'],issues:[{code:'storage_read_failed',message:'secret key'},{code:'unknown',message:'private error'}]});assert(!/secret|private/.test(s));assert.match(s,/openxBidAdapter.*Bidder: openx/);});
 for(const change of [r=>r.version='latest',r=>r.options.userIds[0].settings={name:'evil'},r=>r.options.userIds[0].settings=JSON.parse('{"__proto__":{"x":1}}'),r=>r.options.currencyConversionEnabled='false'])test('invalid plan never writes: '+change,async()=>{const f=await ready(),r=await request(f),before=await snap(f);change(r);await assert.rejects(plan(f,r));assert.deepEqual(await snap(f),before);});
+
+test('preparation response carries its committed revision for continuing without reloading the form',async()=>{
+  const f=await ready(),r=await request(f),saved=await saveBuildPlan(f.env,actor,{...r,acknowledge:true});
+  assert.equal(saved.revision,(await getPrebidSettings(f.env)).revision);
+  const next={...r,expectedRevision:saved.revision};
+  assert.equal((await plan(f,next)).hash,saved.plan.hash);
+  assert.equal((await saveBuildPlan(f.env,actor,{...next,acknowledge:true})).changed,false);
+});
+test('preparation revision never adopts a concurrent change after commit',async()=>{
+  const f=await ready(),r=await request(f),batch=f.env.DB.batch;
+  f.env.DB.batch=async(items)=>{const result=await batch(items);if(items.some(item=>item.sql.includes('UPDATE publisher_configs')))f.sqlite.exec("UPDATE publishers SET name='Later edit'");return result;};
+  const saved=await saveBuildPlan(f.env,actor,{...r,acknowledge:true});
+  assert.notEqual(saved.revision,(await getPrebidSettings(f.env)).revision);
+  await assert.rejects(plan(f,{...r,expectedRevision:saved.revision}),e=>e.status===409);
+});
