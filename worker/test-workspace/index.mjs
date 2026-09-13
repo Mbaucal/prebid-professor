@@ -19,6 +19,7 @@ import { WorkspaceError, workspaceBoundary, sameOrigin, boundedText, jsonBody, T
 import { inspectTestSchema, initializeTestSchema } from './schema.mjs';
 import { issueReceipt, verifyReceipt } from './receipt.mjs';
 import { loginPage, workspacePage, workspaceScript } from './page.mjs';
+import { takeOverForBuild } from './takeover-settings.mjs';
 
 // HTML form navigation under no-referrer sends Origin:null. same-origin keeps
 // legitimate form Origin while still suppressing cross-origin referrers.
@@ -45,7 +46,7 @@ async function candidate(settings, buildTimestamp, takeOverEnabled, bucket) {
   const resolved=await selectedWorkspaceRuntime(settings,bucket);
   const {prebidBuilds,...configuration}=settings;
   return buildArtifactCandidate({snapshot:configuration,pin:resolved.pin,
-    buildTimestamp,takeOver:{enabled:takeOverEnabled,codelessAdUnitPath:settings.site.gam_path+'Interstitial'},prebid:resolved.prebid});
+    buildTimestamp,takeOver:takeOverForBuild(settings,takeOverEnabled),prebid:resolved.prebid});
 }
 async function list(env) {
   const result=await env.DB.withSession('first-primary').prepare('SELECT release_id,package_sha256,state,created_at,note,descriptor_json FROM builtin_draft_uploads WHERE publisher_id=? ORDER BY created_at DESC,release_id LIMIT 20').bind(TEST_SITE).all();
@@ -95,7 +96,11 @@ async function route(request,env) {
   const known=(request.method==='GET' && ['/test-api/status','/test-api/releases','/test-api/runtime-selection','/test-api/site-settings','/test-api/prebid-settings'].includes(path)) || (request.method==='GET' && fileMatch)
     || (request.method==='POST' && ['/test-api/setup','/test-api/generate','/test-api/save','/test-api/runtime-selection','/test-api/site-settings','/test-api/prebid-settings','/test-api/prebid/upload','/test-api/prebid/plan','/test-api/prebid/plan/save'].includes(path));
   if (!known || url.search) throw new WorkspaceError(404,'This operation is not available in the test workspace.');
-  if (path==='/test-api/status') return json({...(await inspectTestSchema(env.DB)),runtime:{version:runtimeDescriptor.version,sha256:runtimeDescriptor.codeSha256},publishable:false});
+  if (path==='/test-api/status') {
+    const schema=await inspectTestSchema(env.DB);
+    return json({...schema,runtime:{version:runtimeDescriptor.version,sha256:runtimeDescriptor.codeSha256},
+      ...(schema.ready?{takeOver:takeOverForBuild(await snapshot(env))}:{}),publishable:false});
+  }
   if (path==='/test-api/setup') {
     const body=await jsonBody(request,['confirm']);
     if(body.confirm!=='prepare-empty-test-database')throw new WorkspaceError(422,'Confirm preparation of the empty test database.');
@@ -131,14 +136,15 @@ async function route(request,env) {
   }
   if (path==='/test-api/generate') {
     const body=await jsonBody(request,['acknowledge','takeOverEnabled']);
-    if(body.acknowledge!==true || typeof body.takeOverEnabled!=='boolean')throw new WorkspaceError(422,'Confirm this is a test package and select the TakeOver option.');
+    if(body.acknowledge!==true || (body.takeOverEnabled!==undefined&&typeof body.takeOverEnabled!=='boolean'))throw new WorkspaceError(422,'Confirm this is a test package. TakeOver uses the saved site settings.');
     const settings=await snapshot(env), buildTimestamp=timestamp();
+    const takeOver=takeOverForBuild(settings,body.takeOverEnabled);
     const generated=await candidate(settings,buildTimestamp,body.takeOverEnabled,env.BUILDS);
     const {descriptor,files}=await describeCandidate(TEST_SITE,generated);
     if(await digest(await snapshot(env))!==await digest(settings))throw new WorkspaceError(409,'Test settings changed. Generate again.');
     const receipt=await issueReceipt({audience:origin,actor:actor.email,configHash:await digest(settings),runtimeHash:runtimeDescriptor.codeSha256,
-      buildTimestamp,takeOverEnabled:body.takeOverEnabled,packageHash:descriptor.packageSha256},env.TEST_SESSION_SECRET);
-    return json({descriptor,receipt,adsJs:new TextDecoder().decode(files['ads.js']),publishable:false});
+      buildTimestamp,takeOverEnabled:takeOver.enabled,packageHash:descriptor.packageSha256},env.TEST_SESSION_SECRET);
+    return json({descriptor,receipt,adsJs:new TextDecoder().decode(files['ads.js']),takeOver,publishable:false});
   }
   const body=await jsonBody(request,['receipt','acknowledge','note']);
   if(body.acknowledge!==true || typeof body.note!=='string' || body.note.length>160)throw new WorkspaceError(422,'Review the test package and keep the note within 160 characters.');

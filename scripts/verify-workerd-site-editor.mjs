@@ -53,6 +53,7 @@ try{
   check('Transaction leaves no assertion rows behind',leftover.n===0);
   const draftState=await json('/test-api/site-settings');
   check('Compiled editor reads only the isolated TEST copy',draftState.siteId==='test-site'&&draftState.prebidEditable===false);
+  draftState.draft.takeOver.enabled=true;draftState.draft.takeOver.autoCloseDesktopSec=0;draftState.draft.takeOver.mobileSize=[320,250];
   draftState.draft.site={name:'Pilot test copy',domain:'pilot.example.invalid',gamPath:'/123/pilot/'};
   draftState.draft.units.push({code:'InText1',type:'BTF',sizeMap:'display',enabled:true});
   draftState.draft.maps[0].breakpoints[0].sizes=[[300,600],[300,250]];
@@ -65,8 +66,9 @@ try{
   check('Read-back contains the changed path and added position',current.draft.site.gamPath==='/123/pilot/'&&current.draft.units.length===3);
   const unchanged=await json('/test-api/site-settings',{...inputDraft,expectedRevision:current.revision,draft:current.draft});
   check('Repeated normalized edit is a no-op',unchanged.changed===false);
-  const generated=await json('/test-api/generate',{acknowledge:true,takeOverEnabled:true});
+  const generated=await json('/test-api/generate',{acknowledge:true});
   check('Compiled generator consumes edited positions, sizes and TakeOver fallback',generatedLiteral(generated.adsJs,'EXPLICIT_UNITS').some(u=>u.id==='InText1')&&JSON.stringify(generatedLiteral(generated.adsJs,'SIZE_MAPS_RAW').display[0].sizes)==='[[300,600],[300,250]]'&&generatedLiteral(generated.adsJs,'TAKEOVER_CODELESS_AD_UNIT_PATH')==='/123/pilot/Interstitial');
+  check('Compiled generator reads persisted TakeOver dimensions and zero timer',generatedLiteral(generated.adsJs,'TAKEOVER_ENABLED')===true&&generatedLiteral(generated.adsJs,'TAKEOVER_AUTO_CLOSE_DESKTOP_SEC')===0&&JSON.stringify(generatedLiteral(generated.adsJs,'TAKEOVER_MOBILE_SIZE'))==='[320,250]');
   const release=await json('/test-api/save',{receipt:generated.receipt,acknowledge:true,note:'Local compiled site editor'});
   const path='/test-api/releases/'+release.draft.id+'/download';
   const first=await call(path);assert.equal(first.status,200);const hash=sha(new Uint8Array(await first.arrayBuffer()));
