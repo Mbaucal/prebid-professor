@@ -23,7 +23,9 @@ export function planOptions(config) {
     currencyConversionEnabled:config.runtimeControls?.currencyConversion?.enabled!==false,
     userIds:USER_IDS.map(id=>{
       const found=active.find(row=>row.name===id.name),retained=saved?.find(row=>row.name===id.name);
-      const {name,...settings}=found??{name:id.name,...(retained?.settings??id.settings)};
+      const configured=config.userIdConfig?.modules?.find(row=>row.name===id.name);
+      const configuredSettings=configured?{params:configured.params??{},...(configured.storage?{storage:configured.storage}:{})}:null;
+      const {name,...settings}=found??{name:id.name,...(retained?.settings??configuredSettings??id.settings)};
       return {name:id.name,enabled:!!found,settings};
     })};
 }
@@ -41,8 +43,6 @@ function normalizeOptions(input) {
     const settings=params(row.settings);
     if(Object.keys(settings).some(key=>!['params','storage'].includes(key)))fail('This runtime supports User ID params and storage. Other saved fields need review and are not discarded.');
     if(settings.params!==undefined)params(settings.params);
-    if(settings.value!==undefined)params(settings.value);
-    if(settings.bidders!==undefined&&(!Array.isArray(settings.bidders)||settings.bidders.some(x=>typeof x!=='string'||!/^[A-Za-z0-9_]+$/.test(x))))fail('User ID bidders must be a list of bidder names.');
     if(settings.storage!==undefined){
       const s=params(settings.storage);
       if(!['cookie','html5','cookie&html5'].includes(s.type)||typeof s.name!=='string'||!s.name||!Number.isInteger(s.expires)||s.expires<1||s.expires>3650)fail('User ID storage needs type, name and expires (1–3650 days).');
@@ -68,7 +68,10 @@ export function applyPrebidDraft(snapshot, config, draft, options) {
     next.userSync={...(next.userSync??{syncEnabled:false,aliasSyncEnabled:false,syncsPerBidder:0,syncDelay:0,auctionDelay:0,filterSettings:{all:{bidders:'*',filter:'include'}}}),userIds:options.userIds.filter(id=>id.enabled).map(id=>({name:id.name,...id.settings}))};
     // Retain disabled values without adding them to the generated runtime.
     next.testPrebidOptions={userIds:options.userIds};
-    if(next.userIdConfig)next.userIdConfig={...next.userIdConfig,modules:options.userIds.map(id=>({...next.userIdConfig.modules?.find(row=>row.name===id.name),name:id.name,moduleCode:USER_IDS.find(row=>row.name===id.name).module,enabled:id.enabled,params:id.settings.params??{},storage:id.settings.storage??null}))};
+    if(next.userIdConfig)next.userIdConfig={...next.userIdConfig,modules:[
+      ...(next.userIdConfig.modules??[]).filter(row=>!USER_IDS.some(id=>id.name===row.name)),
+      ...options.userIds.map(id=>({...next.userIdConfig.modules?.find(row=>row.name===id.name),name:id.name,moduleCode:USER_IDS.find(row=>row.name===id.name).module,enabled:id.enabled,params:id.settings.params??{},storage:id.settings.storage??null}))
+    ]};
   }
   after.config.config_json=JSON.stringify(next);
   return {after,config:next};
