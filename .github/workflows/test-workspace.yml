@@ -25,6 +25,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          fetch-depth: 2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
@@ -35,12 +36,14 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Check both declared test configurations without credentials or network
         run: node scripts/check-test-activation.mjs
+      - name: Preserve runtime versions and their recorded history
+        run: node scripts/check-runtime-release-history.mjs HEAD^
       - name: Prepare locked built-in generator and schema without accessing any database
         run: |
           node scripts/prepare-builtin-runtime.mjs
           node scripts/prepare-test-workspace.mjs
       - name: Exercise real authentication, compiler, SQL schema and stored-draft HTTP workflow
-        run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs tests/runtime/site-runtime-selection.test.mjs tests/runtime/runtime-selection-cas.test.mjs tests/runtime/test-runtime-selection.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs tests/runtime/site-runtime-selection.test.mjs tests/runtime/runtime-selection-cas.test.mjs tests/runtime/test-runtime-selection.test.mjs tests/runtime/runtime-release-history.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:

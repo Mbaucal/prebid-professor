@@ -10,6 +10,7 @@ import { prepareSiteRuntimeSelection, readPinnedSiteRuntime, RuntimeSelectionErr
 import { inspectTestSchema } from './schema.mjs';
 import { WorkspaceError, TEST_SITE } from './boundary.mjs';
 import { commitTestRuntimeSelection } from './selection-transaction.mjs';
+import { describeRuntimeReleases } from '../runtime/runtime-release-history.mjs';
 
 async function savedSettings(env) {
   if (!(await inspectTestSchema(env.DB)).ready) throw new WorkspaceError(409,'Prepare the empty test database on the Generate screen first.');
@@ -32,6 +33,7 @@ export async function readRuntimeSelectionSettings(env) {
   // Do not return saved configJson, arbitrary fields, connector data or a file URL.
   return {site:{id:TEST_SITE,name:saved.site.name,domain:saved.site.domain,gamPath:saved.site.gam_path},
     revision:await digest(saved),selected,validationIssue,publishable:false,prebidEditable:false,enablePrebid:config.enablePrebid,prebidBuildId:config.builtinRuntimeSelection?.prebid?.id??null,
+    releaseHistory:describeRuntimeReleases(runtimeDescriptor,config.builtinRuntimeSelection?.runtime),
     runtimes:[{id:runtimeDescriptor.id,version:runtimeDescriptor.version,channel:runtimeDescriptor.channel,
       pin:pinRuntime(runtimeDescriptor,{allowPreview:true})}]};
 }
