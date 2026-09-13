@@ -31,8 +31,10 @@ export function normalizeDraftSite(site) {
 export function assertWorkspaceSiteScope(saved) {
   let config;try{config=JSON.parse(saved?.config?.config_json);}catch{fail('Saved TEST configuration needs review.',409);}
   if(saved?.site?.id!==TEST_SITE || !config || typeof config!=='object' || Array.isArray(config)
-    || config.enablePrebid!==false || !Array.isArray(saved.bidders)||saved.bidders.length
-    || !Array.isArray(saved.overrides)||saved.overrides.length || (saved.prebidBuilds||[]).length)fail('Only the isolated GPT-only TEST draft is supported.',409);
+    || typeof config.enablePrebid!=='boolean' || !Array.isArray(saved.bidders) || !Array.isArray(saved.overrides))fail('Only the isolated TEST draft is supported.',409);
+  const withPrebid=config.enablePrebid||saved.bidders.length||saved.overrides.length||(saved.prebidBuilds||[]).length;
+  if(withPrebid && (config.testPrebidDraft?.schemaVersion!==1||config.testPrebidDraft?.candidateOnly!==true||!config.builtinRuntimeSelection?.runtime))fail('Save Prebid settings through the TEST editor first.',409);
+  if((saved.prebidBuilds||[]).length>1)fail('Choose exactly one current TEST Prebid file.',409);
   const synthetic=saved.site.domain==='example.invalid'&&saved.site.gam_path==='/123/test/';
   if(!synthetic) {
     if(config[markerKey]?.schemaVersion!==1||config[markerKey]?.candidateOnly!==true||!config.builtinRuntimeSelection)fail('Save this site through the TEST editor and select an exact runtime first.',409);
@@ -98,6 +100,9 @@ export async function planSiteDraft(saved,input) {
   const unitCodes=new Set(draft.units.map((u)=>u.code));
   for(const key of [...before.rules.map((r)=>r.rule_key),...Object.keys(config.advancedUnitRules??{})]){
     if(!['__DEFAULT__','__ATF__','__BTF__'].includes(key)&&!unitCodes.has(key))fail('A removed position still has saved rules. Keep it disabled until its rules are reviewed.');
+  }
+  for(const override of before.overrides){
+    if(override.scope_type==='adunit'&&override.enabled===1&&!draft.units.some((u)=>u.code===override.scope_key&&u.enabled))fail('An enabled bidder override uses this position. Disable or remove that override first.');
   }
   config.runtimeControls??={};config.runtimeControls.sticky??={};config.runtimeControls.sticky.bottomAdUnitId=draft.bottomStickyId;
   config[markerKey]={schemaVersion:1,candidateOnly:true};

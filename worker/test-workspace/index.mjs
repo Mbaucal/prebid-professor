@@ -1,3 +1,6 @@
+import { prebidPage, prebidScript } from './prebid-page.mjs';
+import { getPrebidSettings, savePrebidSettings, prebidSnapshot, prebidStore } from './prebid-settings.mjs';
+import { readPrebidUpload, storePrebidFile } from './prebid-files.mjs';
 import { assertWorkspaceSiteScope } from './site-draft.mjs';
 import { getSiteDraft, saveSiteDraft } from './site-draft-service.mjs';
 import { siteDraftPage, siteDraftScript } from './site-draft-page.mjs';
@@ -7,7 +10,7 @@ import { runtimeDescriptor, readPreviewSnapshot } from '../runtime/builtin-previ
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
 import { SelectionWriteError } from './selection-transaction.mjs';
-import { readRuntimeSelectionSettings, saveRuntimeSelectionSettings, selectedWorkspacePin } from './runtime-selection.mjs';
+import { readRuntimeSelectionSettings, saveRuntimeSelectionSettings, selectedWorkspaceRuntime } from './runtime-selection.mjs';
 import { runtimeSelectionPage, runtimeSelectionScript } from './runtime-selection-page.mjs';
 import { buildArtifactCandidate } from '../runtime/artifact-candidate.mjs';
 import { describeCandidate, saveDraftRelease, readDraftRelease } from '../runtime/draft-release-store.mjs';
@@ -32,15 +35,16 @@ function store(env) {
 }
 async function snapshot(env) {
   const value = await readPreviewSnapshot(env.DB.withSession('first-primary'),TEST_SITE,{includePrebid:true});
-  const {prebidBuilds,...settings}=value;
   assertWorkspaceSiteScope(value);
-  return settings;
+  return value;
 }
-async function candidate(settings, buildTimestamp, takeOverEnabled) {
+async function candidate(settings, buildTimestamp, takeOverEnabled, bucket) {
   // The reference bridge deliberately requires an explicit interstitial fallback.
   // Use the saved TEST-copy GAM path. No production configuration is imported.
-  return buildArtifactCandidate({snapshot:settings,pin:await selectedWorkspacePin(settings),
-    buildTimestamp,takeOver:{enabled:takeOverEnabled,codelessAdUnitPath:settings.site.gam_path+'Interstitial'},prebid:null});
+  const resolved=await selectedWorkspaceRuntime(settings,bucket);
+  const {prebidBuilds,...configuration}=settings;
+  return buildArtifactCandidate({snapshot:configuration,pin:resolved.pin,
+    buildTimestamp,takeOver:{enabled:takeOverEnabled,codelessAdUnitPath:settings.site.gam_path+'Interstitial'},prebid:resolved.prebid});
 }
 async function list(env) {
   const result=await env.DB.withSession('first-primary').prepare('SELECT release_id,package_sha256,state,created_at,note,descriptor_json FROM builtin_draft_uploads WHERE publisher_id=? ORDER BY created_at DESC,release_id LIMIT 20').bind(TEST_SITE).all();
@@ -76,10 +80,12 @@ async function route(request,env) {
   if (path==='/runtime-selection.js' && request.method==='GET' && !url.search) return new Response(runtimeSelectionScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   if (path==='/site-settings' && request.method==='GET' && !url.search) return html(siteDraftPage());
   if (path==='/site-settings.js' && request.method==='GET' && !url.search) return new Response(siteDraftScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
+  if(path==='/prebid-settings'&&request.method==='GET'&&!url.search)return html(prebidPage());
+  if(path==='/prebid-settings.js'&&request.method==='GET'&&!url.search)return new Response(prebidScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   // No legacy fallback: publish, CMS, Gmail, deletion, arbitrary sites and public CDN routes do not exist.
   const fileMatch=path.match(/^\/test-api\/releases\/(builtin-draft-[a-f0-9]{64})(\/download)?$/);
-  const known=(request.method==='GET' && ['/test-api/status','/test-api/releases','/test-api/runtime-selection','/test-api/site-settings'].includes(path)) || (request.method==='GET' && fileMatch)
-    || (request.method==='POST' && ['/test-api/setup','/test-api/generate','/test-api/save','/test-api/runtime-selection','/test-api/site-settings'].includes(path));
+  const known=(request.method==='GET' && ['/test-api/status','/test-api/releases','/test-api/runtime-selection','/test-api/site-settings','/test-api/prebid-settings'].includes(path)) || (request.method==='GET' && fileMatch)
+    || (request.method==='POST' && ['/test-api/setup','/test-api/generate','/test-api/save','/test-api/runtime-selection','/test-api/site-settings','/test-api/prebid-settings','/test-api/prebid/upload'].includes(path));
   if (!known || url.search) throw new WorkspaceError(404,'This operation is not available in the test workspace.');
   if (path==='/test-api/status') return json({...(await inspectTestSchema(env.DB)),runtime:{version:runtimeDescriptor.version,sha256:runtimeDescriptor.codeSha256},publishable:false});
   if (path==='/test-api/setup') {
@@ -88,6 +94,14 @@ async function route(request,env) {
     return json(await initializeTestSchema(env.DB,actor.email));
   }
   if (!(await inspectTestSchema(env.DB)).ready) throw new WorkspaceError(409,'Prepare test data first.');
+  if(path==='/test-api/prebid/upload'){
+    await prebidSnapshot(env);
+    return json(await storePrebidFile(prebidStore(env),await readPrebidUpload(request),actor.email));
+  }
+  if(path==='/test-api/prebid-settings'){
+    if(request.method==='GET')return json(await getPrebidSettings(env));
+    return json(await savePrebidSettings(env,actor.email,await jsonBody(request,['expectedRevision','acknowledge','draft'],262144)));
+  }
   if (path==='/test-api/site-settings') {
     if(request.method==='GET')return json(await getSiteDraft(env));
     return json(await saveSiteDraft(env,actor.email,await jsonBody(request,['expectedRevision','acknowledge','draft'],262144)));
@@ -109,7 +123,7 @@ async function route(request,env) {
     const body=await jsonBody(request,['acknowledge','takeOverEnabled']);
     if(body.acknowledge!==true || typeof body.takeOverEnabled!=='boolean')throw new WorkspaceError(422,'Confirm this is a test package and select the TakeOver option.');
     const settings=await snapshot(env), buildTimestamp=timestamp();
-    const generated=await candidate(settings,buildTimestamp,body.takeOverEnabled);
+    const generated=await candidate(settings,buildTimestamp,body.takeOverEnabled,env.BUILDS);
     const {descriptor,files}=await describeCandidate(TEST_SITE,generated);
     if(await digest(await snapshot(env))!==await digest(settings))throw new WorkspaceError(409,'Test settings changed. Generate again.');
     const receipt=await issueReceipt({audience:origin,actor:actor.email,configHash:await digest(settings),runtimeHash:runtimeDescriptor.codeSha256,
@@ -122,7 +136,7 @@ async function route(request,env) {
   if(review.runtimeHash!==runtimeDescriptor.codeSha256)throw new WorkspaceError(409,'Runtime changed. Generate a new test package.');
   const settings=await snapshot(env);
   if(await digest(settings)!==review.configHash)throw new WorkspaceError(409,'Test configuration changed since review. Generate again.');
-  const generated=await candidate(settings,review.buildTimestamp,review.takeOverEnabled);
+  const generated=await candidate(settings,review.buildTimestamp,review.takeOverEnabled,env.BUILDS);
   if((await describeCandidate(TEST_SITE,generated)).descriptor.packageSha256!==review.packageHash)throw new WorkspaceError(409,'Package changed since review. Nothing was saved.');
   if(await digest(await snapshot(env))!==review.configHash)throw new WorkspaceError(409,'Test settings changed during preparation. Generate again.');
   return json(await saveDraftRelease(store(env),{siteId:TEST_SITE,candidate:generated,actor:actor.email,note:body.note}));

@@ -22,8 +22,8 @@ export async function readRuntimeSelectionSettings(env) {
   let selected = null, validationIssue = null;
   if (Object.hasOwn(config,'builtinRuntimeSelection')) {
     try {
-      const resolved = await readPinnedSiteRuntime({siteId:TEST_SITE,snapshot:saved,catalog:[runtimeDescriptor]});
-      selected = {runtime:resolved.pin,prebid:null};
+      const resolved = await readPinnedSiteRuntime({siteId:TEST_SITE,snapshot:saved,catalog:[runtimeDescriptor]},env.BUILDS);
+      selected = {runtime:resolved.pin,prebid:resolved.prebid?.report?{...resolved.prebid.report.build,modules:resolved.prebid.report.declaredModules}:null};
     } catch(error) {
       if (!(error instanceof RuntimeSelectionError)) throw error;
       validationIssue = error.message;
@@ -31,17 +31,15 @@ export async function readRuntimeSelectionSettings(env) {
   }
   // Do not return saved configJson, arbitrary fields, connector data or a file URL.
   return {site:{id:TEST_SITE,name:saved.site.name,domain:saved.site.domain,gamPath:saved.site.gam_path},
-    revision:await digest(saved),selected,validationIssue,publishable:false,prebidEditable:false,
+    revision:await digest(saved),selected,validationIssue,publishable:false,prebidEditable:false,enablePrebid:config.enablePrebid,prebidBuildId:config.builtinRuntimeSelection?.prebid?.id??null,
     runtimes:[{id:runtimeDescriptor.id,version:runtimeDescriptor.version,channel:runtimeDescriptor.channel,
       pin:pinRuntime(runtimeDescriptor,{allowPreview:true})}]};
 }
 export async function saveRuntimeSelectionSettings(env,actor,body) {
-  if (body?.selection?.enablePrebid !== false || body?.selection?.prebidBuildId !== null) {
-    throw new WorkspaceError(422,'Prebid upload and selection are not enabled in this first TEST editor.');
-  }
-  const {saved} = await savedSettings(env);
+  const {saved,config} = await savedSettings(env);
+  if(body?.selection?.enablePrebid!==config.enablePrebid || body?.selection?.prebidBuildId!==(config.builtinRuntimeSelection?.prebid?.id??null))throw new WorkspaceError(422,'Use Prebid and bidders to change Prebid mode or file. The script-version form preserves that choice.');
   const plan = await prepareSiteRuntimeSelection({siteId:TEST_SITE,snapshot:saved,catalog:[runtimeDescriptor],
-    expectedRevision:body.expectedRevision,selection:body.selection});
+    expectedRevision:body.expectedRevision,selection:body.selection},env.BUILDS);
   const result = await commitTestRuntimeSelection({isolation:'explicit-test-store',db:env.DB},
     {snapshot:saved,configJson:plan.changed?plan.configJson:saved.config.config_json,actor});
   return {...result,runtimeVersion:plan.selection.runtime.runtimeVersion};
@@ -51,14 +49,16 @@ export async function saveRuntimeSelectionSettings(env,actor,body) {
  * Once a selection exists, all generations must use and validate that exact pin.
  * Invalid/unavailable saved selections never fall back to the bootstrap default.
  */
-export async function selectedWorkspacePin(settings) {
+export async function selectedWorkspaceRuntime(settings,bucket) {
   const config = JSON.parse(settings.config.config_json);
   if (!Object.hasOwn(config,'builtinRuntimeSelection')) {
     if (settings.site?.id !== TEST_SITE || settings.site?.domain !== 'example.invalid'
       || settings.site?.gam_path !== '/123/test/' || config.enablePrebid !== false) {
       throw new WorkspaceError(409,'Choose an exact runtime for this site before generating.');
     }
-    return pinRuntime(runtimeDescriptor,{allowPreview:true});
+    return {pin:pinRuntime(runtimeDescriptor,{allowPreview:true}),prebid:null};
   }
-  return (await readPinnedSiteRuntime({siteId:TEST_SITE,snapshot:{...settings,prebidBuilds:[]},catalog:[runtimeDescriptor]})).pin;
+  return readPinnedSiteRuntime({siteId:TEST_SITE,snapshot:{...settings,prebidBuilds:settings.prebidBuilds??[]},catalog:[runtimeDescriptor]},bucket);
 }
+
+export async function selectedWorkspacePin(settings,bucket){return (await selectedWorkspaceRuntime(settings,bucket)).pin;}

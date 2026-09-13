@@ -13,7 +13,7 @@ export async function getSiteDraft(env) {
 }
 export async function saveSiteDraft(env,actor,body) {
   const plan=await planSiteDraft(await read(env),body);
-  await selectedWorkspacePin(plan.after);
+  await selectedWorkspacePin(plan.after,env.BUILDS);
   try{previewInput(plan.after,runtimeDescriptor,'20260913_000000',{enabled:false});}
   catch{throw new WorkspaceError(422,'These settings are not supported by the selected script. Review the positions, size maps and existing advanced rules.');}
   return commitSiteDraft({isolation:'explicit-test-store',db:env.DB},plan,actor);

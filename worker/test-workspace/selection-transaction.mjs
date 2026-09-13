@@ -61,7 +61,8 @@ export async function commitTestRuntimeSelection(store,{snapshot,configJson,acto
   if (typeof configJson !== 'string' || !configJson.length || new TextEncoder().encode(configJson).byteLength > MAX_BYTES) fail('invalid_config','A validated TEST configuration is required.');
   let config;
   try { config = JSON.parse(configJson); } catch { fail('invalid_config','A validated TEST configuration is required.'); }
-  if (!plain(config) || config.enablePrebid !== false) fail('test_mode_required','This first TEST editor remains GPT-only.');
+  if (!plain(config) || typeof config.enablePrebid !== 'boolean') fail('test_mode_required','Explicit TEST Prebid mode is required.');
+  try { assertWorkspaceSiteScope({...snapshot,config:{config_json:configJson}}); } catch { fail('test_mode_required','Use the approved TEST Prebid editor to enable Prebid.'); }
   if (typeof actor !== 'string' || !actor.trim() || actor.length > 320 || /[\r\n]/.test(actor)) fail('actor_required','An authenticated TEST actor is required.');
   if (store?.isolation !== 'explicit-test-store' || !store.db || typeof store.db.withSession !== 'function') fail('test_store_required','An explicit isolated TEST store is required.');
   const db = store.db.withSession('first-primary');
