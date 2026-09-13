@@ -4,6 +4,7 @@
  */
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { WorkspaceError, TEST_SITE } from './boundary.mjs';
+import { normalizeTakeOver, savedTakeOver } from './takeover-settings.mjs';
 const forbidden = new Set(['__proto__','prototype','constructor']);
 const namePattern = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const markerKey = 'testSiteDraft';
@@ -43,7 +44,8 @@ export function assertWorkspaceSiteScope(saved) {
   return config;
 }
 export function normalizeSiteDraft(draft) {
-  record(draft,['site','units','maps','bottomStickyId'],'draft');
+  record(draft,['site','units','maps','bottomStickyId',...(Object.hasOwn(draft??{},'takeOver')?['takeOver']:[])],'draft');
+  const takeOver=Object.hasOwn(draft,'takeOver')?normalizeTakeOver(draft.takeOver):undefined;
   const site=normalizeDraftSite(draft.site), names=new Set();
   const maps=array(draft.maps,32,'Size maps').map((map)=>{
     record(map,['name','breakpoints'],'size map');const name=identifier(map.name,'map name');
@@ -65,7 +67,7 @@ export function normalizeSiteDraft(draft) {
   const ids=new Set();
   const units=array(draft.units,100,'Ad positions').map((unit)=>{
     record(unit,['code','type','sizeMap','enabled'],'ad position');const code=identifier(unit.code,'ad position ID');
-    if(ids.has(code)||code==='TakeOver'||code.startsWith('adsx-')||code.startsWith('close_sticky'))fail('Ad position IDs must be unique; TakeOver is a separate module.');ids.add(code);
+    if(ids.has(code)||code==='TakeOver'||code===takeOver?.adUnitCode||code.startsWith('adsx-')||code.startsWith('close_sticky'))fail('Ad position IDs must be unique; TakeOver is a separate module.');ids.add(code);
     if(!['ATF','BTF'].includes(unit.type)||typeof unit.enabled!=='boolean')fail('Choose ATF/BTF and an enabled state for each position.');
     if(!names.has(unit.sizeMap))fail('Every ad position must reference an existing size map.');
     if(unit.enabled&&!maps.find((m)=>m.name===unit.sizeMap).breakpoints.some((r)=>r.sizes.length))fail('An enabled ad position needs at least one size.');
@@ -74,7 +76,8 @@ export function normalizeSiteDraft(draft) {
   if(!units.some((u)=>u.enabled))fail('Keep at least one enabled ad position.');
   const bottomStickyId=draft.bottomStickyId;
   if(typeof bottomStickyId!=='string'||(bottomStickyId&&!units.some((u)=>u.code===bottomStickyId&&u.enabled)))fail('Choose an enabled position for bottom sticky, or leave it off.');
-  return {site,units,maps,bottomStickyId};
+  if(takeOver?.adUnitCode==='Interstitial')fail('TakeOver must use a different GAM ad unit from its Interstitial fallback.');
+  return {site,units,maps,bottomStickyId,...(takeOver?{takeOver}:{})};
 }
 export function readSiteDraft(saved) {
   const config=assertWorkspaceSiteScope(saved);
@@ -86,7 +89,7 @@ export function readSiteDraft(saved) {
   })}));}catch(error){if(error instanceof WorkspaceError)throw error;fail('Saved size maps need review.',409);}
   const draft={site:{name:saved.site.name,domain:saved.site.domain,gamPath:saved.site.gam_path},
     units:saved.units.map((u)=>{if(u.media_type!=='banner')fail('This editor supports banner positions only.',409);return {code:u.code,type:u.type,sizeMap:u.size_map_key,enabled:u.enabled===1};}),
-    maps,bottomStickyId:Object.hasOwn(config.runtimeControls?.sticky??{},'bottomAdUnitId')
+    maps,takeOver:savedTakeOver(config),bottomStickyId:Object.hasOwn(config.runtimeControls?.sticky??{},'bottomAdUnitId')
       ? (config.runtimeControls.sticky.bottomAdUnitId||'') : (saved.units.some((u)=>u.enabled===1&&u.code==='Sticky')?'Sticky':'')};
   return normalizeSiteDraft(draft);
 }
@@ -105,6 +108,9 @@ export async function planSiteDraft(saved,input) {
     if(override.scope_type==='adunit'&&override.enabled===1&&!draft.units.some((u)=>u.code===override.scope_key&&u.enabled))fail('An enabled bidder override uses this position. Disable or remove that override first.');
   }
   config.runtimeControls??={};config.runtimeControls.sticky??={};config.runtimeControls.sticky.bottomAdUnitId=draft.bottomStickyId;
+  if(draft.takeOver)config.runtimeControls.takeOver=draft.takeOver;
+  // Older editor tabs omit TakeOver; retain it and still validate position collisions.
+  if(afterTakeOverConflict(draft,config))fail('TakeOver needs a separate GAM ad unit, outside the regular ad positions.');
   config[markerKey]={schemaVersion:1,candidateOnly:true};
   const after={...before,site:{id:TEST_SITE,name:draft.site.name,domain:draft.site.domain,gam_path:draft.site.gamPath},
     config:{config_json:JSON.stringify(config)},
@@ -113,3 +119,4 @@ export async function planSiteDraft(saved,input) {
   if(await digest(before)!==expected)fail('Settings changed. Reload saved settings before trying again.',409);
   return {before,after,draft,changed:await digest(before)!==await digest(after)};
 }
+function afterTakeOverConflict(draft,config){const takeover=savedTakeOver(config);return takeover.adUnitCode==='Interstitial'||draft.units.some(u=>u.code===takeover.adUnitCode);}
