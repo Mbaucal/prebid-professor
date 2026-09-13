@@ -67,7 +67,7 @@ export function normalizeSiteDraft(draft) {
   const ids=new Set();
   const units=array(draft.units,100,'Ad positions').map((unit)=>{
     record(unit,['code','type','sizeMap','enabled'],'ad position');const code=identifier(unit.code,'ad position ID');
-    if(ids.has(code)||code==='TakeOver'||code===takeOver?.adUnitCode||code.startsWith('adsx-')||code.startsWith('close_sticky'))fail('Ad position IDs must be unique; TakeOver is a separate module.');ids.add(code);
+    if(ids.has(code)||['TakeOver','Interstitial'].includes(code)||code===takeOver?.adUnitCode||code.startsWith('adsx-')||code.startsWith('close_sticky'))fail('Ad position IDs must be unique. TakeOver and its Interstitial fallback need separate GAM ad units.');ids.add(code);
     if(!['ATF','BTF'].includes(unit.type)||typeof unit.enabled!=='boolean')fail('Choose ATF/BTF and an enabled state for each position.');
     if(!names.has(unit.sizeMap))fail('Every ad position must reference an existing size map.');
     if(unit.enabled&&!maps.find((m)=>m.name===unit.sizeMap).breakpoints.some((r)=>r.sizes.length))fail('An enabled ad position needs at least one size.');

@@ -22,6 +22,11 @@ async function fixture(){const x=workspaceStore();active.push(x);await initializ
  x.audit=()=>sql.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='test_workspace.site_draft_saved'").get().n;
  return x;}
 const copy=(v)=>structuredClone(v);
+test('custom TakeOver cannot share its Interstitial fallback with a regular position',async()=>{
+  const x=await fixture(),d=readSiteDraft(x.snapshot());d.takeOver.enabled=true;d.takeOver.adUnitCode='Overlay';d.units[0].code='Interstitial';
+  assert.throws(()=>normalizeSiteDraft(d),/Interstitial fallback/);
+  delete d.takeOver;assert.throws(()=>normalizeSiteDraft(d),/Interstitial fallback/);
+});
 for(const [name,change] of [
   ['invalid enabled',t=>t.enabled='yes'],['empty code',t=>t.adUnitCode=''],['unsafe code',t=>t.adUnitCode='../../other'],['fallback collision',t=>t.adUnitCode='Interstitial'],['position collision',t=>t.adUnitCode='Billboard'],['bad desktop width',t=>t.desktopMinWidth=0],['zero size',t=>t.desktopSize=[0,600]],['invalid size',t=>t.mobileSize=[300.5,250]],['negative timer',t=>t.autoCloseDesktopSec=-1],['too long timer',t=>t.autoCloseMobileSec=301],['invalid countdown',t=>t.showCountdown=null],['unknown option',t=>t.source='code']
 ])test('TakeOver rejects '+name,async()=>{const x=await fixture(),d=readSiteDraft(x.snapshot());change(d.takeOver);assert.throws(()=>normalizeSiteDraft(d));assert.equal(x.audit(),0);});

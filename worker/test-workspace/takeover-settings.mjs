@@ -23,5 +23,6 @@ export function takeOverForBuild(snapshot,legacyEnabled){
   // Keep already reviewed legacy packages reproducible until a saved setting changes.
   if(configured&&legacyEnabled!==undefined&&legacyEnabled!==saved.enabled)throw new WorkspaceError(409,'TakeOver is now controlled by saved site settings. Reload Generate before continuing.');
   const options=configured?saved:{enabled:legacyEnabled??false};
+  if(options.enabled&&(snapshot.units??[]).some(u=>u.enabled===1&&[saved.adUnitCode,'Interstitial'].includes(u.code)))throw new WorkspaceError(409,'TakeOver and its Interstitial fallback must be separate from regular ad positions. Review site settings.');
   return {...options,codelessAdUnitPath:snapshot.site.gam_path+'Interstitial'};
 }

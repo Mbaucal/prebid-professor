@@ -12,6 +12,10 @@ async function ready(){const f=workspaceStore();fixtures.push(f);const logged=aw
 const state=async(f,cookie)=>(await req(f,'/test-api/site-settings',cookie)).data;
 const save=(f,cookie,s)=>req(f,'/test-api/site-settings',cookie,{expectedRevision:s.revision,acknowledge:true,draft:s.draft});
 const generate=(f,cookie)=>req(f,'/test-api/generate',cookie,{acknowledge:true});
+test('legacy generation cannot share the Interstitial fallback with a regular position',async()=>{
+  const {f,cookie}=await ready();f.sqlite.prepare("UPDATE ad_units SET code='Interstitial' WHERE code='Billboard'").run();
+  const g=await req(f,'/test-api/generate',cookie,{acknowledge:true,takeOverEnabled:true});assert.equal(g.r.status,409);assert.match(g.data.error,/separate from regular ad positions/);assert.equal(f.objects.size,0);
+});
 test('saved TakeOver controls drive Generate, status and the exact saved package',async()=>{
   const {f,cookie}=await ready(),s=await state(f,cookie);
   Object.assign(s.draft.takeOver,{enabled:true,adUnitCode:'Overlay',desktopSize:[970,600],mobileSize:[320,250],desktopMinWidth:1200,autoCloseDesktopSec:0,autoCloseMobileSec:8,showCountdown:false});
