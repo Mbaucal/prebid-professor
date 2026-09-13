@@ -5,10 +5,10 @@ export const ORIGIN = 'https://prebid-professor-test.mbaucal.workers.dev';
 export const TEST_EMAIL = 'tester@example.invalid';
 export const TEST_PASSWORD = 'Local-fixture-only-password-927!';
 export const TEST_SECRET = 'Local-fixture-only-session-key-not-a-live-credential-927!';
-export function workspaceStore() {
+export function workspaceStore({prebidFiles=false}={}) {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec('PRAGMA foreign_keys=ON');
-  const objects=new Map(), log={sql:[],puts:[],gets:[],batches:0};
+  const objects=new Map(),metadata=new Map(), log={sql:[],puts:[],gets:[],batches:0};
   const faults={batchAt:-1,batchAfter:false,putName:''};
   function execute(sql,args) {
     log.sql.push(sql);
@@ -24,11 +24,11 @@ export function workspaceStore() {
       if(faults.batchAfter && items.some((item)=>/^INSERT INTO releases /.test(item.sql)))throw Error('response lost after commit');return result;},
   };
   const bucket={
-    async get(key){log.gets.push(key);assert.match(key,/^publishers\/test-site\/releases\/builtin-draft-[a-f0-9]{64}\//);const value=objects.get(key);if(!value)return null;const copy=value.slice();return {size:copy.length,async arrayBuffer(){return copy.buffer;}};},
-    async put(key,bytes,options){log.puts.push(key);assert.equal(options.onlyIf.get('If-None-Match'),'*');assert.equal(options.httpMetadata.cacheControl,'private, no-store');if(faults.putName&&key.endsWith('/'+faults.putName))throw Error('injected R2 failure');if(objects.has(key))return null;objects.set(key,new Uint8Array(bytes).slice());return {key};},
+    async get(key){log.gets.push(key);assert.match(key,prebidFiles?/^publishers\/test-site\/(?:releases\/builtin-draft-[a-f0-9]{64}\/|prebid-builds\/test-pb-[a-f0-9]{64}\/prebid\.js$)/:/^publishers\/test-site\/releases\/builtin-draft-[a-f0-9]{64}\//);const value=objects.get(key);if(!value)return null;const copy=value.slice();return {size:copy.length,customMetadata:metadata.get(key),async arrayBuffer(){return copy.buffer;}};},
+    async put(key,bytes,options){log.puts.push(key);assert.equal(options.onlyIf.get('If-None-Match'),'*');assert.equal(options.httpMetadata.cacheControl,'private, no-store');if(faults.putName&&key.endsWith('/'+faults.putName))throw Error('injected R2 failure');if(objects.has(key))return null;objects.set(key,new Uint8Array(bytes).slice());metadata.set(key,options.customMetadata?{...options.customMetadata}:{});return {key};},
     delete(){assert.fail('No automatic object deletion');},list(){assert.fail('No bucket-wide listing');},
   };
   const env={TEST_WORKSPACE_ENABLED:'true',TEST_PUBLIC_ORIGIN:ORIGIN,TEST_WORKER_NAME:TEST_WORKER,TEST_DATABASE_ID:TEST_DATABASE,TEST_BUCKET_NAME:TEST_BUCKET,
     TEST_ADMIN_EMAIL:TEST_EMAIL,TEST_ADMIN_PASSWORD:TEST_PASSWORD,TEST_SESSION_SECRET:TEST_SECRET,DB:db,BUILDS:bucket};
-  return {env,sqlite,objects,log,faults,close(){sqlite.close();}};
+  return {env,sqlite,objects,metadata,log,faults,close(){sqlite.close();}};
 }
