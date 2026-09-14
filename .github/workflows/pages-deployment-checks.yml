@@ -1,0 +1,37 @@
+name: Pages deployment verification checks
+on:
+  pull_request:
+    branches: [main, feature/isolated-runtime-workspace-v1]
+    paths:
+      - scripts/pages-release-verification.mjs
+      - worker/deployment-manifest-pin.mjs
+      - worker/external-deployments.ts
+      - tests/runtime/pages-deployment.test.mjs
+      - .github/workflows/deploy-pages-release.yml
+      - .github/workflows/pages-deployment-checks.yml
+  push:
+    branches: [feature/isolated-runtime-workspace-v1]
+    paths:
+      - scripts/pages-release-verification.mjs
+      - worker/deployment-manifest-pin.mjs
+      - worker/external-deployments.ts
+      - tests/runtime/pages-deployment.test.mjs
+      - .github/workflows/deploy-pages-release.yml
+      - .github/workflows/pages-deployment-checks.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: node scripts/prepare-builtin-runtime.mjs
+      - name: Verify package bytes, target branch, callback retries and existing draft barriers
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/pages-deployment.test.mjs tests/runtime/stored-draft-legacy-guards.test.mjs

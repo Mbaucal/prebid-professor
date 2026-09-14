@@ -27,6 +27,10 @@ on:
         description: Public immutable release URL
         required: true
         type: string
+      manifest_sha256:
+        description: Exact source manifest checksum from the platform
+        required: true
+        type: string
       github_environment:
         description: Repository secret name containing the scoped Cloudflare API token
         required: true
@@ -63,166 +67,102 @@ jobs:
   deploy:
     name: ${{ inputs.site_id }} · ${{ inputs.release_version }} · ${{ inputs.channel }}
     runs-on: ubuntu-latest
-
+    timeout-minutes: 15
+    env:
+      DEPLOY_INPUTS: ${{ toJSON(inputs) }}
+    outputs:
+      identity_ok: ${{ steps.identity.outcome }}
+      deployment_url: ${{ steps.deploy.outputs.deployment-url }}
+      alias_url: ${{ steps.deploy.outputs.pages-deployment-alias-url }}
+      evidence_name: pages-source-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: Check out deployment workflow
-        uses: actions/checkout@v4
-
-      - name: Validate deployment credential
-        shell: bash
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Validate deployment identity and destinations before credentials
+        id: identity
+        run: node scripts/pages-release-verification.mjs validate
+      - name: Verify source package and actual Pages production branch
+        id: prepare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets[inputs.github_environment] }}
-          CREDENTIAL_SECRET_NAME: ${{ inputs.github_environment }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "Repository secret ${CREDENTIAL_SECRET_NAME} is missing or empty." >&2
-            exit 1
-          fi
-          echo "Using scoped repository secret ${CREDENTIAL_SECRET_NAME}."
-
-      - name: Download immutable release package
-        shell: bash
-        env:
-          RELEASE_BASE_URL: ${{ inputs.release_base_url }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-
-          files=(
-            ads.js
-            ads.min.js
-            prebid.js
-            config.json
-            manifest.json
-            min-height.css
-            div-export.csv
-            implementation.html
-          )
-
-          for file in "${files[@]}"; do
-            echo "Downloading ${file}"
-            curl \
-              --fail \
-              --location \
-              --retry 3 \
-              --retry-all-errors \
-              --silent \
-              --show-error \
-              "${RELEASE_BASE_URL}/${file}" \
-              --output "dist/${file}"
-          done
-
-          echo "Downloading optional sticky.css"
-          if ! curl \
-            --fail \
-            --location \
-            --retry 3 \
-            --retry-all-errors \
-            --silent \
-            --show-error \
-            "${RELEASE_BASE_URL}/sticky.css" \
-            --output "dist/sticky.css"; then
-            rm -f dist/sticky.css
-            echo "sticky.css is not present on this legacy release; continuing without it."
-          fi
-
-          cat > dist/_headers <<'EOF'
-          /*
-            Access-Control-Allow-Origin: *
-            X-Content-Type-Options: nosniff
-          EOF
-
-          echo "Release package ready:"
-          find dist -maxdepth 1 -type f -printf '%f\n' | sort
-
-      - name: Deploy release with Wrangler
+        run: node scripts/pages-release-verification.mjs prepare
+      - name: Preserve the verified source inventory before deployment
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pages-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .generated/pages-release/verification.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Deploy the verified package with Wrangler
         id: deploy
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
         with:
           apiToken: ${{ secrets[inputs.github_environment] }}
           accountId: ${{ inputs.account_id }}
-          wranglerVersion: "4"
+          wranglerVersion: "4.118.0"
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           command: >-
-            pages deploy dist
+            pages deploy .generated/pages-release/dist
             --project-name=${{ inputs.project_name }}
             --branch=${{ inputs.branch }}
             --commit-dirty=false
-            --commit-message="Prebid Professor ${{ inputs.channel }} ${{ inputs.site_id }} ${{ inputs.release_version }}"
+            --commit-message="Tessera ${{ inputs.channel }} ${{ inputs.site_id }} ${{ inputs.release_version }}"
 
-      - name: Report successful deployment
+  verify:
+    name: Verify public release bytes (read only)
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_INPUTS: ${{ toJSON(inputs) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.deploy.outputs.evidence_name }}
+          path: .generated/pages-release
+      - name: Verify every published file and delivery headers
+        env:
+          PAGES_DEPLOYMENT_URL: ${{ needs.deploy.outputs.deployment_url }}
+        run: node scripts/pages-release-verification.mjs verify-public
+      - name: Preserve public verification evidence
         if: success()
-        shell: bash
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pages-public-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .generated/pages-release/public-verification.json
+          if-no-files-found: error
+          retention-days: 14
+
+  report:
+    name: Update platform status (no deployment)
+    needs: [deploy, verify]
+    if: ${{ always() && needs.deploy.outputs.identity_ok == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEPLOY_INPUTS: ${{ toJSON(inputs) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Report the independent deployment and verification outcomes
         env:
-          CALLBACK_URL: ${{ inputs.callback_url }}
           CALLBACK_SECRET: ${{ secrets.PREBID_PROFESSOR_CALLBACK_SECRET }}
-          CORRELATION_ID: ${{ inputs.correlation_id }}
-          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
-          ALIAS_URL: ${{ steps.deploy.outputs.pages-deployment-alias-url }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          jq -n \
-            --arg correlationId "$CORRELATION_ID" \
-            --arg status "success" \
-            --arg githubRunId "$RUN_ID" \
-            --arg githubRunUrl "$RUN_URL" \
-            --arg deploymentUrl "$DEPLOYMENT_URL" \
-            --arg aliasUrl "$ALIAS_URL" \
-            --arg message "Cloudflare Pages deployment completed." \
-            '{
-              correlationId: $correlationId,
-              status: $status,
-              githubRunId: $githubRunId,
-              githubRunUrl: $githubRunUrl,
-              deploymentUrl: $deploymentUrl,
-              aliasUrl: $aliasUrl,
-              message: $message
-            }' > callback.json
-
-          curl \
-            --fail-with-body \
-            --silent \
-            --show-error \
-            --request POST \
-            --header "Authorization: Bearer ${CALLBACK_SECRET}" \
-            --header "Content-Type: application/json" \
-            --data @callback.json \
-            "$CALLBACK_URL"
-
-      - name: Report failed deployment
-        if: failure()
-        shell: bash
-        env:
-          CALLBACK_URL: ${{ inputs.callback_url }}
-          CALLBACK_SECRET: ${{ secrets.PREBID_PROFESSOR_CALLBACK_SECRET }}
-          CORRELATION_ID: ${{ inputs.correlation_id }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          jq -n \
-            --arg correlationId "$CORRELATION_ID" \
-            --arg status "failed" \
-            --arg githubRunId "$RUN_ID" \
-            --arg githubRunUrl "$RUN_URL" \
-            --arg message "Cloudflare Pages deployment failed. Open the GitHub Actions run for details." \
-            '{
-              correlationId: $correlationId,
-              status: $status,
-              githubRunId: $githubRunId,
-              githubRunUrl: $githubRunUrl,
-              message: $message
-            }' > callback.json
-
-          curl \
-            --fail-with-body \
-            --silent \
-            --show-error \
-            --request POST \
-            --header "Authorization: Bearer ${CALLBACK_SECRET}" \
-            --header "Content-Type: application/json" \
-            --data @callback.json \
-            "$CALLBACK_URL"
+          DEPLOY_OUTCOME: ${{ needs.deploy.result }}
+          VERIFY_OUTCOME: ${{ needs.verify.result }}
+          PAGES_DEPLOYMENT_URL: ${{ needs.deploy.outputs.deployment_url }}
+          PAGES_ALIAS_URL: ${{ needs.deploy.outputs.alias_url }}
+        run: node scripts/pages-release-verification.mjs callback
