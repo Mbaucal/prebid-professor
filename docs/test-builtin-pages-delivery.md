@@ -8,7 +8,9 @@ engine version or regenerate the accepted Tanjug v1 ZIP.
 The user confirmed manually installing ads.js on Tanjug. That is recorded as user
 feedback, not fabricated Pages workflow evidence. The first automatic TEST
 deployment was created on 2026-09-14; its initial verification failed at the Pages
-HTML redirect. There is not yet a second automatic package to restore from.
+HTML redirect and was subsequently verified without redeployment. PR44 then
+delivered the compact script layout and proved a real full-archive restore and
+compact-layout restore. See `docs/evidence/tanjug-compact-restore/README.md`.
 
 ## Connection required for the first real run
 
@@ -101,9 +103,10 @@ The chosen cache value is the Pages default, not a long browser TTL on a mutable
   current production branch are fetched from Cloudflare before Wrangler runs.
   A matching production branch is refused, even when named something unexpected.
   Both legacy and builtin jobs share account/project/branch concurrency.
-- Wrangler delivers all original files plus Pages `_headers`. The immutable
-  deployment URL must belong to the selected project. All package files are read
-  back and checked for exact size, SHA-256, MIME, CORS, nosniff and no-store.
+- Wrangler delivers the original bytes selected by the frozen delivery layout
+  plus its Pages `_headers`. The immutable deployment URL must belong to the
+  selected project. Public files are read back at that URL and the preview alias,
+  checking size, SHA-256, MIME, CORS, nosniff and the layout's cache policy.
   The source manifest remains `completeRelease:false`; it is never relabeled as
   a production release.
 - Restoring creates a new deployment request for the selected previous successful
@@ -181,7 +184,19 @@ existing request was confirmed without redeployment. The first report returned
 was reused. Evidence is in `docs/evidence/tanjug-test-v1-public-verification.json`
 and `docs/evidence/tanjug-test-v1-verification.md`.
 
-Still required before MBA-46 can be Done: a second approved package and a real
-complete restore. No production promotion is included
-in this stage. Previous accepted Prebid/template/Tanjug user tests are not requested
-again; the existing repository CI remains a required gate.
+PR44 acceptance completed on 2026-09-14: compact delivery run `34864698144`,
+full-archive restore `34865064215`, compact restore `34865304443`. Every deploy,
+verify and report job succeeded on its first attempt. Both historical layouts
+were restored from the same unchanged accepted source archive. The final preview
+is compact at `https://f9b56105.tanjug.pages.dev` and
+`https://tessera-test.tanjug.pages.dev`. This proves changing and restoring the
+delivery version; it does not claim a newly generated source configuration.
+
+Remaining production work: implement a reviewed production promotion path for
+the exact verified delivery, preserve the current live version for rollback, and
+validate the selected Prebid build in the publisher's live context. The observed
+production `ads.js` already matches the accepted minified bytes, but production
+Prebid was **10.10.0**, while TEST is **11.34.0**. Earlier user confirmation of
+working live ads is not proof that Prebid 11.34.0 was live. Existing builtin
+staging guards and `completeRelease:false` remain intact; no production promotion
+was performed. Previous accepted user tests must not be requested again.
