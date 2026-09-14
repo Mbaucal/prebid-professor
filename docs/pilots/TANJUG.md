@@ -25,30 +25,49 @@ its Prebid header does not declare `currency`, `priceFloors` or `schain`.
 This is a static declaration mismatch, not a measured auction failure.
 The observed full configuration also names five User IDs, but Lotame has no
 clientId in that source. The provisional module list includes those observed
-features; it is not a final build selection. Confirm partner settings before use.
+features; it is now used by the separately pinned TEST v1 below. Actual partner delivery remains a staging check.
 
-## Remaining pilot work
+## Approved Tanjug TEST v1 (14 September 2026)
 
-The homepage HTML contains no identifiable CMP loader; the wrapper expects
-`__tcfapi`. This does not prove a CMP is absent after scripts run. Ask Marko which
-CMP Tanjug uses before preparing the actual consent/ad-display test. Do not copy
-the old wrapper's permissive fallback as an approved consent policy.
+Marko explicitly authorized reuse of the complete source configuration and
+bidder IDs, adapting the remaining settings, with **TakeOver OFF**. No TakeOver
+GAM unit or fallback is needed for this pilot.
 
-The captured wrapper has no TakeOver configuration. The existing Tessera TEST
-TakeOver settings must be retained; a Tanjug GAM path/unit and fallback remain
-to be established before a real TakeOver request.
+`worker/pilots/tanjug-v1.json` freezes a separate `tanjug-test` snapshot and the
+package changelog. It does not replace the saved `test-site` configuration.
+`scripts/prepare-tanjug-pilot.mjs` generates the ten-file candidate using the
+existing pinned Tessera runtime 3.9.1-tessera.preview.2. The engine did not change.
+Builds run offline from pinned vendor bytes and fail on changed runtime/Prebid
+pins; a future package upgrade must explicitly record a new version.
 
-The homepage contains two `id="Billboard"` placeholders for separate desktop and
-mobile wrappers. A new test page should have one responsive ID, avoiding that
-ambiguity without editing the publisher homepage.
+The original 11.34.0 Prebid build was returned by the official
+`https://js-download.prebid.org/download` endpoint with the saved
+`vendor/prebid/tanjug-11.34.0/prebid-config.json` request. All 15 required module
+declarations and the original 299591 bytes are verified before packaging.
+SHA-256: `384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b`.
+No header edits or publisher JS execution are involved in preparing the package.
 
-Keep the accepted `builtin-draft-401614f1…` package and all saved TEST settings.
-Do not replace them with this JSON automatically. Prepare a separately reviewed
-configuration and private staging handoff. `tanjug.pages.dev` is the observed
-existing asset origin, not an approved staging destination or verified account.
-No destination token, account ID, Pages preview branch or test URL was supplied.
+All 19 positions, six maps, bidder parameters, EUR floors, supply chain and
+source User ID settings are preserved. Refresh retains 30-second start, 50%
+growth, 120-second cap and 20-refresh limit; mobile visibility adapts from 40%
+to the built-in runtime's 50%. The source Lotame entry remains without a made-up
+client ID. New HTML has one responsive Billboard ID, not the homepage's two.
 
-New checks only: the 14-size map survives transactional TEST save/read unchanged;
-32 entries remain valid and 33 are rejected without a write. The complete
-19-position/six-map extracted draft passes the pure editor normalizer. Previous
-user acceptance checks and uploaded ZIP checks were not repeated.
+Authenticated TEST `/pilot/tanjug` offers the frozen ZIP, prebid-config.json,
+version history and a **mock-banner preview, not a live auction test**. The
+preview runs the exact new minified wrapper with local mock GPT/Prebid/CMP in
+an opaque sandbox. Its CSP blocks external requests, storage and parent access;
+the real Prebid file is not executed on the admin origin. These read-only routes
+never touch D1/R2 or the accepted `builtin-draft-401614f1…` package.
+
+The ZIP's `implementation.html` is a real integration example and can request
+ads. Use it only on authorized isolated staging with the site's existing CMP
+loaded first. The actual CMP, real bid/Google delivery and publisher layout
+integration remain live-staging checks; generating the candidate does not claim
+those checks passed. Tanjug production and tanjug.pages.dev remain unchanged.
+
+New verification: full source-to-output data equality, exact original Prebid
+and candidate hashes, authenticated immutable download, no saved-storage access,
+query/method/host boundaries, opaque preview sandbox, desktop/mobile rendering,
+lazy positions, four-bidder requests and sticky close with all network mocked.
+Previously accepted user checks are not requested again.

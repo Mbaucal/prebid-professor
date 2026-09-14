@@ -1,5 +1,7 @@
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 // Only these already reviewed schema sources, never the publisher seeds after them.
 const root = new URL('../', import.meta.url);
@@ -39,3 +41,4 @@ mkdirSync(new URL('.generated/', root), { recursive: true });
 writeFileSync(new URL('.generated/test-workspace-schema.mjs', root),
   `// Generated from checksum-locked DDL only. No production seed data.\nexport const schemaSha256=${JSON.stringify(schemaSha256)};\nexport const tables=${JSON.stringify(tables)};\nexport const statements=${JSON.stringify(statements)};\n`);
 console.log(`Prepared isolated workspace schema: ${tables.length} tables; no database connection or mutation.`);
+execFileSync(process.execPath, ['--experimental-strip-types', fileURLToPath(new URL('./prepare-tanjug-pilot.mjs', import.meta.url))], { stdio: 'inherit' });
