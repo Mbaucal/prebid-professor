@@ -2,7 +2,7 @@
   {
     "id": "tessera-positions-preview-1",
     "version": "3.10.0-tessera.preview.1",
-    "codeSha256": "4df56fe0dbd23f0eebe84c168adb4ac7c31d019f6701b3a80ca3a68bb04e02eb",
+    "codeSha256": "ae98640d4c373547f1a2b9c6ac867010f5760c14ed71b49fb8907fcfeb3fc5cc",
     "configSchemaVersion": 1,
     "channel": "preview",
     "capabilities": [
@@ -17,7 +17,7 @@
     "date": "2026-09-14",
     "title": "TakeOver in Ad positions and saved lazy rules",
     "sourceManifest": "scripts/prepare-next-runtime.mjs",
-    "sourceCommit": "da02ff34684d1a500ea97240bcebd33a52e6e9a1",
+    "sourceCommit": "5aa74e1400ec1d23d3eb47d4c1778eb99d9a1d7e",
     "changes": [
       "Configure TakeOver as an ad position with a responsive size map, closing timers and a per-tab display interval.",
       "Choose GAM only or the site Prebid bidders; ad-unit and device bidder overrides apply to TakeOver.",
