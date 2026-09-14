@@ -34,7 +34,7 @@ try{
   assert.equal(logged.status,303);cookie=logged.headers.get('set-cookie').split(';')[0];
   await json('/test-api/setup',{confirm:'prepare-empty-test-database'});
   const state=await json('/test-api/runtime-selection');
-  check('Compiled settings GET returns one real runtime and no implicit saved selection',state.selected===null&&state.runtimes.length===1);
+  check('Compiled settings GET returns both real runtimes and no implicit saved selection',state.selected===null&&state.runtimes.length===2);
   const input=selection(state);input.selection.allowPreview=false;
   await json('/test-api/runtime-selection',input,422);
   check('Compiled settings writer requires Preview opt-in',true);

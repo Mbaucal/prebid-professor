@@ -1,12 +1,13 @@
+import { runtimeCatalog, prepareSiteRuntimeSelection, readPinnedSiteRuntime } from './runtime-catalog.mjs';
 import { assertWorkspaceSiteScope } from './site-draft.mjs';
 /** Authenticated TEST settings service. The router enforces host, session,
  * same-origin, methods and request size before calling these functions.
  * No Prebid upload, production-site editing, schema migration or publication.
  */
-import { runtimeDescriptor, readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
+import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { pinRuntime } from '../runtime/version-pin.mjs';
-import { prepareSiteRuntimeSelection, readPinnedSiteRuntime, RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
+import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
 import { inspectTestSchema } from './schema.mjs';
 import { WorkspaceError, TEST_SITE } from './boundary.mjs';
 import { commitTestRuntimeSelection } from './selection-transaction.mjs';
@@ -23,7 +24,7 @@ export async function readRuntimeSelectionSettings(env) {
   let selected = null, validationIssue = null;
   if (Object.hasOwn(config,'builtinRuntimeSelection')) {
     try {
-      const resolved = await readPinnedSiteRuntime({siteId:TEST_SITE,snapshot:saved,catalog:[runtimeDescriptor]},env.BUILDS);
+      const resolved = await readPinnedSiteRuntime({siteId:TEST_SITE,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);
       selected = {runtime:resolved.pin,prebid:resolved.prebid?.report?{...resolved.prebid.report.build,modules:resolved.prebid.report.declaredModules}:null};
     } catch(error) {
       if (!(error instanceof RuntimeSelectionError)) throw error;
@@ -33,14 +34,13 @@ export async function readRuntimeSelectionSettings(env) {
   // Do not return saved configJson, arbitrary fields, connector data or a file URL.
   return {site:{id:TEST_SITE,name:saved.site.name,domain:saved.site.domain,gamPath:saved.site.gam_path},
     revision:await digest(saved),selected,validationIssue,publishable:false,prebidEditable:false,enablePrebid:config.enablePrebid,prebidBuildId:config.builtinRuntimeSelection?.prebid?.id??null,
-    releaseHistory:describeRuntimeReleases(runtimeDescriptor,config.builtinRuntimeSelection?.runtime),
-    runtimes:[{id:runtimeDescriptor.id,version:runtimeDescriptor.version,channel:runtimeDescriptor.channel,
-      pin:pinRuntime(runtimeDescriptor,{allowPreview:true})}]};
+    releaseHistory:describeRuntimeReleases(runtimeCatalog,config.builtinRuntimeSelection?.runtime),
+    runtimes:runtimeCatalog.map(r=>({id:r.id,version:r.version,channel:r.channel,pin:pinRuntime(r,{allowPreview:true})}))};
 }
 export async function saveRuntimeSelectionSettings(env,actor,body) {
   const {saved,config} = await savedSettings(env);
   if(body?.selection?.enablePrebid!==config.enablePrebid || body?.selection?.prebidBuildId!==(config.builtinRuntimeSelection?.prebid?.id??null))throw new WorkspaceError(422,'Use Prebid and bidders to change Prebid mode or file. The script-version form preserves that choice.');
-  const plan = await prepareSiteRuntimeSelection({siteId:TEST_SITE,snapshot:saved,catalog:[runtimeDescriptor],
+  const plan = await prepareSiteRuntimeSelection({siteId:TEST_SITE,snapshot:saved,catalog:runtimeCatalog,
     expectedRevision:body.expectedRevision,selection:body.selection},env.BUILDS);
   const result = await commitTestRuntimeSelection({isolation:'explicit-test-store',db:env.DB},
     {snapshot:saved,configJson:plan.changed?plan.configJson:saved.config.config_json,actor});
@@ -58,9 +58,9 @@ export async function selectedWorkspaceRuntime(settings,bucket) {
       || settings.site?.gam_path !== '/123/test/' || config.enablePrebid !== false) {
       throw new WorkspaceError(409,'Choose an exact runtime for this site before generating.');
     }
-    return {pin:pinRuntime(runtimeDescriptor,{allowPreview:true}),prebid:null};
+    return {pin:pinRuntime(runtimeCatalog[1],{allowPreview:true}),prebid:null};
   }
-  return readPinnedSiteRuntime({siteId:TEST_SITE,snapshot:{...settings,prebidBuilds:settings.prebidBuilds??[]},catalog:[runtimeDescriptor]},bucket);
+  return readPinnedSiteRuntime({siteId:TEST_SITE,snapshot:{...settings,prebidBuilds:settings.prebidBuilds??[]},catalog:runtimeCatalog},bucket);
 }
 
 export async function selectedWorkspacePin(settings,bucket){return (await selectedWorkspaceRuntime(settings,bucket)).pin;}

@@ -4,9 +4,9 @@ import { runtimeReleaseHistory, assertRuntimeReleaseSource } from '../../worker/
 import { checkRuntimeReleaseHistory, verifyRuntimeReleaseProvenance } from '../../scripts/check-runtime-release-history.mjs';
 import { createHash } from 'node:crypto';
 const history=()=>structuredClone(runtimeReleaseHistory);
-const next=()=>({...history()[0],id:'tessera-reference391-preview-3',version:'3.9.1-tessera.preview.3',codeSha256:'a'.repeat(64),title:'A documented upgrade'});
+const next=()=>({...history()[0],sourceManifest:'scripts/prepare-builtin-runtime.mjs',id:'tessera-reference391-preview-3',version:'3.9.1-tessera.preview.3',codeSha256:'a'.repeat(64),title:'A documented upgrade'});
 test('historical register can be initialized and retained unchanged',()=>{
-  assert.doesNotThrow(()=>checkRuntimeReleaseHistory(history(),null));
+  assert.doesNotThrow(()=>checkRuntimeReleaseHistory(history().slice(-2),null));
   assert.doesNotThrow(()=>checkRuntimeReleaseHistory(history(),history()));
 });
 test('a new version can be prepended without rewriting history',()=>assert.doesNotThrow(()=>checkRuntimeReleaseHistory([next(),...history()],history())));

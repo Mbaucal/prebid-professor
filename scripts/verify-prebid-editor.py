@@ -3,6 +3,7 @@ All target traffic INCLUDING redirect chains is resolved to loopback TLS.
 No Cloudflare API, real credentials, external ad libraries or publisher requests.
 """
 import json
+from position_editor_actions import add_takeover_position
 import re
 import pathlib
 import subprocess
@@ -109,9 +110,9 @@ def exercise(page):
     page.screenshot(path=str(out/'prebid-mobile.png'),full_page=True)
     page.get_by_role('link',name='Back to Generate',exact=True).click()
     page.locator('#generate').wait_for(state='visible')
-    page.get_by_role('link',name='TakeOver settings',exact=True).click()
-    expect(page.locator('#takeover-enabled')).to_be_enabled()
-    page.locator('#takeover-enabled').check()
+    page.get_by_role('link',name='Ad positions and TakeOver',exact=True).click()
+    page.locator('#add-position').wait_for(state='visible')
+    add_takeover_position(page, demand='site')
     page.locator('#confirm-draft').check()
     page.locator('#save-site').click()
     expect(page.locator('#editor-message')).to_contain_text('Site settings saved')

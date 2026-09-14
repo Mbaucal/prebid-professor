@@ -7,13 +7,13 @@ import { getSiteDraft, saveSiteDraft } from './site-draft-service.mjs';
 import { siteDraftPage, siteDraftScript } from './site-draft-page.mjs';
 import { zipSync } from 'fflate';
 import { getAuthenticatedUser, handleLogin, handleLogout } from '../auth.ts';
-import { runtimeDescriptor, readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
+import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
 import { SelectionWriteError } from './selection-transaction.mjs';
 import { readRuntimeSelectionSettings, saveRuntimeSelectionSettings, selectedWorkspaceRuntime } from './runtime-selection.mjs';
 import { runtimeSelectionPage, runtimeSelectionScript } from './runtime-selection-page.mjs';
-import { buildArtifactCandidate } from '../runtime/artifact-candidate.mjs';
+import { runtimeDescriptor, runtimeCatalog, descriptorForPin, buildArtifactCandidate } from './runtime-catalog.mjs';
 import { describeCandidate, saveDraftRelease, readDraftRelease } from '../runtime/draft-release-store.mjs';
 import { WorkspaceError, workspaceBoundary, sameOrigin, boundedText, jsonBody, TEST_SITE } from './boundary.mjs';
 import { inspectTestSchema, initializeTestSchema } from './schema.mjs';
@@ -108,8 +108,13 @@ async function route(request,env) {
   if (!known || url.search) throw new WorkspaceError(404,'This operation is not available in the test workspace.');
   if (path==='/test-api/status') {
     const schema=await inspectTestSchema(env.DB);
-    return json({...schema,runtime:{version:runtimeDescriptor.version,sha256:runtimeDescriptor.codeSha256},
-      ...(schema.ready?{takeOver:takeOverForBuild(await snapshot(env))}:{}),publishable:false});
+    const settings=schema.ready?await snapshot(env):null;
+    const pin=settings?JSON.parse(settings.config.config_json).builtinRuntimeSelection?.runtime:null;
+    let selected=null,validationIssue=null;
+    try { selected=pin?descriptorForPin(pin):runtimeCatalog[1]; }
+    catch { validationIssue='The saved script version is unavailable or has changed. Open Script version and choose an available version. Your settings and saved packages are unchanged.'; }
+    return json({...schema,runtime:selected?{version:selected.version,sha256:selected.codeSha256}:null,validationIssue,
+      ...(settings?{takeOver:takeOverForBuild(settings)}:{}),publishable:false});
   }
   if (path==='/test-api/setup') {
     const body=await jsonBody(request,['confirm']);
@@ -152,14 +157,14 @@ async function route(request,env) {
     const generated=await candidate(settings,buildTimestamp,body.takeOverEnabled,env.BUILDS);
     const {descriptor,files}=await describeCandidate(TEST_SITE,generated);
     if(await digest(await snapshot(env))!==await digest(settings))throw new WorkspaceError(409,'Test settings changed. Generate again.');
-    const receipt=await issueReceipt({audience:origin,actor:actor.email,configHash:await digest(settings),runtimeHash:runtimeDescriptor.codeSha256,
+    const receipt=await issueReceipt({audience:origin,actor:actor.email,configHash:await digest(settings),runtimeHash:descriptor.runtime.runtimeSha256,
       buildTimestamp,takeOverEnabled:takeOver.enabled,packageHash:descriptor.packageSha256},env.TEST_SESSION_SECRET);
     return json({descriptor,receipt,adsJs:new TextDecoder().decode(files['ads.js']),takeOver,publishable:false});
   }
   const body=await jsonBody(request,['receipt','acknowledge','note']);
   if(body.acknowledge!==true || typeof body.note!=='string' || body.note.length>160)throw new WorkspaceError(422,'Review the test package and keep the note within 160 characters.');
   const review=await verifyReceipt(body.receipt,env.TEST_SESSION_SECRET,{actor:actor.email,origin});
-  if(review.runtimeHash!==runtimeDescriptor.codeSha256)throw new WorkspaceError(409,'Runtime changed. Generate a new test package.');
+  if(!runtimeCatalog.some(r=>r.codeSha256===review.runtimeHash))throw new WorkspaceError(409,'Runtime changed. Generate a new test package.');
   const settings=await snapshot(env);
   if(await digest(settings)!==review.configHash)throw new WorkspaceError(409,'Test configuration changed since review. Generate again.');
   const generated=await candidate(settings,review.buildTimestamp,review.takeOverEnabled,env.BUILDS);

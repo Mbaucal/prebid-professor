@@ -1,8 +1,9 @@
+import { runtimeCatalog, descriptorForPin, previewInput, prepareSiteRuntimeSelection, readPinnedSiteRuntime } from './runtime-catalog.mjs';
 /** Authenticated TEST configuration service. No live endpoints or ad execution. */
-import { readPreviewSnapshot, runtimeDescriptor } from '../runtime/builtin-preview-service.mjs';
-import { prepareSiteRuntimeSelection, readPinnedSiteRuntime, RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
+import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
+import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
 import { prebidRequirements } from '../runtime/prebid-artifact-check.mjs';
-import { previewInput, digest } from '../runtime/preview-snapshot.mjs';
+import { digest } from '../runtime/preview-snapshot.mjs';
 import { WorkspaceError, TEST_SITE } from './boundary.mjs';
 import { assertWorkspaceSiteScope } from './site-draft.mjs';
 import { reviewedProjections, SelectionWriteError } from './selection-transaction.mjs';
@@ -24,12 +25,16 @@ function editorDraft(snapshot, config) {
 export async function getPrebidSettings(env) {
   const {snapshot,config} = await prebidSnapshot(env);
   let validationIssue = null;
-  try { await readPinnedSiteRuntime({siteId:TEST_SITE,snapshot,catalog:[runtimeDescriptor]},env.BUILDS); }
+  try { await readPinnedSiteRuntime({siteId:TEST_SITE,snapshot,catalog:runtimeCatalog},env.BUILDS); }
   catch(error) { if (!(error instanceof RuntimeSelectionError)) throw error; validationIssue=error.message; }
-  const input=previewInput(snapshot,runtimeDescriptor,'20000101_000000');
+  // Keep the editor readable when its exact engine pin needs repair. A failed
+  // lookup is not permission to select a different engine or reset any fields.
+  let requiredModules=[];
+  try{requiredModules=prebidRequirements(previewInput(snapshot,descriptorForPin(config.builtinRuntimeSelection.runtime),'20000101_000000'),config).modules;}
+  catch(error){validationIssue??=error.message;}
   return {site:{id:TEST_SITE,name:snapshot.site.name},revision:await digest(snapshot),draft:editorDraft(snapshot,config),
     files:await listPrebidFiles(prebidStore(env)),supportedBidders:SUPPORTED_BIDDERS,
-    units:snapshot.units.map((u)=>({code:u.code,enabled:u.enabled===1})),requiredModules:prebidRequirements(input,config).modules,
+    units:snapshot.units.map((u)=>({code:u.code,enabled:u.enabled===1})),requiredModules,
     plan:config.testPrebidPlan??null,options:planOptions(config),userIds:USER_IDS.map(({name,label})=>({name,label})),
     version:snapshot.prebidBuilds[0]?.version??'11.11.0',
     validationIssue,publishable:false,notice:'File bytes and header declarations are checked. Partner parameters and actual ad delivery still need a staging test.'};
@@ -76,7 +81,7 @@ export async function preparePrebidSettings(env, body) {
   const next={...(buildPlan?buildPlan.config:config),enablePrebid:draft.enablePrebid,testPrebidDraft:{schemaVersion:1,candidateOnly:true}};
   delete next.testPrebidPlan;
   after.config.config_json=JSON.stringify(next);
-  const planned=await prepareSiteRuntimeSelection({siteId:TEST_SITE,snapshot:after,catalog:[runtimeDescriptor],expectedRevision:await digest(after),
+  const planned=await prepareSiteRuntimeSelection({siteId:TEST_SITE,snapshot:after,catalog:runtimeCatalog,expectedRevision:await digest(after),
     selection:{runtime:config.builtinRuntimeSelection.runtime,allowPreview:true,enablePrebid:draft.enablePrebid,prebidBuildId:draft.enablePrebid?draft.buildId:null}},env.BUILDS);
   after.config.config_json=planned.configJson;
   return {before,after,selectedRow:selected?.row??null};
