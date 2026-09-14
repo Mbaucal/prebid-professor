@@ -54,7 +54,7 @@ export function normalizeSiteDraft(draft) {
     const breakpoints=array(map.breakpoints,12,'Breakpoints').map((row)=>{
       record(row,['minWidth','sizes'],'breakpoint');
       if(!Number.isInteger(row.minWidth)||row.minWidth<0||row.minWidth>10000||widths.has(row.minWidth))fail('Breakpoint widths must be unique whole numbers between 0 and 10000.');widths.add(row.minWidth);
-      const sizes=array(row.sizes,12,'Sizes',0).map((pair)=>{
+      const sizes=array(row.sizes,32,'Sizes',0).map((pair)=>{
         if(pair==='fluid')return pair;
         if(!Array.isArray(pair)||pair.length!==2||!pair.every((n)=>Number.isInteger(n)&&n>0&&n<=10000))fail('Use sizes such as 300x250 or fluid.');return [...pair];
       });

@@ -22,6 +22,24 @@ async function fixture(){const x=workspaceStore();active.push(x);await initializ
  x.audit=()=>sql.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='test_workspace.site_draft_saved'").get().n;
  return x;}
 const copy=(v)=>structuredClone(v);
+test('a 14-size mobile InText map survives TEST save and reload without trimming',async()=>{
+  const x=await fixture(),d=readSiteDraft(x.snapshot()),before=x.snapshot();
+  const sizes=['fluid',[1,1],[336,280],[320,250],[320,240],[300,250],[250,250],[200,200],[320,100],[320,80],[320,50],[300,100],[300,75],[300,50]];
+  d.maps[0].breakpoints[0].sizes=sizes;
+  await x.save(await x.plan(d));
+  assert.deepEqual(readSiteDraft(x.snapshot()).maps[0].breakpoints[0].sizes,sizes);
+  assert.deepEqual(x.snapshot().bidders,before.bidders);
+  assert.deepEqual(readSiteDraft(x.snapshot()).takeOver,d.takeOver);
+  assert.equal(x.log.puts.length,0);
+});
+test('size lists remain bounded at 32 and an oversized list cannot save',async()=>{
+  const x=await fixture(),d=readSiteDraft(x.snapshot());
+  d.maps[0].breakpoints[0].sizes=Array.from({length:32},(_,i)=>[300+i,250]);
+  await x.save(await x.plan(d));assert.equal(readSiteDraft(x.snapshot()).maps[0].breakpoints[0].sizes.length,32);
+  const before=x.snapshot(),audit=x.audit();d.maps[0].breakpoints[0].sizes.push([400,250]);
+  await assert.rejects(x.plan(d),/Sizes: use 0–32 rows/);
+  assert.deepEqual(x.snapshot(),before);assert.equal(x.audit(),audit);
+});
 test('custom TakeOver cannot share its Interstitial fallback with a regular position',async()=>{
   const x=await fixture(),d=readSiteDraft(x.snapshot());d.takeOver.enabled=true;d.takeOver.adUnitCode='Overlay';d.units[0].code='Interstitial';
   assert.throws(()=>normalizeSiteDraft(d),/Interstitial fallback/);
