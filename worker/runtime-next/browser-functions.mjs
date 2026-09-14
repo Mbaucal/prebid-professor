@@ -88,10 +88,13 @@ export function tesseraWireConfiguredLazy() {
   Object.keys(window.adSlots||{}).forEach(function(code){
     var slot=window.adSlots[code],cfg=getUnitConfigById(code)||{},rule=tesseraLazyRule(code);
     if(!rule||slot.__tesseraLazyWired)return;
-    slot.__tesseraLazyWired=true;
-    if(!rule.enabled&&String(cfg.type).toUpperCase()==='ATF')return;
     var dom=document.getElementById(code);
     if(!dom||!slotHasCurrentViewportSizes(code))return;
+    slot.__tesseraLazyWired=true;
+    if(!rule.enabled&&String(cfg.type).toUpperCase()==='ATF'){
+      if(!slot.__tesseraInitialAtf){slot.__tesseraInitialAtf=true;startATF([slot]);}
+      return;
+    }
     var started=false,ready=false,wantsRender=false,displayed=false,timer=null,fetchIO=null,renderIO=null;
     function render(){
       if(displayed||!ready||!wantsRender)return;

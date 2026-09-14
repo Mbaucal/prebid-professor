@@ -35,6 +35,7 @@ test('complete candidate records new settings and excludes the automatic modal c
   const s=positionFixture(false),p=await buildArtifactCandidate({snapshot:s,pin:pinRuntime(runtimeCatalog[0],{allowPreview:true}),buildTimestamp:stamp});
   const decode=name=>new TextDecoder().decode(p.files[name]);
   assert.doesNotMatch(decode('implementation.html'),/id="Overlay"/);
+  assert.doesNotMatch(decode('min-height.css'),/#Overlay/);
   assert.match(decode('implementation.html'),/id="P1"/);
   const config=JSON.parse(decode('config.json'));
   assert.equal(config.adPosition.code,'Overlay');assert.equal(config.lazyRules.__BTF__.fetchMarginPx,500);

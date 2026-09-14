@@ -24,7 +24,7 @@ export function compilePositions(input) {
   const helperNames=['tesseraLazyRule','tesseraWireConfiguredLazy'];
   if(input.overlay)helperNames.push('tesseraOverlayDevice','tesseraOverlayAllowed','tesseraRecordOverlayView','tesseraStopOverlayAuction','tesseraRequestOverlay','tesseraConfirmOverlayRender');
   source=replaceOne(source,'  var TAKEOVER_ACTIVE_FOR_PAGE = takeOverIsActiveForPage();',
-    `  var TESSERA_OVERLAY=${literal(input.overlay)};\n  var TESSERA_LAZY=${literal(input.lazyRules)};\n${helperNames.map(n=>browser[n].toString()).join('\n')}\n  var TAKEOVER_ACTIVE_FOR_PAGE = takeOverIsActiveForPage()${input.overlay?' && tesseraOverlayAllowed()':''};`);
+    `  var TESSERA_OVERLAY=${literal(input.overlay)};\n  var TESSERA_LAZY=${literal(input.lazyRules)};\n  var TESSERA_LAZY_STARTED=false;\n${helperNames.map(n=>browser[n].toString()).join('\n')}\n  var TAKEOVER_ACTIVE_FOR_PAGE = takeOverIsActiveForPage()${input.overlay?' && tesseraOverlayAllowed()':''};`);
   if(input.overlay){
     source=replaceFunction(source,'takeOverDeviceConfig','function takeOverDeviceConfig(){ return tesseraOverlayDevice(); }');
     source=replaceOne(source,'function getUnitConfigById(id){',`function getUnitConfigById(id){\n  if(id===TESSERA_OVERLAY.code)return TESSERA_OVERLAY.unit;`);
@@ -43,9 +43,11 @@ export function compilePositions(input) {
     }`);
   }
   if(Object.keys(input.lazyRules).length){
-    source=replaceOne(source,"          if (cfg && String(cfg.type || 'BTF').toUpperCase() === 'ATF'){","          if (tesseraLazyRule(id)?.enabled) return;\n          if (cfg && String(cfg.type || 'BTF').toUpperCase() === 'ATF'){");
+    source=replaceOne(source,"          if (cfg && String(cfg.type || 'BTF').toUpperCase() === 'ATF'){","          if (tesseraLazyRule(id)?.enabled || window.adSlots[id].__tesseraInitialAtf) return;\n          if (cfg && String(cfg.type || 'BTF').toUpperCase() === 'ATF'){");
     source=replaceOne(source,'    // Registruj oba observer-a za BTF slotove\n    Object.keys(window.adSlots).forEach(function(id){','    // Registruj oba observer-a za BTF slotove\n    Object.keys(window.adSlots).forEach(function(id){\n      if(tesseraLazyRule(id))return;');
-    source=replaceOne(source,'        startATF(atfSlots);','        startATF(atfSlots);\n        tesseraWireConfiguredLazy();');
+    source=replaceOne(source,'        startATF(atfSlots);','        atfSlots.forEach(function(s){s.__tesseraInitialAtf=true;});\n        startATF(atfSlots);\n        TESSERA_LAZY_STARTED=true;\n        tesseraWireConfiguredLazy();');
+    source=replaceOne(source,'                startATF(retry);','                retry.forEach(function(s){s.__tesseraInitialAtf=true;});\n                startATF(retry);');
+    source=replaceOne(source,'    });\n  });\n}\n\n  /* ====== HB helper ====== */','    });\n    if(TESSERA_LAZY_STARTED)tesseraWireConfiguredLazy();\n  });\n}\n\n  /* ====== HB helper ====== */');
   }
   parse(source,{ecmaVersion:'latest'});
   // Final candidate formatting/minification follows this compiler. Both source

@@ -119,6 +119,9 @@ export async function planSiteDraft(saved,input) {
   const draft=normalizeSiteDraft(input.draft), before=structuredClone(saved),config=assertWorkspaceSiteScope(before);
   if(!config.builtinRuntimeSelection)fail('Choose and save an exact script version before editing the site.',409);
   const expected=input.expectedRevision;
+  // Report a stale tab before interpreting its removed units against the newer
+  // saved rules. The transaction still rechecks every row before writing.
+  if(await digest(before)!==expected)fail('Settings changed. Reload saved settings before trying again.',409);
   const unitCodes=new Set(draft.units.map((u)=>u.code));
   for(const key of [...before.rules.map((r)=>r.rule_key),...Object.keys(config.advancedUnitRules??{})]){
     if(!['__DEFAULT__','__ATF__','__BTF__'].includes(key)&&!unitCodes.has(key))fail('A removed position still has saved rules. Keep it disabled until its rules are reviewed.');

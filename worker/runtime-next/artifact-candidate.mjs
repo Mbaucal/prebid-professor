@@ -35,7 +35,8 @@ export async function buildArtifactCandidate({ snapshot, takeOver = { enabled: f
   } else if (prebid !== null) throw new Error('Do not attach a Prebid artifact to a GPT-only candidate.');
 
   // Validate layout before parsing/minifying source. This never guesses unsupported settings.
-  const placeholderCss = placeholderStyles(input);
+  const placeholderCss = placeholderStyles({...input,core:{...input.core,
+    explicitUnits:input.core.explicitUnits.filter(u=>u.id!==input.overlay?.code)}});
   const stickyCss = stickyStyles(input.options.sticky.bottomAdUnitId);
   const generated = compilePositions(input);
   const js = await finalizeJavaScript(installSharedStickyStyles(generated.adsJs, stickyCss), { cleanComments });

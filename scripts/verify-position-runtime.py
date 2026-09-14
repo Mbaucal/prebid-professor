@@ -105,6 +105,13 @@ def immediate(page,source):
 def atf_lazy(page,source):
     visible(page);page.locator('#adsx-takeover-close').click()
     check(count(page,'Billboard')==1,'Visible ATF lazy duplicated initial auction')
+def late_dom(page,source):
+    visible(page)
+    page.locator('#adsx-takeover-close').click()
+    page.evaluate("document.body.insertAdjacentHTML('beforeend','<div id=Billboard class=wrapperAd></div><div id=P1 class=wrapperAd></div>')")
+    page.wait_for_function('__testAds.observations.requests.some(r=>r.id==="P1")',timeout=3000)
+    page.wait_for_timeout(1200)
+    check(count(page,'Billboard')==1 and count(page,'P1')==1,'Late positions missed or repeated by the initial retry')
 
 with sync_playwright() as p:
     browser=p.chromium.launch(headless=True,args=['--no-sandbox'])
@@ -119,6 +126,7 @@ with sync_playwright() as p:
     run(browser,'Lazy fetch and render margins',lazy)
     run(browser,'Lazy BTF off requests immediately',immediate,source='btf-immediate')
     run(browser,'ATF lazy uses only one request',atf_lazy,source='atf-lazy')
+    run(browser,'Late DOM positions get one request after consent',late_dom,source='btf-immediate',hook="document.querySelectorAll('.wrapperAd').forEach(e=>e.remove());")
     run(browser,'Frequency cap skips before creating DOM or guard',skipped,source='frequency',hook="Object.defineProperty(window,'sessionStorage',{value:{getItem(){return String(Date.now());},setItem(){}}});")
     browser.close()
 out.mkdir(exist_ok=True)
