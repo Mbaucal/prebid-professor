@@ -3,7 +3,7 @@ import '../builtin-runtime-preview.css';
 import runtimeReleases from '../../worker/runtime/runtime-releases.json';
 type Runtime = { id: string; version: string; codeSha256: string; channel: string };
 type TakeOver = { enabled: boolean; adUnitCode: string; desktopMinWidth: number; desktopSize: number[]; mobileSize: number[]; autoCloseDesktopSec: number; autoCloseMobileSec: number; codelessAdUnitPath: string };
-type Settings = { site: { id: string; name: string; domain: string }; runtime: Runtime; reviewHash: string; summary: { units: number; bidders: number }; validationIssue: string | null; takeOver: TakeOver; notice: string };
+export type Settings = { site: { id: string; name: string; domain: string }; runtime: Runtime; reviewHash: string; summary: { units: number; bidders: number }; validationIssue: string | null; takeOver: TakeOver; notice: string };
 type Result = { siteId: string; fileName: string; content: string; checksum: string; byteSize: number; completeRelease: false; warnings: string[] };
 async function jsonRequest<T>(url: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin', ...init });
@@ -12,11 +12,12 @@ async function jsonRequest<T>(url: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) throw new Error(payload.error || `Request failed (${response.status}).`);
   return payload as T;
 }
-export default function BuiltinRuntimePreviewPanel({ publisherId }: { publisherId: string }) {
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [takeOver, setTakeOver] = useState<TakeOver | null>(null);
+export default function BuiltinRuntimePreviewPanel({ publisherId, displayFixture }: { publisherId: string; displayFixture?: Settings }) {
+  // An explicit, code-owned fixture for the isolated UI review page. No transport.
+  const [settings, setSettings] = useState<Settings | null>(displayFixture ?? null);
+  const [takeOver, setTakeOver] = useState<TakeOver | null>(displayFixture?.takeOver ?? null);
   const [result, setResult] = useState<Result | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!displayFixture);
   const [busy, setBusy] = useState(false);
   const [approved, setApproved] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -32,6 +33,10 @@ export default function BuiltinRuntimePreviewPanel({ publisherId }: { publisherI
     const id = ++requestId.current;
     setLoading(true); setBusy(false); setResult(null); setSettings(null);
     setApproved(false); setPreviewOpen(false); setError(''); setMessage('');
+    if (displayFixture) {
+      setSettings(displayFixture); setTakeOver(displayFixture.takeOver); setLoading(false);
+      return;
+    }
     try {
       const value = await jsonRequest<Settings>(url, { signal: controller.signal });
       if (!mounted.current || requestId.current !== id) return;
@@ -42,7 +47,7 @@ export default function BuiltinRuntimePreviewPanel({ publisherId }: { publisherI
     } finally {
       if (mounted.current && requestId.current === id) setLoading(false);
     }
-  }, [publisherId, url]);
+  }, [publisherId, url, displayFixture]);
   useEffect(() => {
     mounted.current = true; void load();
     return () => { mounted.current = false; requestId.current++; pending.current?.abort(); };
@@ -52,7 +57,7 @@ export default function BuiltinRuntimePreviewPanel({ publisherId }: { publisherI
     setResult(null); setMessage(''); setPreviewOpen(false);
   }
   async function generate() {
-    if (!settings || !takeOver || !approved || busy || loading || settings.validationIssue) return;
+    if (displayFixture || !settings || !takeOver || !approved || busy || loading || settings.validationIssue) return;
     pending.current?.abort();
     const controller = new AbortController(); pending.current = controller;
     const id = ++requestId.current;
@@ -70,7 +75,7 @@ export default function BuiltinRuntimePreviewPanel({ publisherId }: { publisherI
     } finally { if (mounted.current && id === requestId.current) setBusy(false); }
   }
   async function downloadCandidate() {
-    if (!settings || !takeOver || !approved || busy || loading || settings.validationIssue) return;
+    if (displayFixture || !settings || !takeOver || !approved || busy || loading || settings.validationIssue) return;
     pending.current?.abort();
     const controller = new AbortController(); pending.current = controller;
     const id = ++requestId.current;
@@ -169,8 +174,8 @@ export default function BuiltinRuntimePreviewPanel({ publisherId }: { publisherI
       <p>A test file does not save settings or publish the site. A test ZIP also needs a verified Prebid file when header bidding is enabled.</p>
       <label className="builtin-checkbox"><input type="checkbox" checked={approved} disabled={busy} onChange={(event) => setApproved(event.target.checked)} />Prepare a test preview only.</label>
       <div className="builtin-runtime-actions"><button type="button" className="button secondary" onClick={() => void load()} disabled={busy || loading}>Refresh settings</button>
-        <button type="button" className="button primary" onClick={() => void generate()} disabled={busy || loading || !approved || Boolean(settings.validationIssue)}>{busy ? 'Working…' : 'Preview ads.js'}</button>
-        <button type="button" className="button secondary" onClick={() => void downloadCandidate()} disabled={busy || loading || !approved || Boolean(settings.validationIssue)}>Download test ZIP</button></div>
+        <button type="button" className="button primary" onClick={() => void generate()} disabled={Boolean(displayFixture) || busy || loading || !approved || Boolean(settings.validationIssue)}>{busy ? 'Working…' : 'Preview ads.js'}</button>
+        <button type="button" className="button secondary" onClick={() => void downloadCandidate()} disabled={Boolean(displayFixture) || busy || loading || !approved || Boolean(settings.validationIssue)}>Download test ZIP</button></div>
     </> : !loading ? <button className="button secondary" type="button" onClick={() => void load()}>Retry</button> : null}
     {result ? <section className="builtin-runtime-result"><strong>{(result.byteSize / 1024).toFixed(1)} KB · SHA-256 {result.checksum.slice(0, 16)}</strong>
       {result.warnings.map((warning, index) => <p key={index}>{warning}</p>)}
