@@ -1,5 +1,56 @@
 # Cross-account Cloudflare Pages deployments
 
+## Reviewed TEST branch preparation — 14 September 2026
+
+The Pages pipeline now pins the private R2 manifest before dispatch and downloads
+exactly its declared files. Every size/checksum, release/config identity and
+Prebid declaration is checked before Wrangler receives a directory. There is no
+optional download that silently removes a file advertised by the manifest.
+Legacy manifests which never included sticky.css remain supported.
+
+The workflow reads the actual destination Pages project's `production_branch`.
+Staging must use a different branch; production must use that branch and the
+reviewed main workflow. Source/callback URLs and token secret names are constrained
+before credentials are used; credentialed redirects are refused. Wrangler is
+pinned to 4.118.0, matching the existing reviewed toolchain.
+
+Three independent jobs preserve the distinction between delivery, byte checks
+and status notification:
+
+1. `deploy`: verify the source and destination, record the immutable inventory,
+   then deploy with Wrangler.
+2. `verify`: GET every exact file from the immutable deployment URL and check
+   its bytes, MIME type, CORS, nosniff and no-store cache policy. No ad code runs.
+3. `report`: send the combined result once. A failed status notification does
+   not send a second, contradictory deployment-failed callback.
+
+If delivery succeeded, rerun only a failed `verify` or `report` job as appropriate;
+neither can deploy. A failed/uncertain `deploy` job requires inspection of the
+provider result before retrying. Reconciliation uses the same correlation ID.
+Metadata evidence is retained for 14 days; artifacts contain no tokens or JS/CSS
+source. The Worker and workflow changes must be activated together because the
+workflow requires the new `manifest_sha256` input.
+
+This code is prepared on the isolated TEST branch. It has not performed an A→B
+Pages deployment. The existing production application/workflow remains unchanged.
+Stored `builtin-draft-*` packages are still refused by legacy dispatch/publication;
+offline byte verification does not grant them publishing authority. Connecting
+those private TEST packages through a reviewed staging handoff is the next part
+of MBA-46, together with the chosen pilot site, Pages destination and scoped
+credentials. Do not upload the accepted user ZIP to a public location or alter
+its manifest to evade that boundary.
+
+Verification: `node --experimental-strip-types --experimental-loader
+./tests/support/ts-extension-loader.mjs --test tests/runtime/pages-deployment.test.mjs`.
+Tests use synthetic source/provider responses. The accepted user ZIP can also be
+inspected with the same pure verifier without executing or publishing it.
+
+Provider contracts: [project metadata](https://developers.cloudflare.com/api/resources/pages/subresources/projects/methods/get/),
+[preview branches](https://developers.cloudflare.com/pages/configuration/preview-deployments/),
+[Pages headers](https://developers.cloudflare.com/pages/configuration/headers/).
+
+## Existing operator integration
+
 Prebid Professor does not expose Cloudflare API tokens to the browser and does not store them in D1.
 
 The dashboard records only non-secret destination metadata. A private GitHub Actions workflow downloads an immutable release from the Prebid Professor CDN and runs Wrangler against the selected Cloudflare account and Pages project.
