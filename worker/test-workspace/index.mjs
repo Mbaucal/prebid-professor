@@ -110,8 +110,10 @@ async function route(request,env) {
     const schema=await inspectTestSchema(env.DB);
     const settings=schema.ready?await snapshot(env):null;
     const pin=settings?JSON.parse(settings.config.config_json).builtinRuntimeSelection?.runtime:null;
-    const selected=pin?descriptorForPin(pin):runtimeCatalog[1];
-    return json({...schema,runtime:{version:selected.version,sha256:selected.codeSha256},
+    let selected=null,validationIssue=null;
+    try { selected=pin?descriptorForPin(pin):runtimeCatalog[1]; }
+    catch { validationIssue='The saved script version is unavailable or has changed. Open Script version and choose an available version. Your settings and saved packages are unchanged.'; }
+    return json({...schema,runtime:selected?{version:selected.version,sha256:selected.codeSha256}:null,validationIssue,
       ...(settings?{takeOver:takeOverForBuild(settings)}:{}),publishable:false});
   }
   if (path==='/test-api/setup') {

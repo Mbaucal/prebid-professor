@@ -118,3 +118,19 @@ test('TakeOver ad position saves map, Prebid override, lazy rules and original u
   assert.equal(downgrade.r.status,422);
   assert.deepEqual((await state(f,cookie)).draft.units.at(-1),s.draft.units.at(-1));
 });
+test('invalid saved runtime pin keeps the Prebid editor readable without resetting it',async()=>{
+  const {f,cookie}=await ready({prebidFiles:true});
+  const row=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get();
+  const config=JSON.parse(row.config_json);config.builtinRuntimeSelection.runtime.runtimeSha256='f'.repeat(64);
+  const before=JSON.stringify(config);f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(before);
+  const result=await req(f,'/test-api/prebid-settings',cookie);
+  assert.equal(result.r.status,200,JSON.stringify(result.data));assert(result.data.validationIssue);
+  assert.deepEqual(result.data.requiredModules,[]);assert.equal(result.data.draft.enablePrebid,false);
+  const status=await req(f,'/test-api/status',cookie);
+  assert.equal(status.r.status,200,JSON.stringify(status.data));assert.equal(status.data.ready,true);
+  assert.equal(status.data.runtime,null);assert.match(status.data.validationIssue,/Script version/);
+  assert.equal((await req(f,'/test-api/releases',cookie)).r.status,200);
+  assert.equal((await req(f,'/test-api/runtime-selection',cookie)).r.status,200);
+  assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
+  assert.equal((await generate(f,cookie)).r.status,409);
+});

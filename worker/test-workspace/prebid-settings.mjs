@@ -27,10 +27,14 @@ export async function getPrebidSettings(env) {
   let validationIssue = null;
   try { await readPinnedSiteRuntime({siteId:TEST_SITE,snapshot,catalog:runtimeCatalog},env.BUILDS); }
   catch(error) { if (!(error instanceof RuntimeSelectionError)) throw error; validationIssue=error.message; }
-  const input=previewInput(snapshot,descriptorForPin(config.builtinRuntimeSelection.runtime),'20000101_000000');
+  // Keep the editor readable when its exact engine pin needs repair. A failed
+  // lookup is not permission to select a different engine or reset any fields.
+  let requiredModules=[];
+  try{requiredModules=prebidRequirements(previewInput(snapshot,descriptorForPin(config.builtinRuntimeSelection.runtime),'20000101_000000'),config).modules;}
+  catch(error){validationIssue??=error.message;}
   return {site:{id:TEST_SITE,name:snapshot.site.name},revision:await digest(snapshot),draft:editorDraft(snapshot,config),
     files:await listPrebidFiles(prebidStore(env)),supportedBidders:SUPPORTED_BIDDERS,
-    units:snapshot.units.map((u)=>({code:u.code,enabled:u.enabled===1})),requiredModules:prebidRequirements(input,config).modules,
+    units:snapshot.units.map((u)=>({code:u.code,enabled:u.enabled===1})),requiredModules,
     plan:config.testPrebidPlan??null,options:planOptions(config),userIds:USER_IDS.map(({name,label})=>({name,label})),
     version:snapshot.prebidBuilds[0]?.version??'11.11.0',
     validationIssue,publishable:false,notice:'File bytes and header declarations are checked. Partner parameters and actual ad delivery still need a staging test.'};
