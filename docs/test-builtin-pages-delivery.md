@@ -19,10 +19,13 @@ paste token values into the form, source control, comments, logs, or chat.
 | TEST Worker secret | `TEST_GITHUB_ACTIONS_TOKEN` | A token scoped to Actions write on `Mbaucal/prebid-professor`; sends the existing workflow dispatch. |
 | TEST Worker secret | `TEST_DEPLOY_SECRET` | Dedicated random secret, at least 32 characters, for private package transfer and reporting. |
 | GitHub repository Actions secret | `TESSERA_TEST_DEPLOY_SECRET` | Same dedicated transfer secret. Do not reuse the session or legacy callback secret. |
-| GitHub repository Actions secret | e.g. `CLOUDFLARE_API_TOKEN_TANJUG` | Scoped Cloudflare Pages token for the explicitly selected target account. The UI stores only this name. |
+| GitHub repository Actions secret | `CLOUDFLARE_API_TOKEN` | Existing Cloudflare Pages token with access to the selected account. One secret can serve multiple publisher targets; suffixed names such as `CLOUDFLARE_API_TOKEN_TANJUG` remain supported. The UI stores only this name. |
 | Tessera TEST → Objave | Account ID, Pages project, TEST branch, secret name | Nonsecret destination settings. A typical preview branch is `tessera-test`. |
 
 The UI reports configuration presence, not proof that credentials are valid.
+New targets default to the shared secret name `CLOUDFLARE_API_TOKEN`; existing
+saved secret names are preserved. The saved account ID, Pages project and TEST
+branch determine the destination independently of the secret's name.
 It can save the target while connection secrets are absent. No credentials are
 required to inspect the new page and its frozen Tanjug package selection.
 Do not guess an account ID from a public `pages.dev` hostname.

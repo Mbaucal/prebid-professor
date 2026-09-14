@@ -19,7 +19,7 @@ export function validateTarget(t) {
   // Deliberately restrict preview aliases to an unambiguous lowercase DNS label.
   requireThat(typeof t.previewBranch === 'string' && /^[a-z][a-z0-9-]{0,39}$/.test(t.previewBranch)
     && !['main', 'master', 'production', 'prod'].includes(t.previewBranch), 'Izaberi posebnu TEST granu, na primer tessera-test.');
-  requireThat(typeof t.secretName === 'string' && /^CLOUDFLARE_API_TOKEN_[A-Z][A-Z0-9_]{0,60}$/.test(t.secretName), 'Unesi naziv GitHub tajne za ovaj Cloudflare nalog, bez samog tokena.');
+  requireThat(typeof t.secretName === 'string' && /^CLOUDFLARE_API_TOKEN(?:_[A-Z][A-Z0-9_]{0,60})?$/.test(t.secretName), 'Unesi naziv GitHub tajne, na primer CLOUDFLARE_API_TOKEN, bez samog tokena.');
   return structuredClone(t);
 }
 export function dispatchInputs(run) {
