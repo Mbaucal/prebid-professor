@@ -21,6 +21,7 @@ import { issueReceipt, verifyReceipt } from './receipt.mjs';
 import { loginPage, workspacePage, workspaceScript } from './page.mjs';
 import { takeOverForBuild } from './takeover-settings.mjs';
 import { tanjugPilotResponse } from './tanjug-pilot.mjs';
+import { deploymentResponse, runnerPath, runnerResponse } from './deployments.mjs';
 
 // HTML form navigation under no-referrer sends Origin:null. same-origin keeps
 // legitimate form Origin while still suppressing cross-origin referrers.
@@ -61,6 +62,7 @@ async function list(env) {
 async function route(request,env) {
   const {origin,auth}=workspaceBoundary(request,env);
   if (!['GET','POST'].includes(request.method)) throw new WorkspaceError(405,'Method not allowed.');
+  if (runnerPath(new URL(request.url).pathname)) return runnerResponse(request,env,headers);
   sameOrigin(request,origin);
   const url=new URL(request.url), path=url.pathname;
   if (path==='/login' && request.method==='GET') return html(loginPage());
@@ -77,6 +79,8 @@ async function route(request,env) {
   if (!actor) return path.startsWith('/test-api/')||path.startsWith('/api/') ? json({error:'Test sign-in required.'},401)
     : new Response(null,{status:303,headers:{...headers,location:'/login'}});
   if (path==='/api/auth/logout' && request.method==='POST') return handleLogout(request);
+  const deployment = await deploymentResponse(request,env,actor,headers);
+  if (deployment) return deployment;
   const pilot = tanjugPilotResponse(request, headers);
   if (pilot) return pilot;
   if (path==='/' && request.method==='GET') return html(workspacePage(actor.email));
@@ -166,6 +170,7 @@ export default {
     catch(error) {
       if(error instanceof WorkspaceError || error instanceof RuntimeSelectionError || error instanceof SelectionWriteError)return json({error:error.message},error.status);
       if(String(error?.message).includes('TEST_DRAFT_QUOTA'))return json({error:'The test workspace has reached its 20-package limit. Existing files are retained.'},409);
+      if (new URL(request.url).pathname.startsWith('/test-api/deployment')) return json({error:'Status radnje nije potvrđen. Osveži istoriju i proveri GitHub pre sledeće objave.'},503);
       return json({error:'The test operation could not be verified. Nothing was published. Retry the same reviewed package after checking test storage.'},503);
     }
   },
