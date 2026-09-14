@@ -131,7 +131,21 @@ export async function verifyPublicPackage(url, projectName, verified, fetcher=fe
     && verified.files.every(e=>[...ALLOWED,'manifest.json'].includes(e.name) && Number.isSafeInteger(e.byteSize) && e.byteSize>0 && e.byteSize<=MAX_FILE && HASH.test(e.sha256))
     && verified.files.some(e=>e.name==='manifest.json' && e.sha256===verified.manifestSha256), 'Invalid verified file inventory.');
   for (const e of verified.files) {
-    const {bytes,headers}=await boundedGet(`${origin}/${e.name}`,e.byteSize,{fetcher});
+    // Pages canonicalizes static HTML paths. Permit exactly its one same-origin
+    // implementation.html -> /implementation hop, never redirects for assets,
+    // authenticated source reads or provider API calls.
+    const publicFetch = e.name === 'implementation.html' ? async (url, options) => {
+      const response = await fetcher(url, {...options, redirect:'manual'});
+      if (![301,308].includes(response.status)) return response;
+      const location = response.headers.get('location');
+      await response.body?.cancel();
+      requireThat(location === '/implementation' || location === `${origin}/implementation`, 'Unexpected HTML canonical redirect.');
+      return fetcher(`${origin}/implementation`, options);
+    } : fetcher;
+    let fetched;
+    try { fetched = await boundedGet(`${origin}/${e.name}`,e.byteSize,{fetcher:publicFetch}); }
+    catch (error) { throw new Error(`Published file could not be read: ${e.name}. ${error.message}`); }
+    const {bytes,headers}=fetched;
     requireThat(bytes.byteLength===e.byteSize && digest(bytes)===e.sha256, `Published file differs: ${e.name}.`);
     const type=(headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
     const allowed=e.name.endsWith('.js')?['application/javascript','text/javascript']:e.name.endsWith('.json')?['application/json']:e.name.endsWith('.css')?['text/css']:e.name.endsWith('.html')?['text/html']:['text/plain','text/csv'];

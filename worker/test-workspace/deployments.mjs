@@ -133,7 +133,7 @@ export async function runnerResponse(request, env, headers) {
     return new Response(await readDeliveryZip(env.BUILDS,run.package),{headers:{...headers,'content-type':'application/zip'}});
   }
   check(request.method === 'POST' && ['claim','report'].includes(operation),'Unknown runner operation.',405);
-  const body = await jsonBody(request,operation === 'claim' ? ['inputs','runId','commit'] : ['runId','commit','status','deploymentUrl','productionBranch']);
+  const body = await jsonBody(request,operation === 'claim' ? ['inputs','runId','commit'] : ['runId','commit','status','deploymentUrl','productionBranch','verificationRunId','verificationCommit']);
   check(typeof body.runId === 'string' && /^[1-9][0-9]{0,19}$/.test(body.runId) && typeof body.commit === 'string' && /^[a-f0-9]{40}$/.test(body.commit),'Invalid workflow identity.');
   const state = await changeLedger(env.BUILDS,undefined,latest => {
     const run = deliveryRun(latest,id);
@@ -146,6 +146,10 @@ export async function runnerResponse(request, env, headers) {
     } else {
       check(run.githubRunId === body.runId && run.commit === body.commit,'Result belongs to another workflow.',409);
       check(['failed','unverified','success'].includes(body.status),'Invalid deployment result.');
+      const reverified = body.verificationRunId !== undefined || body.verificationCommit !== undefined;
+      if (reverified) check(body.status === 'success'
+        && typeof body.verificationRunId === 'string' && /^[1-9][0-9]{0,19}$/.test(body.verificationRunId) && body.verificationRunId !== run.githubRunId
+        && typeof body.verificationCommit === 'string' && /^[a-f0-9]{40}$/.test(body.verificationCommit), 'Invalid independent verification identity.');
       if (body.status === 'success' || body.deploymentUrl) check(immutableUrl(body.deploymentUrl,run.target.projectName),'An immutable URL on the selected Pages project is required.');
       if (body.deploymentUrl) body.deploymentUrl = new URL(body.deploymentUrl).origin;
       if (body.status === 'success') check(typeof body.productionBranch === 'string' && body.productionBranch.length > 0 && body.productionBranch.length <= 255 && body.productionBranch !== run.target.previewBranch,'Production branch proof is required.');
@@ -153,12 +157,14 @@ export async function runnerResponse(request, env, headers) {
       // Reporting/verification retries may confirm an unverified run; they cannot
       // reverse a final success, change its URL, or unlock an uncertain deployment.
       if (['success','failed'].includes(run.status)) {
-        check(run.status === body.status && (run.deploymentUrl || '') === (body.deploymentUrl || ''),'A final result cannot be changed.',409);
+        check(run.status === body.status && (run.deploymentUrl || '') === (body.deploymentUrl || '')
+          && run.verificationRunId === body.verificationRunId && run.verificationCommit === body.verificationCommit,'A final result cannot be changed.',409);
         return false;
       }
       check(run.status === 'running' || (run.status === 'unverified' && body.status !== 'failed'),'Inspect the existing deployment before changing its status.',409);
       if (run.deploymentUrl) check(run.deploymentUrl === body.deploymentUrl,'Deployment URL cannot be replaced.',409);
       run.status=body.status;run.deploymentUrl=body.deploymentUrl || '';run.productionBranch=body.productionBranch || '';run.finishedAt=now();
+      if (reverified) {run.verificationRunId=body.verificationRunId;run.verificationCommit=body.verificationCommit;}
     }
   });
   return response({run:deliveryRun(state,id)},headers);
