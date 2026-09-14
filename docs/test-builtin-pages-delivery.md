@@ -6,8 +6,9 @@ restoring an original previously verified package. It does not change the ads.js
 engine version or regenerate the accepted Tanjug v1 ZIP.
 
 The user confirmed manually installing ads.js on Tanjug. That is recorded as user
-feedback, not fabricated Pages workflow evidence. There are initially no automatic
-deployment rows and no previous automatic version to restore.
+feedback, not fabricated Pages workflow evidence. The first automatic TEST
+deployment was created on 2026-09-14; its initial verification failed at the Pages
+HTML redirect. There is not yet a second automatic package to restore from.
 
 ## Connection required for the first real run
 
@@ -80,6 +81,29 @@ deploying again. A failed verification can rerun verification and then report;
 an unverified result can become success only for the same claimed run and URL.
 The deploy job cannot claim a request twice, including GitHub workflow reruns.
 
+Pages redirects `/implementation.html` to `/implementation`. Public verification
+permits only one 301/308 hop to that exact path on the same immutable origin, then
+checks the original HTML bytes and every delivery header. Redirects for other
+assets, additional hops, query strings, foreign origins, private transfers and
+provider APIs remain rejected. Read errors identify the affected filename.
+
+Rerunning an old verification job also reruns its old code. When that code needs
+repair, review a recipe in `ops/runtime-test/verify-existing.json` together with
+its SHA-pinned original source metadata in `docs/evidence/`. Merging that recipe
+to the TEST branch triggers `verify-existing-builtin-test.yml`. It confirms the
+original GitHub deployment identity, rereads the exact cached private ZIP,
+rechecks the actual Pages production branch, and verifies every public file at
+the existing immutable URL. It has no deployment or claim operation.
+
+The separate report job consumes that run's verification receipt, waits for the
+same commit's TEST Worker build, and confirms the existing request using its
+original run ID, commit and URL. Separate `verificationRunId`/`verificationCommit`
+fields retain the new verifier's audit; history links to that verification run.
+Final receipt metadata is immutable. If reporting fails, retry only the report
+job. Failed verification leaves the existing uncertain state locked. Receipts
+are retained in Actions for 90 days; preserve completed milestone evidence in
+git/Linear rather than relying on expiring artifacts alone.
+
 If a run was cancelled, a dispatch outcome cannot be found, or metadata artifacts
 expired, inspect GitHub and the target's actual Pages deployment before any
 operator reconciliation. There is intentionally no browser button that clears an
@@ -97,8 +121,16 @@ Chromium covers the new setup, explicit connection explanation, queued status,
 version history and phone layout with synthetic jobs and all network pinned to
 loopback. These are not live A→B evidence.
 
-Still required before MBA-46 can be Done: an approved target account/project and
-connected secrets, a real staging run with public byte/header evidence, a second
-approved package and a real complete restore. No production promotion is included
+The target and secrets are now confirmed by real API calls and delivery:
+account `6cb2ac6a0a1a0d8b8fc7f9db917cce3d`, project `tanjug`, TEST branch
+`tessera-test`; Cloudflare confirmed production branch `main`. Original run
+[34858629084](https://github.com/Mbaucal/prebid-professor/actions/runs/34858629084)
+created `https://276a50d0.tanjug.pages.dev`. Original source artifact `10354340938`
+is preserved in `docs/evidence/tanjug-test-v1-source.json`; the recovery recipe
+pins both source JSON and original artifact archive hashes. Do not ask for the
+secrets or create another deployment to recover this run.
+
+Still required before MBA-46 can be Done: complete public verification of this
+first run, a second approved package and a real complete restore. No production promotion is included
 in this stage. Previous accepted Prebid/template/Tanjug user tests are not requested
 again; the existing repository CI remains a required gate.

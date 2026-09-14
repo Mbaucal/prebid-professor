@@ -117,7 +117,7 @@ test('bounded reads reject redirects, HTTP failures and advertised/streamed over
 test('public verification checks exact deployment hostname, bytes, content types, CORS and cache',async()=>{
   const f=legacy(), verified=await verifyPackage(f.files,f.input), urls=[];
   let corrupt='',badHeader='';
-  const publicFetch=async(url,options)=>{urls.push(url);assert.equal(options.method,'GET');assert.deepEqual(options.headers,{});assert.equal(options.redirect,'error');
+  const publicFetch=async(url,options)=>{urls.push(url);assert.equal(options.method,'GET');assert.deepEqual(options.headers,{});assert.equal(options.redirect,url.endsWith('/implementation.html')?'manual':'error');
     const name=new URL(url).pathname.slice(1),data=name===corrupt?bytes('bad'):f.files[name];
     const type=name.endsWith('.js')?'application/javascript':name.endsWith('.json')?'application/json':name.endsWith('.css')?'text/css':name.endsWith('.html')?'text/html':'text/csv';
     const headers={'content-type':type,'access-control-allow-origin':'*','x-content-type-options':'nosniff','cache-control':'no-store'};if(badHeader)delete headers[badHeader];return response(data,headers);};

@@ -111,6 +111,25 @@ test('runner claims once, authenticates bytes and binds results to the exact run
     await assert.rejects(publish(f),/već poslednja/);
   }finally{f.close();}
 });
+test('independent verification confirms an uncertain deployment while preserving original identity and immutable audit',async()=>{
+  const f=deploymentStore();try {
+    await setup(f);const {run}=await publish(f);await claim(f,run);await report(f,run,'unverified',{deploymentUrl:url});
+    const audit={verificationRunId:'777777',verificationCommit:'b'.repeat(40)};
+    for(const patch of [{verificationRunId:runId},{verificationCommit:'bad'},{verificationRunId:undefined},{status:'failed'}])
+      await assert.rejects(report(f,run,'success',{...audit,...patch}),/verification identity/);
+    await assert.rejects(report(f,run,'success',{...audit,runId:'777777'}),/another workflow/);
+    const before=(await readLedger(f.env.BUILDS)).state.runs[0];
+    const confirmed=(await report(f,run,'success',audit)).run;
+    assert.equal(confirmed.status,'success');assert.equal(confirmed.githubRunId,runId);assert.equal(confirmed.commit,commit);
+    assert.equal(confirmed.deploymentUrl,url);assert.deepEqual(confirmed.package,before.package);assert.deepEqual(confirmed.target,before.target);
+    assert.equal(confirmed.verificationRunId,audit.verificationRunId);assert.equal(confirmed.verificationCommit,audit.verificationCommit);
+    const revision=(await readLedger(f.env.BUILDS)).state.revision;
+    await report(f,run,'success',audit);assert.equal((await readLedger(f.env.BUILDS)).state.revision,revision);
+    await assert.rejects(report(f,run,'success'),/final result/);
+    await assert.rejects(report(f,run,'success',{...audit,verificationRunId:'888888'}),/final result/);
+    assert.equal((await readLedger(f.env.BUILDS)).state.runs.length,1);assert.equal(f.log.puts.length,0);
+  }finally{f.close();}
+});
 test('restore redeploys every original byte and never regenerates the accepted package',async()=>{
   const f=deploymentStore();try {
     await setup(f);const {run:first}=await publish(f);await claim(f,first);await report(f,first,'success');
