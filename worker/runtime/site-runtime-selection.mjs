@@ -90,11 +90,11 @@ function resolveRuntime(pin, runtimes) {
   catch { fail('runtime_changed','The selected runtime bytes or capabilities changed. Choose an explicit upgrade.',409); }
   return runtime;
 }
-function normalizedRequirements(saved, config, runtime) {
+function normalizedRequirements(saved, config, runtime, inputAdapter) {
   const { prebidBuilds, ...snapshot } = saved;
   snapshot.config = { ...snapshot.config, config_json:JSON.stringify(config) };
   let requirements;
-  try { requirements = prebidRequirements(previewInput(snapshot,runtime,'20000101_000000'),config); }
+  try { requirements = prebidRequirements(inputAdapter(snapshot,runtime,'20000101_000000'),config); }
   catch { fail('unsupported_configuration','The saved settings are not supported by this built-in runtime. Resolve configuration validation first.'); }
   if (requirements.issues.length) fail('unsupported_prebid_modules','The configured bidder or User ID modules need review before selecting a build.');
   return { snapshot, requirements };
@@ -134,7 +134,7 @@ async function checkedPrebid(siteId, builds, buildId, requirements, bucket) {
  * configJson is server-internal: do not send arbitrary saved fields to a client.
  * basedOnRevision must be rechecked atomically by a future settings writer.
  */
-export async function prepareSiteRuntimeSelection({siteId,snapshot,catalog,expectedRevision,selection}, bucket) {
+export async function prepareSiteRuntimeSelection({siteId,snapshot,catalog,expectedRevision,selection,inputAdapter=previewInput}, bucket) {
   const { saved,config,runtimes } = savedInputs(siteId,snapshot,catalog);
   const requested = copyJson(selection);
   exactKeys(requested,['runtime','allowPreview','enablePrebid','prebidBuildId']);
@@ -147,7 +147,7 @@ export async function prepareSiteRuntimeSelection({siteId,snapshot,catalog,expec
   try { pin = pinRuntime(runtime,{allowPreview:requested.allowPreview}); }
   catch { fail('preview_opt_in_required','Selecting a preview runtime requires explicit opt-in.'); }
   const next = { ...config, enablePrebid:requested.enablePrebid };
-  const { requirements } = normalizedRequirements(saved,next,runtime);
+  const { requirements } = normalizedRequirements(saved,next,runtime,inputAdapter);
   const checked = await checkedPrebid(siteId,saved.prebidBuilds,requested.prebidBuildId,requirements,bucket);
   const chosen = { schemaVersion:1, runtime:pin, prebid:checked?.pin ?? null };
   next.builtinRuntimeSelection = chosen;
@@ -160,7 +160,7 @@ export async function prepareSiteRuntimeSelection({siteId,snapshot,catalog,expec
  * catalog is a conflict, never an implicit upgrade. Historical release reads
  * must keep using readDraftRelease instead of regenerating through this path.
  */
-export async function readPinnedSiteRuntime({siteId,snapshot,catalog}, bucket) {
+export async function readPinnedSiteRuntime({siteId,snapshot,catalog,inputAdapter=previewInput}, bucket) {
   const { saved,config,runtimes } = savedInputs(siteId,snapshot,catalog);
   if (!config.builtinRuntimeSelection) fail('runtime_selection_required','Choose and save an exact built-in runtime first.',409);
   const chosen = config.builtinRuntimeSelection;
@@ -169,7 +169,7 @@ export async function readPinnedSiteRuntime({siteId,snapshot,catalog}, bucket) {
   if (config.enablePrebid) exactKeys(chosen.prebid,PB_KEYS);
   else if (chosen.prebid !== null) fail('prebid_mode_mismatch','GPT-only settings must not retain a Prebid pin.');
   const runtime = resolveRuntime(chosen.runtime,runtimes);
-  const { snapshot:settings,requirements } = normalizedRequirements(saved,config,runtime);
+  const { snapshot:settings,requirements } = normalizedRequirements(saved,config,runtime,inputAdapter);
   const checked = await checkedPrebid(siteId,saved.prebidBuilds,chosen.prebid?.id ?? null,requirements,bucket);
   if (checked && await digest(checked.pin) !== await digest(chosen.prebid)) {
     fail('prebid_pin_changed','The saved Prebid version, checksum or modules changed. Select and review an explicit replacement.',409);

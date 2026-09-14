@@ -4,11 +4,14 @@ import { unzipSync } from 'fflate';
 import { generatedLiteral } from '../support/generated-literal.mjs';
 import worker from '../../worker/test-workspace/index.mjs';
 import { workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD } from '../support/test-workspace-store.mjs';
+import { defaultOverlay } from '../../worker/runtime-next/position-settings.mjs';
+import { storePrebidFile } from '../../worker/test-workspace/prebid-files.mjs';
+import { prebidStore } from '../../worker/test-workspace/prebid-settings.mjs';
 const fixtures=[],oldFetch=globalThis.fetch;
 test.before(()=>{globalThis.fetch=()=>assert.fail('No real network requests in the editor');});
 test.after(()=>{globalThis.fetch=oldFetch;});test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function req(f,path,cookie,body,origin=ORIGIN){const r=await worker.fetch(new Request(ORIGIN+path,{method:body===undefined?'GET':'POST',headers:{...(cookie?{cookie}:{}),...(body===undefined?{}:{origin,'content-type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)}),f.env);return {r,data:r.headers.get('content-type')?.includes('json')?await r.json():null};}
-async function ready(){const f=workspaceStore();fixtures.push(f);const logged=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);const cookie=logged.headers.get('set-cookie').split(';')[0];assert.equal((await req(f,'/test-api/setup',cookie,{confirm:'prepare-empty-test-database'})).r.status,200);const s=(await req(f,'/test-api/runtime-selection',cookie)).data;assert.equal((await req(f,'/test-api/runtime-selection',cookie,{expectedRevision:s.revision,selection:{runtime:s.runtimes[0].pin,allowPreview:true,enablePrebid:false,prebidBuildId:null}})).r.status,200);return {f,cookie};}
+async function ready(options={}){const f=workspaceStore(options);fixtures.push(f);const logged=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);const cookie=logged.headers.get('set-cookie').split(';')[0];assert.equal((await req(f,'/test-api/setup',cookie,{confirm:'prepare-empty-test-database'})).r.status,200);const s=(await req(f,'/test-api/runtime-selection',cookie)).data;assert.equal((await req(f,'/test-api/runtime-selection',cookie,{expectedRevision:s.revision,selection:{runtime:s.runtimes[0].pin,allowPreview:true,enablePrebid:false,prebidBuildId:null}})).r.status,200);return {f,cookie};}
 const state=async(f,cookie)=>(await req(f,'/test-api/site-settings',cookie)).data;
 const save=(f,cookie,s)=>req(f,'/test-api/site-settings',cookie,{expectedRevision:s.revision,acknowledge:true,draft:s.draft});
 const generate=(f,cookie)=>req(f,'/test-api/generate',cookie,{acknowledge:true});
@@ -82,4 +85,36 @@ test('site editor rejects over 256KB without changing the saved revision',async(
 });
 test('other test endpoints retain the existing 16KB JSON limit',async()=>{
   const{f,cookie}=await ready();assert.equal((await req(f,'/test-api/generate',cookie,{acknowledge:true,takeOverEnabled:false,extra:'X'.repeat(16385)})).r.status,413);
+});
+
+test('TakeOver ad position saves map, Prebid override, lazy rules and original uploaded bytes into one package',async()=>{
+  const {f,cookie}=await ready({prebidFiles:true});
+  const s=await state(f,cookie);
+  s.draft.maps.push({name:'modal',breakpoints:[{minWidth:0,sizes:[[300,250]]},{minWidth:1024,sizes:[[800,600]]}]});
+  s.draft.units.push({code:'Overlay',type:'ATF',sizeMap:'modal',enabled:true,display:'takeover',overlay:{...defaultOverlay(),demand:'site'}});
+  s.draft.units[0].lazy={enabled:false,fetchMarginPx:500,renderMarginPx:0};
+  let written=await save(f,cookie,s);assert.equal(written.r.status,200,JSON.stringify(written.data));
+  assert.deepEqual((await state(f,cookie)).draft.units.at(-1),s.draft.units.at(-1));
+  const bytes=new TextEncoder().encode('/* prebid.js v11.11.0\nModules: consentManagementTcf,tcfControl,currency,adformBidAdapter */\nwindow.prebidFixtureOnly=true;');
+  const file=await storePrebidFile(prebidStore(f.env),bytes,TEST_EMAIL);
+  const pb=(await req(f,'/test-api/prebid-settings',cookie)).data;
+  assert(pb.units.some(u=>u.code==='Overlay'));
+  const draft={...pb.draft,enablePrebid:true,buildId:file.file.id,bidders:[{bidder:'adform',params:{mid:123},enabled:true}],overrides:[{bidder:'adform',scopeType:'adunit',scopeKey:'Overlay',params:{mid:456},enabled:true}]};
+  written=await req(f,'/test-api/prebid-settings',cookie,{expectedRevision:pb.revision,acknowledge:true,draft});
+  assert.equal(written.r.status,200,JSON.stringify(written.data));
+  const g=await generate(f,cookie);assert.equal(g.r.status,200,JSON.stringify(g.data));
+  assert.equal(generatedLiteral(g.data.adsJs,'TESSERA_OVERLAY').code,'Overlay');
+  assert.equal(generatedLiteral(g.data.adsJs,'BIDDER_ADUNIT_PARAMS').adform.Overlay.mid,456);
+  const release=await req(f,'/test-api/save',cookie,{receipt:g.data.receipt,acknowledge:true,note:'TakeOver position with Prebid'});
+  assert.equal(release.r.status,200,JSON.stringify(release.data));
+  const response=await req(f,'/test-api/releases/'+release.data.draft.id+'/download',cookie);
+  const zip=unzipSync(new Uint8Array(await response.r.arrayBuffer()));
+  assert.deepEqual(zip['prebid.js'],bytes);
+  const config=JSON.parse(new TextDecoder().decode(zip['config.json']));
+  assert.equal(config.adPosition.demand,'site');assert.equal(config.lazyRules.Billboard.enabled,false);
+  const selection=(await req(f,'/test-api/runtime-selection',cookie)).data;
+  assert.equal(selection.runtimes.length,2);
+  const downgrade=await req(f,'/test-api/runtime-selection',cookie,{expectedRevision:selection.revision,selection:{runtime:selection.runtimes[1].pin,allowPreview:true,enablePrebid:true,prebidBuildId:file.file.id}});
+  assert.equal(downgrade.r.status,422);
+  assert.deepEqual((await state(f,cookie)).draft.units.at(-1),s.draft.units.at(-1));
 });

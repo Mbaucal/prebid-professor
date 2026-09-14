@@ -1,8 +1,9 @@
+import { runtimeCatalog, descriptorForPin, previewInput, prepareSiteRuntimeSelection, readPinnedSiteRuntime } from './runtime-catalog.mjs';
 /** Authenticated TEST configuration service. No live endpoints or ad execution. */
-import { readPreviewSnapshot, runtimeDescriptor } from '../runtime/builtin-preview-service.mjs';
-import { prepareSiteRuntimeSelection, readPinnedSiteRuntime, RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
+import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
+import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
 import { prebidRequirements } from '../runtime/prebid-artifact-check.mjs';
-import { previewInput, digest } from '../runtime/preview-snapshot.mjs';
+import { digest } from '../runtime/preview-snapshot.mjs';
 import { WorkspaceError, TEST_SITE } from './boundary.mjs';
 import { assertWorkspaceSiteScope } from './site-draft.mjs';
 import { reviewedProjections, SelectionWriteError } from './selection-transaction.mjs';
@@ -24,9 +25,9 @@ function editorDraft(snapshot, config) {
 export async function getPrebidSettings(env) {
   const {snapshot,config} = await prebidSnapshot(env);
   let validationIssue = null;
-  try { await readPinnedSiteRuntime({siteId:TEST_SITE,snapshot,catalog:[runtimeDescriptor]},env.BUILDS); }
+  try { await readPinnedSiteRuntime({siteId:TEST_SITE,snapshot,catalog:runtimeCatalog},env.BUILDS); }
   catch(error) { if (!(error instanceof RuntimeSelectionError)) throw error; validationIssue=error.message; }
-  const input=previewInput(snapshot,runtimeDescriptor,'20000101_000000');
+  const input=previewInput(snapshot,descriptorForPin(config.builtinRuntimeSelection.runtime),'20000101_000000');
   return {site:{id:TEST_SITE,name:snapshot.site.name},revision:await digest(snapshot),draft:editorDraft(snapshot,config),
     files:await listPrebidFiles(prebidStore(env)),supportedBidders:SUPPORTED_BIDDERS,
     units:snapshot.units.map((u)=>({code:u.code,enabled:u.enabled===1})),requiredModules:prebidRequirements(input,config).modules,
@@ -76,7 +77,7 @@ export async function preparePrebidSettings(env, body) {
   const next={...(buildPlan?buildPlan.config:config),enablePrebid:draft.enablePrebid,testPrebidDraft:{schemaVersion:1,candidateOnly:true}};
   delete next.testPrebidPlan;
   after.config.config_json=JSON.stringify(next);
-  const planned=await prepareSiteRuntimeSelection({siteId:TEST_SITE,snapshot:after,catalog:[runtimeDescriptor],expectedRevision:await digest(after),
+  const planned=await prepareSiteRuntimeSelection({siteId:TEST_SITE,snapshot:after,catalog:runtimeCatalog,expectedRevision:await digest(after),
     selection:{runtime:config.builtinRuntimeSelection.runtime,allowPreview:true,enablePrebid:draft.enablePrebid,prebidBuildId:draft.enablePrebid?draft.buildId:null}},env.BUILDS);
   after.config.config_json=planned.configJson;
   return {before,after,selectedRow:selected?.row??null};

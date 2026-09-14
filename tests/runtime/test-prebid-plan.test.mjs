@@ -6,7 +6,7 @@ import {readRuntimeSelectionSettings,saveRuntimeSelectionSettings,selectedWorksp
 import {getPrebidSettings,previewBuildPlan,saveBuildPlan,savePrebidSettings,preparePrebidSettings,commitPrebidSettings,prebidStore} from '../../worker/test-workspace/prebid-settings.mjs';
 import {storePrebidFile} from '../../worker/test-workspace/prebid-files.mjs';
 import {readPreviewSnapshot} from '../../worker/runtime/builtin-preview-service.mjs';
-import {buildArtifactCandidate} from '../../worker/runtime/artifact-candidate.mjs';
+import {buildArtifactCandidate} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {prebidRequirements,prebidFailureMessage} from '../../worker/runtime/prebid-artifact-check.mjs';
 import {generatedLiteral} from '../support/generated-literal.mjs';
 const actor='tester@example.invalid',active=[];

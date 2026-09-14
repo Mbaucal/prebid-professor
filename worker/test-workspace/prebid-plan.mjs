@@ -1,9 +1,9 @@
+import { descriptorForPin, previewInput } from './runtime-catalog.mjs';
 /** Data-only Prebid Download plan. Uses the same normalized input as activation. */
 import { fields, params, normalizePrebidDraft } from './prebid-draft.mjs';
 import { WorkspaceError } from './boundary.mjs';
-import { previewInput, digest } from '../runtime/preview-snapshot.mjs';
+import { digest } from '../runtime/preview-snapshot.mjs';
 import { prebidRequirements, moduleReason } from '../runtime/prebid-artifact-check.mjs';
-import { runtimeDescriptor } from '../runtime/builtin-preview-service.mjs';
 
 export const USER_IDS = Object.freeze([
   {name:'sharedId',label:'SharedID',module:'sharedIdSystem',settings:{storage:{type:'cookie',name:'_sharedid',expires:365}}},
@@ -84,7 +84,7 @@ export async function makePrebidPlan(snapshot,config,request) {
   // Planning always derives the enabled build, even while the active mode is OFF.
   const forBuild=structuredClone(applied.after),buildConfig={...applied.config,enablePrebid:true};
   forBuild.config.config_json=JSON.stringify(buildConfig);
-  const requirements=prebidRequirements(previewInput(forBuild,runtimeDescriptor,'20000101_000000'),buildConfig);
+  const requirements=prebidRequirements(previewInput(forBuild,descriptorForPin(config.builtinRuntimeSelection.runtime),'20000101_000000'),buildConfig);
   if(requirements.issues.length)fail('An enabled bidder or User ID has no verified module mapping. Existing settings were retained.');
   const configuration={version:request.version,modules:requirements.modules};
   const hash=await digest({version:request.version,options,draft:{...draft,buildId:null}});
