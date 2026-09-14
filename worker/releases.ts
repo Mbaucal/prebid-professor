@@ -1,3 +1,4 @@
+import { isStoredBuiltinDraft, STORED_DRAFT_BLOCK } from './runtime/stored-draft-safety.mjs';
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
 import { compileRuntime, type GeneratorEngine } from './runtime-compiler';
@@ -947,6 +948,7 @@ async function promote(request: Request, env: ReleaseEnv, siteId: string, releas
   if (!env.BUILDS) return storageMissing();
   const release = await fetchRelease(env.DB, siteId, releaseId);
   if (!release) return apiError('Release not found.', 404);
+  if (isStoredBuiltinDraft(release)) return apiError(STORED_DRAFT_BLOCK, 409);
   if (release.status === 'failed') return apiError('Failed releases cannot be promoted.', 409);
   if (channel === 'staging' && release.status === 'production') return apiError('The current production release does not need staging promotion.', 409);
   try {

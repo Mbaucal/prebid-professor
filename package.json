@@ -4,9 +4,12 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/prepare-builtin-runtime.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/prepare-builtin-runtime.mjs",
     "build": "vite build",
     "preview": "vite preview",
+    "test:builtin": "node scripts/prepare-builtin-runtime.mjs && node --experimental-strip-types --test tests/runtime/builtin-preview.test.mjs",
     "deploy": "npm run build && wrangler deploy",
     "cf-typegen": "wrangler types",
     "db:migrate:local": "wrangler d1 migrations apply prebid-professor-db --local",
@@ -15,7 +18,8 @@
   "dependencies": {
     "fflate": "^0.8.2",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "terser": "5.44.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "latest",

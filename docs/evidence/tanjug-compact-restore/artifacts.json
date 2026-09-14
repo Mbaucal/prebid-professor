@@ -1,0 +1,44 @@
+[
+  {
+    "file": "compact-v2-source.json",
+    "artifactId": 10355583868,
+    "artifactArchiveSha256": "dae5825baba77a39e363795e9625bebfd1dedb06933bbc9e0b90cb85f51878df",
+    "jsonSha256": "325c16bb9262f4d603b36bcf5f86e65c710c6f96b206fcf77d34c4e1bbe886cc",
+    "runId": "34864698144"
+  },
+  {
+    "file": "compact-v2-public.json",
+    "artifactId": 10356254741,
+    "artifactArchiveSha256": "76670b2f7cabe7a72c5c6a89dbdb4a91083ddf29c9d2d3f4c9ac1668b8414d35",
+    "jsonSha256": "45a1b43749e0809c4c004a53adeadb86690f9cdf39b4e933d2a85405cbbcd9ec",
+    "runId": "34864698144"
+  },
+  {
+    "file": "restore-v1-source.json",
+    "artifactId": 10357035344,
+    "artifactArchiveSha256": "ebdb7266ed5686519ae9471615d7c9cbdd619450338d2ff0913bf9ba37c4a946",
+    "jsonSha256": "70a4e3fb52b74ef4a45f553e963d81f6f3b3f7e311c72eac02d743f88c060152",
+    "runId": "34865064215"
+  },
+  {
+    "file": "restore-v1-public.json",
+    "artifactId": 10357075413,
+    "artifactArchiveSha256": "4e83b7d29c13fceeb50bf9906ff65d0e2a190808da503be5054771380ce38fa9",
+    "jsonSha256": "c11f4a8a6ec69796bc2df55d2cfe0b670b78a02d2ffa076a8a1ef9c60830fd13",
+    "runId": "34865064215"
+  },
+  {
+    "file": "restore-v2-source.json",
+    "artifactId": 10356905882,
+    "artifactArchiveSha256": "f2ea256d9cc1c8444d79ce2b038d5e9cf4d35e702b39fbbe73f74f980e88be53",
+    "jsonSha256": "5eb7f17368a56efb18758b8c73075a696ec777d0a216b8e95cf1b05eec9cc1b1",
+    "runId": "34865304443"
+  },
+  {
+    "file": "restore-v2-public.json",
+    "artifactId": 10356441935,
+    "artifactArchiveSha256": "f38e9dca66218e329047078257335b4bc8b999062c2a2a92c410079f7f91a8fa",
+    "jsonSha256": "dafaca749a1173cb1eb4f69214c4ce051e7f8ff82e5712df07b68985c30dae5b",
+    "runId": "34865304443"
+  }
+]

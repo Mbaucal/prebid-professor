@@ -1,3 +1,4 @@
+import { isStoredBuiltinDraft, STORED_DRAFT_BLOCK } from './runtime/stored-draft-safety.mjs';
 import { apiError, getActor, json } from './http';
 import type { ReleaseEnv } from './releases';
 
@@ -76,6 +77,7 @@ export async function deleteRelease(
     .first<ReleaseRow>();
 
   if (!release) return apiError('Release not found.', 404);
+  if (isStoredBuiltinDraft(release)) return apiError(STORED_DRAFT_BLOCK, 409);
   if (!DELETABLE_STATUSES.has(release.status)) {
     return apiError(
       `A ${release.status} release cannot be deleted. Only draft, failed and archived releases may be removed.`,

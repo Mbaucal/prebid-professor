@@ -1,32 +1,12 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "prebid-professor",
-  "main": "worker/app-ads-txt-managed-file.ts",
+  "main": "worker/app-builtin-runtime-preview.ts",
   "compatibility_date": "2026-07-15",
   "compatibility_flags": ["nodejs_compat"],
-  "assets": {
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": true
-  },
-  "triggers": {
-    "crons": ["0 6 * * *"]
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "prebid-professor-db",
-      "database_id": "7ef68f78-0fd8-4937-a774-d2fd1d5353e6",
-      "migrations_dir": "migrations"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "BUILDS",
-      "bucket_name": "prebid-professor-builds"
-    }
-  ],
-  "observability": {
-    "enabled": true
-  }
+  "assets": { "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true },
+  "triggers": { "crons": ["0 6 * * *"] },
+  "d1_databases": [{ "binding": "DB", "database_name": "prebid-professor-db", "database_id": "7ef68f78-0fd8-4937-a774-d2fd1d5353e6", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "BUILDS", "bucket_name": "prebid-professor-builds" }],
+  "observability": { "enabled": true }
 }

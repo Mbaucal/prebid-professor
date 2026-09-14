@@ -1,0 +1,21 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "prebid-professor-test",
+  "account_id": "b5e5e6f70b811e8f97af71df1af46308",
+  "main": "../../worker/test-workspace/index.mjs",
+  "compatibility_date": "2026-07-15",
+  "workers_dev": true,
+  "preview_urls": false,
+  "routes": [],
+  "triggers": { "crons": [] },
+  "d1_databases": [{ "binding": "DB", "database_name": "prebid-professor-test-db", "database_id": "d27843e4-a53c-403a-baed-04a193f6d5c6" }],
+  "r2_buckets": [{ "binding": "BUILDS", "bucket_name": "prebid-professor-test-builds" }],
+  "vars": {
+    "TEST_WORKSPACE_ENABLED": "false",
+    "TEST_PUBLIC_ORIGIN": "",
+    "TEST_WORKER_NAME": "prebid-professor-test",
+    "TEST_DATABASE_ID": "d27843e4-a53c-403a-baed-04a193f6d5c6",
+    "TEST_BUCKET_NAME": "prebid-professor-test-builds"
+  },
+  "observability": { "enabled": false }
+}

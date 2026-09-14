@@ -1,0 +1,58 @@
+{
+  "verified": true,
+  "deploymentUrl": "https://99b7390d.tanjug.pages.dev",
+  "previewAliasUrl": "https://tessera-test.tanjug.pages.dev",
+  "fileCount": 2,
+  "manifestSha256": "c94d991269f16b09bbc787c73447d1a2a5cc59df154be169aadae64f6ac6a8cc",
+  "deliverySha256": "19553aba155e5ce0be6942b06d1b9a3fe7f9d113f10cc8fb872137a9c753d525",
+  "deliveryProfile": "publisher-scripts-v1",
+  "immutable": {
+    "url": "https://99b7390d.tanjug.pages.dev",
+    "files": [
+      {
+        "name": "ads.js",
+        "sha256": "62fc33c7ece330d87cc3e684b7f3eba5009e36d74e43cc426b636eb956a6d2c4",
+        "byteSize": 122756,
+        "etag": "W/\"494beb55d027853a6b8c0c3757fa29c2\"",
+        "revalidated": true
+      },
+      {
+        "name": "prebid.js",
+        "sha256": "384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b",
+        "byteSize": 299591,
+        "etag": "W/\"211455d19d6600471d2922977aecb280\"",
+        "revalidated": true
+      }
+    ],
+    "excludedFilesAbsent": true
+  },
+  "preview": {
+    "url": "https://tessera-test.tanjug.pages.dev",
+    "files": [
+      {
+        "name": "ads.js",
+        "sha256": "62fc33c7ece330d87cc3e684b7f3eba5009e36d74e43cc426b636eb956a6d2c4",
+        "byteSize": 122756,
+        "etag": "W/\"494beb55d027853a6b8c0c3757fa29c2\"",
+        "revalidated": true
+      },
+      {
+        "name": "prebid.js",
+        "sha256": "384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b",
+        "byteSize": 299591,
+        "etag": "W/\"211455d19d6600471d2922977aecb280\"",
+        "revalidated": true
+      }
+    ],
+    "excludedFilesAbsent": true
+  },
+  "runId": "34864698144",
+  "commit": "d2ffb7da20311e4919ceedbf48bc7d99224e4b78",
+  "project": {
+    "accountId": "6cb2ac6a0a1a0d8b8fc7f9db917cce3d",
+    "projectName": "tanjug",
+    "productionBranch": "main",
+    "branch": "tessera-test",
+    "channel": "staging"
+  }
+}

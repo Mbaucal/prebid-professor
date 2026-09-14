@@ -1,7 +1,10 @@
+import { isStoredBuiltinDraft, STORED_DRAFT_BLOCK } from './runtime/stored-draft-safety.mjs';
+import { deploymentManifestPin } from './deployment-manifest-pin.mjs';
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
 
 export interface ExternalDeployEnv extends DatabaseEnv {
+  BUILDS?: R2Bucket;
   GITHUB_ACTIONS_TOKEN?: string;
   GITHUB_DEPLOY_REPOSITORY?: string;
   GITHUB_DEPLOY_REF?: string;
@@ -56,6 +59,8 @@ type ReleaseRow = {
   publisher_id: string;
   version: string;
   status: string;
+  manifest_key: string | null;
+  config_hash: string;
 };
 
 const DEFAULT_REPOSITORY = 'Mbaucal/prebid-professor';
@@ -541,14 +546,18 @@ export async function dispatchExternalDeployment(
   if (target.enabled !== 1) return apiError('Deployment target is disabled.', 409);
 
   const release = await env.DB
-    .prepare('SELECT id, publisher_id, version, status FROM releases WHERE publisher_id = ? AND id = ? LIMIT 1')
+    .prepare('SELECT id, publisher_id, version, status, manifest_key, config_hash FROM releases WHERE publisher_id = ? AND id = ? LIMIT 1')
     .bind(siteId, releaseId)
     .first<ReleaseRow>();
   if (!release) return apiError('Release not found.', 404);
+  if (isStoredBuiltinDraft(release)) return apiError(STORED_DRAFT_BLOCK, 409);
   if (release.status === 'failed') return apiError('A failed release cannot be deployed.', 409);
   if (channel === 'production' && release.status !== 'production') {
     return apiError('External production deploy requires an internally published production release.', 409);
   }
+  let manifestSha256: string;
+  try { manifestSha256 = await deploymentManifestPin(env.BUILDS, siteId, release); }
+  catch { return apiError('The exact stored release manifest could not be verified. Nothing was dispatched.', 409); }
 
   let repository;
   try {
@@ -615,6 +624,7 @@ export async function dispatchExternalDeployment(
           release_id: release.id,
           release_version: release.version,
           release_base_url: releaseBaseUrl,
+          manifest_sha256: manifestSha256,
           github_environment: target.github_environment,
           account_id: target.account_id,
           project_name: target.project_name,

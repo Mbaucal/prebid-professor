@@ -1,0 +1,33 @@
+name: Built-in preview tests
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  builtin-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify bundled source and run preview tests
+        run: npm run test:builtin
+      - name: Verify read-only Prebid artifact inspection and integration
+        run: node --experimental-strip-types --test tests/runtime/prebid-artifact-check.test.mjs tests/runtime/prebid-preflight-service.test.mjs tests/runtime/builtin-prebid-integration.test.mjs
+      - name: Archive tracked sources for reproducible offline verification
+        run: |
+          mkdir -p verification-artifacts
+          git archive --format=zip --output=verification-artifacts/verified-source.zip HEAD
+          git rev-parse HEAD > verification-artifacts/commit.txt
+          sha256sum verification-artifacts/verified-source.zip > verification-artifacts/checksums.txt
+      - name: Retain verification source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: builtin-verified-source
+          path: verification-artifacts/
+          retention-days: 3
+          if-no-files-found: error
