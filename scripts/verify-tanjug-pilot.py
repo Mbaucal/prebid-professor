@@ -90,13 +90,17 @@ with tempfile.TemporaryDirectory(prefix='tessera-local-tls-') as tls:
             browser=playwright.chromium.launch(headless=True,executable_path=os.environ.get('TESSERA_TEST_CHROMIUM'),args=[
                 '--no-proxy-server','--disable-quic',
                 '--host-resolver-rules=MAP '+hostname+' 127.0.0.1:8877, MAP * ~NOTFOUND'])
-            context=browser.new_context(viewport={'width':1280,'height':900},accept_downloads=True,ignore_https_errors=True,service_workers='block')
+            context=browser.new_context(viewport={'width':1280,'height':900},accept_downloads=True,ignore_https_errors=True)
             def handle(route):
                 if not route.request.url.startswith(origin+'/'):
                     external.append(urllib.parse.urlsplit(route.request.url).hostname)
                     route.abort()
                 else:
                     route.continue_()
+            # Playwright 1.55's service_workers='block' init script reads
+            # navigator.serviceWorker unguarded and throws in opaque sandboxes.
+            # Keep registration blocked without changing the product sandbox.
+            context.add_init_script("try { if (navigator.serviceWorker) navigator.serviceWorker.register = () => Promise.reject(new Error('Local test blocks service workers')); } catch (_) {}")
             context.route('**/*',handle)
             page=context.new_page()
             def inspect_response(response):
