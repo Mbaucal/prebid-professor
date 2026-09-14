@@ -44,6 +44,26 @@ test('setup is nonsecret, read-only until saved, preserves TEST DB and supports 
     assert(!f.log.sql.some(sql=>/^(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)/i.test(sql)));
   }finally{f.close();}
 });
+test('shared Cloudflare secret preserves each publisher destination from save through dispatch',async()=>{
+  const shared='CLOUDFLARE_API_TOKEN';
+  for(const destination of [TARGET,{...TARGET,accountId:'2'.repeat(32),projectName:'other-publisher',previewBranch:'publisher-test'}]) {
+    const f=deploymentStore();try {
+      const target={...destination,secretName:shared};
+      await saveTarget(f.env,{expectedRevision:0,siteId:'tanjug-test',target});
+      for(const secretName of ['GITHUB_TOKEN','TEST_DEPLOY_SECRET','CLOUDFLARE_API_TOKEN_','CLOUDFLARE_API_TOKEN;echo'])
+        await assert.rejects(saveTarget(f.env,{expectedRevision:1,siteId:'tanjug-test',target:{...target,secretName}}));
+      assert.deepEqual((await deploymentState(f.env)).targets['tanjug-test'],target);
+      const calls=[];
+      const {run}=await publish(f,async(u,o)=>{calls.push(JSON.parse(o.body));return new Response(null,{status:204});});
+      assert.equal(calls.length,1);
+      const input=calls[0].inputs;
+      assert.equal(input.github_environment,shared);
+      assert.equal(input.account_id,target.accountId);assert.equal(input.project_name,target.projectName);assert.equal(input.branch,target.previewBranch);
+      assert.deepEqual(validateRunnerInput(input,'refs/heads/'+DEPLOY_REF,DEPLOY_REPO),dispatchInputs(run));
+      assert.deepEqual(run.target,target);
+    }finally{f.close();}
+  }
+});
 test('concurrent publish requests dispatch only one exact pinned TEST package',async()=>{
   const f=deploymentStore();try {
     await setup(f);const calls=[];const fetcher=async(u,o)=>{calls.push({u,o});return new Response(null,{status:204});};
