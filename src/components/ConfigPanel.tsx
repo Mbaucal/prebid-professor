@@ -64,7 +64,7 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
           User ID modules
         </button>
         <button className={section === 'generator-profiles' ? 'active' : ''} onClick={() => setSection('generator-profiles')} type="button">
-          Generator profiles
+          ads.js versions
         </button>
         <button className={section === 'imports' ? 'active' : ''} onClick={() => setSection('imports')} type="button">
           CSV import
