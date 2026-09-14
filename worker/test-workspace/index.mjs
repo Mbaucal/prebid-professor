@@ -20,6 +20,7 @@ import { inspectTestSchema, initializeTestSchema } from './schema.mjs';
 import { issueReceipt, verifyReceipt } from './receipt.mjs';
 import { loginPage, workspacePage, workspaceScript } from './page.mjs';
 import { takeOverForBuild } from './takeover-settings.mjs';
+import { tanjugPilotResponse } from './tanjug-pilot.mjs';
 
 // HTML form navigation under no-referrer sends Origin:null. same-origin keeps
 // legitimate form Origin while still suppressing cross-origin referrers.
@@ -76,6 +77,8 @@ async function route(request,env) {
   if (!actor) return path.startsWith('/test-api/')||path.startsWith('/api/') ? json({error:'Test sign-in required.'},401)
     : new Response(null,{status:303,headers:{...headers,location:'/login'}});
   if (path==='/api/auth/logout' && request.method==='POST') return handleLogout(request);
+  const pilot = tanjugPilotResponse(request, headers);
+  if (pilot) return pilot;
   if (path==='/' && request.method==='GET') return html(workspacePage(actor.email));
   if (path==='/workspace.js' && request.method==='GET') return new Response(workspaceScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   if (path==='/runtime-selection' && request.method==='GET' && !url.search) return html(runtimeSelectionPage());

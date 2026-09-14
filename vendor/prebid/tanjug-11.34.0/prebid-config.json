@@ -1,0 +1,20 @@
+{
+  "version": "11.34.0",
+  "modules": [
+    "consentManagementTcf",
+    "criteoBidAdapter",
+    "criteoIdSystem",
+    "currency",
+    "id5IdSystem",
+    "lotamePanoramaIdSystem",
+    "openxBidAdapter",
+    "priceFloors",
+    "pubmaticBidAdapter",
+    "schain",
+    "sharedIdSystem",
+    "tcfControl",
+    "teadsBidAdapter",
+    "teadsIdSystem",
+    "userId"
+  ]
+}
