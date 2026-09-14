@@ -7,6 +7,11 @@ exactly its declared files. Every size/checksum, release/config identity and
 Prebid declaration is checked before Wrangler receives a directory. There is no
 optional download that silently removes a file advertised by the manifest.
 Legacy manifests which never included sticky.css remain supported.
+AdX-only packages require matching disabled-mode declarations and the exact
+synthetic `prebid.js` notice produced by the legacy generator. Enabled builds
+still require matching Prebid headers. Legacy files allow up to 20 MiB, matching
+the accepted Prebid upload size; the package bound covers the full allowed file
+inventory. Private built-in storage limits remain enforced by their own verifier.
 
 The workflow reads the actual destination Pages project's `production_branch`.
 Staging must use a different branch; production must use that branch and the

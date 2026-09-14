@@ -10,8 +10,11 @@ const HASH = /^[a-f0-9]{64}$/;
 const PART = /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/;
 const REQUIRED = ['ads.js','ads.min.js','prebid.js','config.json','min-height.css','div-export.csv','implementation.html'];
 const ALLOWED = [...REQUIRED, 'sticky.css', 'README.txt'];
-const MAX_FILE = 8 * 1024 * 1024;
-const MAX_TOTAL = 12 * 1024 * 1024;
+// Match the legacy Prebid uploader's 20 MiB acceptance limit. Private built-in
+// candidates retain their own smaller storage limits in describeCandidate.
+const MAX_FILE = 20 * 1024 * 1024;
+const MAX_TOTAL = ALLOWED.length * MAX_FILE + 256 * 1024;
+const DISABLED_PREBID = '/* Prebid disabled for this release. Google Ad Manager / AdX only. */\n';
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const record = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 function requireThat(value, message) { if (!value) throw new Error(message); }
@@ -75,7 +78,13 @@ export async function verifyPackage(files, expected) {
     requireThat(config.site?.id === expected.site_id && config.version === expected.release_version && digest(files['config.json']) === manifest.configHash, 'Release configuration identity or checksum differs.');
     requireThat(same(config.prebidBuild, manifest.prebidBuild), 'Prebid configuration and manifest differ.');
   }
-  if (files['prebid.js']) {
+  if (!builtin && (manifest.prebidEnabled === false || config.enablePrebid === false || manifest.prebidBuild === null)) {
+    requireThat(manifest.prebidEnabled === false && config.enablePrebid === false
+      && manifest.demandMode === 'gam-adx-only' && config.demandMode === 'gam-adx-only'
+      && manifest.prebidBuild === null && config.prebidBuild === null, 'AdX-only mode declarations differ.');
+    requireThat(Buffer.from(files['prebid.js']).equals(Buffer.from(DISABLED_PREBID)), 'AdX-only Prebid placeholder differs.');
+  } else if (files['prebid.js']) {
+    requireThat(record(manifest.prebidBuild) && Array.isArray(manifest.prebidBuild.modules), 'Prebid metadata is missing.');
     const header = parsePrebidHeader(new TextDecoder('utf-8',{fatal:true}).decode(files['prebid.js']).slice(0,500000));
     requireThat(header.version === manifest.prebidBuild?.version && Array.isArray(manifest.prebidBuild.modules), 'Prebid version differs from manifest.');
     requireThat(same(header.modules, [...new Set(manifest.prebidBuild.modules)].sort()), 'Prebid modules differ from manifest.');

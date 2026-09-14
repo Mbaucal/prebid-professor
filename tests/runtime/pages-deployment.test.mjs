@@ -28,7 +28,38 @@ function legacy() {
   return {input,files,manifest,config};
 }
 function rewrite(f, mutate) {mutate(f.manifest);f.files['manifest.json']=bytes(f.manifest);return f;}
+function reseal(f) {
+  f.files['config.json']=bytes(f.config);f.manifest.configHash=sha(f.files['config.json']);
+  f.manifest.files=Object.fromEntries(Object.entries(f.files).filter(([name])=>name!=='manifest.json').map(([name,value])=>[name,{size:value.length,sha256:sha(value)}]));
+  f.files['manifest.json']=bytes(f.manifest);f.input.manifest_sha256=sha(f.files['manifest.json']);return f;
+}
+function adxOnly() {
+  const f=legacy();Object.assign(f.config,{enablePrebid:false,demandMode:'gam-adx-only',prebidBuild:null});
+  Object.assign(f.manifest,{prebidEnabled:false,demandMode:'gam-adx-only',prebidBuild:null});
+  f.files['prebid.js']=bytes('/* Prebid disabled for this release. Google Ad Manager / AdX only. */\n');return reseal(f);
+}
 function response(body,headers={}){return new Response(body,{headers});}
+test('AdX-only accepts its exact disabled artifact and rejects inconsistent modes or substituted code',async()=>{
+  const f=adxOnly();assert.equal((await verifyPackage(f.files,f.input)).files.length,9);
+  for(const mutate of [
+    f=>f.config.enablePrebid=true,
+    f=>delete f.manifest.demandMode,
+    f=>delete f.manifest.prebidEnabled,
+    f=>f.files['prebid.js']=bytes('throw Error("not the disabled artifact");'),
+  ]) {const bad=adxOnly();mutate(bad);reseal(bad);await assert.rejects(verifyPackage(bad.files,bad.input),/AdX-only/);}
+});
+test('legacy package accepts the uploader maximum of 20 MiB before and after delivery',async()=>{
+  const f=legacy(),large=new Uint8Array(20*1024*1024).fill(32);large.set(f.files['prebid.js']);f.files['prebid.js']=large;reseal(f);
+  const checked=await verifyPackage(f.files,f.input);assert.equal(checked.files.find(e=>e.name==='prebid.js').byteSize,20*1024*1024);
+  const fetcher=async url=>{
+    const name=new URL(url).pathname.slice(1),type=name.endsWith('.js')?'application/javascript':name.endsWith('.json')?'application/json':name.endsWith('.css')?'text/css':name.endsWith('.html')?'text/html':'text/csv';
+    return response(f.files[name],{'content-type':type,'access-control-allow-origin':'*','x-content-type-options':'nosniff','cache-control':'no-store'});
+  };
+  assert.equal((await verifyPublicPackage('https://0123abcd.test-pages.pages.dev','test-pages',checked,fetcher)).fileCount,9);
+});
+test('legacy files beyond the upload size limit are refused before downloading',()=>{
+  const f=legacy();rewrite(f,m=>m.files['prebid.js'].size=20*1024*1024+1);assert.throws(()=>manifestInventory(f.files['manifest.json'],f.input),/size/);
+});
 test('legacy deployment validates the private manifest, all eight assets and Prebid metadata without execution',async()=>{
   const f=legacy();assert.deepEqual(validateDeploymentInput(f.input,ref),f.input);
   const checked=await verifyPackage(f.files,f.input);assert.equal(checked.files.length,9);assert.equal(checked.builtinDraft,false);
