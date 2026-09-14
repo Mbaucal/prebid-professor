@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { unzipSync } from 'fflate';
+import { unzipSync, zipSync } from 'fflate';
+import { parse } from 'acorn';
 import { metadata, zipBase64, previewHtml, prebidConfig } from '../../.generated/tanjug-pilot.mjs';
 import { generatedLiteral } from '../support/generated-literal.mjs';
 import { parsePrebidHeader, sha256 } from '../../worker/runtime/prebid-artifact-check.mjs';
@@ -24,12 +25,36 @@ test('Tanjug package preserves all approved GAM, bidder and responsive mapping d
     assert.equal(generatedLiteral(text(name), 'adUnitPath'), config.core.gamPath);
     assert.equal(generatedLiteral(text(name), 'TAKEOVER_ENABLED'), false);
     assert.deepEqual(generatedLiteral(text(name), 'EXPLICIT_UNITS'), config.core.explicitUnits);
+    const sync = [];
+    function visit(n) {
+      if (!n || typeof n !== 'object') return;
+      if (n.type === 'CallExpression' && n.callee.type === 'MemberExpression' && n.callee.object.name === 'pbjs' && n.callee.property.name === 'setConfig') {
+        const p = n.arguments[0]?.properties?.find((p) => (p.key.name ?? p.key.value) === 'userSync');
+        if (p) sync.push(p.value);
+      }
+      for (const child of Object.values(n)) if (Array.isArray(child)) child.forEach(visit); else if (child && typeof child === 'object') visit(child);
+    }
+    visit(parse(text(name), {ecmaVersion:'latest'}));
+    assert.equal(sync.length, 1);
+    const delay = sync[0].properties.find((p) => (p.key.name ?? p.key.value) === 'auctionDelay').value;
+    assert.equal(delay.value, config.core.userSync.auctionDelay);
+    assert.equal(delay.value, 50); // compiler.patchUserSync replaces the reference's 150.
   }
   assert.equal((text('implementation.html').match(/id="Billboard"/g) || []).length, 1);
   assert.equal((text('implementation.html').match(/class="wrapperAd/g) || []).length, 18);
   assert(!text('implementation.html').includes('LOCAL-MOCK'));
   assert(!text('ads.js').includes('gdprApplies: false'));
   assert(previewHtml.includes(text('ads.min.js').replace(/<\/script/gi, '<\\/script')));
+});
+test('frozen ZIP encoding is identical in UTC and timezones east and west of UTC', () => {
+  const originalZone = process.env.TZ;
+  try {
+    for (const zone of ['UTC', 'Pacific/Honolulu', 'Asia/Tokyo']) {
+      process.env.TZ = zone;
+      const entries = Object.fromEntries(Object.entries(files).map(([name, bytes]) => [name, [bytes, {level:0,mtime:new Date(1980,0,1,0,0,0)}]]));
+      assert.deepEqual(Buffer.from(zipSync(entries, {level:0})), Buffer.from(zipBase64, 'base64'), zone);
+    }
+  } finally { if (originalZone === undefined) delete process.env.TZ; else process.env.TZ = originalZone; }
 });
 test('ZIP contains exact original builder bytes and verifies every candidate file', async () => {
   assert.equal(Object.keys(files).length, 10);

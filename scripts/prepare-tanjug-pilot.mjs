@@ -34,7 +34,7 @@ const report = await inspectPrebidArtifact({ siteId: snapshot.site.id, builds: [
 assert.equal(report.status, 'checked', JSON.stringify(report.issues));
 const candidate = await buildArtifactCandidate({ snapshot, buildTimestamp, pin, takeOver: { enabled: false }, prebid: { report, bytes } });
 const { descriptor } = await describeCandidate(snapshot.site.id, candidate);
-const entries = Object.fromEntries(Object.entries(candidate.files).map(([name, value]) => [name, [value, { level: 0, mtime: new Date('1980-01-01T00:00:00Z') }]]));
+const entries = Object.fromEntries(Object.entries(candidate.files).map(([name, value]) => [name, [value, { level: 0, mtime: new Date(1980, 0, 1, 0, 0, 0) }]]));
 const zip = zipSync(entries, { level: 0 });
 const directory = new URL('.generated/tanjug-pilot/', root);
 mkdirSync(directory, { recursive: true });

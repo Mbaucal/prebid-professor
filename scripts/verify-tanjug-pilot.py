@@ -41,25 +41,31 @@ def exercise(page):
         page.get_by_role('link',name='Preuzmi Tanjug ZIP',exact=True).click()
     original=pathlib.Path('.generated/tanjug-pilot/tanjug-test-v1.zip').read_bytes()
     check('Authenticated download matches frozen Tanjug package byte for byte',pathlib.Path(download.value.path()).read_bytes()==original)
-    for mode,width in [('desktop',1920),('mobile',390)]:
+    for mode,width in [('desktop',1920),('mobile',1024)]:
         page.set_viewport_size({'width':width,'height':900})
         page.locator('#'+mode).click()
         frame=page.frame_locator('#pilot-preview')
         expect(frame.locator('#Billboard iframe')).to_be_visible(timeout=15000)
         expect(frame.locator('#Sticky iframe')).to_be_visible(timeout=15000)
         inner=next(f for f in page.frames if f.url.endswith('/pilot/tanjug/preview'))
+        if mode=='mobile':
+            check('Mobile frame content is exactly 390 px',inner.evaluate('innerWidth')==390)
         check(mode+' opaque origin cannot access parent or cookies',inner.evaluate("""() => {let parentBlocked=false,cookieBlocked=false;try{void parent.document}catch(e){parentBlocked=true}try{void document.cookie}catch(e){cookieBlocked=true}return parentBlocked&&cookieBlocked}"""))
         check(mode+' no TakeOver or codeless request',inner.evaluate("!__testAds.slots.some(s=>s.id==='adsx-takeover-slot'||s.id==='interstitial-guard')"))
         for unit in ['Billboard_2','P2','InText_1']:
             frame.locator('#'+unit).scroll_into_view_if_needed()
             expect(frame.locator('#'+unit+' iframe')).to_be_visible(timeout=15000)
         check(mode+' lazy positions run the generated runtime with four Tanjug bidders',inner.evaluate("""() => __testAds.observations.bids.some(b=>b.adUnits.some(u=>u.code==='InText_1'&&u.bids.length===4))"""))
+        check(mode+' executable Prebid userSync keeps the approved 50 ms delay',inner.evaluate("__testAds.observations.configs.filter(c=>c.userSync).length>0 && __testAds.observations.configs.filter(c=>c.userSync).every(c=>c.userSync.auctionDelay===50)"))
         check(mode+' all GAM requests retain Tanjug path',inner.evaluate("__testAds.observations.requests.every(r=>r.path.startsWith('/22852026051/Tanjug.rs-Display/'))"))
         check(mode+' preview fits viewport',inner.evaluate('document.documentElement.scrollWidth<=innerWidth'))
         inner.evaluate('scrollTo(0,0)')
         page.locator('#pilot-preview').scroll_into_view_if_needed()
         page.screenshot(path=str(out/('tanjug-'+mode+'.png')),full_page=True)
         check(mode+' sticky close control works',inner.evaluate("""() => {const b=document.querySelector('#close_sticky_ad');if(!b)return false;b.click();return !document.getElementById('Sticky').classList.contains('ad-loaded');}"""))
+    page.set_viewport_size({'width':390,'height':900})
+    check('Pilot controls fit a 390 px phone viewport',page.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+    page.screenshot(path=str(out/'tanjug-phone-controls.png'),full_page=True)
     check('No external requests or third party responses',not external and not nonlocal_responses)
     check('No page JavaScript errors',not page_errors)
 
