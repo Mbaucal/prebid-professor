@@ -130,7 +130,15 @@ is preserved in `docs/evidence/tanjug-test-v1-source.json`; the recovery recipe
 pins both source JSON and original artifact archive hashes. Do not ask for the
 secrets or create another deployment to recover this run.
 
-Still required before MBA-46 can be Done: complete public verification of this
-first run, a second approved package and a real complete restore. No production promotion is included
+Public verification completed on 2026-09-14 in
+[34861322056](https://github.com/Mbaucal/prebid-professor/actions/runs/34861322056):
+all 10 original files, delivery headers and actual preview branch passed. The
+existing request was confirmed without redeployment. The first report returned
+422; retrying only that report job succeeded. The successful original-byte receipt
+was reused. Evidence is in `docs/evidence/tanjug-test-v1-public-verification.json`
+and `docs/evidence/tanjug-test-v1-verification.md`.
+
+Still required before MBA-46 can be Done: a second approved package and a real
+complete restore. No production promotion is included
 in this stage. Previous accepted Prebid/template/Tanjug user tests are not requested
 again; the existing repository CI remains a required gate.
