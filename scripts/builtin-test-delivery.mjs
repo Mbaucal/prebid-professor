@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { MAX_ZIP, requireThat, dispatchInputs, validateRunnerInput, verifyDeliveryZip } from '../worker/test-workspace/deployment-contract.mjs';
 import { boundedGet, checkPagesProject, verifyPublicPackage, deploymentOrigin } from './pages-release-verification.mjs';
+import { selectDelivery } from '../worker/test-workspace/delivery-layout.mjs';
+import { verifyDeliveryPublication } from './publisher-delivery-verification.mjs';
 
 export async function privateCall(input, suffix, secret, body, fetcher=fetch) {
   requireThat(typeof secret === 'string' && secret.length >= 32, 'Dedicated TEST transfer secret is missing.');
@@ -31,7 +33,9 @@ export async function prepareDelivery({run,input,token,secret,fetcher=fetch}) {
   const manifest = checked.descriptor.files.find(f => f.name === 'manifest.json');
   requireThat(manifest.sha256 === input.manifest_sha256, 'Manifest differs from the saved deployment request.');
   const project = await checkPagesProject(input,token,fetcher);
-  return {files:checked.files,evidence:{input,runId:run.githubRunId,commit:run.commit,project,
+  const selected = await selectDelivery(checked.files,checked.descriptor,run.delivery);
+  return {files:checked.files,deploymentFiles:selected.files,headers:selected.headers,evidence:{input,runId:run.githubRunId,commit:run.commit,project,
+    ...(run.delivery ? {delivery:selected.delivery} : {}),
     zipSha256:run.package.zipSha256,verified:{...checked.descriptor,manifestSha256:manifest.sha256}}};
 }
 async function main() {
@@ -48,18 +52,20 @@ async function main() {
   if (mode === 'prepare') {
     const run = JSON.parse(await readFile(resolve(root,'request.json'),'utf8'));
     assertRun(run,input,runId,commit);
-    const {files,evidence} = await prepareDelivery({run,input,token:process.env.CLOUDFLARE_API_TOKEN,secret:process.env.TEST_TRANSFER_SECRET});
+    const {deploymentFiles:files,headers,evidence} = await prepareDelivery({run,input,token:process.env.CLOUDFLARE_API_TOKEN,secret:process.env.TEST_TRANSFER_SECRET});
     const dist=resolve(root,'dist');await mkdir(dist,{recursive:true});requireThat((await readdir(dist)).length===0,'Deployment directory must be empty.');
     for(const [name,bytes] of Object.entries(files))await writeFile(resolve(dist,name),bytes,{flag:'wx'});
-    await writeFile(resolve(dist,'_headers'),'/*\n  Access-Control-Allow-Origin: *\n  X-Content-Type-Options: nosniff\n  Cache-Control: no-store\n  X-Robots-Tag: noindex\n',{flag:'wx'});
+    await writeFile(resolve(dist,'_headers'),headers,{flag:'wx'});
     await writeFile(resolve(root,'verification.json'),JSON.stringify(evidence,null,2)+'\n',{flag:'wx'});
-    console.log(`Verified ${evidence.verified.files.length} original package files and the actual Pages preview branch.`);return;
+    console.log(`Verified ${evidence.verified.files.length} original package files; publishing ${Object.keys(files).length} assets plus _headers to the actual Pages preview branch.`);return;
   }
   if (mode === 'verify-public') {
     const evidence = JSON.parse(await readFile(resolve(root,'verification.json'),'utf8'));
     requireThat(evidence.runId === runId && evidence.commit === commit && Object.entries(input).every(([k,v])=>evidence.input?.[k]===v)
       && evidence.verified.releaseId === input.release_id && evidence.verified.manifestSha256 === input.manifest_sha256,'Verification evidence belongs to another deployment.');
-    const result = await verifyPublicPackage(process.env.PAGES_DEPLOYMENT_URL,input.project_name,evidence.verified);
+    const result = evidence.delivery
+      ? await verifyDeliveryPublication(process.env.PAGES_DEPLOYMENT_URL,input,evidence.verified,evidence.delivery)
+      : await verifyPublicPackage(process.env.PAGES_DEPLOYMENT_URL,input.project_name,evidence.verified);
     await writeFile(resolve(root,'public-verification.json'),JSON.stringify({...result,runId,commit,project:evidence.project},null,2)+'\n');
     // Branch names can contain arbitrary text on provider records; never emit one
     // directly into GITHUB_OUTPUT. The callback reads the JSON evidence instead.
@@ -67,7 +73,7 @@ async function main() {
   }
   if (mode === 'report') {
     const status = runnerOutcome(process.env.DEPLOY_STEP_OUTCOME,process.env.VERIFY_OUTCOME,process.env.PAGES_DEPLOYMENT_URL);
-    let productionBranch='';
+    let productionBranch='', deliverySha256;
     if (status === 'success') {
       const evidence = JSON.parse(await readFile(resolve(root,'public-verification.json'),'utf8'));
       requireThat(evidence.verified === true && evidence.runId === runId && evidence.commit === commit
@@ -76,9 +82,10 @@ async function main() {
         && evidence.project.projectName === input.project_name && evidence.project.branch === input.branch
         && evidence.project.channel === 'staging','Public verification proof differs.');
       productionBranch=evidence.project.productionBranch;
+      deliverySha256=evidence.deliverySha256;
     }
     await privateCall(input,'report',process.env.TEST_TRANSFER_SECRET,{runId,commit,status,
-      deploymentUrl:process.env.PAGES_DEPLOYMENT_URL || '',productionBranch});
+      deploymentUrl:process.env.PAGES_DEPLOYMENT_URL || '',productionBranch,...(deliverySha256 ? {deliverySha256} : {})});
     console.log(`TEST status reported: ${status}. A report retry does not redeploy files.`);return;
   }
   throw Error('Unknown builtin delivery command.');

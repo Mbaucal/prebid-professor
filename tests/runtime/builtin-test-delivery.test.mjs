@@ -10,6 +10,7 @@ import { deploymentState, saveTarget, requestDeployment, runnerResponse } from '
 import { STATE_KEY, readLedger, changeLedger, cacheDeliveryZip, readDeliveryZip } from '../../worker/test-workspace/deployment-store.mjs';
 import { DEPLOY_ORIGIN, DEPLOY_REPO, DEPLOY_REF, dispatchInputs, validateRunnerInput, verifyDeliveryZip } from '../../worker/test-workspace/deployment-contract.mjs';
 import { prepareDelivery, privateCall, runnerOutcome } from '../../scripts/builtin-test-delivery.mjs';
+import { describeDelivery } from '../../worker/test-workspace/delivery-layout.mjs';
 import { verifyPublicPackage } from '../../scripts/pages-release-verification.mjs';
 import { deploymentStore, TARGET, TRANSFER_SECRET } from '../support/deployment-store.mjs';
 import { TEST_EMAIL, TEST_PASSWORD } from '../support/test-workspace-store.mjs';
@@ -26,7 +27,7 @@ async function runner(f,run,operation,body,headers={}) {
   return runnerResponse(post(`/test-api/deployment-runner/${run.id}/${operation}`,body,{authorization:'Bearer '+TRANSFER_SECRET,...headers}),f.env,{});
 }
 async function claim(f,run,extra={}) {return (await runner(f,run,'claim',{inputs:dispatchInputs(run),runId,commit,...extra})).json();}
-async function report(f,run,status,extra={}) {return (await runner(f,run,'report',{runId,commit,status,deploymentUrl:status==='success'?url:'',productionBranch:status==='success'?'main':'',...extra})).json();}
+async function report(f,run,status,extra={}) {return (await runner(f,run,'report',{runId,commit,status,deploymentUrl:status==='success'?url:'',productionBranch:status==='success'?'main':'',...(status==='success'?{deliverySha256:run.delivery?.sha256}:{}),...extra})).json();}
 
 test('setup is nonsecret, read-only until saved, preserves TEST DB and supports stale-tab protection',async()=>{
   const f=deploymentStore();try {
@@ -138,8 +139,9 @@ test('restore redeploys every original byte and never regenerates the accepted p
     const manifest=JSON.parse(new TextDecoder().decode(files['manifest.json']));manifest.files['README.txt']={byteSize:files['README.txt'].length,sha256:await sha256(files['README.txt'])};
     files['manifest.json']=new TextEncoder().encode(JSON.stringify(manifest));
     const {descriptor}=await describeCandidate('tanjug-test',{files});
+    const secondDelivery=await describeDelivery(descriptor);
     const secondZip=zipSync(files,{level:0});const pin=await cacheDeliveryZip(f.env.BUILDS,secondZip);
-    await changeLedger(f.env.BUILDS,undefined,s=>s.runs.unshift({...structuredClone(s.runs[0]),id:'builtin-test-'+crypto.randomUUID(),package:{...pin,descriptor,label:'Synthetic v2'},createdAt:new Date().toISOString()}));
+    await changeLedger(f.env.BUILDS,undefined,s=>s.runs.unshift({...structuredClone(s.runs[0]),id:'builtin-test-'+crypto.randomUUID(),package:{...pin,descriptor,label:'Synthetic v2'},delivery:secondDelivery,createdAt:new Date().toISOString()}));
     const before=(await readLedger(f.env.BUILDS)).state;
     const {run:restore}=await requestDeployment(f.env,actor,{expectedRevision:before.revision,siteId:'tanjug-test',action:'restore',restoreId:first.id,acknowledge:true},async()=>new Response(null,{status:204}));
     assert.equal(restore.previousId,before.runs[0].id);assert.equal(restore.restoreId,first.id);

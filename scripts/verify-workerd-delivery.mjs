@@ -47,7 +47,7 @@ try {
   check('Compiled runner can claim a private package only once',true);
   const download=await mf.dispatchFetch(origin+path+'/package',{headers:{authorization:'Bearer '+secret,'x-tessera-run-id':'123456'}});
   assert.equal(download.status,200);check('Immutable delivery cache retains exact original ZIP bytes',createHash('sha256').update(new Uint8Array(await download.arrayBuffer())).digest('hex')===metadata.zipSha256);
-  await json(path+'/report',{...runnerIdentity,status:'success',deploymentUrl:'https://1234abcd.tessera-fixture.pages.dev/',productionBranch:'main'},200,true);
+  await json(path+'/report',{...runnerIdentity,status:'success',deliverySha256:run.delivery.sha256,deploymentUrl:'https://1234abcd.tessera-fixture.pages.dev/',productionBranch:'main'},200,true);
   history=await json('/test-api/deployments');
   check('Compiled callback records success and normalizes immutable URL',history.runs[0].status==='success'&&history.runs[0].deploymentUrl==='https://1234abcd.tessera-fixture.pages.dev');
   const db=await mf.getD1Database('DB'),tables=await db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE '_cf_%'").all();

@@ -3,6 +3,9 @@ on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
     paths:
+      - scripts/publisher-delivery-verification.mjs
+      - worker/test-workspace/delivery-layout.mjs
+      - tests/runtime/publisher-delivery.test.mjs
       - scripts/reverify-builtin-test.mjs
       - tests/runtime/builtin-reverification.test.mjs
       - .github/workflows/verify-existing-builtin-test.yml
@@ -22,6 +25,9 @@ on:
   push:
     branches: [feature/isolated-runtime-workspace-v1]
     paths:
+      - scripts/publisher-delivery-verification.mjs
+      - worker/test-workspace/delivery-layout.mjs
+      - tests/runtime/publisher-delivery.test.mjs
       - scripts/reverify-builtin-test.mjs
       - tests/runtime/builtin-reverification.test.mjs
       - .github/workflows/verify-existing-builtin-test.yml
@@ -55,4 +61,4 @@ jobs:
       - run: node scripts/prepare-builtin-runtime.mjs
       - run: node scripts/prepare-test-workspace.mjs
       - name: Verify package bytes, target branch, callback retries and existing draft barriers
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/builtin-reverification.test.mjs tests/runtime/pages-deployment.test.mjs tests/runtime/stored-draft-legacy-guards.test.mjs tests/runtime/builtin-test-delivery.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/publisher-delivery.test.mjs tests/runtime/builtin-reverification.test.mjs tests/runtime/pages-deployment.test.mjs tests/runtime/stored-draft-legacy-guards.test.mjs tests/runtime/builtin-test-delivery.test.mjs
