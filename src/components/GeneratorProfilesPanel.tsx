@@ -8,7 +8,7 @@ export default function GeneratorProfilesPanel({ publisherId }: { publisherId: s
     <BuiltinRuntimePreviewPanel key={publisherId} publisherId={publisherId} />
     <BuiltinPrebidCheckPanel key={`prebid-${publisherId}`} publisherId={publisherId} />
     <details onToggle={(event) => setLegacyOpen(event.currentTarget.open)}>
-      <summary>Legacy profiles — existing releases and template uploads</summary>
+      <summary>Advanced: older template profiles</summary>
       {legacyOpen ? <LegacyGeneratorProfilesPanel key={publisherId} publisherId={publisherId} /> : null}
     </details>
   </div>;
