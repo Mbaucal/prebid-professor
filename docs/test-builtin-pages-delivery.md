@@ -33,6 +33,49 @@ Do not guess an account ID from a public `pages.dev` hostname.
 
 ## Delivery contract
 
+### Publisher scripts layout
+
+New TEST deliveries use the versioned `publisher-scripts-v1` layout. The private
+accepted archive remains intact. Cloudflare receives these original source bytes:
+
+| Public name | Archived source | Purpose |
+| --- | --- | --- |
+| `ads.js` | `ads.min.js` | Existing parser-minified wrapper, copied without reminifying |
+| `prebid.js` | `prebid.js` | Original accepted Prebid build, when enabled |
+| `_headers` | Versioned delivery policy | CORS `*`, nosniff, noindex, `public, max-age=0, must-revalidate` |
+
+Config, source manifest, readable wrapper, CSV, styles and implementation examples
+remain in the authenticated Tessera archive. The wrapper already injects sticky
+styles; existing publisher placement CSS stays on the publisher's page. This
+layout does not rewrite the site, its DOM IDs, existing script URLs, or saved
+settings. Tanjug retains `https://tanjug.pages.dev/ads.js` and `/prebid.js` for a
+later production promotion. The preview alias is separate.
+
+The delivery descriptor pins its profile, source package SHA, public-to-source
+file mapping and `_headers` SHA. Run identity includes the layout, so a compact
+delivery of the same accepted source is a distinct version. The claim returns
+that frozen descriptor; the runner reconstructs and checks it against the exact
+cached ZIP. Success callbacks must match its delivery hash.
+
+Old rows without a delivery descriptor retain `archive-v1`: all original files
+and the original no-store header policy. Restore always uses the historical
+layout and original ZIP, including when the source package hash is unchanged.
+It never silently converts a historical full package into today's compact layout.
+
+The new public verifier checks both the immutable deployment and the exact saved
+preview alias: script bytes, MIME, CORS/nosniff/noindex, revalidation cache policy,
+ETag/304, and absence of excluded source files. Full-archive restore checks all
+its original bytes and headers at both URLs. The workflow retains separate
+verification and reporting jobs, so report retries do not redeploy or rerun
+successful byte checks.
+
+References: [Pages cache and ETag behavior](https://developers.cloudflare.com/pages/configuration/serving-pages/),
+[Pages `_headers`](https://developers.cloudflare.com/pages/configuration/headers/).
+The chosen cache value is the Pages default, not a long browser TTL on a mutable
+`ads.js` filename. TEST no-store was intentionally stricter than this policy.
+
+### Existing source and authorization boundaries
+
 - Existing `deploy-pages-release.yml` dispatch inputs are retained unchanged.
   Correlation IDs beginning `builtin-test-` call `deploy-builtin-test.yml` at the
   same commit. This reuses the workflow already registered on the default branch
@@ -130,7 +173,15 @@ is preserved in `docs/evidence/tanjug-test-v1-source.json`; the recovery recipe
 pins both source JSON and original artifact archive hashes. Do not ask for the
 secrets or create another deployment to recover this run.
 
-Still required before MBA-46 can be Done: complete public verification of this
-first run, a second approved package and a real complete restore. No production promotion is included
+Public verification completed on 2026-09-14 in
+[34861322056](https://github.com/Mbaucal/prebid-professor/actions/runs/34861322056):
+all 10 original files, delivery headers and actual preview branch passed. The
+existing request was confirmed without redeployment. The first report returned
+422; retrying only that report job succeeded. The successful original-byte receipt
+was reused. Evidence is in `docs/evidence/tanjug-test-v1-public-verification.json`
+and `docs/evidence/tanjug-test-v1-verification.md`.
+
+Still required before MBA-46 can be Done: a second approved package and a real
+complete restore. No production promotion is included
 in this stage. Previous accepted Prebid/template/Tanjug user tests are not requested
 again; the existing repository CI remains a required gate.

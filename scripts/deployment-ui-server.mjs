@@ -21,7 +21,7 @@ const server=createServer({key:readFileSync(key),cert:readFileSync(cert)},async(
       const run=(await readLedger(fixture.env.BUILDS)).state.runs[0];if(!run)throw Error('No synthetic job.');
       const base=DEPLOY_ORIGIN+'/test-api/deployment-runner/'+run.id;
       const headers={authorization:'Bearer '+fixture.env.TEST_DEPLOY_SECRET,'content-type':'application/json'};
-      for(const [path,body] of [['claim',{inputs:dispatchInputs(run),runId:'123456',commit:'a'.repeat(40)}],['report',{runId:'123456',commit:'a'.repeat(40),status:'success',deploymentUrl:'https://1234abcd.tessera-fixture.pages.dev',productionBranch:'main'}]]){
+      for(const [path,body] of [['claim',{inputs:dispatchInputs(run),runId:'123456',commit:'a'.repeat(40)}],['report',{runId:'123456',commit:'a'.repeat(40),status:'success',deliverySha256:run.delivery.sha256,deploymentUrl:'https://1234abcd.tessera-fixture.pages.dev',productionBranch:'main'}]]){
         const r=await worker.fetch(new Request(base+'/'+path,{method:'POST',headers,body:JSON.stringify(body)}),fixture.env);if(!r.ok)throw Error('Synthetic result failed.');
       }
       response=Response.json({synthetic:true,dispatches});

@@ -49,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                 result=page.evaluate("fetch('/__fixture/complete',{method:'POST'}).then(r=>r.json())")
                 check('Exactly one synthetic job was dispatched',result['dispatches']==1)
                 page.locator('#refresh').click();expect(page.locator('#history')).to_contain_text('Objavljeno i provereno')
-                check('History shows the immutable version and GitHub run',page.get_by_role('link',name='Otvori ovu TEST verziju').get_attribute('href')=='https://1234abcd.tessera-fixture.pages.dev/implementation.html')
+                check('History opens minified code at the unchanged ads.js name',page.get_by_role('link',name='Otvori ads.js').get_attribute('href')=='https://1234abcd.tessera-fixture.pages.dev/ads.js')
                 expect(page.locator('#publish')).to_be_disabled();expect(page.locator('#ready-reason')).to_contain_text('već poslednja')
                 page.screenshot(path=str(out/'history-desktop.png'),full_page=True)
                 page.set_viewport_size({'width':390,'height':844})

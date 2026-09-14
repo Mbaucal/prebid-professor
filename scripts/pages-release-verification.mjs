@@ -124,8 +124,16 @@ export function deploymentOrigin(value, projectName) {
   return u.origin;
 }
 
-export async function verifyPublicPackage(url, projectName, verified, fetcher=fetch) {
-  const origin=deploymentOrigin(url,projectName);
+export function previewOrigin(value, projectName, branch) {
+  requireThat(/^[a-z][a-z0-9-]{0,39}$/.test(branch) && !['main','master','production','prod'].includes(branch), 'A separate preview branch is required.');
+  // Reuse the project validator without allowing arbitrary public origins.
+  deploymentOrigin(`https://12345678.${projectName}.pages.dev`,projectName);
+  const expected=`https://${branch}.${projectName}.pages.dev`;
+  requireThat(value === expected, 'Preview URL differs from the selected branch.');
+  return expected;
+}
+export async function verifyPublicPackage(url, projectName, verified, fetcher=fetch, expectedPreviewBranch) {
+  const origin=expectedPreviewBranch === undefined ? deploymentOrigin(url,projectName) : previewOrigin(url,projectName,expectedPreviewBranch);
   requireThat(Array.isArray(verified?.files) && verified.files.length>=8 && verified.files.length<=10
     && new Set(verified.files.map(e=>e.name)).size===verified.files.length
     && verified.files.every(e=>[...ALLOWED,'manifest.json'].includes(e.name) && Number.isSafeInteger(e.byteSize) && e.byteSize>0 && e.byteSize<=MAX_FILE && HASH.test(e.sha256))

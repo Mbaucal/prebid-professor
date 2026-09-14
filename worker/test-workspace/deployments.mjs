@@ -7,6 +7,7 @@ import { DEPLOY_ORIGIN, DEPLOY_REPO, DEPLOY_REF, SITES, RELEASE_ID, REQUEST_ID, 
   destination, dispatchInputs, verifyDeliveryZip } from './deployment-contract.mjs';
 import { readLedger, changeLedger, deliveryRun, unsettled, cacheDeliveryZip, readDeliveryZip } from './deployment-store.mjs';
 import { deploymentPage, deploymentScript } from './deployment-page.mjs';
+import { SCRIPT_LAYOUT, describeDelivery, deliveryIdentity } from './delivery-layout.mjs';
 
 const check = (ok, message, status=422) => {if (!ok) throw new WorkspaceError(status,message);};
 const now = () => new Date().toISOString();
@@ -23,14 +24,16 @@ function response(value, headers, status=200) {return new Response(JSON.stringif
 async function sources(env) {
   const result = [{siteId:'tanjug-test',releaseId:metadata.descriptor.releaseId,label:metadata.version,
     packageSha256:metadata.descriptor.packageSha256,runtimeVersion:metadata.descriptor.runtime.runtimeVersion,
-    prebidVersion:metadata.descriptor.prebidBuild?.version ?? null,fileCount:metadata.descriptor.files.length}];
+    prebidVersion:metadata.descriptor.prebidBuild?.version ?? null,fileCount:metadata.descriptor.files.length,
+    deliveryProfile:SCRIPT_LAYOUT,publicFileCount:metadata.descriptor.prebidBuild?2:1}];
   if (!(await inspectTestSchema(env.DB)).ready) return result;
   const rows = await env.DB.withSession('first-primary').prepare('SELECT release_id,note,descriptor_json FROM builtin_draft_uploads WHERE publisher_id=? AND state=? ORDER BY created_at DESC,release_id LIMIT 20').bind(TEST_SITE,'stored').all();
   for (const row of rows.results) {
     const d = JSON.parse(row.descriptor_json);
     check(RELEASE_ID.test(row.release_id) && d.releaseId === row.release_id && d.siteId === TEST_SITE,'Sačuvani opis paketa se razlikuje.',409);
     result.push({siteId:TEST_SITE,releaseId:row.release_id,label:row.note || 'Sačuvani TEST paket',packageSha256:d.packageSha256,
-      runtimeVersion:d.runtime.runtimeVersion,prebidVersion:d.prebidBuild?.version ?? null,fileCount:d.files.length});
+      runtimeVersion:d.runtime.runtimeVersion,prebidVersion:d.prebidBuild?.version ?? null,fileCount:d.files.length,
+      deliveryProfile:SCRIPT_LAYOUT,publicFileCount:d.prebidBuild?2:1});
   }
   return result;
 }
@@ -70,23 +73,26 @@ export async function requestDeployment(env, actor, body, fetcher=fetch) {
   check(target,'Prvo sačuvaj TEST odredište.',409);
   check(state.revision === body.expectedRevision && !activeFor(state,body.siteId,target),'Osveži prikaz i sačekaj prethodnu objavu.',409);
   const current = currentFor(state,target);
-  let pkg;
+  let pkg, delivery;
   if (body.action === 'restore') {
     const previous = deliveryRun(state,body.restoreId);
     check(current && previous.status === 'success' && previous.siteId === body.siteId
       && destination(previous.target) === destination(target)
-      && previous.package.descriptor.packageSha256 !== current.package.descriptor.packageSha256,'Izaberi ranije potvrđen paket za isto TEST odredište.',409);
+      && deliveryIdentity(previous) !== deliveryIdentity(current),'Izaberi ranije potvrđen paket za isto TEST odredište.',409);
     const bytes = await readDeliveryZip(env.BUILDS,previous.package);
     await verifyDeliveryZip(bytes,{siteId:body.siteId,...previous.package,packageSha256:previous.package.descriptor.packageSha256});
     pkg = structuredClone(previous.package);
+    delivery = await describeDelivery(pkg.descriptor,previous.delivery?.profile || 'archive-v1');
+    check(previous.delivery === undefined || JSON.stringify(previous.delivery) === JSON.stringify(delivery),'Sačuvani raspored fajlova se razlikuje.',409);
   } else {
     const source = await sourcePackage(env,body.siteId,body.releaseId);
-    check(source.descriptor.packageSha256 !== current?.package.descriptor.packageSha256,'Ovaj paket je već poslednja potvrđena objava.',409);
+    delivery = await describeDelivery(source.descriptor);
+    check(!current || deliveryIdentity({delivery,package:{descriptor:source.descriptor}}) !== deliveryIdentity(current),'Ovaj paket je već poslednja potvrđena objava.',409);
     pkg = {...await cacheDeliveryZip(env.BUILDS,source.bytes),descriptor:source.descriptor,label:source.label};
   }
   const run = {id:'builtin-test-'+crypto.randomUUID(),siteId:body.siteId,action:body.action,
     restoreId:body.action === 'restore' ? body.restoreId : null,previousId:current?.id ?? null,
-    target:structuredClone(target),package:pkg,status:'queued',createdAt:now(),actor:actor.email};
+    target:structuredClone(target),package:pkg,delivery,status:'queued',createdAt:now(),actor:actor.email};
   await changeLedger(env.BUILDS,body.expectedRevision,latest => {
     check(latest.runs.length < 100,'Istorija je dostigla 100 pokušaja. Sve verzije su sačuvane.',409);
     check(!activeFor(latest,body.siteId,target),'Druga objava je već u toku.',409);
@@ -133,7 +139,7 @@ export async function runnerResponse(request, env, headers) {
     return new Response(await readDeliveryZip(env.BUILDS,run.package),{headers:{...headers,'content-type':'application/zip'}});
   }
   check(request.method === 'POST' && ['claim','report'].includes(operation),'Unknown runner operation.',405);
-  const body = await jsonBody(request,operation === 'claim' ? ['inputs','runId','commit'] : ['runId','commit','status','deploymentUrl','productionBranch','verificationRunId','verificationCommit']);
+  const body = await jsonBody(request,operation === 'claim' ? ['inputs','runId','commit'] : ['runId','commit','status','deploymentUrl','productionBranch','verificationRunId','verificationCommit','deliverySha256']);
   check(typeof body.runId === 'string' && /^[1-9][0-9]{0,19}$/.test(body.runId) && typeof body.commit === 'string' && /^[a-f0-9]{40}$/.test(body.commit),'Invalid workflow identity.');
   const state = await changeLedger(env.BUILDS,undefined,latest => {
     const run = deliveryRun(latest,id);
@@ -146,6 +152,7 @@ export async function runnerResponse(request, env, headers) {
     } else {
       check(run.githubRunId === body.runId && run.commit === body.commit,'Result belongs to another workflow.',409);
       check(['failed','unverified','success'].includes(body.status),'Invalid deployment result.');
+      if (body.status === 'success') check(body.deliverySha256 === run.delivery?.sha256,'Public verification belongs to another delivery layout.',409);
       const reverified = body.verificationRunId !== undefined || body.verificationCommit !== undefined;
       if (reverified) check(body.status === 'success'
         && typeof body.verificationRunId === 'string' && /^[1-9][0-9]{0,19}$/.test(body.verificationRunId) && body.verificationRunId !== run.githubRunId
