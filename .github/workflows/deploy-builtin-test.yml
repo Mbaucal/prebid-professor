@@ -1,0 +1,126 @@
+name: Deliver private builtin package to Pages TEST
+
+on:
+  workflow_call:
+    inputs:
+      deployment_inputs:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  deploy:
+    name: Claim and deliver the original TEST package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_INPUTS: ${{ inputs.deployment_inputs }}
+    outputs:
+      claim_outcome: ${{ steps.claim.outcome }}
+      deploy_outcome: ${{ steps.deploy.outcome }}
+      deployment_url: ${{ steps.deploy.outputs.deployment-url }}
+      source_artifact: builtin-source-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Validate TEST branch, repository, destinations and secret reference
+        run: node scripts/builtin-test-delivery.mjs validate
+      - name: Claim the saved request once
+        id: claim
+        env:
+          TEST_TRANSFER_SECRET: ${{ secrets.TESSERA_TEST_DEPLOY_SECRET }}
+        run: node scripts/builtin-test-delivery.mjs claim
+      - name: Verify private original bytes and actual Pages production branch
+        env:
+          TEST_TRANSFER_SECRET: ${{ secrets.TESSERA_TEST_DEPLOY_SECRET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets[fromJSON(inputs.deployment_inputs).github_environment] }}
+        run: node scripts/builtin-test-delivery.mjs prepare
+      - name: Preserve source verification metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: builtin-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .generated/builtin-delivery/verification.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Deliver verified files to the TEST branch
+        id: deploy
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
+        with:
+          apiToken: ${{ secrets[fromJSON(inputs.deployment_inputs).github_environment] }}
+          accountId: ${{ fromJSON(inputs.deployment_inputs).account_id }}
+          wranglerVersion: "4.118.0"
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: >-
+            pages deploy .generated/builtin-delivery/dist
+            --project-name=${{ fromJSON(inputs.deployment_inputs).project_name }}
+            --branch=${{ fromJSON(inputs.deployment_inputs).branch }}
+            --commit-dirty=false
+            --commit-message="Tessera builtin TEST ${{ fromJSON(inputs.deployment_inputs).correlation_id }}"
+
+  verify:
+    name: Verify published bytes and headers (no deployment)
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_INPUTS: ${{ inputs.deployment_inputs }}
+      PAGES_DEPLOYMENT_URL: ${{ needs.deploy.outputs.deployment_url }}
+    outputs:
+      public_artifact: builtin-public-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.deploy.outputs.source_artifact }}
+          path: .generated/builtin-delivery
+      - run: node scripts/builtin-test-delivery.mjs verify-public
+      - name: Preserve public verification metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: builtin-public-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .generated/builtin-delivery/public-verification.json
+          if-no-files-found: error
+          retention-days: 14
+
+  report:
+    name: Record the result (retry without redeploying)
+    needs: [deploy, verify]
+    if: ${{ always() && needs.deploy.outputs.claim_outcome == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEPLOY_INPUTS: ${{ inputs.deployment_inputs }}
+      DEPLOY_STEP_OUTCOME: ${{ needs.deploy.outputs.deploy_outcome }}
+      VERIFY_OUTCOME: ${{ needs.verify.result }}
+      PAGES_DEPLOYMENT_URL: ${{ needs.deploy.outputs.deployment_url }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: ${{ needs.verify.result == 'success' }}
+        with:
+          name: ${{ needs.verify.outputs.public_artifact }}
+          path: .generated/builtin-delivery
+      - name: Report the independent Pages and verification outcomes
+        env:
+          TEST_TRANSFER_SECRET: ${{ secrets.TESSERA_TEST_DEPLOY_SECRET }}
+        run: node scripts/builtin-test-delivery.mjs report
