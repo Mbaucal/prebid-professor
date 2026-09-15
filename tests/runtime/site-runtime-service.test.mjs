@@ -15,8 +15,34 @@ test('saved bottom Sticky with group loading cannot be renamed or deleted',async
  const unit=f.sqlite.prepare("SELECT * FROM ad_units WHERE code='Billboard'").get();
  const request=new Request(ORIGIN+'/api/publishers/test-site/ad-units/'+unit.id,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({code:'Renamed'})});
  assert.equal((await updateAdUnit(request,f.env,'test-site',unit.id)).status,409);
+ assert.equal((await updateAdUnit(new Request(request.url,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({enabled:false})}),f.env,'test-site',unit.id)).status,409);
  assert.equal((await deleteAdUnit(new Request(request.url,{method:'DELETE'}),f.env,'test-site',unit.id)).status,409);
  assert.equal(f.sqlite.prepare('SELECT code FROM ad_units WHERE id=?').get(unit.id).code,'Billboard');
+});
+test('concurrent position save prevents ad-unit mutation and its audit atomically',async()=>{
+ const compiled=await build({entryPoints:['worker/ad-units.ts'],bundle:true,write:false,platform:'node',format:'esm'});
+ const {updateAdUnit,deleteAdUnit}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+ for(const remove of [false,true]){
+  const {f}=await setup();await select(f);const unit=f.sqlite.prepare("SELECT * FROM ad_units WHERE code='Billboard'").get();
+  const before=f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n;
+  const originalBatch=f.env.DB.batch.bind(f.env.DB);
+  f.env.DB.batch=async items=>{
+   const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+   config.runtimeControls??={};config.runtimeControls.sticky={bottomAdUnitId:'Billboard'};
+   f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+   return originalBatch(items);
+  };
+  const request=new Request(ORIGIN+'/unit',{method:remove?'DELETE':'PATCH',headers:{'content-type':'application/json'},...(remove?{}:{body:JSON.stringify({code:'Renamed'})})});
+  const response=await (remove?deleteAdUnit:updateAdUnit)(request,f.env,'test-site',unit.id);
+  assert.equal(response.status,409,await response.text());
+  assert.deepEqual(f.sqlite.prepare('SELECT * FROM ad_units WHERE id=?').get(unit.id),unit);
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,before);
+  f.env.DB.batch=originalBatch;
+  const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);config.runtimeControls.sticky.bottomAdUnitId='';
+  f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+  const retry=new Request(ORIGIN+'/unit',{method:remove?'DELETE':'PATCH',headers:{'content-type':'application/json'},...(remove?{}:{body:JSON.stringify({code:'Renamed'})})});
+  assert.equal((await (remove?deleteAdUnit:updateAdUnit)(retry,f.env,'test-site',unit.id)).status,200);
+ }
 });
 test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function setup(){const f=workspaceStore();fixtures.push(f);const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);const cookie=login.headers.get('set-cookie').split(';')[0];const r=await worker.fetch(new Request(ORIGIN+'/test-api/setup',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({confirm:'prepare-empty-test-database'})}),f.env);assert.equal(r.status,200);return {f,cookie};}
