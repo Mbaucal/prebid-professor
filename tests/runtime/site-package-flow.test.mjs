@@ -82,3 +82,21 @@ test('registered draft source URLs support preview jobs and read only the reques
  assert.equal(await builtInCdn(new Request('https://tessera.invalid/cdn/first/current/ads.js'),f.env),null);
  assert.equal(f.sqlite.prepare('SELECT status FROM releases').get().status,'draft');
 });
+
+test('channel lookup failure preserves legacy fallback but immutable built-in failures remain closed',async()=>{
+ const env={DB:{withSession(){throw Error('D1 unavailable');}}};
+ assert.equal(await builtInCdn(new Request('https://tessera.invalid/cdn/first/current/ads.js'),env),null);
+ await assert.rejects(builtInCdn(new Request('https://tessera.invalid/cdn/first/releases/builtin-release-'+ 'a'.repeat(64)+'/ads.js'),env),/D1 unavailable/);
+});
+test('monitoring follows the immutable production package after publishing and rollback',async()=>{
+ const {getMonitoringStatus}=await import('../../worker/monitoring-readonly.ts');
+ const f=await fixture(),a=await generate(f);await promote(f,a.id,'staging');await promote(f,a.id,'production');
+ const get=f.env.BUILDS.get;f.env.BUILDS.get=async key=>{const o=await get(key);return o?{...o,text:async()=>new TextDecoder().decode(await o.arrayBuffer())}:null;};
+ f.env.BUILDS.head=async key=>get(key);
+ const originalFetch=globalThis.fetch;globalThis.fetch=async()=>new Response('google.com, 123, DIRECT',{headers:{'content-type':'text/plain'}});
+ try{
+  const inspect=async id=>{const response=await getMonitoringStatus(new Request('https://tessera.invalid/api/monitor'),f.env,'first');assert.equal(response.status,200);const data=await response.json();assert.equal(data.runtime.manifestVersion,id);assert.equal(data.runtime.versionMatches,true);assert.equal(data.runtime.artifacts.filter(a=>a.required&&!a.found).length,0);};
+  await inspect(a.id);f.sqlite.prepare("UPDATE unit_rules SET rule_json='{\"timeout\":1800,\"refresh\":{\"enabled\":false}}'").run();
+  const b=await generate(f);await promote(f,b.id,'staging');await promote(f,b.id,'production');await inspect(b.id);await promote(f,a.id,'rollback');await inspect(a.id);
+ }finally{globalThis.fetch=originalFetch;}
+});

@@ -121,7 +121,7 @@ export async function builtInCdn(request,env){
  const u=new URL(request.url),m=u.pathname.match(/^\/cdn\/([a-z0-9][a-z0-9-]{0,97})\/(?:releases\/(builtin-release-[a-f0-9]{64})|(current|staging))\/([a-z][a-z0-9.-]*)$/);
  if(!m||!['GET','HEAD'].includes(request.method))return null;
  const [,site,version,channel,name]=m;let id=version;
- if(channel){const rows=await db(env).prepare('SELECT id FROM releases WHERE publisher_id=? AND status=? LIMIT 2').bind(site,channel==='current'?'production':'staging').all();if(!rows.results.some(r=>ID.test(r.id)))return null;check(rows.results.length===1,'Channel is ambiguous.');id=rows.results[0].id;}
+ if(channel){let rows;try{rows=await db(env).prepare('SELECT id FROM releases WHERE publisher_id=? AND status=? LIMIT 2').bind(site,channel==='current'?'production':'staging').all();}catch{return null;}if(!rows.results.some(r=>ID.test(r.id)))return null;check(rows.results.length===1,'Channel is ambiguous.');id=rows.results[0].id;}
  // Registered immutable draft URLs are workflow sources; channel URLs still require a published channel.
  const p=await readPackage(env,site,id,{requestedFile:name});check(p.files[name],'File not found.',404);
  return new Response(request.method==='HEAD'?null:p.files[name],{headers:{'content-type':type(name),'cache-control':channel?'no-cache':'public, max-age=31536000, immutable','access-control-allow-origin':'*','x-content-type-options':'nosniff','etag':`"${await sha256(p.files[name])}"`}});
