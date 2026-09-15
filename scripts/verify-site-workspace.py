@@ -51,4 +51,5 @@ try:
     (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'requests':requests,'externalRequests':0},indent=2))
     print('PASS shared React version selection, saved TakeOver controls, mobile layout and real generated ZIP')
 finally:
+ print(json.dumps({'pageErrors':errors,'requests':requests}))
  process.stdin.close();process.wait(timeout=10)
