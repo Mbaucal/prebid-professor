@@ -46,6 +46,20 @@ try:
     assert download.value.suggested_filename=='test-site-candidate.zip'
     page.get_by_role('status').filter(has_text='Candidate downloaded').wait_for()
     page.screenshot(path=str(out/'mobile-versions.png'),full_page=True)
+    page.get_by_role('button',name='Generate and releases',exact=True).click()
+    page.get_by_label('What changed?',exact=True).fill('Browser package check')
+    page.get_by_role('button',name='Generate and save package',exact=True).click()
+    page.get_by_role('status').filter(has_text='Package saved in Releases').wait_for()
+    page.get_by_text('Browser package check',exact=True).wait_for()
+    page.get_by_role('button',name='Reload releases',exact=True).click()
+    page.get_by_text('Browser package check',exact=True).wait_for()
+    with page.expect_download() as stored_download:
+        page.get_by_role('button',name='Download saved ZIP',exact=True).click()
+    assert stored_download.value.suggested_filename.startswith('builtin-draft-')
+    assert page.get_by_role('link',name='TEST deployments',exact=True).get_attribute('href')=='/deployments'
+    assert page.get_by_role('button',name='Publish package',exact=True).count()==0
+    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+    page.screenshot(path=str(out/'mobile-packages.png'),full_page=True)
     assert not errors,errors
     browser.close()
     (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'requests':requests,'externalRequests':0},indent=2))

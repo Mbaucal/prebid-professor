@@ -50,7 +50,8 @@ export function manifestInventory(bytes, expected) {
   const builtin = m.kind === 'builtin-runtime-candidate';
   if (!builtin) {
     requireThat(m.releaseId === expected.release_id && m.version === expected.release_version, 'Manifest belongs to another release.');
-    requireThat(REQUIRED.every(n => names.includes(n)), 'Required release files are missing.');
+    const complete=m.kind==='builtin-runtime-release'&&m.completeRelease===true;
+    requireThat(REQUIRED.filter(n=>!(complete&&m.prebidBuild===null&&n==='prebid.js')).every(n => names.includes(n)), 'Required release files are missing.');
   }
   let total = bytes.byteLength;
   const entries = names.map(name => {
@@ -82,7 +83,8 @@ export async function verifyPackage(files, expected) {
     requireThat(manifest.prebidEnabled === false && config.enablePrebid === false
       && manifest.demandMode === 'gam-adx-only' && config.demandMode === 'gam-adx-only'
       && manifest.prebidBuild === null && config.prebidBuild === null, 'AdX-only mode declarations differ.');
-    requireThat(Buffer.from(files['prebid.js']).equals(Buffer.from(DISABLED_PREBID)), 'AdX-only Prebid placeholder differs.');
+    if(manifest.kind==='builtin-runtime-release'&&manifest.completeRelease===true)requireThat(!files['prebid.js'],'Disabled Prebid must not be included.');
+    else requireThat(Buffer.from(files['prebid.js']).equals(Buffer.from(DISABLED_PREBID)), 'AdX-only Prebid placeholder differs.');
   } else if (files['prebid.js']) {
     requireThat(record(manifest.prebidBuild) && Array.isArray(manifest.prebidBuild.modules), 'Prebid metadata is missing.');
     const header = parsePrebidHeader(new TextDecoder('utf-8',{fatal:true}).decode(files['prebid.js']).slice(0,500000));
@@ -187,7 +189,10 @@ async function main() {
     for(const e of inventory.entries)files[e.name]=(await boundedGet(input.release_base_url+'/'+e.name,e.byteSize)).bytes;
     const verified=await verifyPackage(files,input);
     await mkdir(dist,{recursive:true});requireThat((await readdir(dist)).length===0,'Deployment directory must be empty.');
-    for(const [name,bytes] of Object.entries(files))await writeFile(resolve(dist,name),bytes,{flag:'wx'});
+    const compact=inventory.manifest.kind==='builtin-runtime-release'&&inventory.manifest.completeRelease===true;
+    const delivered=compact?Object.fromEntries(Object.entries(files).filter(([name])=>['ads.js','prebid.js'].includes(name))):files;
+    for(const [name,bytes] of Object.entries(delivered))await writeFile(resolve(dist,name),bytes,{flag:'wx'});
+    if(compact){verified.files=verified.files.filter(e=>Object.hasOwn(delivered,e.name));verified.deliveryProfile='scripts-v1';}
     const headers='/*\n  Access-Control-Allow-Origin: *\n  X-Content-Type-Options: nosniff\n  Cache-Control: no-store\n  X-Robots-Tag: noindex\n';
     await writeFile(resolve(dist,'_headers'),headers,{flag:'wx'});
     await writeFile(resolve(root,'verification.json'),JSON.stringify({project,verified},null,2)+'\n');
