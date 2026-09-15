@@ -134,12 +134,17 @@ export function previewOrigin(value, projectName, branch) {
   requireThat(value === expected, 'Preview URL differs from the selected branch.');
   return expected;
 }
+export function scriptsDelivery(verified) {
+  return {...verified,deliveryProfile:'scripts-v1',files:verified.files.filter(e=>['ads.js','prebid.js'].includes(e.name))};
+}
 export async function verifyPublicPackage(url, projectName, verified, fetcher=fetch, expectedPreviewBranch) {
   const origin=expectedPreviewBranch === undefined ? deploymentOrigin(url,projectName) : previewOrigin(url,projectName,expectedPreviewBranch);
-  requireThat(Array.isArray(verified?.files) && verified.files.length>=8 && verified.files.length<=10
+  const compact=verified?.deliveryProfile==='scripts-v1';
+  requireThat((verified?.deliveryProfile===undefined || compact) && HASH.test(verified?.manifestSha256)
+    && Array.isArray(verified?.files) && (compact ? verified.files.length>=1 && verified.files.length<=2 : verified.files.length>=8 && verified.files.length<=10)
     && new Set(verified.files.map(e=>e.name)).size===verified.files.length
     && verified.files.every(e=>[...ALLOWED,'manifest.json'].includes(e.name) && Number.isSafeInteger(e.byteSize) && e.byteSize>0 && e.byteSize<=MAX_FILE && HASH.test(e.sha256))
-    && verified.files.some(e=>e.name==='manifest.json' && e.sha256===verified.manifestSha256), 'Invalid verified file inventory.');
+    && (compact ? verified.files.some(e=>e.name==='ads.js') && verified.files.every(e=>['ads.js','prebid.js'].includes(e.name)) : verified.files.some(e=>e.name==='manifest.json' && e.sha256===verified.manifestSha256)), 'Invalid verified file inventory.');
   for (const e of verified.files) {
     // Pages canonicalizes static HTML paths. Permit exactly its one same-origin
     // implementation.html -> /implementation hop, never redirects for assets,
@@ -187,12 +192,12 @@ async function main() {
     requireThat(!inventory.builtin, 'Built-in drafts cannot use legacy publication.');
     const files={'manifest.json':manifest};
     for(const e of inventory.entries)files[e.name]=(await boundedGet(input.release_base_url+'/'+e.name,e.byteSize)).bytes;
-    const verified=await verifyPackage(files,input);
+    let verified=await verifyPackage(files,input);
     await mkdir(dist,{recursive:true});requireThat((await readdir(dist)).length===0,'Deployment directory must be empty.');
     const compact=inventory.manifest.kind==='builtin-runtime-release'&&inventory.manifest.completeRelease===true;
     const delivered=compact?Object.fromEntries(Object.entries(files).filter(([name])=>['ads.js','prebid.js'].includes(name))):files;
     for(const [name,bytes] of Object.entries(delivered))await writeFile(resolve(dist,name),bytes,{flag:'wx'});
-    if(compact){verified.files=verified.files.filter(e=>Object.hasOwn(delivered,e.name));verified.deliveryProfile='scripts-v1';}
+    if(compact)verified=scriptsDelivery(verified);
     const headers='/*\n  Access-Control-Allow-Origin: *\n  X-Content-Type-Options: nosniff\n  Cache-Control: no-store\n  X-Robots-Tag: noindex\n';
     await writeFile(resolve(dist,'_headers'),headers,{flag:'wx'});
     await writeFile(resolve(root,'verification.json'),JSON.stringify({project,verified},null,2)+'\n');

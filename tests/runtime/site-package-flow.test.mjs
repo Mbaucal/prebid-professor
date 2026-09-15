@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import {rea
 import {workspaceStore} from '../support/test-workspace-store.mjs';
 import {siteRuntimeSettings,changeSiteRuntime} from '../../worker/site-runtime/service.mjs';
 import {generatePackage,packageDownload,readPackage,changePackageChannel,channelRevision,builtInCdn,packageResponse} from '../../worker/site-runtime/releases.mjs';
-import {verifyPackage} from '../../scripts/pages-release-verification.mjs';
+import {verifyPackage,verifyPublicPackage,scriptsDelivery} from '../../scripts/pages-release-verification.mjs';
 import {sha256} from '../../worker/runtime/prebid-artifact-check.mjs';
 import {deploymentManifestPin} from '../../worker/deployment-manifest-pin.mjs';
 const fixtures=[];test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
@@ -59,4 +59,26 @@ test('download errors keep the JSON API contract',async()=>{
  const f=await fixture();
  const response=await packageResponse(new Request('https://tessera.invalid/api/packages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'download',releaseId:'unknown'})}),f.env,'first','tester');
  assert.equal(response.status,404);assert.match(response.headers.get('content-type'),/application\/json/);assert.match((await response.json()).error,/Unknown/);
+});
+
+test('compact delivery verifies one or two public scripts and keeps the source manifest pin',async()=>{
+ const f=await fixture(),release=await generate(f),p=await readPackage(f.env,'first',release.id);
+ const source=await verifyPackage(p.files,{site_id:'first',release_id:release.id,release_version:release.version});
+ const compact=scriptsDelivery(source);assert.equal(compact.manifestSha256,source.manifestSha256);
+ const fetcher=async url=>new Response(p.files[new URL(url).pathname.slice(1)],{headers:{'content-type':'application/javascript','access-control-allow-origin':'*','x-content-type-options':'nosniff','cache-control':'no-store'}});
+ assert.equal((await verifyPublicPackage('https://0123abcd.first.pages.dev','first',compact,fetcher)).fileCount,1);
+ await assert.rejects(verifyPublicPackage('https://0123abcd.first.pages.dev','first',{...compact,files:[]},fetcher));
+ await assert.rejects(verifyPublicPackage('https://0123abcd.first.pages.dev','first',{...compact,manifestSha256:''},fetcher));
+ p.files['prebid.js']=new TextEncoder().encode('original prebid bytes');
+ compact.files.push({name:'prebid.js',byteSize:p.files['prebid.js'].length,sha256:await sha256(p.files['prebid.js'])});
+ assert.equal((await verifyPublicPackage('https://0123abcd.first.pages.dev','first',compact,fetcher)).fileCount,2);
+});
+test('registered draft source URLs support preview jobs and read only the requested artifact',async()=>{
+ const f=await fixture(),release=await generate(f),get=f.env.BUILDS.get,reads=[];
+ f.env.BUILDS.get=async key=>{reads.push(key);return get(key);};
+ const base=`https://tessera.invalid/cdn/first/releases/${release.id}/`;
+ const manifest=await builtInCdn(new Request(base+'manifest.json'),f.env);assert.equal(manifest.status,200);assert.equal(reads.length,1);
+ reads.length=0;const script=await builtInCdn(new Request(base+'ads.js'),f.env);assert.equal(script.status,200);assert.equal(reads.length,2);
+ assert.equal(await builtInCdn(new Request('https://tessera.invalid/cdn/first/current/ads.js'),f.env),null);
+ assert.equal(f.sqlite.prepare('SELECT status FROM releases').get().status,'draft');
 });

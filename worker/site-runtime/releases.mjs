@@ -72,19 +72,21 @@ export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
  check(result[0].meta.changes===1,'Settings changed or package already exists. Reload releases.');
  return {release:payload(await db(env).prepare('SELECT * FROM releases WHERE publisher_id=? AND id=?').bind(site,id).first()),testOnly:false};
 }
-export async function readPackage(env,site,id,{testOnly=false}={}){
+export async function readPackage(env,site,id,{testOnly=false,requestedFile=null}={}){
  if(testOnly){check(site==='test-site'&&/^builtin-draft-[a-f0-9]{64}$/.test(id),'Unknown TEST package.',404);const p=await readDraftRelease({isolation:'explicit-test-store',db:env.DB,bucket:env.BUILDS},{siteId:site,releaseId:id});check(p,'Package not found.',404);return {files:p.files,release:p.draft};}
  check(ID.test(id),'Unknown built-in release.',404);
  const row=await db(env).prepare('SELECT * FROM releases WHERE publisher_id=? AND id=?').bind(site,id).first();check(row&&row.version===id&&row.manifest_key===key(site,id,'manifest.json'),'Release not found.',404);
  const obj=await env.BUILDS.get(row.manifest_key);check(obj&&obj.size<=262144,'Release manifest is missing.');const bytes=new Uint8Array(await obj.arrayBuffer());
  check(await sha256(bytes)===obj.customMetadata?.sha256,'Manifest checksum differs.');const m=JSON.parse(decode.decode(bytes));
  check(m.kind==='builtin-runtime-release'&&m.completeRelease===true&&m.siteId===site&&m.releaseId===id&&m.version===id&&m.configHash===row.config_hash,'Release identity differs.');
+ check(m.files&&typeof m.files==='object'&&!Array.isArray(m.files),'Invalid file inventory.');
+ check(['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','min-height.css','sticky.css'].every(n=>Object.hasOwn(m.files,n))&&Object.hasOwn(m.files,'prebid.js')===Boolean(m.prebidBuild),'Release file set differs.');
+ check(!requestedFile||requestedFile==='manifest.json'||Object.hasOwn(m.files,requestedFile),'File not found.',404);
  const files={'manifest.json':bytes};let total=bytes.length;
  for(const [name,entry] of Object.entries(m.files)){
   check(['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','min-height.css','sticky.css','prebid.js'].includes(name)&&name!=='manifest.json'&&entry.key===key(site,id,name)&&Number.isSafeInteger(entry.byteSize)&&entry.byteSize>0&&entry.byteSize<=8388608,'Invalid file inventory.');
-  total+=entry.byteSize;check(total<=12582912,'Package exceeds limit.');const object=await env.BUILDS.get(entry.key);check(object&&object.size===entry.byteSize,'Release file is missing.');const data=new Uint8Array(await object.arrayBuffer());check(data.length===entry.byteSize&&await sha256(data)===entry.sha256,'Release checksum differs.');files[name]=data;
+  total+=entry.byteSize;check(total<=12582912,'Package exceeds limit.');if(requestedFile&&name!==requestedFile)continue;const object=await env.BUILDS.get(entry.key);check(object&&object.size===entry.byteSize,'Release file is missing.');const data=new Uint8Array(await object.arrayBuffer());check(data.length===entry.byteSize&&await sha256(data)===entry.sha256,'Release checksum differs.');files[name]=data;
  }
- check(files['ads.js']&&files['ads.min.js']&&files['config.json']&&Boolean(files['prebid.js'])===Boolean(m.prebidBuild),'Release file set differs.');
  return {files,release:row,manifest:m};
 }
 export async function packageDownload(env,site,id,options){const p=await readPackage(env,site,id,options);return new Response(zip(p.files),{headers:{'content-type':'application/zip','cache-control':'private, no-store','content-disposition':`attachment; filename="${id}.zip"`}});}
@@ -120,7 +122,8 @@ export async function builtInCdn(request,env){
  if(!m||!['GET','HEAD'].includes(request.method))return null;
  const [,site,version,channel,name]=m;let id=version;
  if(channel){const rows=await db(env).prepare('SELECT id FROM releases WHERE publisher_id=? AND status=? LIMIT 2').bind(site,channel==='current'?'production':'staging').all();if(!rows.results.some(r=>ID.test(r.id)))return null;check(rows.results.length===1,'Channel is ambiguous.');id=rows.results[0].id;}
- const p=await readPackage(env,site,id);check(p.release.published_at,'Release has not been staged.',404);check(p.files[name],'File not found.',404);
+ // Registered immutable draft URLs are workflow sources; channel URLs still require a published channel.
+ const p=await readPackage(env,site,id,{requestedFile:name});check(p.files[name],'File not found.',404);
  return new Response(request.method==='HEAD'?null:p.files[name],{headers:{'content-type':type(name),'cache-control':channel?'no-cache':'public, max-age=31536000, immutable','access-control-allow-origin':'*','x-content-type-options':'nosniff','etag':`"${await sha256(p.files[name])}"`}});
 }
 export async function packageResponse(request,env,site,actor,options={}){
