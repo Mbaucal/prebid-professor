@@ -7,6 +7,7 @@ type Props = {
 
 type RuntimeControlsPayload = {
   ok: true;
+  bottomManagedByPositions?: boolean;
   controls: {
     sticky: {
       bottomAdUnitId: string | null;
@@ -242,6 +243,7 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
             <label>
               <span>Bottom sticky ad unit</span>
               <select
+                disabled={payload.bottomManagedByPositions}
                 onChange={(event) => setForm((current) => current ? { ...current, bottomAdUnitId: event.target.value } : current)}
                 value={form.bottomAdUnitId}
               >
@@ -250,7 +252,7 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
                   <option key={unit.code} value={unit.code}>{unit.code}{unit.enabled ? '' : ' · disabled'}</option>
                 ))}
               </select>
-              <small>The selected ad unit gets the generic bottom-sticky host, close button and refresh behavior.</small>
+              <small>{payload.bottomManagedByPositions ? 'Manage Bottom Sticky under Ad units → Display & loading.' : 'The selected ad unit gets the generic bottom-sticky host, close button and refresh behavior.'}</small>
             </label>
 
             <label>

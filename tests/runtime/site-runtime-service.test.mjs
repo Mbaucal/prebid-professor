@@ -45,7 +45,7 @@ test('concurrent position save prevents ad-unit mutation and its audit atomicall
  }
 });
 test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
-async function setup(){const f=workspaceStore();fixtures.push(f);const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);const cookie=login.headers.get('set-cookie').split(';')[0];const r=await worker.fetch(new Request(ORIGIN+'/test-api/setup',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({confirm:'prepare-empty-test-database'})}),f.env);assert.equal(r.status,200);return {f,cookie};}
+async function setup(options){const f=workspaceStore(options);fixtures.push(f);const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);const cookie=login.headers.get('set-cookie').split(';')[0];const r=await worker.fetch(new Request(ORIGIN+'/test-api/setup',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({confirm:'prepare-empty-test-database'})}),f.env);assert.equal(r.status,200);return {f,cookie};}
 async function select(f,siteId='test-site'){const s=await siteRuntimeSettings(f.env,siteId);await changeSiteRuntime(f.env,siteId,TEST_EMAIL,{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});return siteRuntimeSettings(f.env,siteId);}
 test('site API saves runtime, position and lazy choices then builds selected version without template or row loss',async()=>{
  const {f}=await setup();const rows=f.sqlite.prepare('SELECT * FROM ad_units ORDER BY id').all();
@@ -87,4 +87,43 @@ test('new TEST routes retain auth, same origin, schema and site scope guards',as
  assert.equal((await send(body)).status,200);
  assert.equal((await send(body)).status,409);
  const html=await worker.fetch(new Request(ORIGIN+'/site-workspace',{headers:{cookie}}),f.env);assert.equal(html.status,200);assert.match(html.headers.get('content-security-policy'),/connect-src 'self'/);
+});
+
+test('runtime selection repairs an archived Prebid pin using the activated current file',async()=>{
+ const {storePrebidFile}=await import('../../worker/test-workspace/prebid-files.mjs');
+ const {prebidStore,getPrebidSettings,savePrebidSettings}=await import('../../worker/test-workspace/prebid-settings.mjs');
+ const {f}=await setup({prebidFiles:true});await select(f);
+ const bytes=new TextEncoder().encode('/* prebid.js v11.11.0\nModules: consentManagementTcf, tcfControl, currency, adformBidAdapter */\nwindow.prebidFixtureOnly=true;');
+ const uploaded=await storePrebidFile(prebidStore(f.env),bytes,TEST_EMAIL);
+ const settings=await getPrebidSettings(f.env);
+ await savePrebidSettings(f.env,TEST_EMAIL,{expectedRevision:settings.revision,acknowledge:true,draft:{...settings.draft,enablePrebid:true,buildId:uploaded.file.id,bidders:[{bidder:'adform',params:{mid:123},enabled:true}]}});
+ const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ config.builtinRuntimeSelection.prebid.id='previous-archived-file';
+ f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+ await select(f);
+ assert.equal(JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json).builtinRuntimeSelection.prebid.id,uploaded.file.id);
+});
+test('disabled banner cannot save TakeOver',async()=>{
+ const {f}=await setup();await select(f);f.sqlite.prepare("UPDATE ad_units SET enabled=0 WHERE code='Billboard'").run();
+ const s=await siteRuntimeSettings(f.env,'test-site');
+ await assert.rejects(changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:s.revision,position:{code:'Billboard',display:'takeover',overlay:{demand:'gam'},lazy:null}}),/Enable this ad unit/);
+});
+test('older runtime-control form preserves position-owned Sticky and rejects concurrent config changes',async()=>{
+ const compiled=await build({entryPoints:['worker/runtime-controls.ts'],bundle:true,write:false,platform:'node',format:'esm'});
+ const {getRuntimeControls,updateRuntimeControls}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+ const {f}=await setup();let s=await select(f);
+ const old=await(await getRuntimeControls(f.env,'test-site')).json();
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:s.revision,position:{code:'Billboard',display:'sticky',overlay:null,lazy:null}});
+ const request=()=>new Request(ORIGIN+'/controls',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(old.controls)});
+ const saved=await updateRuntimeControls(request(),f.env,'test-site');assert.equal(saved.status,200,await saved.clone().text());
+ assert.equal((await saved.json()).controls.sticky.bottomAdUnitId,'Billboard');
+ const before=f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n;
+ const originalBatch=f.env.DB.batch.bind(f.env.DB);
+ f.env.DB.batch=async items=>{
+  const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);config.runtimeControls.sticky.bottomAdUnitId='';
+  f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));return originalBatch(items);
+ };
+ assert.equal((await updateRuntimeControls(request(),f.env,'test-site')).status,409);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,before);
+ assert.equal(JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json).runtimeControls.sticky.bottomAdUnitId,'');
 });

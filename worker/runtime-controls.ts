@@ -75,7 +75,7 @@ function controlsFromConfig(config: JsonRecord, adUnitCodes: string[]): RuntimeC
 
   return {
     sticky: {
-      bottomAdUnitId: nullableString(sticky.bottomAdUnitId) ?? defaultBottom,
+      bottomAdUnitId: Object.hasOwn(sticky,'bottomAdUnitId') ? nullableString(sticky.bottomAdUnitId) : defaultBottom,
       topAdUnitId: nullableString(sticky.topAdUnitId),
       allowClosePortal: sticky.allowClosePortal === true,
     },
@@ -194,6 +194,7 @@ async function buildPayload(db: D1Database, siteId: string, config: JsonRecord) 
   const references = await loadReferenceData(db, siteId);
   return {
     ok: true,
+    bottomManagedByPositions: Boolean(config.builtinRuntimeSelection),
     controls: controlsFromConfig(config, references.adUnits.map((unit) => unit.code)),
     ...references,
     floorRuleSchema: {
@@ -236,24 +237,28 @@ export async function updateRuntimeControls(
   if (!row) return apiError('Publisher config was not found.', 404);
   const config = parseConfig(row.config_json);
   const references = await loadReferenceData(env.DB, siteId);
-  const controls = validateControls(body, new Set(references.adUnits.map((unit) => unit.code)));
+  const previous = controlsFromConfig(config, references.adUnits.map((unit) => unit.code));
+  // Versioned sites use the ad-unit editor as the sole owner of bottom Sticky.
+  const input = config.builtinRuntimeSelection ? { ...body, sticky: {
+    ...(isRecord(body.sticky) ? body.sticky : {}), bottomAdUnitId: previous.sticky.bottomAdUnitId,
+  } } : body;
+  const controls = validateControls(input, new Set(references.adUnits.map((unit) => unit.code)));
   if (controls instanceof Response) return controls;
 
-  const previous = controlsFromConfig(config, references.adUnits.map((unit) => unit.code));
   // Preserve versioned position/TakeOver options owned by the ad-unit editor.
   config.runtimeControls = { ...(isRecord(config.runtimeControls)?config.runtimeControls:{}), ...controls };
   const actor = getActor(request);
   const now = new Date().toISOString();
 
   try {
-    await env.DB.batch([
+    const result = await env.DB.batch([
       env.DB
-        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ?')
-        .bind(JSON.stringify(config), now, siteId),
+        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ? AND config_json = ?')
+        .bind(JSON.stringify(config), now, siteId, row.config_json),
       env.DB
         .prepare(`INSERT INTO audit_log (
           id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-        ) VALUES (?, ?, 'runtime_controls.updated', ?, 'runtime_controls', ?, ?, ?)`) 
+        ) SELECT ?, ?, 'runtime_controls.updated', ?, 'runtime_controls', ?, ?, ? WHERE changes() = 1`) 
         .bind(
           crypto.randomUUID(),
           actor,
@@ -263,6 +268,7 @@ export async function updateRuntimeControls(
           now,
         ),
     ]);
+    if(result[0].meta.changes!==1)return apiError('Site settings changed. Reload before saving.',409);
   } catch (error) {
     return apiError(
       'Runtime controls could not be saved.',

@@ -66,7 +66,7 @@ export async function changeSiteRuntime(env,siteId,actor,body){
  if(typeof body?.revision!=='string'||body.revision!==await digest(saved))fail('Site settings changed. Reload before saving.',409);
  if(body.action==='version'){
   keys(body,['action','revision','runtime','allowPreview']);
-  const currentId=config.builtinRuntimeSelection?.prebid?.id??(saved.prebidBuilds.length===1?saved.prebidBuilds[0].id:null);
+  const currentId=saved.prebidBuilds.length===1?saved.prebidBuilds[0].id:null;
   const plan=await prepareSiteRuntimeSelection({siteId,snapshot:saved,catalog:runtimeCatalog,expectedRevision:body.revision,
    selection:{runtime:body.runtime,allowPreview:body.allowPreview,enablePrebid:config.enablePrebid,prebidBuildId:config.enablePrebid?currentId:null}},env.BUILDS);
   return commitSiteConfiguration(env,saved,plan.configJson,actor);
@@ -80,6 +80,7 @@ export async function changeSiteRuntime(env,siteId,actor,body){
  const descriptor=descriptorForPin(pin),positions=readPositions(config,saved.units);
  config.runtimeControls??={};config.runtimeControls.sticky??={};
  if(p.display==='takeover'){
+  if(!unit.enabled)fail('Enable this ad unit before selecting TakeOver.');
   if(Object.keys(positions).some(code=>code!==p.code))fail('This site already has a TakeOver position.');
   if(config.runtimeControls.takeOver?.enabled)fail('Move the earlier TakeOver into Ad positions before changing its display settings.');
   positions[p.code]=normalizeOverlay(p.overlay);
