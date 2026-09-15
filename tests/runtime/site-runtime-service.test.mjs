@@ -127,3 +127,9 @@ test('older runtime-control form preserves position-owned Sticky and rejects con
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,before);
  assert.equal(JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json).runtimeControls.sticky.bottomAdUnitId,'');
 });
+
+test('Prebid demand is rejected when the site has Prebid disabled',async()=>{
+ const {f}=await setup();const s=await select(f);
+ await assert.rejects(changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:s.revision,position:{code:'Billboard',display:'takeover',overlay:{demand:'site',desktopMinWidth:1024,desktopSeconds:10,mobileSeconds:5,countdown:true,frequencyMinutes:15},lazy:null}}),/Enable Prebid for this site/);
+ assert.equal((await siteRuntimeSettings(f.env,'test-site')).positions.find(p=>p.code==='Billboard').display,'standard');
+});

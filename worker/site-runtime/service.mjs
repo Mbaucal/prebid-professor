@@ -84,6 +84,7 @@ export async function changeSiteRuntime(env,siteId,actor,body){
   if(Object.keys(positions).some(code=>code!==p.code))fail('This site already has a TakeOver position.');
   if(config.runtimeControls.takeOver?.enabled)fail('Move the earlier TakeOver into Ad positions before changing its display settings.');
   positions[p.code]=normalizeOverlay(p.overlay);
+  if(positions[p.code].demand==='site'&&!config.enablePrebid)fail('Enable Prebid for this site before selecting Prebid + GAM demand.');
  }else{if(p.overlay!==null)fail('Overlay options belong to TakeOver only.');delete positions[p.code];}
  const oldSticky=Object.hasOwn(config.runtimeControls.sticky,'bottomAdUnitId')?config.runtimeControls.sticky.bottomAdUnitId:(saved.units.some(u=>u.code==='Sticky'&&u.enabled===1)?'Sticky':'');
  if(p.display==='sticky'){if(!unit.enabled)fail('Enable this ad unit before selecting bottom Sticky.');config.runtimeControls.sticky.bottomAdUnitId=p.code;}
