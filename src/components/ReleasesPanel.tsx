@@ -453,5 +453,5 @@ export default function ReleasesPanel(props:Props){
  useEffect(()=>{let active=true;setBuiltin(null);setWorkflowError(false);fetch(`/api/publishers/${encodeURIComponent(props.publisherId)}/builtin-site-settings`,{credentials:'same-origin',cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json();}).then(s=>{if(active)setBuiltin(Boolean(s.selected));}).catch(()=>{if(active)setWorkflowError(true);});return()=>{active=false;};},[props.publisherId]);
  if(workflowError)return <p role="alert">Release settings could not be loaded. Reload this site before generating.</p>;
  if(builtin===null)return <p>Loading release workflow…</p>;
- return builtin?<SitePackagesPanel publisherId={props.publisherId} onChanged={props.onChanged}/>:<LegacyReleasesPanel {...props}/>;
+ return builtin?<SitePackagesPanel key={props.publisherId} publisherId={props.publisherId} onChanged={props.onChanged}/>:<LegacyReleasesPanel {...props}/>;
 }

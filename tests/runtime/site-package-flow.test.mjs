@@ -3,6 +3,7 @@ import {workspaceStore} from '../support/test-workspace-store.mjs';
 import {siteRuntimeSettings,changeSiteRuntime} from '../../worker/site-runtime/service.mjs';
 import {generatePackage,packageDownload,readPackage,changePackageChannel,channelRevision,builtInCdn} from '../../worker/site-runtime/releases.mjs';
 import {verifyPackage} from '../../scripts/pages-release-verification.mjs';
+import {sha256} from '../../worker/runtime/prebid-artifact-check.mjs';
 import {deploymentManifestPin} from '../../worker/deployment-manifest-pin.mjs';
 const fixtures=[];test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function fixture(){const f=workspaceStore();fixtures.push(f);f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
@@ -41,4 +42,15 @@ test('snapshot change during upload cannot register a release or audit',async()=
  f.env.BUILDS.put=async(...args)=>{const r=await put(...args);if(!changed){changed=true;f.sqlite.prepare("UPDATE ad_units SET enabled=0").run();}return r;};
  await assert.rejects(generate(f),/Settings changed/);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM releases').get().n,0);
  assert.equal(f.sqlite.prepare("SELECT count(*) n FROM audit_log WHERE action='builtin_release.generated'").get().n,0);
+});
+test('complete Prebid package keeps the uploaded file and passes Pages source verification',async()=>{
+ const f=await fixture();
+ const bytes=new TextEncoder().encode('/* prebid.js v11.11.0\nModules: consentManagementTcf, tcfControl, currency, adformBidAdapter */\nwindow.prebidFixtureOnly=true;');
+ const path='publishers/first/prebid-builds/original/prebid.js';f.objects.set(path,{bytes,meta:{sha256:await sha256(bytes)}});
+ f.sqlite.prepare("INSERT INTO prebid_builds(id,publisher_id,version,file_key,modules_json,status) VALUES('original','first','11.11.0',?,?, 'current')").run(path,JSON.stringify(['adformBidAdapter','consentManagementTcf','currency','tcfControl']));
+ f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,enabled) VALUES('bidder','first','adform','{\"mid\":123}',1)").run();
+ const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);config.enablePrebid=true;f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+ const s=await siteRuntimeSettings(f.env,'first');await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});
+ const release=await generate(f),p=await readPackage(f.env,'first',release.id);assert.deepEqual(p.files['prebid.js'],bytes);
+ await verifyPackage(p.files,{site_id:'first',release_id:release.id,release_version:release.id});
 });
