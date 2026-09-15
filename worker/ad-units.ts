@@ -26,6 +26,14 @@ function databaseMissing(): Response {
   return apiError('D1 database binding is not configured yet.', 503);
 }
 
+async function positionGuard(db:D1Database,siteId:string,code:string){
+  const row=await db.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=? LIMIT 1').bind(siteId).first<{config_json:string}>();
+  const config=JSON.parse(row?.config_json??'{}');
+  return { configJson: row?.config_json ?? null, configured: Boolean(config.runtimeControls?.adPositions?.[code])
+    || config.runtimeControls?.sticky?.bottomAdUnitId === code
+    || config.advancedUnitRules?.[code]?.lazy != null };
+}
+
 function toAdUnit(row: AdUnitRow): AdUnit {
   return {
     id: row.id,
@@ -237,17 +245,37 @@ export async function updateAdUnit(
       ? current.sortOrder
       : Number(input.sortOrder);
   const notes = input.notes === undefined ? current.notes : normalizeNullableString(input.notes);
+  const guard = await positionGuard(env.DB,publisherId,current.code);
+  if((code!==current.code||type==='DRAFT'||mediaType!=='banner'||!enabled)&&guard.configured)return apiError('Set this position to Standard and group loading before renaming, disabling or changing its media/group.',409);
   const actor = getActor(request);
   const now = new Date().toISOString();
+  const auditId = crypto.randomUUID();
 
   try {
-    await env.DB.batch([
+    const result = await env.DB.batch([
+      env.DB
+        .prepare(
+          `INSERT INTO audit_log (
+             id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
+           ) SELECT ?, ?, 'ad_unit.updated', ?, 'ad_unit', ?, ?, ?
+           WHERE (SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1) IS ?
+             AND EXISTS (SELECT 1 FROM ad_units WHERE publisher_id = ? AND id = ? AND code = ? AND updated_at IS ?)`,
+        )
+        .bind(
+          auditId,
+          actor,
+          publisherId,
+          adUnitId,
+          JSON.stringify({ previousCode: current.code, code, type, mediaType, sizeMapKey }),
+          now, publisherId, guard.configJson, publisherId, adUnitId, current.code, current.updatedAt,
+        ),
+
       env.DB
         .prepare(
           `UPDATE ad_units
            SET code = ?, type = ?, media_type = ?, size_map_key = ?, enabled = ?,
                sort_order = ?, notes = ?, updated_at = ?
-           WHERE publisher_id = ? AND id = ?`,
+           WHERE publisher_id = ? AND id = ? AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)`,
         )
         .bind(
           code,
@@ -259,37 +287,24 @@ export async function updateAdUnit(
           notes,
           now,
           publisherId,
-          adUnitId,
+          adUnitId, auditId,
         ),
       env.DB
         .prepare(
           `UPDATE bidder_overrides
            SET scope_key = ?, updated_at = ?
-           WHERE publisher_id = ? AND scope_type = 'adunit' AND scope_key = ?`,
+           WHERE publisher_id = ? AND scope_type = 'adunit' AND scope_key = ? AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)`,
         )
-        .bind(code, now, publisherId, current.code),
+        .bind(code, now, publisherId, current.code, auditId),
       env.DB
         .prepare(
           `UPDATE unit_rules
            SET rule_key = ?, updated_at = ?
-           WHERE publisher_id = ? AND rule_key = ?`,
+           WHERE publisher_id = ? AND rule_key = ? AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)`,
         )
-        .bind(code, now, publisherId, current.code),
-      env.DB
-        .prepare(
-          `INSERT INTO audit_log (
-             id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'ad_unit.updated', ?, 'ad_unit', ?, ?, ?)`,
-        )
-        .bind(
-          crypto.randomUUID(),
-          actor,
-          publisherId,
-          adUnitId,
-          JSON.stringify({ previousCode: current.code, code, type, mediaType, sizeMapKey }),
-          now,
-        ),
+        .bind(code, now, publisherId, current.code, auditId),
     ]);
+    if (result[0].meta.changes !== 1) return apiError("Site settings changed. Reload before editing this ad unit.",409);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);
@@ -458,38 +473,45 @@ export async function deleteAdUnit(
 
   const current = await fetchAdUnit(env.DB, publisherId, adUnitId);
   if (!current) return apiError('Ad unit not found.', 404);
+  const guard = await positionGuard(env.DB,publisherId,current.code);
+  if(guard.configured)return apiError('Set this position to Standard and group loading before deleting it.',409);
 
   const actor = getActor(request);
   const now = new Date().toISOString();
+  const auditId = crypto.randomUUID();
 
-  await env.DB.batch([
-    env.DB
-      .prepare(
-        `DELETE FROM bidder_overrides
-         WHERE publisher_id = ? AND scope_type = 'adunit' AND scope_key = ?`,
-      )
-      .bind(publisherId, current.code),
-    env.DB
-      .prepare('DELETE FROM unit_rules WHERE publisher_id = ? AND rule_key = ?')
-      .bind(publisherId, current.code),
-    env.DB
-      .prepare('DELETE FROM ad_units WHERE publisher_id = ? AND id = ?')
-      .bind(publisherId, adUnitId),
+  const result = await env.DB.batch([
     env.DB
       .prepare(
         `INSERT INTO audit_log (
            id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-         ) VALUES (?, ?, 'ad_unit.deleted', ?, 'ad_unit', ?, ?, ?)`,
+         ) SELECT ?, ?, 'ad_unit.deleted', ?, 'ad_unit', ?, ?, ?
+           WHERE (SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1) IS ?
+             AND EXISTS (SELECT 1 FROM ad_units WHERE publisher_id = ? AND id = ? AND code = ? AND updated_at IS ?)`,
       )
       .bind(
-        crypto.randomUUID(),
+        auditId,
         actor,
         publisherId,
         adUnitId,
         JSON.stringify({ code: current.code }),
-        now,
+        now, publisherId, guard.configJson, publisherId, adUnitId, current.code, current.updatedAt,
       ),
-  ]);
+
+    env.DB
+      .prepare(
+        `DELETE FROM bidder_overrides
+         WHERE publisher_id = ? AND scope_type = 'adunit' AND scope_key = ? AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)`,
+      )
+      .bind(publisherId, current.code, auditId),
+    env.DB
+      .prepare('DELETE FROM unit_rules WHERE publisher_id = ? AND rule_key = ? AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)')
+      .bind(publisherId, current.code, auditId),
+    env.DB
+      .prepare('DELETE FROM ad_units WHERE publisher_id = ? AND id = ? AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)')
+      .bind(publisherId, adUnitId, auditId),
+    ]);
+    if (result[0].meta.changes !== 1) return apiError("Site settings changed. Reload before editing this ad unit.",409);
 
   return json({ ok: true, deletedId: adUnitId });
 }
