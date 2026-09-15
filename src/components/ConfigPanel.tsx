@@ -15,6 +15,7 @@ import UserIdModulesPanel from './UserIdModulesPanel';
 type Props = {
   publisherId: string;
   onChanged?: () => void | Promise<void>;
+  initialSection?: ConfigSection;
 };
 
 type ConfigSection =
@@ -30,8 +31,8 @@ type ConfigSection =
   | 'generator-profiles'
   | 'imports';
 
-export default function ConfigPanel({ publisherId, onChanged }: Props) {
-  const [section, setSection] = useState<ConfigSection>('ad-units');
+export default function ConfigPanel({ publisherId, onChanged, initialSection = 'ad-units' }: Props) {
+  const [section, setSection] = useState<ConfigSection>(initialSection);
 
   return (
     <div className="config-workspace">

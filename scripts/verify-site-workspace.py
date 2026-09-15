@@ -21,6 +21,12 @@ try:
     browser=p.chromium.launch(headless=True)
     page=browser.new_page(viewport={'width':1280,'height':900});page.route('**/*',route);page.on('pageerror',lambda e:errors.append(str(e)))
     page.goto('https://tessera.fixture.invalid/site-workspace')
+    page.get_by_role('button',name='Build workflow',exact=True).click()
+    workflow=page.get_by_role('region',name='Build workflow',exact=True)
+    workflow.get_by_role('button',name='Open site settings',exact=True).wait_for()
+    assert workflow.get_by_role('heading',level=3).count()==5
+    assert all(r['method']=='GET' for r in requests)
+    workflow.get_by_role('button',name='Choose script version',exact=True).click()
     page.get_by_label('Script version',exact=True).select_option(label='3.10.0-tessera.preview.1')
     page.get_by_role('checkbox',name='Use this Preview script').check()
     page.get_by_role('button',name='Save script version',exact=True).click()
@@ -60,6 +66,14 @@ try:
     assert page.get_by_role('button',name='Publish package',exact=True).count()==0
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
     page.screenshot(path=str(out/'mobile-packages.png'),full_page=True)
+    before=len(requests)
+    page.get_by_role('button',name='Build workflow',exact=True).click()
+    workflow.get_by_text('1 recent built-in packages.',exact=False).wait_for()
+    assert all(r['method']=='GET' for r in requests[before:])
+    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+    page.screenshot(path=str(out/'mobile-workflow.png'),full_page=True)
+    workflow.get_by_role('button',name='Open saved packages',exact=True).click()
+    page.get_by_text('Browser package check',exact=True).wait_for()
     assert not errors,errors
     browser.close()
     (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'requests':requests,'externalRequests':0},indent=2))
