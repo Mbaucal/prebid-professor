@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 import {workspaceStore} from '../support/test-workspace-store.mjs';
 import {siteRuntimeSettings,changeSiteRuntime} from '../../worker/site-runtime/service.mjs';
-import {generatePackage,packageDownload,readPackage,changePackageChannel,channelRevision,builtInCdn} from '../../worker/site-runtime/releases.mjs';
+import {generatePackage,packageDownload,readPackage,changePackageChannel,channelRevision,builtInCdn,packageResponse} from '../../worker/site-runtime/releases.mjs';
 import {verifyPackage} from '../../scripts/pages-release-verification.mjs';
 import {sha256} from '../../worker/runtime/prebid-artifact-check.mjs';
 import {deploymentManifestPin} from '../../worker/deployment-manifest-pin.mjs';
@@ -53,4 +53,10 @@ test('complete Prebid package keeps the uploaded file and passes Pages source ve
  const s=await siteRuntimeSettings(f.env,'first');await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});
  const release=await generate(f),p=await readPackage(f.env,'first',release.id);assert.deepEqual(p.files['prebid.js'],bytes);
  await verifyPackage(p.files,{site_id:'first',release_id:release.id,release_version:release.id});
+});
+
+test('download errors keep the JSON API contract',async()=>{
+ const f=await fixture();
+ const response=await packageResponse(new Request('https://tessera.invalid/api/packages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'download',releaseId:'unknown'})}),f.env,'first','tester');
+ assert.equal(response.status,404);assert.match(response.headers.get('content-type'),/application\/json/);assert.match((await response.json()).error,/Unknown/);
 });

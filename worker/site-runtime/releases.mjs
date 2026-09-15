@@ -135,7 +135,7 @@ export async function packageResponse(request,env,site,actor,options={}){
   try{for(;;){const r=await reader.read();if(r.done)break;size+=r.value.length;check(size<=8192,'Request too large.',413);chunks.push(r.value);}}finally{reader.releaseLock();}
   const bytes=new Uint8Array(size);let at=0;for(const c of chunks){bytes.set(c,at);at+=c.length;}const body=JSON.parse(decode.decode(bytes));
   if(body.action==='generate')return json(await generatePackage(env,site,actor,{notes:body.notes,revision:body.revision},options),201);
-  if(body.action==='download')return packageDownload(env,site,body.releaseId,options);
+  if(body.action==='download')return await packageDownload(env,site,body.releaseId,options);
   return json(await changePackageChannel(env,site,body.releaseId,actor,body.action,body,options));
  }catch(e){return json({error:e.message},e.status??422);}
 }
