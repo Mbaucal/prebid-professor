@@ -43,3 +43,4 @@ writeFileSync(new URL('.generated/test-workspace-schema.mjs', root),
 console.log(`Prepared isolated workspace schema: ${tables.length} tables; no database connection or mutation.`);
 execFileSync(process.execPath, ['--experimental-strip-types', fileURLToPath(new URL('./prepare-tanjug-pilot.mjs', import.meta.url))], { stdio: 'inherit' });
 execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-ads-versions-preview.mjs', import.meta.url))], { stdio: 'inherit' });
+execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-site-workspace.mjs', import.meta.url))], { stdio: 'inherit' });

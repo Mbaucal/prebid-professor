@@ -240,7 +240,8 @@ export async function updateRuntimeControls(
   if (controls instanceof Response) return controls;
 
   const previous = controlsFromConfig(config, references.adUnits.map((unit) => unit.code));
-  config.runtimeControls = controls;
+  // Preserve versioned position/TakeOver options owned by the ad-unit editor.
+  config.runtimeControls = { ...(isRecord(config.runtimeControls)?config.runtimeControls:{}), ...controls };
   const actor = getActor(request);
   const now = new Date().toISOString();
 

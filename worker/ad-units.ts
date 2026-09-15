@@ -26,6 +26,12 @@ function databaseMissing(): Response {
   return apiError('D1 database binding is not configured yet.', 503);
 }
 
+async function hasVersionedPosition(db:D1Database,siteId:string,code:string):Promise<boolean>{
+  const row=await db.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=? LIMIT 1').bind(siteId).first<{config_json:string}>();
+  const config=JSON.parse(row?.config_json??'{}');
+  return Boolean(config.runtimeControls?.adPositions?.[code])||config.advancedUnitRules?.[code]?.lazy!=null;
+}
+
 function toAdUnit(row: AdUnitRow): AdUnit {
   return {
     id: row.id,
@@ -237,6 +243,7 @@ export async function updateAdUnit(
       ? current.sortOrder
       : Number(input.sortOrder);
   const notes = input.notes === undefined ? current.notes : normalizeNullableString(input.notes);
+  if((code!==current.code||type==='DRAFT'||mediaType!=='banner')&&await hasVersionedPosition(env.DB,publisherId,current.code))return apiError('Set this position to Standard and group loading before renaming it or changing its media/group.',409);
   const actor = getActor(request);
   const now = new Date().toISOString();
 
@@ -458,6 +465,7 @@ export async function deleteAdUnit(
 
   const current = await fetchAdUnit(env.DB, publisherId, adUnitId);
   if (!current) return apiError('Ad unit not found.', 404);
+  if(await hasVersionedPosition(env.DB,publisherId,current.code))return apiError('Set this position to Standard and group loading before deleting it.',409);
 
   const actor = getActor(request);
   const now = new Date().toISOString();

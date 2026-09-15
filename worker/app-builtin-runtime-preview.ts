@@ -6,6 +6,7 @@ import { previewInput, digest } from './runtime/preview-snapshot.mjs';
 import { handlePrebidPreflight } from './runtime/prebid-preflight-service.mjs';
 import { handleArtifactBundle } from './runtime/artifact-bundle-service.mjs';
 import type { ReleaseEnv } from './releases';
+import { siteRuntimeResponse } from './site-runtime/service.mjs';
 interface Env extends AuthEnv, ReleaseEnv { ASSETS: Fetcher }
 const downstream = baseApp as {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
@@ -16,6 +17,16 @@ export default {
     const draftBlock = blockStoredDraftCdn(request);
     if (draftBlock) return draftBlock;
     const url = new URL(request.url);
+    const settingsMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-site-settings$/);
+    if(settingsMatch){
+      const actor=await getAuthenticatedUser(request,env);
+      const fail=(error:string,status:number)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'private, no-store'}});
+      if(!actor)return fail('Authentication required.',401);
+      if(url.search)return fail('Unknown query.',400);
+      if(!['GET','POST'].includes(request.method))return fail('Method not allowed.',405);
+      if(!isSameOriginMutation(request)||(request.method==='POST'&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
+      return siteRuntimeResponse(request,env,settingsMatch[1],actor.email);
+    }
     const match = url.pathname.match(/^\/api\/publishers\/([^/]+)\/(builtin-runtime-preview|builtin-runtime-prebid-check|builtin-runtime-bundle)$/);
     if (!match) return downstream.fetch(request, env, ctx);
     const headers = { 'content-type': 'application/json', 'cache-control': 'private, no-store' };
