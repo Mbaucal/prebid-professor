@@ -6,6 +6,7 @@ import { assertWorkspaceSiteScope } from './site-draft.mjs';
 import { getSiteDraft, saveSiteDraft } from './site-draft-service.mjs';
 import { siteDraftPage, siteDraftScript } from './site-draft-page.mjs';
 import { zipSync } from 'fflate';
+import { downloadScript } from '../../.generated/download.mjs';
 import { getAuthenticatedUser, handleLogin, handleLogout } from '../auth.ts';
 import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
@@ -14,7 +15,7 @@ import { SelectionWriteError } from './selection-transaction.mjs';
 import { readRuntimeSelectionSettings, saveRuntimeSelectionSettings, selectedWorkspaceRuntime } from './runtime-selection.mjs';
 import { runtimeSelectionPage, runtimeSelectionScript } from './runtime-selection-page.mjs';
 import { runtimeDescriptor, runtimeCatalog, descriptorForPin, buildArtifactCandidate } from './runtime-catalog.mjs';
-import { describeCandidate, saveDraftRelease, readDraftRelease } from '../runtime/draft-release-store.mjs';
+import { describeCandidate, saveDraftRelease, readDraftRelease, readDraftReleaseIndex, readDraftReleaseFile } from '../runtime/draft-release-store.mjs';
 import { WorkspaceError, workspaceBoundary, sameOrigin, boundedText, jsonBody, TEST_SITE } from './boundary.mjs';
 import { inspectTestSchema, initializeTestSchema } from './schema.mjs';
 import { issueReceipt, verifyReceipt } from './receipt.mjs';
@@ -89,7 +90,8 @@ async function route(request,env) {
   if (deployment) return deployment;
   const pilot = tanjugPilotResponse(request, headers);
   if (pilot) return pilot;
-  if (path==='/' && request.method==='GET') return html(workspacePage(actor.email));
+  if (path==='/' && request.method==='GET') return html(workspacePage(actor.email).replace('</body>','<script src="/download.js" defer></script></body>'));
+  if(path==='/download.js'&&request.method==='GET'&&!url.search)return new Response(downloadScript,{headers:{...headers,'content-type':'application/javascript'}});
   if (path==='/workspace.js' && request.method==='GET') return new Response(workspaceScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   if (path==='/runtime-selection' && request.method==='GET' && !url.search) return html(runtimeSelectionPage());
   if (path==='/runtime-selection.js' && request.method==='GET' && !url.search) return new Response(runtimeSelectionScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
@@ -105,7 +107,7 @@ async function route(request,env) {
   if(path==='/prebid-settings.js'&&request.method==='GET'&&!url.search)return new Response(prebidScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   if(path==='/test-api/prebid/versions'&&request.method==='GET'&&!url.search)return json(await prebidVersions());
   // No legacy fallback: publish, CMS, Gmail, deletion, arbitrary sites and public CDN routes do not exist.
-  const fileMatch=path.match(/^\/test-api\/releases\/(builtin-draft-[a-f0-9]{64})(\/download)?$/);
+  const fileMatch=path.match(/^\/test-api\/releases\/(builtin-draft-[a-f0-9]{64})(\/download|\/index|\/files\/[A-Za-z0-9.-]+)?$/);
   const known=(request.method==='GET' && ['/test-api/status','/test-api/releases','/test-api/runtime-selection','/test-api/site-settings','/test-api/prebid-settings'].includes(path)) || (request.method==='GET' && fileMatch)
     || (request.method==='POST' && ['/test-api/setup','/test-api/generate','/test-api/save','/test-api/runtime-selection','/test-api/site-settings','/test-api/prebid-settings','/test-api/prebid/upload','/test-api/prebid/plan','/test-api/prebid/plan/save'].includes(path));
   if (!known || url.search) throw new WorkspaceError(404,'This operation is not available in the test workspace.');
@@ -146,11 +148,27 @@ async function route(request,env) {
   }
   if (path==='/test-api/releases') return json({releases:await list(env)});
   if (fileMatch) {
+    if(fileMatch[2]==='/download'&&request.headers.get('accept')?.includes('text/html')){
+      const index=await readDraftReleaseIndex(store(env),{siteId:TEST_SITE,releaseId:fileMatch[1]});
+      if(!index)throw new WorkspaceError(404,'Saved test release not found.');
+      return html('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Download saved package</title><body><h1>Download saved package</h1><p id="download-status" role="status">Preparing your saved files…</p><button id="download-retry">Retry download</button><p><a href="/">Back to saved packages</a></p><script src="/download.js" defer></script></body></html>');
+    }
+    if(fileMatch[2]==='/index'){
+      const index=await readDraftReleaseIndex(store(env),{siteId:TEST_SITE,releaseId:fileMatch[1]});
+      if(!index)throw new WorkspaceError(404,'Saved test release not found.');
+      return json(index);
+    }
+    if(fileMatch[2]?.startsWith('/files/')){
+      const file=await readDraftReleaseFile(store(env),{siteId:TEST_SITE,releaseId:fileMatch[1],name:fileMatch[2].slice(7)});
+      if(!file)throw new WorkspaceError(404,'Saved test release not found.');
+      return new Response(file.bytes,{headers:{...headers,'content-type':'application/octet-stream','x-tessera-file-sha256':file.entry.sha256}});
+    }
     const saved=await readDraftRelease(store(env),{siteId:TEST_SITE,releaseId:fileMatch[1]});
     if(!saved)throw new WorkspaceError(404,'Saved test release not found.');
     if(!fileMatch[2])return json({draft:saved.draft,files:(await describeCandidate(TEST_SITE,saved)).descriptor.files,verified:true});
     const files=Object.fromEntries(Object.entries(saved.files).map(([name,bytes])=>[name,[bytes,{level:0,mtime:new Date('1980-01-01T00:00:00Z')}]]));
     return new Response(zipSync(files,{level:0}),{headers:{...headers,'content-type':'application/zip','content-disposition':`attachment; filename="${fileMatch[1]}.zip"`,'x-tessera-package-sha256':saved.draft.packageSha256}});
+
   }
   if (path==='/test-api/generate') {
     const body=await jsonBody(request,['acknowledge','takeOverEnabled']);
