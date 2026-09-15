@@ -181,7 +181,7 @@ export async function saveDraftRelease(store, { siteId, candidate, actor, note =
 /** Does not regenerate anything or require that the historical runtime is current.
  * Read every stored byte and recheck its package identity before returning files.
  */
-export async function readDraftRelease(store, { siteId, releaseId }) {
+export async function readDraftReleaseIndex(store, { siteId, releaseId }) {
   scope(siteId,releaseId);
   const { db, bucket } = bindings(store);
   const row = await intent(db,siteId,releaseId);
@@ -205,6 +205,25 @@ export async function readDraftRelease(store, { siteId, releaseId }) {
     config_key: fileKey(siteId,releaseId,'config.json'),manifest_key: fileKey(siteId,releaseId,'manifest.json'),
     notes: row.note,created_by: row.created_by,created_at: row.created_at,published_at: null };
   requireThat(registered && Object.entries(expected).every(([key,value]) => registered[key] === value), 'Registered draft metadata mismatch.');
+  requireThat(await sha256(encoder.encode(JSON.stringify({siteId,inventory}))) === descriptor.packageSha256
+    && releaseId === `builtin-draft-${descriptor.packageSha256}` && row.package_sha256 === descriptor.packageSha256,
+    'Stored package identity mismatch.');
+  return {draft:publicDraft(row,descriptor),descriptor};
+}
+export async function readDraftReleaseFile(store,{siteId,releaseId,name}) {
+  const index=await readDraftReleaseIndex(store,{siteId,releaseId});
+  if(!index)return null;
+  const entry=index.descriptor.files.find(e=>e.name===name);
+  requireThat(entry,'Unknown stored file.');
+  const {bucket}=bindings(store);
+  const bytes=await verifiedObject(bucket,fileKey(siteId,releaseId,name),entry);
+  requireThat(bytes,'Stored draft file is missing.');
+  return {bytes,entry};
+}
+export async function readDraftRelease(store,{siteId,releaseId}) {
+  const index=await readDraftReleaseIndex(store,{siteId,releaseId});
+  if(!index)return null;
+  const {bucket}=bindings(store),descriptor=index.descriptor,inventory=descriptor.files;
   const files = Object.create(null);
   for (const entry of inventory) {
     files[entry.name] = await verifiedObject(bucket,fileKey(siteId,releaseId,entry.name),entry);
@@ -212,5 +231,5 @@ export async function readDraftRelease(store, { siteId, releaseId }) {
   }
   const checked = await describeCandidate(siteId,{ files });
   requireThat(same(checked.descriptor,descriptor), 'Stored package identity mismatch.');
-  return { draft: publicDraft(row,descriptor), files: checked.files };
+  return { draft: index.draft, files: checked.files };
 }
