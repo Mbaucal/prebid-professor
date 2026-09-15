@@ -23,6 +23,7 @@ import { takeOverForBuild } from './takeover-settings.mjs';
 import { tanjugPilotResponse } from './tanjug-pilot.mjs';
 import { deploymentResponse, runnerPath, runnerResponse } from './deployments.mjs';
 import { adsVersionsPreviewResponse } from './ads-versions-preview.mjs';
+import { siteWorkspaceResponse } from './site-workspace.mjs';
 
 // HTML form navigation under no-referrer sends Origin:null. same-origin keeps
 // legitimate form Origin while still suppressing cross-origin referrers.
@@ -80,6 +81,8 @@ async function route(request,env) {
   if (!actor) return path.startsWith('/test-api/')||path.startsWith('/api/') ? json({error:'Test sign-in required.'},401)
     : new Response(null,{status:303,headers:{...headers,location:'/login'}});
   if (path==='/api/auth/logout' && request.method==='POST') return handleLogout(request);
+  const siteWorkspace=await siteWorkspaceResponse(request,env,actor,headers);
+  if(siteWorkspace)return siteWorkspace;
   const uiReview = adsVersionsPreviewResponse(request, headers);
   if (uiReview) return uiReview;
   const deployment = await deploymentResponse(request,env,actor,headers);
