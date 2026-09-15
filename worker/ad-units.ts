@@ -29,7 +29,9 @@ function databaseMissing(): Response {
 async function hasVersionedPosition(db:D1Database,siteId:string,code:string):Promise<boolean>{
   const row=await db.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=? LIMIT 1').bind(siteId).first<{config_json:string}>();
   const config=JSON.parse(row?.config_json??'{}');
-  return Boolean(config.runtimeControls?.adPositions?.[code])||config.advancedUnitRules?.[code]?.lazy!=null;
+  return Boolean(config.runtimeControls?.adPositions?.[code])
+    || config.runtimeControls?.sticky?.bottomAdUnitId === code
+    || config.advancedUnitRules?.[code]?.lazy != null;
 }
 
 function toAdUnit(row: AdUnitRow): AdUnit {

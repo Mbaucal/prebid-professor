@@ -1,11 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { unzipSync } from 'fflate';
+import { build } from 'esbuild';
 import worker from '../../worker/test-workspace/index.mjs';
 import { workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD } from '../support/test-workspace-store.mjs';
 import { siteRuntimeSettings,changeSiteRuntime,siteRuntimeBundle,commitSiteConfiguration } from '../../worker/site-runtime/service.mjs';
 import { readPreviewSnapshot } from '../../worker/runtime/builtin-preview-service.mjs';
 const fixtures=[];
+test('saved bottom Sticky with group loading cannot be renamed or deleted',async()=>{
+ const {f}=await setup();let s=await select(f);
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:s.revision,position:{code:'Billboard',display:'sticky',overlay:null,lazy:null}});
+ const compiled=await build({entryPoints:['worker/ad-units.ts'],bundle:true,write:false,platform:'node',format:'esm'});
+ const {updateAdUnit,deleteAdUnit}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+ const unit=f.sqlite.prepare("SELECT * FROM ad_units WHERE code='Billboard'").get();
+ const request=new Request(ORIGIN+'/api/publishers/test-site/ad-units/'+unit.id,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({code:'Renamed'})});
+ assert.equal((await updateAdUnit(request,f.env,'test-site',unit.id)).status,409);
+ assert.equal((await deleteAdUnit(new Request(request.url,{method:'DELETE'}),f.env,'test-site',unit.id)).status,409);
+ assert.equal(f.sqlite.prepare('SELECT code FROM ad_units WHERE id=?').get(unit.id).code,'Billboard');
+});
 test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function setup(){const f=workspaceStore();fixtures.push(f);const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);const cookie=login.headers.get('set-cookie').split(';')[0];const r=await worker.fetch(new Request(ORIGIN+'/test-api/setup',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({confirm:'prepare-empty-test-database'})}),f.env);assert.equal(r.status,200);return {f,cookie};}
 async function select(f,siteId='test-site'){const s=await siteRuntimeSettings(f.env,siteId);await changeSiteRuntime(f.env,siteId,TEST_EMAIL,{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});return siteRuntimeSettings(f.env,siteId);}
