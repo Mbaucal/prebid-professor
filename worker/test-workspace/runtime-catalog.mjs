@@ -18,8 +18,14 @@ export function descriptorForPin(pin){
 export function previewInput(snapshot,descriptor,time,takeOver){
   const config=JSON.parse(snapshot.config.config_json);
   if(descriptor.id===next.id){
+    const codes=Object.keys(config.runtimeControls?.adPositions??{});
+    if(codes.some(code=>snapshot.units.find(unit=>unit.code===code)?.enabled!==1))throw Error('Enable the TakeOver ad position, or explicitly change its display to Standard before disabling it.');
     const input=positionsInput(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
     if(input.overlay?.demand==='site'&&config.enablePrebid!==true)throw Error('This TakeOver uses Prebid + GAM. Enable Prebid or explicitly change its demand to GAM only.');
+    if(input.overlay){
+      const base=input.overlay.unit.sizeMapName,maps=input.core.sizeMapsRaw;
+      if(Object.entries(maps).some(([name,rows])=>name.endsWith('_'+base)&&JSON.stringify(rows)!==JSON.stringify(maps[base])))throw Error('This script version does not support TakeOver maps by page type. Your maps are kept; this requires a future script version, or an explicit change to Standard display.');
+    }
     return input;
   }
   if(Object.keys(config.runtimeControls?.adPositions??{}).length)throw Error('TakeOver ad units require version 3.10.0. Earlier packages remain available in Releases.');

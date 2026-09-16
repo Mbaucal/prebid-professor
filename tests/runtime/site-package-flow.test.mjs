@@ -175,6 +175,10 @@ test('first built-in publication retains the prior legacy release and its existi
  f.sqlite.prepare("INSERT INTO releases(id,publisher_id,version,status,manifest_key,created_at,published_at) VALUES(?,'first',?,'production',?,'2000-01-01','2000-01-02')").run(legacyId,version,prefix+'manifest.json');
  f.sqlite.prepare("UPDATE publishers SET current_release_id=?,current_version=? WHERE id='first'").run(legacyId,version);
  for(let i=0;i<51;i++)f.sqlite.prepare("INSERT INTO releases(id,publisher_id,version,status) VALUES(?,'first',?,'draft')").run('old-draft-'+i,'older-package-'+i);
+ for(const [id,action] of [['legacy-earlier','release.production_published'],['legacy-restored','release.rolled_back']]){
+  f.sqlite.prepare("INSERT INTO releases(id,publisher_id,version,status,created_at) VALUES(?,'first',?,'archived','1999-01-01')").run(id,id);
+  f.sqlite.prepare("INSERT INTO audit_log(id,actor,action,publisher_id,entity_type,entity_id,details_json) VALUES(?,'tester',?,'first','release',?,'{}')").run(id+'-audit',action,id);
+ }
  const legacyFiles={};
  for(const name of ['ads.js','ads.min.js','prebid.js','config.json','manifest.json','min-height.css','sticky.css','div-export.csv','implementation.html']){
   const bytes=new TextEncoder().encode(name==='manifest.json'?JSON.stringify({version,siteId:'first'}):'saved legacy '+name);
@@ -183,7 +187,7 @@ test('first built-in publication retains the prior legacy release and its existi
  const settings=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
  await promote(f,release.id,'staging');await promote(f,release.id,'production');
  const earlier=(await packageState(f.env,'first')).earlierReleases;
- assert.equal(earlier.length,50);assert.equal(earlier[0].id,legacyId);assert.equal(earlier[0].canRestore,true);
+ assert.equal(earlier.length,50);assert.equal(earlier[0].id,legacyId);assert.equal(earlier[0].canRestore,true);assert.deepEqual(earlier.slice(1,3).map(r=>r.id).sort(),['legacy-earlier','legacy-restored']);assert.ok(earlier.slice(1,3).every(r=>r.canRestore));
  const rawGet=f.env.BUILDS.get;
  f.env.BUILDS.get=async key=>{const o=await rawGet(key);if(!o)return null;const bytes=new Uint8Array(await o.arrayBuffer());return {...o,body:bytes,httpEtag:'"fixture"',text:async()=>new TextDecoder().decode(bytes),writeHttpMetadata(headers){headers.set('content-type','application/javascript');}};};
  let copies=0;f.env.BUILDS.put=async(key,bytes,options)=>{
@@ -291,4 +295,30 @@ test('main Prebid activation updates the runtime pin atomically and rejects corr
  config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);assert.equal(config.enablePrebid,false);assert.equal(config.builtinRuntimeSelection.prebid,null);assert.equal((await packageState(f.env,'first')).ready,true);
  response=await mode(true);assert.equal(response.status,200,await response.text());
  config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);assert.equal(config.builtinRuntimeSelection.prebid.id,'original');
+});
+
+test('disabled TakeOver and unsupported page-type maps stop generation without changing saved files or settings',async()=>{
+ const {packageState}=await import('../../worker/site-runtime/releases.mjs');
+ const {siteRuntimeBundle}=await import('../../worker/site-runtime/service.mjs');
+ const {defaultOverlay}=await import('../../worker/runtime-next/position-settings.mjs');
+ const f=await fixture();let s=await siteRuntimeSettings(f.env,'first');
+ await changeSiteRuntime(f.env,'first','tester',{action:'position',revision:s.revision,position:{code:'Billboard',display:'takeover',overlay:defaultOverlay(),lazy:null}});
+ const release=await generate(f),original=await readPackage(f.env,'first',release.id);
+ f.sqlite.prepare("UPDATE ad_units SET enabled=0 WHERE code='Billboard'").run();
+ s=await siteRuntimeSettings(f.env,'first');assert.match(s.validationIssue,/Enable the TakeOver ad position/);
+ assert.equal((await packageState(f.env,'first')).ready,false);await assert.rejects(generate(f),/saved settings are not supported/);
+ f.sqlite.prepare("UPDATE ad_units SET enabled=1 WHERE code='Billboard'").run();
+ const config=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,objectCount=f.objects.size;
+ for(const sizes of [[[320,480]],[]]){
+  const map=JSON.stringify([{viewport:[0,0],sizes}]);
+  f.sqlite.prepare("INSERT OR REPLACE INTO size_maps(id,publisher_id,name,map_json) VALUES('sport-map','first','sport_display',?)").run(map);
+  s=await siteRuntimeSettings(f.env,'first');assert.match(s.validationIssue,/maps by page type/);
+  assert.equal((await packageState(f.env,'first')).ready,false);
+  await assert.rejects(generate(f),/saved settings are not supported/);
+  await assert.rejects(siteRuntimeBundle(f.env,'first',{action:'bundle',revision:s.revision,acknowledge:true}),/saved settings are not supported/);
+  assert.equal(f.sqlite.prepare("SELECT map_json FROM size_maps WHERE name='sport_display'").get().map_json,map);
+  assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,config);assert.equal(f.objects.size,objectCount);
+ }
+ await changeSiteRuntime(f.env,'first','tester',{action:'position',revision:s.revision,position:{code:'Billboard',display:'standard',overlay:null,lazy:null}});
+ assert.equal((await packageState(f.env,'first')).ready,true);assert.deepEqual((await readPackage(f.env,'first',release.id)).files,original.files);
 });

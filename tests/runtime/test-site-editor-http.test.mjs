@@ -139,3 +139,17 @@ test('invalid saved runtime pin keeps the Prebid editor readable without resetti
   assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
   assert.equal((await generate(f,cookie)).r.status,409);
 });
+
+test('TEST editor rejects disabling a TakeOver position before saving its draft',async()=>{
+ const {f,cookie}=await ready();let s=await state(f,cookie);
+ s.draft.maps.push({name:'modal',breakpoints:[{minWidth:0,sizes:[[300,250]]}]});
+ s.draft.units.push({code:'Overlay',type:'ATF',sizeMap:'modal',enabled:true,display:'takeover',overlay:defaultOverlay()});
+ let response=await save(f,cookie,s);assert.equal(response.r.status,200,JSON.stringify(response.data));
+ s=await state(f,cookie);const before=structuredClone(s),audits=f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n;
+ s.draft.units.find(u=>u.code==='Overlay').enabled=false;
+ response=await save(f,cookie,s);assert.equal(response.r.status,422);assert.match(response.data.error,/Enable the TakeOver ad position/);
+ assert.deepEqual(await state(f,cookie),before);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,audits);
+ delete s.draft.units.find(u=>u.code==='Overlay').overlay;s.draft.units.find(u=>u.code==='Overlay').display='standard';
+ response=await save(f,cookie,s);assert.equal(response.r.status,200,JSON.stringify(response.data));
+ assert.equal((await state(f,cookie)).draft.units.find(u=>u.code==='Overlay').enabled,false);
+});
