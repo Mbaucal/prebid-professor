@@ -1,5 +1,9 @@
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
+import { readPreviewSnapshot } from './runtime/builtin-preview-service.mjs';
+import { digest } from './runtime/preview-snapshot.mjs';
+import { runtimeCatalog, prepareSiteRuntimeSelection } from './test-workspace/runtime-catalog.mjs';
+import { commitSiteConfiguration } from './site-runtime/service.mjs';
 
 export interface PrebidBuildEnv extends DatabaseEnv {
   BUILDS?: R2Bucket;
@@ -368,47 +372,28 @@ export async function activatePrebidBuild(
   const moduleSet = new Set(modules);
   const missingAdapters = required.filter((module) => !moduleSet.has(module));
   if (missingAdapters.length) {
-    await env.DB
-      .prepare(`UPDATE prebid_builds SET status = 'invalid' WHERE publisher_id = ? AND id = ?`)
-      .bind(siteId, buildId)
-      .run();
     return apiError('This build cannot be activated because bidder adapters are missing.', 422, {
       missingAdapters,
     });
   }
 
-  const actor = getActor(request);
-  const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB
-      .prepare(
-        `UPDATE prebid_builds
-         SET status = 'archived'
-         WHERE publisher_id = ? AND status = 'current' AND id <> ?`,
-      )
-      .bind(siteId, buildId),
-    env.DB
-      .prepare(
-        `UPDATE prebid_builds
-         SET status = 'current'
-         WHERE publisher_id = ? AND id = ?`,
-      )
-      .bind(siteId, buildId),
-    env.DB
-      .prepare(
-        `INSERT INTO audit_log (
-           id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-         ) VALUES (?, ?, 'prebid_build.activated', ?, 'prebid_build', ?, ?, ?)`,
-      )
-      .bind(
-        crypto.randomUUID(),
-        actor,
-        siteId,
-        buildId,
-        JSON.stringify({ version: row.version, fileKey: row.file_key }),
-        now,
-      ),
-  ]);
+  try {
+    const saved = await readPreviewSnapshot(env.DB.withSession('first-primary'), siteId, {includePrebid:true});
+    const config = JSON.parse(saved.config.config_json);
+    let configJson = saved.config.config_json;
+    if(config.builtinRuntimeSelection) {
+      const projected = {...saved,prebidBuilds:[{...row,status:'current'}]};
+      const enabled = config.enablePrebid === true;
+      const plan = await prepareSiteRuntimeSelection({siteId,snapshot:projected,catalog:runtimeCatalog,
+        expectedRevision:await digest(projected),selection:{runtime:config.builtinRuntimeSelection.runtime,
+          allowPreview:true,enablePrebid:enabled,prebidBuildId:enabled?buildId:null}},env.BUILDS);
+      configJson = plan.configJson;
+    }
+    await commitSiteConfiguration(env,saved,configJson,getActor(request),row);
+  } catch(error) {
+    const failure = error as Error & {status?:number};
+    return apiError(failure.message || 'Prebid build could not be activated.',failure.status ?? 422);
+  }
 
   const updated = await fetchBuildRow(env.DB, siteId, buildId);
   return json({
