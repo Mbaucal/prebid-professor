@@ -114,6 +114,7 @@ export default function App() {
   const [activePublisherId, setActivePublisherId] = useState<string | null>(null);
   const [activeSiteId, setActiveSiteId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<PublisherTab>('Overview');
+  const [configEntry, setConfigEntry] = useState<'ad-units' | 'generator-profiles'>('ad-units');
   const [modal, setModal] = useState<ModalMode>(null);
   const [publisherForm, setPublisherForm] = useState<PublisherForm>(emptyPublisherForm);
   const [siteForm, setSiteForm] = useState<SiteForm>(emptySiteForm);
@@ -537,7 +538,6 @@ export default function App() {
             <button className="button secondary" disabled={!site} onClick={openEditSite} type="button">Edit site</button>
             <button className="button secondary" disabled={!site} onClick={openDuplicateSite} type="button">Duplicate site</button>
             <button className="button danger" disabled={!site} onClick={() => void removeSite()} type="button">Delete site</button>
-            <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Validate</button>
             <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Generate</button>
             <button className="button primary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Publish ↗</button>
           </div>
@@ -559,13 +559,17 @@ export default function App() {
 
         {activeTab === 'Overview' ? renderOverview() : null}
         {activeTab === 'Config' && site ? (
-          <ConfigPanel onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
+          <ConfigPanel onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
         ) : null}
         {activeTab === 'Prebid.js' && site ? (
           <PrebidBuildsPanel publisherId={site.id} siteName={site.name} />
         ) : null}
         {activeTab === 'Releases' && site ? (
           <ReleasesPanel
+            onNavigate={destination => {
+              if (destination === 'prebid') setActiveTab('Prebid.js');
+              else { setConfigEntry('generator-profiles'); setActiveTab('Config'); }
+            }}
             onChanged={() => loadHierarchy(publisher?.id, site.id)}
             publisherId={site.id}
             siteName={site.name}

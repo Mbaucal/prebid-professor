@@ -90,6 +90,12 @@ const ARTIFACT_ORDER = [
 
 type ArtifactName = (typeof ARTIFACT_ORDER)[number];
 
+// Display only: keep full versions in URLs, selections and downloaded packages.
+function releaseLabel(version: string): string {
+  const builtin = /^builtin-(release|draft)-([a-f0-9]{64})$/.exec(version);
+  return builtin ? `${builtin[1] === 'draft' ? 'Draft' : 'Release'} ${builtin[2].slice(0, 8)}` : version;
+}
+
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
   const text = await response.text();
@@ -454,34 +460,36 @@ export default function ExportPanel({ publisherId, site }: Props) {
       <div className="export-source-panel">
         <div>
           <span className="panel-kicker">Artifact source</span>
-          <h3>{sourceVersion}</h3>
+          <h3 title={sourceVersion}>{releaseLabel(sourceVersion)}</h3>
           <p>{prebidEnabled ? 'GAM + Prebid' : 'GAM / AdX only'} · {activeUnits.length} active ad unit(s)</p>
         </div>
         <div className="export-source-options" role="radiogroup" aria-label="Export source">
           <label className={source === 'current' ? 'selected' : ''}>
             <input checked={source === 'current'} disabled={!productionRelease} name="export-source" onChange={() => setSource('current')} type="radio" />
             <span>Production current</span>
-            <small>{productionRelease?.version ?? 'Not published'}</small>
+            <small title={productionRelease?.version}>{productionRelease ? releaseLabel(productionRelease.version) : 'Not published'}</small>
           </label>
           <label className={source === 'staging' ? 'selected' : ''}>
             <input checked={source === 'staging'} disabled={!stagingRelease} name="export-source" onChange={() => setSource('staging')} type="radio" />
             <span>Staging</span>
-            <small>{stagingRelease?.version ?? 'Not published'}</small>
+            <small title={stagingRelease?.version}>{stagingRelease ? releaseLabel(stagingRelease.version) : 'Not published'}</small>
           </label>
           <label className={source === 'release' ? 'selected' : ''}>
             <input checked={source === 'release'} disabled={!releases.length} name="export-source" onChange={() => setSource('release')} type="radio" />
             <span>Immutable release</span>
             <select
+              aria-label="Release version"
               disabled={!releases.length}
               onChange={(event) => {
                 setSelectedReleaseId(event.target.value);
                 setSource('release');
               }}
               value={selectedReleaseId}
+              title={selectedRelease?.version}
             >
               {releases.map((release) => (
-                <option key={release.id} value={release.id}>
-                  {release.version} · {release.status}
+                <option key={release.id} value={release.id} title={release.version}>
+                  {releaseLabel(release.version)} · {release.status}
                 </option>
               ))}
             </select>

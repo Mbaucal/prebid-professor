@@ -14,7 +14,9 @@ import UserIdModulesPanel from './UserIdModulesPanel';
 
 type Props = {
   publisherId: string;
+  onOpenPrebid?: () => void;
   onChanged?: () => void | Promise<void>;
+  initialSection?: ConfigSection;
 };
 
 type ConfigSection =
@@ -30,8 +32,8 @@ type ConfigSection =
   | 'generator-profiles'
   | 'imports';
 
-export default function ConfigPanel({ publisherId, onChanged }: Props) {
-  const [section, setSection] = useState<ConfigSection>('ad-units');
+export default function ConfigPanel({ publisherId, onChanged, onOpenPrebid, initialSection = 'ad-units' }: Props) {
+  const [section, setSection] = useState<ConfigSection>(initialSection);
 
   return (
     <div className="config-workspace">
@@ -64,7 +66,7 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
           User ID modules
         </button>
         <button className={section === 'generator-profiles' ? 'active' : ''} onClick={() => setSection('generator-profiles')} type="button">
-          Generator profiles
+          ads.js versions
         </button>
         <button className={section === 'imports' ? 'active' : ''} onClick={() => setSection('imports')} type="button">
           CSV import
@@ -85,7 +87,7 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
       {section === 'runtime-controls' ? <RuntimeControlsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'supply-consent' ? <SupplyChainConsentPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'user-id' ? <UserIdModulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
-      {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} /> : null}
+      {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} onOpenPrebid={onOpenPrebid} /> : null}
       {section === 'imports' ? (
         <>
           <div className="size-map-import-compat-note">

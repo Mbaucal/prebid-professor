@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AdUnit, AdUnitType } from '../shared/types';
+import SiteRuntimePanel from './SiteRuntimePanel';
 
 type Props = {
   publisherId: string;
@@ -65,6 +66,7 @@ function formFromAdUnit(adUnit: AdUnit): FormState {
 }
 
 export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
+  const [runtimeUnit,setRuntimeUnit]=useState<string|null>(null);
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -250,6 +252,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
                     {adUnit.notes ? <p>{adUnit.notes}</p> : null}
 
                     <div className="ad-unit-actions">
+                      {adUnit.mediaType==='banner'&&adUnit.type!=='DRAFT'?<button onClick={()=>setRuntimeUnit(adUnit.code)} type="button">Display & loading</button>:null}
                       <button onClick={() => openEdit(adUnit)} type="button">Edit</button>
                       <button onClick={() => openDuplicate(adUnit)} type="button">Duplicate</button>
                       <button className="danger-link" onClick={() => void remove(adUnit)} type="button">
@@ -270,6 +273,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
         </div>
       </section>
 
+      {runtimeUnit?<div className="modal-backdrop"><section className="modal-card ad-unit-modal" role="dialog" aria-modal="true" aria-label={`Display settings for ${runtimeUnit}`}><button className="icon-button" type="button" onClick={()=>setRuntimeUnit(null)} aria-label="Close display settings">×</button><SiteRuntimePanel key={publisherId+runtimeUnit} publisherId={publisherId} view="positions" unitCode={runtimeUnit} onChanged={onChanged}/></section></div>:null}
       {mode ? (
         <div className="modal-backdrop" onMouseDown={closeForm} role="presentation">
           <section

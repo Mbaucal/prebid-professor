@@ -333,6 +333,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
     () => builds.find((build) => build.status === 'current') ?? null,
     [builds],
   );
+  const multipleCurrentBuilds = builds.filter((build) => build.status === 'current').length > 1;
 
   function resetSelectedBuild() {
     setAnalysis(null);
@@ -717,8 +718,8 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
             <h3>R2 build history</h3>
             <p>Current is the build that the next release generator will use.</p>
           </div>
-          <span className={currentBuild ? 'build-state valid' : 'build-state invalid'}>
-            {currentBuild ? `Current v${currentBuild.version}` : 'No current build'}
+          <span className={currentBuild && !multipleCurrentBuilds ? 'build-state valid' : 'build-state invalid'}>
+            {multipleCurrentBuilds ? 'Multiple current files — use Set current to choose one' : currentBuild ? `Current v${currentBuild.version}` : 'No current build'}
           </span>
         </div>
 
@@ -751,7 +752,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
               </div>
               <div className="stored-build-actions">
                 <a className="button secondary" href={build.downloadUrl}>Download</a>
-                {build.status !== 'current' && build.valid ? (
+                {(build.status !== 'current' || multipleCurrentBuilds) && build.valid ? (
                   <button
                     className="button secondary"
                     disabled={busyBuildId === build.id}
