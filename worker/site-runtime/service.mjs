@@ -31,7 +31,7 @@ async function read(env,siteId){
 }
 /** The exact reviewed snapshot is compared inside the UPDATE and audit batch.
  * No extra assertion table or schema change is required in the main app. */
-export async function commitSiteConfiguration(env,snapshot,configJson,actor,activation=null){
+export async function commitSiteConfiguration(env,snapshot,configJson,actor,{activation=null,audit=null}={}){
  const siteId=snapshot.site.id,conditions=[],args=[];
  for(const [key,table,columns,where,single] of specs){
   const rows=single?[snapshot[key]]:snapshot[key];
@@ -50,7 +50,7 @@ export async function commitSiteConfiguration(env,snapshot,configJson,actor,acti
   ...(activation?[
    db.prepare(`UPDATE prebid_builds SET status=CASE WHEN id=? THEN 'current' ELSE 'archived' END WHERE publisher_id=? AND (status='current' OR id=?) AND changes()=1`).bind(activation.id,siteId,activation.id),
    db.prepare("INSERT INTO audit_log (id,actor,action,publisher_id,entity_type,entity_id,details_json) SELECT ?,?,'prebid_build.activated',?,'prebid_build',?,? WHERE changes()>0").bind(crypto.randomUUID(),actor,siteId,activation.id,JSON.stringify({version:activation.version,fileKey:activation.file_key,runtimeSelectionSynchronized:true})),
-  ]:[db.prepare('INSERT INTO audit_log (id,actor,action,publisher_id,details_json) SELECT ?,?,?,?,? WHERE changes()=1 AND ?=1').bind(crypto.randomUUID(),actor,'builtin_runtime.settings_saved',siteId,JSON.stringify({kind:'site-runtime-settings',published:false}),Number(changed))]),
+  ]:[db.prepare('INSERT INTO audit_log (id,actor,action,publisher_id,entity_type,entity_id,details_json) SELECT ?,?,?,?,?,?,? WHERE changes()=1 AND ?=1').bind(crypto.randomUUID(),actor,audit?.action??'builtin_runtime.settings_saved',siteId,audit?.entityType??null,audit?.entityId??null,JSON.stringify(audit?.details??{kind:'site-runtime-settings',published:false}),Number(changed))]),
  ]);}catch{fail('The save result is unconfirmed. Reload this site before trying again.',503);}
  if(result?.some(r=>r.success!==true))fail('The save result is unconfirmed. Reload this site before trying again.',503);
  if(result?.[0]?.meta?.changes!==1)fail('Site settings changed in another tab. Reload this site before saving.',409);

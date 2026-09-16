@@ -229,6 +229,10 @@ test('main demand-mode API rejects TakeOver conflicts, synchronizes the exact Pr
  response=await mode(false);assert.equal(response.status,200,await response.text());
  let config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
  assert.equal(config.enablePrebid,false);assert.equal(config.builtinRuntimeSelection.prebid,null);assert.equal((await packageState(f.env,'first')).ready,true);
+ const transitions=f.sqlite.prepare("SELECT actor,entity_type,entity_id,details_json FROM audit_log WHERE action='prebid_mode.updated' ORDER BY rowid").all();
+ assert.equal(transitions.length,2);assert.equal(transitions[1].entity_type,'prebid_mode');assert.equal(transitions[1].entity_id,'first');assert.ok(transitions[1].actor);
+ assert.deepEqual(JSON.parse(transitions[1].details_json),{previousEnabled:true,enabled:false,mode:'gam-adx-only',savedBidderConfigurationPreserved:true});
+ assert.deepEqual(JSON.parse(transitions[0].details_json),{previousEnabled:false,enabled:true,mode:'gam-prebid',savedBidderConfigurationPreserved:true});
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM bidders').get().n,1);assert.deepEqual(f.objects.get(path).bytes,bytes);
  response=await mode(true);assert.equal(response.status,200,await response.text());
  config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);assert.equal(config.builtinRuntimeSelection.prebid.sha256,await sha256(bytes));

@@ -389,7 +389,7 @@ export async function activatePrebidBuild(
           allowPreview:true,enablePrebid:enabled,prebidBuildId:enabled?buildId:null}},env.BUILDS);
       configJson = plan.configJson;
     }
-    await commitSiteConfiguration(env,saved,configJson,getActor(request),row);
+    await commitSiteConfiguration(env,saved,configJson,getActor(request),{activation:row});
   } catch(error) {
     const failure = error as Error & {status?:number};
     return apiError(failure.message || 'Prebid build could not be activated.',failure.status ?? 422);

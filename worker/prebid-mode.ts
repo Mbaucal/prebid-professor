@@ -151,7 +151,10 @@ export async function updatePrebidMode(
       const plan = await prepareSiteRuntimeSelection({siteId, snapshot:saved, catalog:runtimeCatalog,
         expectedRevision:await digest(saved), selection:{runtime:current.builtinRuntimeSelection.runtime,
           allowPreview:true, enablePrebid:enabled, prebidBuildId:enabled && saved.prebidBuilds.length===1?saved.prebidBuilds[0].id:null}}, env.BUILDS);
-      await commitSiteConfiguration(env,saved,plan.configJson,getActor(request));
+      await commitSiteConfiguration(env,saved,plan.configJson,getActor(request),{audit:{
+        action:'prebid_mode.updated',entityType:'prebid_mode',entityId:siteId,
+        details:{previousEnabled:enabledFromConfig(current),enabled,mode:enabled?'gam-prebid':'gam-adx-only',savedBidderConfigurationPreserved:true},
+      }});
       return json(await buildPayload(env.DB,siteId,JSON.parse(plan.configJson)));
     } catch (error) {
       const failure=error as Error & {status?:number};
