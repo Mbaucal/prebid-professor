@@ -21,13 +21,12 @@ try:
     browser=p.chromium.launch(headless=True)
     page=browser.new_page(viewport={'width':1280,'height':900});page.route('**/*',route);page.on('pageerror',lambda e:errors.append(str(e)))
     page.goto('https://tessera.fixture.invalid/')
-    page.get_by_role('link',name='Build workflow',exact=True).click()
-    assert page.url=='https://tessera.fixture.invalid/site-workspace#workflow'
-    workflow=page.get_by_role('region',name='Build workflow',exact=True)
-    workflow.get_by_role('button',name='Open site settings',exact=True).wait_for()
-    assert workflow.get_by_role('heading',level=3).count()==5
+    page.get_by_role('link',name='Generate and releases',exact=True).click()
+    assert page.url=='https://tessera.fixture.invalid/site-workspace#packages'
+    page.get_by_role('button',name='Choose ads.js version',exact=True).wait_for()
+    assert page.get_by_role('button',name='Generate and save package',exact=True).is_disabled()
     assert all(r['method']=='GET' for r in requests)
-    workflow.get_by_role('button',name='Choose script version',exact=True).click()
+    page.get_by_role('button',name='Choose ads.js version',exact=True).click()
     page.get_by_label('Script version',exact=True).select_option(label='3.10.0')
     page.get_by_role('checkbox',name='Use this script version').check()
     page.get_by_role('button',name='Save script version',exact=True).click()
@@ -68,13 +67,14 @@ try:
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
     page.screenshot(path=str(out/'mobile-packages.png'),full_page=True)
     before=len(requests)
-    page.get_by_role('button',name='Build workflow',exact=True).click()
-    workflow.get_by_text('1 recent built-in packages.',exact=False).wait_for()
+    # Existing bookmarks open the generator directly after removing the guide.
+    page.goto('https://tessera.fixture.invalid/site-workspace#workflow')
+    page.reload()
+    page.get_by_text('Browser package check',exact=True).wait_for()
+    assert page.get_by_role('button',name='Build workflow',exact=True).count()==0
     assert all(r['method']=='GET' for r in requests[before:])
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
-    page.screenshot(path=str(out/'mobile-workflow.png'),full_page=True)
-    workflow.get_by_role('button',name='Open saved packages',exact=True).click()
-    page.get_by_text('Browser package check',exact=True).wait_for()
+    page.screenshot(path=str(out/'mobile-generator-bookmark.png'),full_page=True)
     assert not errors,errors
     browser.close()
     (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'requests':requests,'externalRequests':0},indent=2))

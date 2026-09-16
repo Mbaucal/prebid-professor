@@ -11,7 +11,6 @@ import ExportPanel from './components/ExportPanel';
 import HierarchySidebar from './components/HierarchySidebar';
 import PrebidBuildsPanel from './components/PrebidBuildsPanel';
 import ReleasesPanel from './components/ReleasesPanel';
-import SiteWorkflowPanel from './components/SiteWorkflowPanel';
 import MockupBuilderPanel from './components/MockupBuilderPanel';
 import MonitoringReadonlyPanel from './components/MonitoringReadonlyPanel';
 import type {
@@ -31,7 +30,7 @@ const globalDescriptions: Record<GlobalSection, string> = {
   'Audit log': 'Review configuration, release and operational activity recorded in D1.',
   Settings: 'Check runtime health, bindings, security and retention safeguards.',
 };
-const publisherTabs = ['Overview', 'Build workflow', 'Config', 'Prebid.js', 'Releases', 'Export', 'Mockup', 'Monitoring', 'Debug', 'Ads.txt'] as const;
+const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Export', 'Mockup', 'Monitoring', 'Debug', 'Ads.txt'] as const;
 
 type PublisherTab = (typeof publisherTabs)[number];
 type ModalMode = 'create-publisher' | 'create-site' | 'edit-site' | 'duplicate-site' | null;
@@ -539,7 +538,6 @@ export default function App() {
             <button className="button secondary" disabled={!site} onClick={openEditSite} type="button">Edit site</button>
             <button className="button secondary" disabled={!site} onClick={openDuplicateSite} type="button">Duplicate site</button>
             <button className="button danger" disabled={!site} onClick={() => void removeSite()} type="button">Delete site</button>
-            <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Build workflow')} type="button">Build workflow</button>
             <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Generate</button>
             <button className="button primary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Publish ↗</button>
           </div>
@@ -560,12 +558,6 @@ export default function App() {
         </section>
 
         {activeTab === 'Overview' ? renderOverview() : null}
-        {activeTab === 'Build workflow' && site ? <SiteWorkflowPanel key={site.id} publisherId={site.id} onNavigate={destination => {
-          if (destination === 'settings' || destination === 'versions') {
-            setConfigEntry(destination === 'versions' ? 'generator-profiles' : 'ad-units');
-            setActiveTab('Config');
-          } else setActiveTab(destination === 'prebid' ? 'Prebid.js' : 'Releases');
-        }} /> : null}
         {activeTab === 'Config' && site ? (
           <ConfigPanel onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
         ) : null}
@@ -592,7 +584,7 @@ export default function App() {
         {activeTab === 'Ads.txt' && site ? (
           <AdsTxtPanel onChanged={() => loadHierarchy(publisher?.id, site.id)} site={site} />
         ) : null}
-        {activeTab !== 'Overview' && activeTab !== 'Build workflow' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Monitoring' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
+        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Monitoring' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
           ? renderPlaceholder(activeTab)
           : null}
           </>
