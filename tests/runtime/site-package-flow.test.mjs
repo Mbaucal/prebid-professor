@@ -290,7 +290,12 @@ test('main Prebid activation updates the runtime pin atomically and rejects corr
  }
  let response=await mode(true);assert.equal(response.status,200,await response.text());
  const originalRelease=await generate(f),originalPackage=await readPackage(f.env,'first',originalRelease.id);
+ // A concurrent first upload may leave two current rows. Reactivating the
+ // chosen current file must repair the ambiguity without another upload.
+ f.sqlite.prepare("UPDATE prebid_builds SET status='current' WHERE id='replacement'").run();
+ const ambiguous=await siteRuntimeSettings(f.env,'first');assert.equal(ambiguous.prebid.status,'ambiguous');assert.equal(ambiguous.nextStep,'prebid');
  response=await activate('replacement');assert.equal(response.status,200,await response.text());
+ assert.equal(f.sqlite.prepare("SELECT count(*) n FROM prebid_builds WHERE status='current'").get().n,1);
  let config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
  assert.equal(config.builtinRuntimeSelection.prebid.id,'replacement');assert.equal(config.builtinRuntimeSelection.prebid.version,'11.34.0');assert.equal((await packageState(f.env,'first')).ready,true);
  assert.equal(f.sqlite.prepare("SELECT status FROM prebid_builds WHERE id='original'").get().status,'archived');
