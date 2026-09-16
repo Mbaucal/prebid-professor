@@ -47,6 +47,27 @@ test('concurrent position save prevents ad-unit mutation and its audit atomicall
 test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function setup(options){const f=workspaceStore(options);fixtures.push(f);const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);const cookie=login.headers.get('set-cookie').split(';')[0];const r=await worker.fetch(new Request(ORIGIN+'/test-api/setup',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({confirm:'prepare-empty-test-database'})}),f.env);assert.equal(r.status,200);return {f,cookie};}
 async function select(f,siteId='test-site'){const s=await siteRuntimeSettings(f.env,siteId);await changeSiteRuntime(f.env,siteId,TEST_EMAIL,{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});return siteRuntimeSettings(f.env,siteId);}
+test('unconfigured site uses the built-in workflow and gives one actionable missing-Prebid step without writing',async()=>{
+ const {f}=await setup();
+ const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ config.enablePrebid=true;config.importedSettings={keep:'original'};
+ const original=JSON.stringify(config);f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(original);
+ const audits=f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n;
+ const s=await siteRuntimeSettings(f.env,'test-site');
+ assert.equal(s.releaseWorkflow,'builtin');assert.equal(s.selected,null);assert.equal(s.nextStep,'prebid');assert.equal(s.prebid.status,'missing');
+ assert.match(s.prebid.message,/Open Prebid.js.*Set current/);
+ await assert.rejects(changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true}),e=>e.status===422&&e.message===s.prebid.message);
+ assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,original);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,audits);
+});
+test('configured legacy profiles retain their workflow; a saved built-in choice takes precedence',async()=>{
+ const {f}=await setup();
+ const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ config.generatorProfileId='existing-profile';f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+ let s=await siteRuntimeSettings(f.env,'test-site');assert.equal(s.releaseWorkflow,'legacy');assert.equal(s.prebid.status,'off');
+ s=await select(f);assert.equal(s.releaseWorkflow,'builtin');assert.equal(s.nextStep,null);
+ assert.equal(JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json).generatorProfileId,'existing-profile');
+});
 test('site API saves runtime, position and lazy choices then builds selected version without template or row loss',async()=>{
  const {f}=await setup();const rows=f.sqlite.prepare('SELECT * FROM ad_units ORDER BY id').all();
  let s=await select(f);const p=s.positions.find(p=>p.code==='Billboard');

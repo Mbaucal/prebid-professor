@@ -567,13 +567,17 @@ export default function App() {
           } else setActiveTab(destination === 'prebid' ? 'Prebid.js' : 'Releases');
         }} /> : null}
         {activeTab === 'Config' && site ? (
-          <ConfigPanel key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
+          <ConfigPanel onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
         ) : null}
         {activeTab === 'Prebid.js' && site ? (
           <PrebidBuildsPanel publisherId={site.id} siteName={site.name} />
         ) : null}
         {activeTab === 'Releases' && site ? (
           <ReleasesPanel
+            onNavigate={destination => {
+              if (destination === 'prebid') setActiveTab('Prebid.js');
+              else { setConfigEntry('generator-profiles'); setActiveTab('Config'); }
+            }}
             onChanged={() => loadHierarchy(publisher?.id, site.id)}
             publisherId={site.id}
             siteName={site.name}

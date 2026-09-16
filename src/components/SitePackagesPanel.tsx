@@ -2,8 +2,9 @@ import { useEffect,useState } from 'react';
 import {downloadStoredPackage} from '../download/saved-package.mjs';
 import ExternalDeploymentsPanel from './ExternalDeploymentsPanel';
 import '../site-workspace/runtime.css';
-type Props={publisherId:string;endpoint?:string;onChanged?:()=>void|Promise<void>};
-export default function SitePackagesPanel({publisherId,endpoint,onChanged}:Props){
+import { runtimeLabel } from '../site-workspace/runtime-labels';
+type Props={publisherId:string;endpoint?:string;onChanged?:()=>void|Promise<void>;onNavigate?:(destination:'prebid'|'versions')=>void};
+export default function SitePackagesPanel({publisherId,endpoint,onChanged,onNavigate}:Props){
  const url=endpoint??`/api/publishers/${encodeURIComponent(publisherId)}/builtin-releases`;
  const [state,setState]=useState<any>(null),[notes,setNotes]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[failed,setFailed]=useState(false);
  async function request(body?:any){const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});if(!r.ok)throw Error((await r.json()).error||'Package request failed.');return r;}
@@ -22,8 +23,8 @@ export default function SitePackagesPanel({publisherId,endpoint,onChanged}:Props
  return <section className="site-runtime-panel" aria-label="Saved packages"><h2>Generate and releases</h2>
  {message?<p role="status" className={failed?'runtime-error':'runtime-message'}>{message}</p>:null}
  {!state?<p>Loading saved packages…</p>:<>
- <p>{state.site.name} · {state.runtime?.runtimeVersion??'Choose a script version first'}</p>
- {state.error?<p className="runtime-error">{state.error}</p>:null}
+ <p>{state.site.name} · {state.runtime?runtimeLabel(state.runtime.runtimeVersion):'Setup needed'}</p>
+ {state.error?<div className="runtime-error"><p>{state.error}</p>{state.nextStep&&onNavigate?<button onClick={()=>onNavigate(state.nextStep)}>{state.nextStep==='prebid'?'Open Prebid.js':'Choose ads.js version'}</button>:null}</div>:null}
  <p>Generate from this site’s saved ad units, size maps, bidders and script version. Each saved package keeps its original files.</p>
  <label>What changed?<input maxLength={160} value={notes} disabled={busy} onChange={e=>setNotes(e.target.value)} placeholder="Short release note"/></label>
  <div className="runtime-actions"><button disabled={busy||!state.ready} onClick={()=>void run(generate)}>{busy?'Working…':'Generate and save package'}</button><button disabled={busy} onClick={()=>void run(reload)}>Reload releases</button></div>

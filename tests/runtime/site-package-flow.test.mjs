@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 import {workspaceStore} from '../support/test-workspace-store.mjs';
 import {siteRuntimeSettings,changeSiteRuntime} from '../../worker/site-runtime/service.mjs';
-import {generatePackage,packageDownload,readPackage,changePackageChannel,channelRevision,builtInCdn,packageResponse} from '../../worker/site-runtime/releases.mjs';
+import {generatePackage,packageDownload,readPackage,changePackageChannel,channelRevision,builtInCdn,packageResponse,packageState} from '../../worker/site-runtime/releases.mjs';
 import {verifyPackage,verifyPublicPackage,scriptsDelivery} from '../../scripts/pages-release-verification.mjs';
 import {sha256} from '../../worker/runtime/prebid-artifact-check.mjs';
 import {deploymentManifestPin} from '../../worker/deployment-manifest-pin.mjs';
@@ -16,6 +16,20 @@ async function fixture(){const f=workspaceStore();fixtures.push(f);f.sqlite.exec
  const s=await siteRuntimeSettings(f.env,'first');await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});return f;}
 async function generate(f,note='First package'){const s=await siteRuntimeSettings(f.env,'first');return (await generatePackage(f.env,'first','tester',{revision:s.revision,notes:note})).release;}
 async function promote(f,id,action){return changePackageChannel(f.env,'first',id,'tester',action,{acknowledge:true,channelRevision:await channelRevision(f.env,'first')});}
+test('release setup explains the missing file before version selection and keeps saved packages accessible',async()=>{
+ const f=await fixture(),release=await generate(f);
+ const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ delete config.builtinRuntimeSelection;config.enablePrebid=true;
+ f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+ let s=await packageState(f.env,'first');
+ assert.equal(s.ready,false);assert.equal(s.nextStep,'prebid');assert.match(s.error,/No current Prebid file/);
+ assert.doesNotMatch(s.error,/generator profile|missing .*BidAdapter/);assert.equal(s.releases[0].id,release.id);
+ config.enablePrebid=false;f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+ s=await packageState(f.env,'first');assert.equal(s.ready,false);assert.equal(s.nextStep,'versions');assert.match(s.error,/no template is needed/);
+ const versions=await siteRuntimeSettings(f.env,'first');
+ await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:versions.revision,runtime:versions.runtimes[0].pin,allowPreview:true});
+ s=await packageState(f.env,'first');assert.equal(s.ready,true);assert.equal(s.nextStep,null);assert.equal(s.error,null);
+});
 test('built-in Generate stores original package; channels and rollback reuse its exact bytes',async()=>{
  const f=await fixture(),settings=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
  const a=await generate(f);assert.equal(a.status,'draft');assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,settings);
