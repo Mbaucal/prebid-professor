@@ -4,7 +4,7 @@ import SiteRuntimePanel from '../components/SiteRuntimePanel';
 import SitePackagesPanel from '../components/SitePackagesPanel';
 import SiteWorkflowPanel from '../components/SiteWorkflowPanel';
 function Workspace() {
-  const [view,setView]=useState<'versions'|'positions'|'packages'|'workflow'>('versions');
+  const [view,setView]=useState<'versions'|'positions'|'packages'|'workflow'>(()=>window.location.hash==='#workflow'?'workflow':'versions');
   return <main style={{maxWidth:1000,margin:'24px auto',padding:16}}>
     <h1>Tessera · TEST site workspace</h1><p>This workspace uses your saved TEST copy. Production sites are unchanged.</p>
     <nav className="runtime-actions">

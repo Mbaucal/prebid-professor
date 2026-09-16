@@ -20,8 +20,9 @@ try:
  with sync_playwright() as p:
     browser=p.chromium.launch(headless=True)
     page=browser.new_page(viewport={'width':1280,'height':900});page.route('**/*',route);page.on('pageerror',lambda e:errors.append(str(e)))
-    page.goto('https://tessera.fixture.invalid/site-workspace')
-    page.get_by_role('button',name='Build workflow',exact=True).click()
+    page.goto('https://tessera.fixture.invalid/')
+    page.get_by_role('link',name='Build workflow',exact=True).click()
+    assert page.url=='https://tessera.fixture.invalid/site-workspace#workflow'
     workflow=page.get_by_role('region',name='Build workflow',exact=True)
     workflow.get_by_role('button',name='Open site settings',exact=True).wait_for()
     assert workflow.get_by_role('heading',level=3).count()==5
