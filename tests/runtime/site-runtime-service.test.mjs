@@ -6,6 +6,7 @@ import worker from '../../worker/test-workspace/index.mjs';
 import { workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD } from '../support/test-workspace-store.mjs';
 import { siteRuntimeSettings,changeSiteRuntime,siteRuntimeBundle,commitSiteConfiguration } from '../../worker/site-runtime/service.mjs';
 import { readPreviewSnapshot } from '../../worker/runtime/builtin-preview-service.mjs';
+import { runtimeLabel } from '../../src/site-workspace/runtime-labels.ts';
 const fixtures=[];
 test('saved bottom Sticky with group loading cannot be renamed or deleted',async()=>{
  const {f}=await setup();let s=await select(f);
@@ -67,6 +68,16 @@ test('configured legacy profiles retain their workflow; a saved built-in choice 
  let s=await siteRuntimeSettings(f.env,'test-site');assert.equal(s.releaseWorkflow,'legacy');assert.equal(s.prebid.status,'off');
  s=await select(f);assert.equal(s.releaseWorkflow,'builtin');assert.equal(s.nextStep,null);
  assert.equal(JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json).generatorProfileId,'existing-profile');
+});
+test('malformed saved runtime remains displayable and can be explicitly repaired',async()=>{
+ const {f}=await setup();
+ const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ config.builtinRuntimeSelection={runtime:{runtimeSha256:'old-schema'}};
+ f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+ const s=await siteRuntimeSettings(f.env,'test-site');assert.ok(s.validationIssue);
+ assert.equal(runtimeLabel(s.selected.runtimeVersion),'Invalid saved version');
+ const repaired=await select(f);assert.equal(repaired.validationIssue,null);
+ assert.equal(runtimeLabel(repaired.selected.runtimeVersion),'3.10.0');
 });
 test('site API saves runtime, position and lazy choices then builds selected version without template or row loss',async()=>{
  const {f}=await setup();const rows=f.sqlite.prepare('SELECT * FROM ad_units ORDER BY id').all();
