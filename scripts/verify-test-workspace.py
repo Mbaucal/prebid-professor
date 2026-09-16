@@ -3,6 +3,7 @@ All target traffic INCLUDING redirect chains is resolved to loopback TLS.
 No Cloudflare API, real credentials, external ad libraries or publisher requests.
 """
 import json
+from position_editor_actions import add_takeover_position
 import pathlib
 import subprocess
 import tempfile
@@ -55,8 +56,8 @@ def exercise(page):
         page.locator('#runtime').select_option('0')
         check('Preview opt-in is not preselected',page.locator('#save-selection').is_disabled())
         page.locator('#allow-preview').check()
-        expect(page.locator('#release-history article')).to_have_count(2)
-        expect(page.locator('#release-history article[data-available="true"]')).to_contain_text('Available on TEST')
+        expect(page.locator('#release-history article')).to_have_count(3)
+        expect(page.locator('#release-history article[data-available="true"]')).to_have_count(2)
         expect(page.locator('#release-history article[data-available="false"]')).to_contain_text('Earlier build')
         writes_before=sum(event['method']=='POST' for event in http_events)
         page.get_by_role('link',name='View version history').click()
@@ -92,9 +93,9 @@ def exercise(page):
     page.set_viewport_size({'width':1280,'height':900})
     page.get_by_role('link',name='Back to Generate').click()
     page.locator('#generate').wait_for(state='visible')
-    page.get_by_role('link',name='TakeOver settings',exact=True).click()
-    expect(page.locator('#takeover-enabled')).to_be_enabled()
-    page.locator('#takeover-enabled').check()
+    page.get_by_role('link',name='Ad positions and TakeOver',exact=True).click()
+    page.locator('#add-position').wait_for(state='visible')
+    add_takeover_position(page)
     page.locator('#confirm-draft').check()
     page.locator('#save-site').click()
     expect(page.locator('#editor-message')).to_contain_text('Site settings saved')
@@ -130,6 +131,13 @@ def exercise(page):
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         check('ZIP contains the exact originally reviewed JS',archive.read('ads.js').decode()==source)
         check('GPT-only package has nine files and no Prebid',len(archive.namelist())==9 and 'prebid.js' not in archive.namelist())
+    direct_url=origin+'/test-api/releases/'+details['draft']['id']+'/download'
+    with page.expect_download() as direct_download:
+        page.goto(direct_url)
+    direct_raw=pathlib.Path(direct_download.value.path()).read_bytes()
+    check('Existing direct download URL assembles the same ZIP in browser',direct_raw==raw)
+    page.goto(origin+'/')
+    page.locator('#logout').wait_for(state='visible')
     page.screenshot(path=str(out/'desktop.png'),full_page=True)
     page.set_viewport_size({'width':390,'height':844})
     check('Mobile workspace has no horizontal overflow',page.evaluate('document.documentElement.scrollWidth<=innerWidth'))

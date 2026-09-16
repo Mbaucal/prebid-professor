@@ -6,15 +6,16 @@ import { assertWorkspaceSiteScope } from './site-draft.mjs';
 import { getSiteDraft, saveSiteDraft } from './site-draft-service.mjs';
 import { siteDraftPage, siteDraftScript } from './site-draft-page.mjs';
 import { zipSync } from 'fflate';
+import { downloadScript } from '../../.generated/download.mjs';
 import { getAuthenticatedUser, handleLogin, handleLogout } from '../auth.ts';
-import { runtimeDescriptor, readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
+import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
 import { SelectionWriteError } from './selection-transaction.mjs';
 import { readRuntimeSelectionSettings, saveRuntimeSelectionSettings, selectedWorkspaceRuntime } from './runtime-selection.mjs';
 import { runtimeSelectionPage, runtimeSelectionScript } from './runtime-selection-page.mjs';
-import { buildArtifactCandidate } from '../runtime/artifact-candidate.mjs';
-import { describeCandidate, saveDraftRelease, readDraftRelease } from '../runtime/draft-release-store.mjs';
+import { runtimeDescriptor, runtimeCatalog, descriptorForPin, buildArtifactCandidate } from './runtime-catalog.mjs';
+import { describeCandidate, saveDraftRelease, readDraftRelease, readDraftReleaseIndex, readDraftReleaseFile } from '../runtime/draft-release-store.mjs';
 import { WorkspaceError, workspaceBoundary, sameOrigin, boundedText, jsonBody, TEST_SITE } from './boundary.mjs';
 import { inspectTestSchema, initializeTestSchema } from './schema.mjs';
 import { issueReceipt, verifyReceipt } from './receipt.mjs';
@@ -22,6 +23,8 @@ import { loginPage, workspacePage, workspaceScript } from './page.mjs';
 import { takeOverForBuild } from './takeover-settings.mjs';
 import { tanjugPilotResponse } from './tanjug-pilot.mjs';
 import { deploymentResponse, runnerPath, runnerResponse } from './deployments.mjs';
+import { adsVersionsPreviewResponse } from './ads-versions-preview.mjs';
+import { siteWorkspaceResponse } from './site-workspace.mjs';
 
 // HTML form navigation under no-referrer sends Origin:null. same-origin keeps
 // legitimate form Origin while still suppressing cross-origin referrers.
@@ -79,11 +82,16 @@ async function route(request,env) {
   if (!actor) return path.startsWith('/test-api/')||path.startsWith('/api/') ? json({error:'Test sign-in required.'},401)
     : new Response(null,{status:303,headers:{...headers,location:'/login'}});
   if (path==='/api/auth/logout' && request.method==='POST') return handleLogout(request);
+  const siteWorkspace=await siteWorkspaceResponse(request,env,actor,headers);
+  if(siteWorkspace)return siteWorkspace;
+  const uiReview = adsVersionsPreviewResponse(request, headers);
+  if (uiReview) return uiReview;
   const deployment = await deploymentResponse(request,env,actor,headers);
   if (deployment) return deployment;
   const pilot = tanjugPilotResponse(request, headers);
   if (pilot) return pilot;
-  if (path==='/' && request.method==='GET') return html(workspacePage(actor.email));
+  if (path==='/' && request.method==='GET') return html(workspacePage(actor.email).replace('</body>','<script src="/download.js" defer></script></body>'));
+  if(path==='/download.js'&&request.method==='GET'&&!url.search)return new Response(downloadScript,{headers:{...headers,'content-type':'application/javascript'}});
   if (path==='/workspace.js' && request.method==='GET') return new Response(workspaceScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   if (path==='/runtime-selection' && request.method==='GET' && !url.search) return html(runtimeSelectionPage());
   if (path==='/runtime-selection.js' && request.method==='GET' && !url.search) return new Response(runtimeSelectionScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
@@ -99,14 +107,19 @@ async function route(request,env) {
   if(path==='/prebid-settings.js'&&request.method==='GET'&&!url.search)return new Response(prebidScript,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});
   if(path==='/test-api/prebid/versions'&&request.method==='GET'&&!url.search)return json(await prebidVersions());
   // No legacy fallback: publish, CMS, Gmail, deletion, arbitrary sites and public CDN routes do not exist.
-  const fileMatch=path.match(/^\/test-api\/releases\/(builtin-draft-[a-f0-9]{64})(\/download)?$/);
+  const fileMatch=path.match(/^\/test-api\/releases\/(builtin-draft-[a-f0-9]{64})(\/download|\/index|\/files\/[A-Za-z0-9.-]+)?$/);
   const known=(request.method==='GET' && ['/test-api/status','/test-api/releases','/test-api/runtime-selection','/test-api/site-settings','/test-api/prebid-settings'].includes(path)) || (request.method==='GET' && fileMatch)
     || (request.method==='POST' && ['/test-api/setup','/test-api/generate','/test-api/save','/test-api/runtime-selection','/test-api/site-settings','/test-api/prebid-settings','/test-api/prebid/upload','/test-api/prebid/plan','/test-api/prebid/plan/save'].includes(path));
   if (!known || url.search) throw new WorkspaceError(404,'This operation is not available in the test workspace.');
   if (path==='/test-api/status') {
     const schema=await inspectTestSchema(env.DB);
-    return json({...schema,runtime:{version:runtimeDescriptor.version,sha256:runtimeDescriptor.codeSha256},
-      ...(schema.ready?{takeOver:takeOverForBuild(await snapshot(env))}:{}),publishable:false});
+    const settings=schema.ready?await snapshot(env):null;
+    const pin=settings?JSON.parse(settings.config.config_json).builtinRuntimeSelection?.runtime:null;
+    let selected=null,validationIssue=null;
+    try { selected=pin?descriptorForPin(pin):runtimeCatalog[1]; }
+    catch { validationIssue='The saved script version is unavailable or has changed. Open Script version and choose an available version. Your settings and saved packages are unchanged.'; }
+    return json({...schema,runtime:selected?{version:selected.version,sha256:selected.codeSha256}:null,validationIssue,
+      ...(settings?{takeOver:takeOverForBuild(settings)}:{}),publishable:false});
   }
   if (path==='/test-api/setup') {
     const body=await jsonBody(request,['confirm']);
@@ -135,11 +148,27 @@ async function route(request,env) {
   }
   if (path==='/test-api/releases') return json({releases:await list(env)});
   if (fileMatch) {
+    if(fileMatch[2]==='/download'&&request.headers.get('accept')?.includes('text/html')){
+      const index=await readDraftReleaseIndex(store(env),{siteId:TEST_SITE,releaseId:fileMatch[1]});
+      if(!index)throw new WorkspaceError(404,'Saved test release not found.');
+      return html('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Download saved package</title><body><h1>Download saved package</h1><p id="download-status" role="status">Preparing your saved files…</p><button id="download-retry">Retry download</button><p><a href="/">Back to saved packages</a></p><script src="/download.js" defer></script></body></html>');
+    }
+    if(fileMatch[2]==='/index'){
+      const index=await readDraftReleaseIndex(store(env),{siteId:TEST_SITE,releaseId:fileMatch[1]});
+      if(!index)throw new WorkspaceError(404,'Saved test release not found.');
+      return json(index);
+    }
+    if(fileMatch[2]?.startsWith('/files/')){
+      const file=await readDraftReleaseFile(store(env),{siteId:TEST_SITE,releaseId:fileMatch[1],name:fileMatch[2].slice(7)});
+      if(!file)throw new WorkspaceError(404,'Saved test release not found.');
+      return new Response(file.bytes,{headers:{...headers,'content-type':'application/octet-stream','x-tessera-file-sha256':file.entry.sha256}});
+    }
     const saved=await readDraftRelease(store(env),{siteId:TEST_SITE,releaseId:fileMatch[1]});
     if(!saved)throw new WorkspaceError(404,'Saved test release not found.');
     if(!fileMatch[2])return json({draft:saved.draft,files:(await describeCandidate(TEST_SITE,saved)).descriptor.files,verified:true});
     const files=Object.fromEntries(Object.entries(saved.files).map(([name,bytes])=>[name,[bytes,{level:0,mtime:new Date('1980-01-01T00:00:00Z')}]]));
     return new Response(zipSync(files,{level:0}),{headers:{...headers,'content-type':'application/zip','content-disposition':`attachment; filename="${fileMatch[1]}.zip"`,'x-tessera-package-sha256':saved.draft.packageSha256}});
+
   }
   if (path==='/test-api/generate') {
     const body=await jsonBody(request,['acknowledge','takeOverEnabled']);
@@ -149,14 +178,14 @@ async function route(request,env) {
     const generated=await candidate(settings,buildTimestamp,body.takeOverEnabled,env.BUILDS);
     const {descriptor,files}=await describeCandidate(TEST_SITE,generated);
     if(await digest(await snapshot(env))!==await digest(settings))throw new WorkspaceError(409,'Test settings changed. Generate again.');
-    const receipt=await issueReceipt({audience:origin,actor:actor.email,configHash:await digest(settings),runtimeHash:runtimeDescriptor.codeSha256,
+    const receipt=await issueReceipt({audience:origin,actor:actor.email,configHash:await digest(settings),runtimeHash:descriptor.runtime.runtimeSha256,
       buildTimestamp,takeOverEnabled:takeOver.enabled,packageHash:descriptor.packageSha256},env.TEST_SESSION_SECRET);
     return json({descriptor,receipt,adsJs:new TextDecoder().decode(files['ads.js']),takeOver,publishable:false});
   }
   const body=await jsonBody(request,['receipt','acknowledge','note']);
   if(body.acknowledge!==true || typeof body.note!=='string' || body.note.length>160)throw new WorkspaceError(422,'Review the test package and keep the note within 160 characters.');
   const review=await verifyReceipt(body.receipt,env.TEST_SESSION_SECRET,{actor:actor.email,origin});
-  if(review.runtimeHash!==runtimeDescriptor.codeSha256)throw new WorkspaceError(409,'Runtime changed. Generate a new test package.');
+  if(!runtimeCatalog.some(r=>r.codeSha256===review.runtimeHash))throw new WorkspaceError(409,'Runtime changed. Generate a new test package.');
   const settings=await snapshot(env);
   if(await digest(settings)!==review.configHash)throw new WorkspaceError(409,'Test configuration changed since review. Generate again.');
   const generated=await candidate(settings,review.buildTimestamp,review.takeOverEnabled,env.BUILDS);

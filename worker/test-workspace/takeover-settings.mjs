@@ -1,5 +1,6 @@
 /** Saved TEST controls for the existing built-in TakeOver implementation. */
 import { WorkspaceError } from './boundary.mjs';
+import { readPositions } from '../runtime-next/position-settings.mjs';
 export const defaultTakeOver=()=>({enabled:false,adUnitCode:'TakeOver',desktopMinWidth:1024,desktopSize:[800,600],mobileSize:[300,250],autoCloseDesktopSec:10,autoCloseMobileSec:5,showCountdown:true});
 const fail=message=>{throw new WorkspaceError(422,message);};
 export function normalizeTakeOver(value){
@@ -19,6 +20,12 @@ export function savedTakeOver(config){
 }
 export function takeOverForBuild(snapshot,legacyEnabled){
   const config=JSON.parse(snapshot.config.config_json),saved=savedTakeOver(config);
+  const positions=readPositions(config,snapshot.units??[]),code=Object.keys(positions)[0];
+  if(code){
+    const enabled=snapshot.units.some(u=>u.code===code&&u.enabled===1);
+    if(legacyEnabled!==undefined&&legacyEnabled!==enabled)throw new WorkspaceError(409,'TakeOver uses the saved ad position. Reload Generate.');
+    return {enabled,adUnitCode:code,codelessAdUnitPath:snapshot.site.gam_path+'Interstitial'};
+  }
   const configured=Object.hasOwn(config.runtimeControls??{},'takeOver');
   // Keep already reviewed legacy packages reproducible until a saved setting changes.
   if(configured&&legacyEnabled!==undefined&&legacyEnabled!==saved.enabled)throw new WorkspaceError(409,'TakeOver is now controlled by saved site settings. Reload Generate before continuing.');

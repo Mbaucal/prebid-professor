@@ -51,3 +51,15 @@ const receiptValues={audience:ORIGIN,actor:TEST_EMAIL,configHash:'a'.repeat(64),
 test('receipt expires exactly after 20 minutes',async()=>{const token=await issueReceipt(receiptValues,TEST_SECRET,1000000);assert.equal((await verifyReceipt(token,TEST_SECRET,{actor:TEST_EMAIL,origin:ORIGIN},2199999)).siteId,'test-site');await assert.rejects(verifyReceipt(token,TEST_SECRET,{actor:TEST_EMAIL,origin:ORIGIN},2200000),/expired/);});
 test('receipt rejects another origin or signing key',async()=>{const token=await issueReceipt(receiptValues,TEST_SECRET);await assert.rejects(verifyReceipt(token,TEST_SECRET,{actor:TEST_EMAIL,origin:'https://other.invalid'}));await assert.rejects(verifyReceipt(token,TEST_SECRET+'different',{actor:TEST_EMAIL,origin:ORIGIN}));});
 test('promotion and site deletion are also guarded in test SQL',async()=>{const {f,cookie}=await ready();const reviewed=await generate(f,cookie);await save(f,cookie,reviewed.receipt);assert.throws(()=>f.sqlite.exec("UPDATE releases SET status='production'"),/TEST_PUBLISH_DISABLED/);assert.throws(()=>f.sqlite.exec('DELETE FROM publishers'),/TEST_SITE_DELETE_DISABLED/);});
+
+test('browser download uses metadata then one verified file per request without reading the whole package',async()=>{
+ const {f,cookie}=await ready(),g=await generate(f,cookie),saved=await save(f,cookie,g.receipt,'download regression'),id=saved.data.draft.id;
+ const get=f.env.BUILDS.get,reads=[];f.env.BUILDS.get=async key=>{reads.push(key);return get(key);};
+ const path='/test-api/releases/'+id;
+ const navigation=await worker.fetch(req(path+'/download',{cookie,headers:{accept:'text/html'}}),f.env);
+ assert.equal(navigation.status,200);assert.match(navigation.headers.get('content-type'),/text\/html/);assert.equal(reads.length,0);assert.match(await navigation.text(),/download.js/);
+ const index=await call(f,'releases/'+id+'/index',undefined,cookie);assert.equal(index.response.status,200);assert.equal(reads.length,0);
+ for(const entry of index.data.descriptor.files){reads.length=0;const response=await worker.fetch(req(path+'/files/'+entry.name,{cookie}),f.env);assert.equal(response.status,200);assert.equal(reads.length,1);assert.equal(await sha256(new Uint8Array(await response.arrayBuffer())),entry.sha256);}
+ assert.equal((await worker.fetch(req(path+'/index'),f.env)).status,401);
+ assert.notEqual((await worker.fetch(req(path+'/files/unknown.js',{cookie}),f.env)).status,200);
+});

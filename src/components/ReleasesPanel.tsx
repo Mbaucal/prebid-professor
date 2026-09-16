@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import ExternalDeploymentsPanel from './ExternalDeploymentsPanel';
 import ReleaseDiffPanel from './ReleaseDiffPanel';
 import ReleaseDeleteButton from './ReleaseDeleteButton';
+import SitePackagesPanel from './SitePackagesPanel';
 
 type Props = {
   publisherId: string;
@@ -137,7 +138,7 @@ function statusLabel(status: ReleaseStatus): string {
   return 'ARCHIVED';
 }
 
-export default function ReleasesPanel({ publisherId, siteName, onChanged }: Props) {
+function LegacyReleasesPanel({ publisherId, siteName, onChanged }: Props) {
   const [validation, setValidation] = useState<ValidationPayload | null>(null);
   const [releases, setReleases] = useState<Release[]>([]);
   const [channels, setChannels] = useState<Channels | null>(null);
@@ -445,4 +446,12 @@ export default function ReleasesPanel({ publisherId, siteName, onChanged }: Prop
       </div>
     </section>
   );
+}
+
+export default function ReleasesPanel(props:Props){
+ const [builtin,setBuiltin]=useState<boolean|null>(null),[workflowError,setWorkflowError]=useState(false);
+ useEffect(()=>{let active=true;setBuiltin(null);setWorkflowError(false);fetch(`/api/publishers/${encodeURIComponent(props.publisherId)}/builtin-site-settings`,{credentials:'same-origin',cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json();}).then(s=>{if(active)setBuiltin(Boolean(s.selected));}).catch(()=>{if(active)setWorkflowError(true);});return()=>{active=false;};},[props.publisherId]);
+ if(workflowError)return <p role="alert">Release settings could not be loaded. Reload this site before generating.</p>;
+ if(builtin===null)return <p>Loading release workflow…</p>;
+ return builtin?<SitePackagesPanel key={props.publisherId} publisherId={props.publisherId} onChanged={props.onChanged}/>:<LegacyReleasesPanel {...props}/>;
 }

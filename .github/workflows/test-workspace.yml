@@ -3,6 +3,9 @@ on:
   pull_request:
     branches: [main, feature/builtin-runtime-foundation-v1, feature/isolated-runtime-workspace-v1]
     paths:
+      - src/components/BuiltinRuntimePreviewPanel.tsx
+      - src/builtin-runtime-preview.css
+      - src/preview/**
       - worker/**
       - ops/runtime-test/**
       - scripts/**
@@ -44,6 +47,8 @@ jobs:
           node scripts/prepare-test-workspace.mjs
       - name: Exercise real authentication, compiler, SQL schema and stored-draft HTTP workflow
         run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs tests/runtime/site-runtime-selection.test.mjs tests/runtime/runtime-selection-cas.test.mjs tests/runtime/test-runtime-selection.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/tanjug-pilot.test.mjs
+      - name: Verify read-only ads version UI routes
+        run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:

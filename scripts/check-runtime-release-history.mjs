@@ -29,7 +29,9 @@ export function verifyRuntimeReleaseProvenance(releases,readSource=readGitSource
       if(node.type==='VariableDeclarator'&&['sourceFiles','MODULE_SHA256'].includes(node.id?.name))declarations.push(node);
       for(const value of Object.values(node))if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')visit(value);
     }
-    visit(parse(readSource(release.sourceCommit,'scripts/prepare-builtin-runtime.mjs').toString('utf8'),{ecmaVersion:'latest',sourceType:'module'}));
+    const manifest=release.sourceManifest??'scripts/prepare-builtin-runtime.mjs';
+    assert(['scripts/prepare-builtin-runtime.mjs','scripts/prepare-next-runtime.mjs'].includes(manifest),'Known source manifest required');
+    visit(parse(readSource(release.sourceCommit,manifest).toString('utf8'),{ecmaVersion:'latest',sourceType:'module'}));
     const files=declarations.filter(d=>d.id.name==='sourceFiles'),module=declarations.filter(d=>d.id.name==='MODULE_SHA256');
     assert(files.length===1&&files[0].init?.type==='ArrayExpression','Recorded source closure must declare one literal file list');
     assert(module.length===1&&module[0].init?.type==='Literal'&&/^[a-f0-9]{64}$/.test(module[0].init.value),'Recorded reference module checksum required');

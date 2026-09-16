@@ -1,5 +1,31 @@
 [
   {
+    "id": "tessera-positions-preview-1",
+    "version": "3.10.0-tessera.preview.1",
+    "codeSha256": "ae98640d4c373547f1a2b9c6ac867010f5760c14ed71b49fb8907fcfeb3fc5cc",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy"
+    ],
+    "date": "2026-09-14",
+    "title": "TakeOver in Ad positions and saved lazy rules",
+    "sourceManifest": "scripts/prepare-next-runtime.mjs",
+    "sourceCommit": "5aa74e1400ec1d23d3eb47d4c1778eb99d9a1d7e",
+    "changes": [
+      "Configure TakeOver as an ad position with a responsive size map, closing timers and a per-tab display interval.",
+      "Choose GAM only or the site Prebid bidders; ad-unit and device bidder overrides apply to TakeOver.",
+      "Saved lazy fetch/render rules work in the built-in generator.",
+      "The previous 3.9.1 generator remains bundled and selectable for compatible settings; saved packages retain their original files."
+    ]
+  },
+  {
     "id": "tessera-reference391-preview-2",
     "version": "3.9.1-tessera.preview.2",
     "codeSha256": "222569881b377c085f0b5d373523d092d64e2ac5dab05d421c3cc9f371078de9",

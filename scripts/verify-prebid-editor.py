@@ -3,6 +3,7 @@ All target traffic INCLUDING redirect chains is resolved to loopback TLS.
 No Cloudflare API, real credentials, external ad libraries or publisher requests.
 """
 import json
+from position_editor_actions import add_takeover_position
 import re
 import pathlib
 import subprocess
@@ -109,9 +110,9 @@ def exercise(page):
     page.screenshot(path=str(out/'prebid-mobile.png'),full_page=True)
     page.get_by_role('link',name='Back to Generate',exact=True).click()
     page.locator('#generate').wait_for(state='visible')
-    page.get_by_role('link',name='TakeOver settings',exact=True).click()
-    expect(page.locator('#takeover-enabled')).to_be_enabled()
-    page.locator('#takeover-enabled').check()
+    page.get_by_role('link',name='Ad positions and TakeOver',exact=True).click()
+    page.locator('#add-position').wait_for(state='visible')
+    add_takeover_position(page, demand='site')
     page.locator('#confirm-draft').check()
     page.locator('#save-site').click()
     expect(page.locator('#editor-message')).to_contain_text('Site settings saved')
@@ -133,8 +134,29 @@ def exercise(page):
     expect(page.locator('#enable-prebid')).to_be_checked()
     page.locator('#enable-prebid').uncheck()
     page.locator('#ack').check()
+    with page.expect_response(lambda r:'/test-api/prebid-settings' in r.url and r.request.method=='POST') as blocked_off:
+        page.locator('#save-prebid').click()
+    check('Prebid cannot turn off while TakeOver explicitly uses Prebid + GAM',blocked_off.value.status==422)
+    page.reload()
+    expect(page.locator('#enable-prebid')).to_be_checked()
+    page.get_by_role('link',name='Back to Generate',exact=True).click()
+    page.get_by_role('link',name='Ad positions and TakeOver',exact=True).click()
+    page.get_by_label('Demand',exact=True).select_option('gam')
+    page.locator('#confirm-draft').check()
+    page.locator('#save-site').click()
+    expect(page.locator('#editor-message')).to_contain_text('Site settings saved')
+    page.get_by_role('link',name='Back to Generate',exact=True).click()
+    page.get_by_role('link',name='Prebid and bidders',exact=True).click()
+    expect(page.locator('#editor')).to_be_enabled()
+    expect(page.locator('#enable-prebid')).to_be_checked()
+    page.locator('#enable-prebid').uncheck()
+    page.locator('#ack').check()
     page.locator('#save-prebid').click()
     expect(page.locator('#message')).to_contain_text('Prebid settings saved')
+    expect(page.locator('#build')).to_have_value(build)
+    page.reload()
+    expect(page.locator('#editor')).to_be_enabled()
+    expect(page.locator('#enable-prebid')).not_to_be_checked()
     expect(page.locator('#build')).to_have_value(build)
     check('Turning off preserves file and bidder parameters',page.locator('#bidders .bidder').count()==1)
     check('No external ad or third-party requests',not external and not nonlocal_responses)

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { unzipSync } from 'fflate';
 import worker from '../../worker/test-workspace/index.mjs';
-import { runtimeDescriptor } from '../../worker/runtime/builtin-preview-service.mjs';
+import { runtimeDescriptor } from '../../worker/test-workspace/runtime-catalog.mjs';
 import { runtimeReleaseHistory } from '../../worker/runtime/runtime-release-history.mjs';
 import { workspaceStore, ORIGIN, TEST_EMAIL, TEST_PASSWORD } from '../support/test-workspace-store.mjs';
 const fixtures=[];
@@ -27,17 +27,17 @@ test('unauthenticated settings API cannot read or write the database',async()=>{
 test('settings page and script require test authentication',async()=>{const f=fixture();for(const path of ['/runtime-selection','/runtime-selection.js']){const {r}=await request(f,path);assert.equal(r.status,303);assert.equal(r.headers.get('location'),'/login');}});
 test('settings screen preserves CSP and loads only its own client code',async()=>{const {f,cookie}=await ready();const {r}=await request(f,'/runtime-selection',cookie);assert.equal(r.status,200);assert.match(r.headers.get('content-security-policy'),/script-src 'self'/);const html=await r.text();assert.match(html,/Save runtime selection/);assert.match(html,/runtime-selection.js/);assert(!html.includes('gpt.js'));assert(!html.includes('<iframe'));});
 test('settings GET on an empty database does not initialize it',async()=>{const f=fixture(),cookie=await login(f);assert.equal((await settings(f,cookie)).r.status,409);assert.equal(f.sqlite.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table'").get().n,0);});
-test('settings GET exposes only the built-in catalog and public site fields',async()=>{const {f,cookie}=await ready();const c=config(f);c.internalOnly='do-not-expose-this-value';f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));const {r,data}=await settings(f,cookie);assert.equal(r.status,200);assert(!JSON.stringify(data).includes(c.internalOnly));assert.equal(data.selected,null);assert.equal(data.runtimes.length,1);assert.equal(data.runtimes[0].version,runtimeDescriptor.version);assert.equal(data.prebidEditable,false);assert.equal(f.log.puts.length,0);assert.equal(f.log.gets.length,0);});
+test('settings GET exposes only the built-in catalog and public site fields',async()=>{const {f,cookie}=await ready();const c=config(f);c.internalOnly='do-not-expose-this-value';f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));const {r,data}=await settings(f,cookie);assert.equal(r.status,200);assert(!JSON.stringify(data).includes(c.internalOnly));assert.equal(data.selected,null);assert.equal(data.runtimes.length,2);assert.equal(data.runtimes[0].version,runtimeDescriptor.version);assert.equal(data.prebidEditable,false);assert.equal(f.log.puts.length,0);assert.equal(f.log.gets.length,0);});
 test('history identifies an earlier saved build without changing its pin or enabling it',async()=>{
   const {f,cookie}=await ready();await selectCurrent(f,cookie);
-  const c=config(f),old=runtimeReleaseHistory[1];
+  const c=config(f),old=runtimeReleaseHistory.at(-1);
   Object.assign(c.builtinRuntimeSelection.runtime,{runtimeId:old.id,runtimeVersion:old.version,runtimeSha256:old.codeSha256});
   f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));
   const before=config(f),auditCount=audits(f),{r,data}=await settings(f,cookie);
   assert.equal(r.status,200);assert.equal(data.selected,null);assert(data.validationIssue);
   assert.equal(data.releaseHistory[0].available,true);assert.equal(data.releaseHistory[0].saved,false);
-  assert.equal(data.releaseHistory[1].available,false);assert.equal(data.releaseHistory[1].saved,true);
-  assert.equal(data.runtimes.length,1);assert.equal(data.runtimes[0].pin.runtimeSha256,runtimeDescriptor.codeSha256);
+  assert.equal(data.releaseHistory.at(-1).available,false);assert.equal(data.releaseHistory.at(-1).saved,true);
+  assert.equal(data.runtimes.length,2);assert.equal(data.runtimes[0].pin.runtimeSha256,runtimeDescriptor.codeSha256);
   assert.deepEqual(config(f),before);assert.equal(audits(f),auditCount);assert.equal(f.objects.size,0);
 });
 test('history reflects the exact explicitly saved build',async()=>{

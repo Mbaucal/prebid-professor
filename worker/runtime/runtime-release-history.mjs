@@ -15,13 +15,14 @@ export function assertRuntimeReleaseSource(codeSha256, release = currentRuntimeR
 
 /** History is informational. Only the actually bundled descriptor is selectable. */
 export function describeRuntimeReleases(descriptor, savedPin) {
-  assertRuntimeReleaseSource(descriptor.codeSha256);
-  if (descriptor.id !== currentRuntimeRelease.id || descriptor.version !== currentRuntimeRelease.version) {
-    throw new Error('Runtime release notes do not match the bundled version.');
+  const catalog=Array.isArray(descriptor)?descriptor:[descriptor];
+  for(const entry of catalog){
+    const release=runtimeReleaseHistory.find(r=>r.id===entry.id&&r.version===entry.version&&r.codeSha256===entry.codeSha256);
+    if(!release)throw Error('Runtime release notes do not match the bundled version.');
   }
   return runtimeReleaseHistory.map(release => ({
     ...release,
-    available: release.id === descriptor.id && release.version === descriptor.version && release.codeSha256 === descriptor.codeSha256,
+    available: catalog.some(entry=>release.id===entry.id&&release.version===entry.version&&release.codeSha256===entry.codeSha256),
     saved: release.id === savedPin?.runtimeId && release.version === savedPin?.runtimeVersion && release.codeSha256 === savedPin?.runtimeSha256
   }));
 }
