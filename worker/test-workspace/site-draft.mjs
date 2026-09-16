@@ -77,6 +77,7 @@ export function normalizeSiteDraft(draft) {
     let overlay,lazy;
     try{if(integrated)overlay=normalizeOverlay(unit.overlay);else if(unit.overlay!==undefined)fail('Only TakeOver positions have overlay settings.');if(Object.hasOwn(unit,'lazy'))lazy=normalizeLazy(unit.lazy);}catch(error){fail(error.message);}
     if(integrated){
+      if(!unit.enabled)fail('Enable the TakeOver ad position, or explicitly change its display to Standard before disabling it.');
       if(takeOver?.enabled)fail('Move the saved legacy TakeOver into this position before saving.');
       if(lazy?.enabled)fail('TakeOver opens once after consent; lazy rules apply to in-page positions.');
       if(maps.find(m=>m.name===unit.sizeMap).breakpoints.some(r=>r.sizes.length>1||r.sizes.some(s=>s==='fluid'||s[0]<2||s[1]<2)))fail('TakeOver maps need one numeric size per width, or an empty row to turn it off.');

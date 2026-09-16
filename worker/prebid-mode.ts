@@ -1,5 +1,9 @@
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
+import { readPreviewSnapshot } from './runtime/builtin-preview-service.mjs';
+import { digest } from './runtime/preview-snapshot.mjs';
+import { runtimeCatalog, prepareSiteRuntimeSelection } from './test-workspace/runtime-catalog.mjs';
+import { commitSiteConfiguration } from './site-runtime/service.mjs';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -112,7 +116,7 @@ export async function getPrebidMode(env: DatabaseEnv, siteId: string): Promise<R
 
 export async function updatePrebidMode(
   request: Request,
-  env: DatabaseEnv,
+  env: DatabaseEnv & { BUILDS?: R2Bucket },
   siteId: string,
 ): Promise<Response> {
   if (!env.DB) return databaseMissing();
@@ -135,20 +139,42 @@ export async function updatePrebidMode(
   const config = parseConfig(row.config_json);
   const previousEnabled = enabledFromConfig(config);
   const enabled = body.enabled;
+  const controls = isRecord(config.runtimeControls) ? config.runtimeControls : {};
+  const positions = isRecord(controls.adPositions) ? controls.adPositions : {};
+  if (!enabled && Object.values(positions).some(value => isRecord(value) && value.demand === 'site')) {
+    return apiError('This TakeOver uses Prebid + GAM. Change its demand to GAM only before disabling Prebid.', 422);
+  }
+  if (isRecord(config.builtinRuntimeSelection)) {
+    try {
+      const saved = await readPreviewSnapshot(env.DB.withSession('first-primary'), siteId, { includePrebid: true });
+      const current = JSON.parse(saved.config.config_json);
+      const plan = await prepareSiteRuntimeSelection({siteId, snapshot:saved, catalog:runtimeCatalog,
+        expectedRevision:await digest(saved), selection:{runtime:current.builtinRuntimeSelection.runtime,
+          allowPreview:true, enablePrebid:enabled, prebidBuildId:enabled && saved.prebidBuilds.length===1?saved.prebidBuilds[0].id:null}}, env.BUILDS);
+      await commitSiteConfiguration(env,saved,plan.configJson,getActor(request),{audit:{
+        action:'prebid_mode.updated',entityType:'prebid_mode',entityId:siteId,
+        details:{previousEnabled:enabledFromConfig(current),enabled,mode:enabled?'gam-prebid':'gam-adx-only',savedBidderConfigurationPreserved:true},
+      }});
+      return json(await buildPayload(env.DB,siteId,JSON.parse(plan.configJson)));
+    } catch (error) {
+      const failure=error as Error & {status?:number};
+      return apiError(failure.message||'Prebid mode could not be saved.',failure.status??422);
+    }
+  }
   config.enablePrebid = enabled;
 
   const actor = getActor(request);
   const now = new Date().toISOString();
 
   try {
-    await env.DB.batch([
+    const result = await env.DB.batch([
       env.DB
-        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ?')
-        .bind(JSON.stringify(config), now, siteId),
+        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ? AND config_json = ?')
+        .bind(JSON.stringify(config), now, siteId, row.config_json),
       env.DB
         .prepare(`INSERT INTO audit_log (
           id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-        ) VALUES (?, ?, 'prebid_mode.updated', ?, 'prebid_mode', ?, ?, ?)`) 
+        ) SELECT ?, ?, 'prebid_mode.updated', ?, 'prebid_mode', ?, ?, ? WHERE changes()=1`) 
         .bind(
           crypto.randomUUID(),
           actor,
@@ -163,6 +189,7 @@ export async function updatePrebidMode(
           now,
         ),
     ]);
+    if(result[0]?.meta?.changes!==1)return apiError('Site settings changed. Reload before changing Prebid mode.',409);
   } catch (error) {
     return apiError(
       'Prebid mode could not be saved.',

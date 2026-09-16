@@ -93,7 +93,9 @@ test('TakeOver ad position saves map, Prebid override, lazy rules and original u
   s.draft.maps.push({name:'modal',breakpoints:[{minWidth:0,sizes:[[300,250]]},{minWidth:1024,sizes:[[800,600]]}]});
   s.draft.units.push({code:'Overlay',type:'ATF',sizeMap:'modal',enabled:true,display:'takeover',overlay:{...defaultOverlay(),demand:'site'}});
   s.draft.units[0].lazy={enabled:false,fetchMarginPx:500,renderMarginPx:0};
-  let written=await save(f,cookie,s);assert.equal(written.r.status,200,JSON.stringify(written.data));
+  let written=await save(f,cookie,s);assert.equal(written.r.status,422);assert.match(written.data.error,/Prebid \+ GAM/);
+  s.draft.units.at(-1).overlay.demand='gam';
+  written=await save(f,cookie,s);assert.equal(written.r.status,200,JSON.stringify(written.data));
   assert.deepEqual((await state(f,cookie)).draft.units.at(-1),s.draft.units.at(-1));
   const bytes=new TextEncoder().encode('/* prebid.js v11.11.0\nModules: consentManagementTcf,tcfControl,currency,adformBidAdapter */\nwindow.prebidFixtureOnly=true;');
   const file=await storePrebidFile(prebidStore(f.env),bytes,TEST_EMAIL);
@@ -102,6 +104,9 @@ test('TakeOver ad position saves map, Prebid override, lazy rules and original u
   const draft={...pb.draft,enablePrebid:true,buildId:file.file.id,bidders:[{bidder:'adform',params:{mid:123},enabled:true}],overrides:[{bidder:'adform',scopeType:'adunit',scopeKey:'Overlay',params:{mid:456},enabled:true}]};
   written=await req(f,'/test-api/prebid-settings',cookie,{expectedRevision:pb.revision,acknowledge:true,draft});
   assert.equal(written.r.status,200,JSON.stringify(written.data));
+  const demandState=await state(f,cookie);demandState.draft.units.at(-1).overlay.demand='site';
+  written=await save(f,cookie,demandState);assert.equal(written.r.status,200,JSON.stringify(written.data));
+  s.draft.units.at(-1).overlay.demand='site';
   const g=await generate(f,cookie);assert.equal(g.r.status,200,JSON.stringify(g.data));
   assert.equal(generatedLiteral(g.data.adsJs,'TESSERA_OVERLAY').code,'Overlay');
   assert.equal(generatedLiteral(g.data.adsJs,'BIDDER_ADUNIT_PARAMS').adform.Overlay.mid,456);
@@ -133,4 +138,18 @@ test('invalid saved runtime pin keeps the Prebid editor readable without resetti
   assert.equal((await req(f,'/test-api/runtime-selection',cookie)).r.status,200);
   assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
   assert.equal((await generate(f,cookie)).r.status,409);
+});
+
+test('TEST editor rejects disabling a TakeOver position before saving its draft',async()=>{
+ const {f,cookie}=await ready();let s=await state(f,cookie);
+ s.draft.maps.push({name:'modal',breakpoints:[{minWidth:0,sizes:[[300,250]]}]});
+ s.draft.units.push({code:'Overlay',type:'ATF',sizeMap:'modal',enabled:true,display:'takeover',overlay:defaultOverlay()});
+ let response=await save(f,cookie,s);assert.equal(response.r.status,200,JSON.stringify(response.data));
+ s=await state(f,cookie);const before=structuredClone(s),audits=f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n;
+ s.draft.units.find(u=>u.code==='Overlay').enabled=false;
+ response=await save(f,cookie,s);assert.equal(response.r.status,422);assert.match(response.data.error,/Enable the TakeOver ad position/);
+ assert.deepEqual(await state(f,cookie),before);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,audits);
+ delete s.draft.units.find(u=>u.code==='Overlay').overlay;s.draft.units.find(u=>u.code==='Overlay').display='standard';
+ response=await save(f,cookie,s);assert.equal(response.r.status,200,JSON.stringify(response.data));
+ assert.equal((await state(f,cookie)).draft.units.find(u=>u.code==='Overlay').enabled,false);
 });

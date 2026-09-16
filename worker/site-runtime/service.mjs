@@ -31,18 +31,26 @@ async function read(env,siteId){
 }
 /** The exact reviewed snapshot is compared inside the UPDATE and audit batch.
  * No extra assertion table or schema change is required in the main app. */
-export async function commitSiteConfiguration(env,snapshot,configJson,actor){
+export async function commitSiteConfiguration(env,snapshot,configJson,actor,{activation=null,audit=null}={}){
  const siteId=snapshot.site.id,conditions=[],args=[];
  for(const [key,table,columns,where,single] of specs){
   const rows=single?[snapshot[key]]:snapshot[key];
   conditions.push(`(SELECT json_group_array(json_array(${columns.join(',')})) FROM (SELECT ${columns.join(',')} FROM ${table} WHERE ${where}))=?`);
   args.push(siteId,JSON.stringify(rows.map(row=>columns.map(c=>row[c]))));
  }
+ if(activation){
+  const columns=specs.find(([key])=>key==='prebidBuilds')[2];
+  conditions.push(`(SELECT json_array(${columns.join(',')}) FROM prebid_builds WHERE publisher_id=? AND id=?)=?`);
+  args.push(siteId,activation.id,JSON.stringify(columns.map(c=>activation[c])));
+ }
  const changed=configJson!==snapshot.config.config_json;
  const db=env.DB.withSession('first-primary');let result;
  try{result=await db.batch([
   db.prepare(`UPDATE publisher_configs SET config_json=?,config_hash=CASE WHEN ? THEN NULL ELSE config_hash END,updated_at=CASE WHEN ? THEN ? ELSE updated_at END WHERE publisher_id=? AND ${conditions.join(' AND ')}`).bind(configJson,Number(changed),Number(changed),new Date().toISOString(),siteId,...args),
-  db.prepare('INSERT INTO audit_log (id,actor,action,publisher_id,details_json) SELECT ?,?,?,?,? WHERE changes()=1 AND ?=1').bind(crypto.randomUUID(),actor,'builtin_runtime.settings_saved',siteId,JSON.stringify({kind:'site-runtime-settings',published:false}),Number(changed)),
+  ...(activation?[
+   db.prepare(`UPDATE prebid_builds SET status=CASE WHEN id=? THEN 'current' ELSE 'archived' END WHERE publisher_id=? AND (status='current' OR id=?) AND changes()=1`).bind(activation.id,siteId,activation.id),
+   db.prepare("INSERT INTO audit_log (id,actor,action,publisher_id,entity_type,entity_id,details_json) SELECT ?,?,'prebid_build.activated',?,'prebid_build',?,? WHERE changes()>0").bind(crypto.randomUUID(),actor,siteId,activation.id,JSON.stringify({version:activation.version,fileKey:activation.file_key,runtimeSelectionSynchronized:true})),
+  ]:[db.prepare('INSERT INTO audit_log (id,actor,action,publisher_id,entity_type,entity_id,details_json) SELECT ?,?,?,?,?,?,? WHERE changes()=1 AND ?=1').bind(crypto.randomUUID(),actor,audit?.action??'builtin_runtime.settings_saved',siteId,audit?.entityType??null,audit?.entityId??null,JSON.stringify(audit?.details??{kind:'site-runtime-settings',published:false}),Number(changed))]),
  ]);}catch{fail('The save result is unconfirmed. Reload this site before trying again.',503);}
  if(result?.some(r=>r.success!==true))fail('The save result is unconfirmed. Reload this site before trying again.',503);
  if(result?.[0]?.meta?.changes!==1)fail('Site settings changed in another tab. Reload this site before saving.',409);

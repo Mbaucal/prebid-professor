@@ -144,3 +144,181 @@ test('main browser ZIP uses scoped artifact reads, preserves stored bytes and re
   assert.equal(f.sqlite.prepare('SELECT status FROM releases').get().status,'draft');
  }finally{Object.assign(globalThis,{fetch:saved.fetch,document:saved.document,setTimeout:saved.timeout});URL.createObjectURL=saved.create;URL.revokeObjectURL=saved.revoke;}
 });
+
+test('saved site-demand TakeOver cannot generate after Prebid is disabled, and can be explicitly repaired',async()=>{
+ const {packageState}=await import('../../worker/site-runtime/releases.mjs');
+ const {siteRuntimeBundle}=await import('../../worker/site-runtime/service.mjs');
+ const {defaultOverlay}=await import('../../worker/runtime-next/position-settings.mjs');
+ const f=await fixture(),config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ // This is also the state left by an older demand-mode editor switching Prebid off.
+ config.runtimeControls.adPositions={Billboard:{...defaultOverlay(),demand:'site'}};
+ config.enablePrebid=false;config.builtinRuntimeSelection.prebid=null;
+ f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+ const before=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ let state=await siteRuntimeSettings(f.env,'first');assert.match(state.validationIssue,/Prebid \+ GAM/);
+ assert.equal((await packageState(f.env,'first')).ready,false);
+ await assert.rejects(generate(f),/saved settings are not supported/);
+ await assert.rejects(siteRuntimeBundle(f.env,'first',{action:'bundle',revision:state.revision,acknowledge:true}),/saved settings are not supported/);
+ await assert.rejects(changeSiteRuntime(f.env,'first','tester',{action:'version',revision:state.revision,runtime:state.runtimes[0].pin,allowPreview:true}),/saved settings are not supported/);
+ assert.equal(f.objects.size,0);assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
+ await changeSiteRuntime(f.env,'first','tester',{action:'position',revision:state.revision,position:{code:'Billboard',display:'takeover',overlay:{...defaultOverlay(),demand:'gam'},lazy:null}});
+ assert.equal((await packageState(f.env,'first')).ready,true);
+});
+
+test('first built-in publication retains the prior legacy release and its existing rollback route',async()=>{
+ const {packageState}=await import('../../worker/site-runtime/releases.mjs');
+ const {default:mainWorker}=await import('../../worker/app-builtin-runtime-preview.ts');
+ const {handleLogin}=await import('../../worker/auth.ts');
+ const {TEST_EMAIL,TEST_PASSWORD,TEST_SECRET}=await import('../support/test-workspace-store.mjs');
+ const f=await fixture(),release=await generate(f),builtin=await readPackage(f.env,'first',release.id);
+ const version='20260901_120000',legacyId='legacy-live',prefix=`publishers/first/releases/${version}/`;
+ f.sqlite.prepare("INSERT INTO releases(id,publisher_id,version,status,manifest_key,created_at,published_at) VALUES(?,'first',?,'production',?,'2000-01-01','2000-01-02')").run(legacyId,version,prefix+'manifest.json');
+ f.sqlite.prepare("UPDATE publishers SET current_release_id=?,current_version=? WHERE id='first'").run(legacyId,version);
+ for(let i=0;i<51;i++)f.sqlite.prepare("INSERT INTO releases(id,publisher_id,version,status) VALUES(?,'first',?,'draft')").run('old-draft-'+i,'older-package-'+i);
+ for(const [id,action] of [['legacy-earlier','release.production_published'],['legacy-restored','release.rolled_back']]){
+  f.sqlite.prepare("INSERT INTO releases(id,publisher_id,version,status,created_at) VALUES(?,'first',?,'archived','1999-01-01')").run(id,id);
+  f.sqlite.prepare("INSERT INTO audit_log(id,actor,action,publisher_id,entity_type,entity_id,details_json) VALUES(?,'tester',?,'first','release',?,'{}')").run(id+'-audit',action,id);
+ }
+ const legacyFiles={};
+ for(const name of ['ads.js','ads.min.js','prebid.js','config.json','manifest.json','min-height.css','sticky.css','div-export.csv','implementation.html']){
+  const bytes=new TextEncoder().encode(name==='manifest.json'?JSON.stringify({version,siteId:'first'}):'saved legacy '+name);
+  legacyFiles[name]=bytes;f.objects.set(prefix+name,{bytes,meta:{sha256:await sha256(bytes)}});
+ }
+ const settings=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ await promote(f,release.id,'staging');await promote(f,release.id,'production');
+ const earlier=(await packageState(f.env,'first')).earlierReleases;
+ assert.equal(earlier.length,50);assert.equal(earlier[0].id,legacyId);assert.equal(earlier[0].canRestore,true);assert.deepEqual(earlier.slice(1,3).map(r=>r.id).sort(),['legacy-earlier','legacy-restored']);assert.ok(earlier.slice(1,3).every(r=>r.canRestore));
+ const rawGet=f.env.BUILDS.get;
+ f.env.BUILDS.get=async key=>{const o=await rawGet(key);if(!o)return null;const bytes=new Uint8Array(await o.arrayBuffer());return {...o,body:bytes,httpEtag:'"fixture"',text:async()=>new TextDecoder().decode(bytes),writeHttpMetadata(headers){headers.set('content-type','application/javascript');}};};
+ let copies=0;f.env.BUILDS.put=async(key,bytes,options)=>{
+  assert.ok(key.startsWith('publishers/first/current/'));
+  const current=await builtInCdn(new Request('https://tessera.invalid/cdn/first/current/ads.js'),f.env);
+  assert.deepEqual(new Uint8Array(await current.arrayBuffer()),builtin.files['ads.js'],'active built-in stays intact while old files are prepared');
+  copies++;f.objects.set(key,{bytes:new Uint8Array(bytes),meta:options.customMetadata});
+ };
+ Object.assign(f.env,{ADMIN_EMAIL:TEST_EMAIL,ADMIN_PASSWORD:TEST_PASSWORD,SESSION_SECRET:TEST_SECRET});
+ const login=await handleLogin(new Request('https://tessera.invalid/api/auth/login',{method:'POST',headers:{origin:'https://tessera.invalid','content-type':'application/json'},body:JSON.stringify({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);
+ const cookie=login.headers.get('set-cookie').split(';')[0];
+ const response=await mainWorker.fetch(new Request(`https://tessera.invalid/api/publishers/first/releases/${legacyId}/rollback`,{method:'POST',headers:{cookie,origin:'https://tessera.invalid'}}),f.env,{});
+ assert.equal(response.status,200,await response.text());assert.equal(copies,9);
+ assert.equal(f.sqlite.prepare("SELECT current_release_id FROM publishers WHERE id='first'").get().current_release_id,legacyId);
+ assert.equal(f.sqlite.prepare('SELECT status FROM releases WHERE id=?').get(release.id).status,'archived');
+ const current=await mainWorker.fetch(new Request('https://tessera.invalid/cdn/first/current/ads.js'),f.env,{});
+ assert.equal(current.status,200);assert.deepEqual(new Uint8Array(await current.arrayBuffer()),legacyFiles['ads.js']);
+ assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,settings);
+ assert.deepEqual((await readPackage(f.env,'first',release.id)).files,builtin.files);
+});
+
+test('main demand-mode API rejects TakeOver conflicts, synchronizes the exact Prebid pin and preserves concurrent settings',async()=>{
+ const {default:mainWorker}=await import('../../worker/app-builtin-runtime-preview.ts');
+ const {packageState}=await import('../../worker/site-runtime/releases.mjs');
+ const {defaultOverlay}=await import('../../worker/runtime-next/position-settings.mjs');
+ const {TEST_EMAIL,TEST_PASSWORD,TEST_SECRET}=await import('../support/test-workspace-store.mjs');
+ const f=await fixture();Object.assign(f.env,{ADMIN_EMAIL:TEST_EMAIL,ADMIN_PASSWORD:TEST_PASSWORD,SESSION_SECRET:TEST_SECRET});
+ const login=await mainWorker.fetch(new Request('https://tessera.invalid/api/auth/login',{method:'POST',headers:{origin:'https://tessera.invalid','content-type':'application/json'},body:JSON.stringify({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env,{});
+ const cookie=login.headers.get('set-cookie').split(';')[0];
+ const mode=enabled=>mainWorker.fetch(new Request('https://tessera.invalid/api/publishers/first/prebid-mode',{method:'PUT',headers:{cookie,origin:'https://tessera.invalid','content-type':'application/json'},body:JSON.stringify({enabled})}),f.env,{});
+ const bytes=new TextEncoder().encode('/* prebid.js v11.11.0\nModules: consentManagementTcf,tcfControl,currency,adformBidAdapter */\nwindow.fixtureOnly=true;');
+ const path='publishers/first/prebid-builds/original/prebid.js';f.objects.set(path,{bytes,meta:{sha256:await sha256(bytes)}});
+ f.sqlite.prepare("INSERT INTO prebid_builds(id,publisher_id,version,file_key,modules_json,status) VALUES('original','first','11.11.0',?,?, 'current')").run(path,JSON.stringify(['adformBidAdapter','consentManagementTcf','currency','tcfControl']));
+ f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,enabled) VALUES('bidder','first','adform','{\"mid\":123}',1)").run();
+ let response=await mode(true);assert.equal(response.status,200,await response.text());
+ let s=await siteRuntimeSettings(f.env,'first');
+ await changeSiteRuntime(f.env,'first','tester',{action:'position',revision:s.revision,position:{code:'Billboard',display:'takeover',overlay:{...defaultOverlay(),demand:'site'},lazy:null}});
+ const before=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ const auditCount=()=>f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n;
+ let audits=auditCount();response=await mode(false);assert.equal(response.status,422);assert.match(await response.text(),/GAM only before disabling/);
+ assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);assert.equal(auditCount(),audits);
+ s=await siteRuntimeSettings(f.env,'first');await changeSiteRuntime(f.env,'first','tester',{action:'position',revision:s.revision,position:{code:'Billboard',display:'takeover',overlay:{...defaultOverlay(),demand:'gam'},lazy:null}});
+ response=await mode(false);assert.equal(response.status,200,await response.text());
+ let config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ assert.equal(config.enablePrebid,false);assert.equal(config.builtinRuntimeSelection.prebid,null);assert.equal((await packageState(f.env,'first')).ready,true);
+ const transitions=f.sqlite.prepare("SELECT actor,entity_type,entity_id,details_json FROM audit_log WHERE action='prebid_mode.updated' ORDER BY rowid").all();
+ assert.equal(transitions.length,2);assert.equal(transitions[1].entity_type,'prebid_mode');assert.equal(transitions[1].entity_id,'first');assert.ok(transitions[1].actor);
+ assert.deepEqual(JSON.parse(transitions[1].details_json),{previousEnabled:true,enabled:false,mode:'gam-adx-only',savedBidderConfigurationPreserved:true});
+ assert.deepEqual(JSON.parse(transitions[0].details_json),{previousEnabled:false,enabled:true,mode:'gam-prebid',savedBidderConfigurationPreserved:true});
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM bidders').get().n,1);assert.deepEqual(f.objects.get(path).bytes,bytes);
+ response=await mode(true);assert.equal(response.status,200,await response.text());
+ config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);assert.equal(config.builtinRuntimeSelection.prebid.sha256,await sha256(bytes));
+ const batch=f.env.DB.batch;audits=auditCount();
+ f.env.DB.batch=async items=>{if(items.some(item=>item.sql.startsWith('UPDATE publisher_configs'))){const next=structuredClone(config);next.runtimeControls.adPositions.Billboard.demand='site';f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(next));}return batch(items);};
+ response=await mode(false);assert.equal(response.status,409,await response.text());assert.equal(auditCount(),audits);
+ config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);assert.equal(config.enablePrebid,true);assert.equal(config.runtimeControls.adPositions.Billboard.demand,'site');
+});
+
+test('legacy demand-mode writer cannot discard a concurrently saved built-in runtime selection',async()=>{
+ const {updatePrebidMode}=await import('../../worker/prebid-mode.ts');const f=await fixture();
+ const chosen=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ const legacy=JSON.parse(chosen);delete legacy.builtinRuntimeSelection;
+ f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(legacy));
+ const audits=f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,batch=f.env.DB.batch;
+ f.env.DB.batch=async items=>{f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(chosen);return batch(items);};
+ const response=await updatePrebidMode(new Request('https://tessera.invalid/api/mode',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({enabled:false})}),f.env,'first');
+ assert.equal(response.status,409,await response.text());assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,chosen);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,audits);
+});
+
+test('main Prebid activation updates the runtime pin atomically and rejects corrupt or concurrent replacements',async()=>{
+ const {default:mainWorker}=await import('../../worker/app-builtin-runtime-preview.ts');
+ const {packageState}=await import('../../worker/site-runtime/releases.mjs');
+ const {TEST_EMAIL,TEST_PASSWORD,TEST_SECRET}=await import('../support/test-workspace-store.mjs');
+ const f=await fixture();Object.assign(f.env,{ADMIN_EMAIL:TEST_EMAIL,ADMIN_PASSWORD:TEST_PASSWORD,SESSION_SECRET:TEST_SECRET});
+ f.env.BUILDS.head=async key=>{const o=f.objects.get(key);return o?{size:o.bytes.length,customMetadata:o.meta}:null;};
+ const login=await mainWorker.fetch(new Request('https://tessera.invalid/api/auth/login',{method:'POST',headers:{origin:'https://tessera.invalid','content-type':'application/json'},body:JSON.stringify({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env,{});
+ const cookie=login.headers.get('set-cookie').split(';')[0],headers={cookie,origin:'https://tessera.invalid','content-type':'application/json'};
+ const mode=enabled=>mainWorker.fetch(new Request('https://tessera.invalid/api/publishers/first/prebid-mode',{method:'PUT',headers,body:JSON.stringify({enabled})}),f.env,{});
+ const activate=id=>mainWorker.fetch(new Request(`https://tessera.invalid/api/publishers/first/prebid-builds/${id}/activate`,{method:'POST',headers}),f.env,{});
+ const modules=['adformBidAdapter','consentManagementTcf','currency','tcfControl'];
+ f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,enabled) VALUES('bidder','first','adform','{\"mid\":123}',1)").run();
+ for(const [id,version,status] of [['original','11.11.0','current'],['replacement','11.34.0','archived'],['broken','11.34.0','archived']]){
+  const bytes=new TextEncoder().encode(`/* prebid.js v${version}\nModules: ${modules.join(',')} */\nwindow.fixtureOnly=true;`),path=`publishers/first/prebid-builds/${id}/prebid.js`;
+  f.objects.set(path,{bytes,meta:{sha256:await sha256(bytes)}});
+  f.sqlite.prepare('INSERT INTO prebid_builds(id,publisher_id,version,file_key,modules_json,status) VALUES(?,?,?,?,?,?)').run(id,'first',version,path,JSON.stringify(modules),status);
+ }
+ let response=await mode(true);assert.equal(response.status,200,await response.text());
+ const originalRelease=await generate(f),originalPackage=await readPackage(f.env,'first',originalRelease.id);
+ response=await activate('replacement');assert.equal(response.status,200,await response.text());
+ let config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ assert.equal(config.builtinRuntimeSelection.prebid.id,'replacement');assert.equal(config.builtinRuntimeSelection.prebid.version,'11.34.0');assert.equal((await packageState(f.env,'first')).ready,true);
+ assert.equal(f.sqlite.prepare("SELECT status FROM prebid_builds WHERE id='original'").get().status,'archived');
+ const nextPackage=await readPackage(f.env,'first',(await generate(f)).id);
+ assert.deepEqual(nextPackage.files['prebid.js'],f.objects.get('publishers/first/prebid-builds/replacement/prebid.js').bytes);
+ assert.deepEqual((await readPackage(f.env,'first',originalRelease.id)).files,originalPackage.files);
+ f.objects.get('publishers/first/prebid-builds/broken/prebid.js').bytes=new TextEncoder().encode('corrupted file');
+ const snapshot=()=>({config:f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,builds:f.sqlite.prepare('SELECT id,status FROM prebid_builds ORDER BY id').all(),audits:f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n});
+ const before=snapshot();response=await activate('broken');assert.equal(response.status,422);assert.deepEqual(snapshot(),before);
+ const batch=f.env.DB.batch;let race=false;
+ f.env.DB.batch=async items=>{if(items.some(item=>item.sql.startsWith('UPDATE publisher_configs'))){race=true;f.sqlite.prepare("UPDATE unit_rules SET rule_json='{\"timeout\":1900,\"refresh\":{\"enabled\":false}}'").run();}return batch(items);};
+ response=await activate('original');assert.equal(response.status,409,await response.text());assert.equal(race,true);assert.deepEqual(snapshot(),before);
+ f.env.DB.batch=batch;
+ response=await mode(false);assert.equal(response.status,200,await response.text());
+ response=await activate('original');assert.equal(response.status,200,await response.text());
+ config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);assert.equal(config.enablePrebid,false);assert.equal(config.builtinRuntimeSelection.prebid,null);assert.equal((await packageState(f.env,'first')).ready,true);
+ response=await mode(true);assert.equal(response.status,200,await response.text());
+ config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);assert.equal(config.builtinRuntimeSelection.prebid.id,'original');
+});
+
+test('disabled TakeOver and unsupported page-type maps stop generation without changing saved files or settings',async()=>{
+ const {packageState}=await import('../../worker/site-runtime/releases.mjs');
+ const {siteRuntimeBundle}=await import('../../worker/site-runtime/service.mjs');
+ const {defaultOverlay}=await import('../../worker/runtime-next/position-settings.mjs');
+ const f=await fixture();let s=await siteRuntimeSettings(f.env,'first');
+ await changeSiteRuntime(f.env,'first','tester',{action:'position',revision:s.revision,position:{code:'Billboard',display:'takeover',overlay:defaultOverlay(),lazy:null}});
+ const release=await generate(f),original=await readPackage(f.env,'first',release.id);
+ f.sqlite.prepare("UPDATE ad_units SET enabled=0 WHERE code='Billboard'").run();
+ s=await siteRuntimeSettings(f.env,'first');assert.match(s.validationIssue,/Enable the TakeOver ad position/);
+ assert.equal((await packageState(f.env,'first')).ready,false);await assert.rejects(generate(f),/saved settings are not supported/);
+ f.sqlite.prepare("UPDATE ad_units SET enabled=1 WHERE code='Billboard'").run();
+ const config=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,objectCount=f.objects.size;
+ for(const sizes of [[[320,480]],[]]){
+  const map=JSON.stringify([{viewport:[0,0],sizes}]);
+  f.sqlite.prepare("INSERT OR REPLACE INTO size_maps(id,publisher_id,name,map_json) VALUES('sport-map','first','sport_display',?)").run(map);
+  s=await siteRuntimeSettings(f.env,'first');assert.match(s.validationIssue,/maps by page type/);
+  assert.equal((await packageState(f.env,'first')).ready,false);
+  await assert.rejects(generate(f),/saved settings are not supported/);
+  await assert.rejects(siteRuntimeBundle(f.env,'first',{action:'bundle',revision:s.revision,acknowledge:true}),/saved settings are not supported/);
+  assert.equal(f.sqlite.prepare("SELECT map_json FROM size_maps WHERE name='sport_display'").get().map_json,map);
+  assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,config);assert.equal(f.objects.size,objectCount);
+ }
+ await changeSiteRuntime(f.env,'first','tester',{action:'position',revision:s.revision,position:{code:'Billboard',display:'standard',overlay:null,lazy:null}});
+ assert.equal((await packageState(f.env,'first')).ready,true);assert.deepEqual((await readPackage(f.env,'first',release.id)).files,original.files);
+});
