@@ -8,6 +8,7 @@ import { runtimeCatalog, descriptorForPin, previewInput, prepareSiteRuntimeSelec
 import { readPositions, normalizeOverlay, normalizeLazy } from '../runtime-next/position-settings.mjs';
 import { takeOverForBuild } from '../test-workspace/takeover-settings.mjs';
 import { zipSync } from 'fflate';
+import { siteSetupState } from './setup-state.mjs';
 
 export class SiteRuntimeError extends Error { constructor(message,status=422){super(message);this.status=status;} }
 const fail=(message,status)=>{throw new SiteRuntimeError(message,status);};
@@ -62,7 +63,7 @@ export async function siteRuntimeSettings(env,siteId){
  try{if(pin)previewInput(saved,descriptorForPin(pin),'20000101_000000');}catch(e){validationIssue=e.message;}
  const positions=readPositions(config,saved.units),sticky=config.runtimeControls?.sticky;
  const stickyId=Object.hasOwn(sticky??{},'bottomAdUnitId')?sticky.bottomAdUnitId:(saved.units.some(u=>u.code==='Sticky'&&u.enabled===1)?'Sticky':'');
- return {site:saved.site,revision:await digest(saved),selected:pin??null,validationIssue,enablePrebid:config.enablePrebid===true,
+ return {site:saved.site,revision:await digest(saved),selected:pin??null,validationIssue,enablePrebid:config.enablePrebid===true,...siteSetupState(saved),
   runtimes:runtimeCatalog.map(r=>({version:r.version,pin:pinRuntime(r,{allowPreview:true})})),history:describeRuntimeReleases(runtimeCatalog,pin),
   positions:saved.units.filter(u=>u.media_type==='banner'&&u.type!=='DRAFT').map(u=>({code:u.code,type:u.type,sizeMap:u.size_map_key,enabled:u.enabled===1,
    display:positions[u.code]?'takeover':stickyId===u.code?'sticky':'standard',overlay:positions[u.code]??null,
@@ -74,6 +75,7 @@ export async function changeSiteRuntime(env,siteId,actor,body){
  if(typeof body?.revision!=='string'||body.revision!==await digest(saved))fail('Site settings changed. Reload before saving.',409);
  if(body.action==='version'){
   keys(body,['action','revision','runtime','allowPreview']);
+  const setup=siteSetupState(saved);if(setup.nextStep==='prebid')fail(setup.setupMessage);
   const currentId=saved.prebidBuilds.length===1?saved.prebidBuilds[0].id:null;
   const plan=await prepareSiteRuntimeSelection({siteId,snapshot:saved,catalog:runtimeCatalog,expectedRevision:body.revision,
    selection:{runtime:body.runtime,allowPreview:body.allowPreview,enablePrebid:config.enablePrebid,prebidBuildId:config.enablePrebid?currentId:null}},env.BUILDS);

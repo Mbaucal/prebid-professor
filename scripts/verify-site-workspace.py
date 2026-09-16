@@ -28,8 +28,8 @@ try:
     assert workflow.get_by_role('heading',level=3).count()==5
     assert all(r['method']=='GET' for r in requests)
     workflow.get_by_role('button',name='Choose script version',exact=True).click()
-    page.get_by_label('Script version',exact=True).select_option(label='3.10.0-tessera.preview.1')
-    page.get_by_role('checkbox',name='Use this Preview script').check()
+    page.get_by_label('Script version',exact=True).select_option(label='3.10.0')
+    page.get_by_role('checkbox',name='Use this script version').check()
     page.get_by_role('button',name='Save script version',exact=True).click()
     page.get_by_role('status').filter(has_text='Script version saved').wait_for()
     page.get_by_role('button',name='Ad positions',exact=True).click()

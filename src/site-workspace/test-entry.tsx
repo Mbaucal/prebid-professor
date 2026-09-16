@@ -15,7 +15,7 @@ function Workspace() {
     {view==='workflow'?<SiteWorkflowPanel publisherId="test-site" runtimeEndpoint="/test-api/site-runtime" packagesEndpoint="/test-api/site-packages" onNavigate={destination=>{
       if(destination==='settings'||destination==='prebid') window.location.assign(destination==='settings'?'/site-settings':'/prebid-settings');
       else setView(destination==='versions'?'versions':'packages');
-    }}/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages"/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view}/>}
+    }}/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Workspace/>);

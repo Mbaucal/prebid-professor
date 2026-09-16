@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import '../site-workspace/runtime.css';
+import { runtimeLabel } from '../site-workspace/runtime-labels';
 
 export type WorkflowDestination = 'settings' | 'versions' | 'prebid' | 'packages';
 type Props = { publisherId: string; runtimeEndpoint?: string; packagesEndpoint?: string; onNavigate: (destination: WorkflowDestination) => void };
@@ -37,8 +38,8 @@ export default function SiteWorkflowPanel({ publisherId, runtimeEndpoint, packag
         <button onClick={() => onNavigate('settings')}>Open site settings</button>
       </article>
       <article className="runtime-release"><h3>2. Script and Prebid</h3>
-        <p>Saved ads.js version: <strong>{data.runtime.selected?.runtimeVersion ?? 'Not selected'}</strong></p>
-        <p>Prebid: {data.runtime.enablePrebid ? 'enabled — use the saved bidder settings and uploaded build' : 'off — GAM / AdX only'}.</p>
+        <p>Saved ads.js version: <strong>{data.runtime.selected ? runtimeLabel(data.runtime.selected.runtimeVersion) : 'Not selected'}</strong></p>
+        <p>{data.runtime.prebid.message}</p>
         <div className="runtime-actions"><button onClick={() => onNavigate('versions')}>Choose script version</button><button onClick={() => onNavigate('prebid')}>Open Prebid build</button></div>
       </article>
       <article className="runtime-release"><h3>3. Generate a package</h3>

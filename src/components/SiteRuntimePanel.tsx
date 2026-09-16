@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import '../site-workspace/runtime.css';
+import { runtimeLabel } from '../site-workspace/runtime-labels';
 
 type Position={code:string;type:string;sizeMap:string;enabled:boolean;display:string;overlay:any;lazy:any};
-type State={site:{id:string;name:string;domain:string};revision:string;selected:any;validationIssue:string|null;enablePrebid:boolean;runtimes:Array<{version:string;pin:any}>;history:any[];positions:Position[]};
-type Props={publisherId:string;view:'versions'|'positions';unitCode?:string;endpoint?:string;onChanged?:()=>void|Promise<void>};
+type State={site:{id:string;name:string;domain:string};revision:string;selected:any;validationIssue:string|null;enablePrebid:boolean;prebid:{status:string;message:string};runtimes:Array<{version:string;pin:any}>;history:any[];positions:Position[]};
+type Props={publisherId:string;view:'versions'|'positions';unitCode?:string;endpoint?:string;onChanged?:()=>void|Promise<void>;onOpenPrebid?:()=>void};
 const overlayDefaults={demand:'gam',desktopMinWidth:1024,desktopSeconds:10,mobileSeconds:5,countdown:true,frequencyMinutes:0};
 
-export default function SiteRuntimePanel({publisherId,view,unitCode,endpoint,onChanged}:Props){
+export default function SiteRuntimePanel({publisherId,view,unitCode,endpoint,onChanged,onOpenPrebid}:Props){
  const url=endpoint??`/api/publishers/${encodeURIComponent(publisherId)}/builtin-site-settings`;
  const [state,setState]=useState<State|null>(null),[version,setVersion]=useState(''),[approved,setApproved]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[failed,setFailed]=useState(false),[stale,setStale]=useState(false);
  const [draft,setDraft]=useState<Position|null>(null);
@@ -15,6 +16,7 @@ export default function SiteRuntimePanel({publisherId,view,unitCode,endpoint,onC
  useEffect(()=>{let active=true;setState(null);setDraft(null);setMessage('');setFailed(false);setStale(false);setBusy(false);request().then(r=>r.json()).then(data=>{if(active)accept(data);}).catch(e=>{if(active){setMessage(e.message);setFailed(true);}});return()=>{active=false;};},[url,publisherId]);
  async function run(fn:()=>Promise<void>){if(busy)return;setBusy(true);setFailed(false);try{await fn();}catch(e){setMessage(e instanceof Error?e.message:'Could not complete this action.');setFailed(true);setStale(true);}finally{setBusy(false);}}
  async function reload(note='Saved settings loaded.'){accept(await(await request()).json());setMessage(note);}
+ const needsPrebid=state?.prebid.status==='missing'||state?.prebid.status==='ambiguous';
  const selected=state?.runtimes.find(r=>r.pin.runtimeSha256===version);
  async function saveVersion(){if(!selected||!state)return;await request({action:'version',revision:state.revision,runtime:selected.pin,allowPreview:approved});await reload('Script version saved. Your site settings and Prebid choice are retained.');await onChanged?.();}
  async function savePosition(){if(!draft||!state)return;const position={code:draft.code,display:draft.display,overlay:draft.display==='takeover'?draft.overlay:null,lazy:draft.display==='takeover'?null:draft.lazy};await request({action:'position',revision:state.revision,position});await reload('Position settings saved. They apply to the next generated package.');await onChanged?.();}
@@ -27,12 +29,13 @@ export default function SiteRuntimePanel({publisherId,view,unitCode,endpoint,onC
   {state?.validationIssue?<p className="runtime-error">{state.validationIssue}</p>:null}
   {state&&view==='versions'?<>
    <p>Tessera creates ads.js from this site’s saved settings. Choose a script version; no template upload is needed.</p>
-   <label>Script version<select aria-label="Script version" value={version} disabled={busy} onChange={e=>{setVersion(e.target.value);setApproved(false);}}><option value="">Choose a version</option>{state.runtimes.map(r=><option key={r.pin.runtimeSha256} value={r.pin.runtimeSha256}>{r.version}</option>)}</select></label>
-   <p>Saved version: <strong>{state.selected?.runtimeVersion??'Not selected'}</strong> · Prebid {state.enablePrebid?'enabled':'off'}</p>
-   <label className="runtime-check"><input type="checkbox" checked={approved} disabled={busy} onChange={e=>setApproved(e.target.checked)}/>Use this Preview script for this site’s next package.</label>
-   <div className="runtime-actions"><button disabled={busy||stale||!selected||!approved} onClick={()=>void run(saveVersion)}>Save script version</button><button disabled={busy||stale||!state.selected||Boolean(state.validationIssue)} onClick={()=>void run(bundle)}>Download candidate ZIP</button></div>
+   <label>Script version<select aria-label="Script version" value={version} disabled={busy} onChange={e=>{setVersion(e.target.value);setApproved(false);}}><option value="">Choose a version</option>{state.runtimes.map(r=><option key={r.pin.runtimeSha256} value={r.pin.runtimeSha256}>{runtimeLabel(r.version)}</option>)}</select></label>
+   <p>Saved version: <strong>{state.selected?runtimeLabel(state.selected.runtimeVersion):'Not selected'}</strong> · Prebid {state.enablePrebid?'enabled':'off'}</p>
+   <div className={needsPrebid?"runtime-error":"runtime-message"}><p>{state.prebid.message}</p>{onOpenPrebid?<button onClick={onOpenPrebid}>Open Prebid.js</button>:null}</div>
+   <label className="runtime-check"><input type="checkbox" checked={approved} disabled={busy} onChange={e=>setApproved(e.target.checked)}/>Use this script version for this site’s next package.</label>
+   <div className="runtime-actions"><button disabled={busy||stale||!selected||!approved||needsPrebid} onClick={()=>void run(saveVersion)}>Save script version</button><button disabled={busy||stale||!state.selected||needsPrebid||Boolean(state.validationIssue)} onClick={()=>void run(bundle)}>Download candidate ZIP</button></div>
    <p>Downloads are review candidates. Saved releases and live files are unchanged.</p>
-   <h3>Version history</h3>{state.history.map(r=><article className="runtime-release" key={r.codeSha256}><strong>{r.version} · {r.date}</strong><p>{r.title} · {r.available?'Available':'Saved packages only'}{r.saved?' · Selected on this site':''}</p><ul>{r.changes.map((c:string)=><li key={c}>{c}</li>)}</ul><details><summary>Build details</summary><code>{r.codeSha256}</code></details></article>)}
+   <h3>Version history</h3>{state.history.map(r=><article className="runtime-release" key={r.codeSha256}><strong>{runtimeLabel(r.version)} · {r.date}</strong><p>{r.title} · {r.available?'Available':'Saved packages only'}{r.saved?' · Selected on this site':''}</p><ul>{r.changes.map((c:string)=><li key={c}>{c}</li>)}</ul><details><summary>Build details</summary><p>Build: {r.version} · {r.version.includes(".preview.")?"Test release":"Release"}</p><code>{r.codeSha256}</code></details></article>)}
   </>:null}
   {state&&view==='positions'?<>
    <p>Use the ad unit’s existing size map and bidder overrides. These settings apply with script version 3.10.0.</p>

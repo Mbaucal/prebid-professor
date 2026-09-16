@@ -5,6 +5,7 @@ import { describeCandidate, saveDraftRelease, readDraftRelease } from '../runtim
 import { runtimeCatalog, readPinnedSiteRuntime, buildArtifactCandidate } from '../test-workspace/runtime-catalog.mjs';
 import { takeOverForBuild } from '../test-workspace/takeover-settings.mjs';
 import { zipSync } from 'fflate';
+import { siteSetupState } from './setup-state.mjs';
 
 const encode=new TextEncoder(),decode=new TextDecoder('utf-8',{fatal:true});
 const ID=/^builtin-release-[a-f0-9]{64}$/;
@@ -18,6 +19,7 @@ const payload=row=>({id:row.id,version:row.version,status:row.status,notes:row.n
 export async function packageState(env,site,{testOnly=false}={}){
  const saved=await snapshot(env,site),revision=await digest(saved);let error=null,selected=null;
  try{selected=await readPinnedSiteRuntime({siteId:site,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);}catch(e){error=e.message;}
+ const setup=siteSetupState(saved);if(error&&setup.setupMessage)error=setup.setupMessage;
  const rows=await db(env).prepare("SELECT * FROM releases WHERE publisher_id=? AND version LIKE ? ORDER BY created_at DESC,id DESC LIMIT 50").bind(site,testOnly?'builtin-draft-%':'builtin-release-%').all();
  // Keep prior production packages reachable after selecting a built-in runtime.
  const earlier=testOnly?{results:[]}:await db(env).prepare(`SELECT r.*,
@@ -26,7 +28,7 @@ export async function packageState(env,site,{testOnly=false}={}){
      (a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id))) AS was_production
    FROM releases r WHERE r.publisher_id=? AND r.id NOT LIKE 'builtin-%' AND r.version NOT LIKE 'builtin-%'
    ORDER BY CASE WHEN r.status='production' OR EXISTS(SELECT 1 FROM audit_log a WHERE a.publisher_id=r.publisher_id AND a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id) THEN 0 ELSE 1 END,was_production DESC,r.created_at DESC,r.id DESC LIMIT 50`).bind(site).all();
- return {site:saved.site,revision,ready:!error,error,runtime:selected?.pin??null,testOnly,releases:rows.results.map(payload),earlierReleases:earlier.results.map(r=>({...payload(r),canRestore:r.status==='archived'&&Boolean(r.was_production)}))};
+ return {site:saved.site,revision,ready:!error,error,nextStep:error?setup.nextStep:null,runtime:selected?.pin??null,testOnly,releases:rows.results.map(payload),earlierReleases:earlier.results.map(r=>({...payload(r),canRestore:r.status==='archived'&&Boolean(r.was_production)}))};
 }
 async function build(env,site,revision,stamp){
  const saved=await snapshot(env,site);check(await digest(saved)===revision,'Settings changed. Reload before generating.');
