@@ -1,10 +1,10 @@
 name: TEST site editor checks
 on:
   pull_request:
-    branches: [feature/isolated-runtime-workspace-v1]
+    branches: [main, feature/isolated-runtime-workspace-v1]
     paths: [worker/**, src/**, tests/**, scripts/**, .github/workflows/site-editor-checks.yml]
   push:
-    branches: [feature/isolated-runtime-workspace-v1]
+    branches: [main, feature/isolated-runtime-workspace-v1]
 permissions:
   contents: read
 jobs:

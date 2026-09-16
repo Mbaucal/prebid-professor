@@ -100,3 +100,36 @@ test('monitoring follows the immutable production package after publishing and r
   const b=await generate(f);await promote(f,b.id,'staging');await promote(f,b.id,'production');await inspect(b.id);await promote(f,a.id,'rollback');await inspect(a.id);
  }finally{globalThis.fetch=originalFetch;}
 });
+
+test('main browser ZIP uses scoped artifact reads, preserves stored bytes and refuses wrong-site/corrupt packages',async()=>{
+ const {packageAssetResponse}=await import('../../worker/site-runtime/releases.mjs');
+ const {downloadStoredPackage}=await import('../../src/download/saved-package.mjs');
+ const {unzipSync}=await import('fflate');
+ const f=await fixture(),release=await generate(f),original=await readPackage(f.env,'first',release.id);
+ const get=f.env.BUILDS.get,reads=[];f.env.BUILDS.get=async key=>{reads.push(key);return get(key);};
+ const base=`https://tessera.invalid/api/publishers/first/builtin-releases/${release.id}`;
+ const index=await packageAssetResponse(new Request(base+'/index'),f.env,'first',release.id,null);
+ assert.equal(index.status,200);assert.equal(reads.length,1);
+ const descriptor=(await index.json()).descriptor;assert.equal(descriptor.siteId,'first');assert.equal(descriptor.files.length,9);
+ assert.equal((await packageAssetResponse(new Request(base+'/index'),f.env,'second',release.id,null)).status,404);
+ assert.equal((await packageAssetResponse(new Request(base+'/index',{method:'POST'}),f.env,'first',release.id,null)).status,405);
+ const saved={fetch:globalThis.fetch,document:globalThis.document,create:URL.createObjectURL,revoke:URL.revokeObjectURL,timeout:globalThis.setTimeout};
+ let blob,clicks=0,wrongSite=false;
+ globalThis.fetch=async url=>{
+  assert.ok(url.startsWith(new URL(base).pathname));reads.length=0;
+  const name=url.endsWith('/index')?null:url.split('/').pop();
+  const response=await packageAssetResponse(new Request('https://tessera.invalid'+url),f.env,'first',release.id,name);
+  assert.ok(reads.length<=(name?2:1),'each HTTP request reads at most manifest + requested file');
+  return wrongSite?Response.json({descriptor:{...descriptor,siteId:'second'}}):response;
+ };
+ globalThis.document={body:{append(){}},createElement(){return {click(){clicks++},remove(){}}}};
+ URL.createObjectURL=value=>{blob=value;return 'blob:local'};URL.revokeObjectURL=()=>{};globalThis.setTimeout=fn=>{fn();return 0};
+ try{
+  await downloadStoredPackage(release.id,()=>{},{siteId:'first'});assert.equal(clicks,1);
+  const files=unzipSync(new Uint8Array(await blob.arrayBuffer()));assert.deepEqual(files,original.files);
+  wrongSite=true;await assert.rejects(downloadStoredPackage(release.id,()=>{},{siteId:'first'}),/inventory/);assert.equal(clicks,1);
+  wrongSite=false;f.objects.get(`publishers/first/releases/${release.id}/ads.js`).bytes[0]^=1;
+  await assert.rejects(downloadStoredPackage(release.id,()=>{},{siteId:'first'}),/Could not download/);assert.equal(clicks,1);
+  assert.equal(f.sqlite.prepare('SELECT status FROM releases').get().status,'draft');
+ }finally{Object.assign(globalThis,{fetch:saved.fetch,document:saved.document,setTimeout:saved.timeout});URL.createObjectURL=saved.create;URL.revokeObjectURL=saved.revoke;}
+});
