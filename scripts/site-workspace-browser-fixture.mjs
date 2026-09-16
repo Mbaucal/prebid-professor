@@ -1,6 +1,8 @@
 import { createInterface } from 'node:readline';
 import { build } from 'esbuild';
 import worker from '../worker/test-workspace/index.mjs';
+import { siteRuntimeResponse } from '../worker/site-runtime/service.mjs';
+import { packageResponse } from '../worker/site-runtime/releases.mjs';
 import { workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD } from '../tests/support/test-workspace-store.mjs';
 const f=workspaceStore();
 globalThis.fetch=()=>{throw Error('External network is forbidden in this fixture');};
@@ -30,8 +32,12 @@ for await(const line of createInterface({input:process.stdin})){
  if(setupMode&&body.path==='/setup')response=new Response('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/setup.css"><div id="root"></div><script src="/setup.js"></script>',{headers:{'content-type':'text/html'}});
  else if(setupMode&&['/setup.js','/setup.css'].includes(body.path)){const ext=body.path.endsWith('.js')?'.js':'.css';response=new Response(harness.outputFiles.find(f=>f.path.endsWith(ext)).text,{headers:{'content-type':ext==='.js'?'application/javascript':'text/css'}});}
  else {
-  const aliases={'/api/publishers/test-site/builtin-site-settings':'/test-api/site-runtime','/api/publishers/test-site/builtin-releases':'/test-api/site-packages'};
-  response=await worker.fetch(new Request(ORIGIN+(setupMode?aliases[body.path]??body.path:body.path),{method:body.method,headers:{cookie,origin:ORIGIN,...(body.body?{'content-type':'application/json'}:{})},body:body.body||undefined}),f.env);
+  const request=new Request(ORIGIN+body.path,{method:body.method,headers:{cookie,origin:ORIGIN,...(body.body?{'content-type':'application/json'}:{})},body:body.body||undefined});
+  // The main imported-site scenario uses its shared service handlers directly.
+  // TEST's editor-completion prerequisite is not part of the main site flow.
+  if(setupMode&&body.path==='/api/publishers/test-site/builtin-site-settings')response=await siteRuntimeResponse(request,f.env,'test-site',TEST_EMAIL);
+  else if(setupMode&&body.path==='/api/publishers/test-site/builtin-releases')response=await packageResponse(request,f.env,'test-site',TEST_EMAIL,{testOnly:true});
+  else response=await worker.fetch(request,f.env);
  }
  console.log(JSON.stringify({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer()).toString('base64')}));}
  catch(e){console.log(JSON.stringify({error:e.message}));}
