@@ -105,11 +105,22 @@ test('main browser ZIP uses scoped artifact reads, preserves stored bytes and re
  const {packageAssetResponse}=await import('../../worker/site-runtime/releases.mjs');
  const {downloadStoredPackage}=await import('../../src/download/saved-package.mjs');
  const {unzipSync}=await import('fflate');
+ const {default:mainWorker}=await import('../../worker/app-builtin-runtime-preview.ts');
+ const {handleLogin}=await import('../../worker/auth.ts');
+ const {TEST_EMAIL,TEST_PASSWORD,TEST_SECRET}=await import('../support/test-workspace-store.mjs');
  const f=await fixture(),release=await generate(f),original=await readPackage(f.env,'first',release.id);
+ Object.assign(f.env,{ADMIN_EMAIL:TEST_EMAIL,ADMIN_PASSWORD:TEST_PASSWORD,SESSION_SECRET:TEST_SECRET});
+ const login=await handleLogin(new Request('https://tessera.invalid/api/auth/login',{method:'POST',headers:{origin:'https://tessera.invalid','content-type':'application/json'},body:JSON.stringify({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);
+ const cookie=login.headers.get('set-cookie').split(';')[0];
  const get=f.env.BUILDS.get,reads=[];f.env.BUILDS.get=async key=>{reads.push(key);return get(key);};
  const base=`https://tessera.invalid/api/publishers/first/builtin-releases/${release.id}`;
- const index=await packageAssetResponse(new Request(base+'/index'),f.env,'first',release.id,null);
+ assert.equal((await mainWorker.fetch(new Request(base+'/index'),f.env,{})).status,401);
+ assert.equal((await mainWorker.fetch(new Request(base+'/files/README.txt'),f.env,{})).status,401);
+ assert.equal(reads.length,0);
+ const index=await mainWorker.fetch(new Request(base+'/index',{headers:{cookie}}),f.env,{});
  assert.equal(index.status,200);assert.equal(reads.length,1);
+ const readme=await mainWorker.fetch(new Request(`https://tessera.invalid/cdn/first/releases/${release.id}/README.txt`),f.env,{});
+ assert.equal(readme.status,200);assert.deepEqual(new Uint8Array(await readme.arrayBuffer()),original.files['README.txt']);
  const descriptor=(await index.json()).descriptor;assert.equal(descriptor.siteId,'first');assert.equal(descriptor.files.length,9);
  assert.equal((await packageAssetResponse(new Request(base+'/index'),f.env,'second',release.id,null)).status,404);
  assert.equal((await packageAssetResponse(new Request(base+'/index',{method:'POST'}),f.env,'first',release.id,null)).status,405);
@@ -118,7 +129,7 @@ test('main browser ZIP uses scoped artifact reads, preserves stored bytes and re
  globalThis.fetch=async url=>{
   assert.ok(url.startsWith(new URL(base).pathname));reads.length=0;
   const name=url.endsWith('/index')?null:url.split('/').pop();
-  const response=await packageAssetResponse(new Request('https://tessera.invalid'+url),f.env,'first',release.id,name);
+  const response=await mainWorker.fetch(new Request('https://tessera.invalid'+url,{headers:{cookie}}),f.env,{});
   assert.ok(reads.length<=(name?2:1),'each HTTP request reads at most manifest + requested file');
   return wrongSite?Response.json({descriptor:{...descriptor,siteId:'second'}}):response;
  };

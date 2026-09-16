@@ -133,7 +133,7 @@ export async function changePackageChannel(env,site,id,actor,action,body,{testOn
 export async function channelRevision(env,site){const r=await db(env).prepare('SELECT id,status,published_at FROM releases WHERE publisher_id=? ORDER BY id').bind(site).all();return sha256(encode.encode(JSON.stringify(r.results)));}
 /** Resolve a channel to one immutable package; no sequential file-copy window. */
 export async function builtInCdn(request,env){
- const u=new URL(request.url),m=u.pathname.match(/^\/cdn\/([a-z0-9][a-z0-9-]{0,97})\/(?:releases\/(builtin-release-[a-f0-9]{64})|(current|staging))\/([a-z][a-z0-9.-]*)$/);
+ const u=new URL(request.url),m=u.pathname.match(/^\/cdn\/([a-z0-9][a-z0-9-]{0,97})\/(?:releases\/(builtin-release-[a-f0-9]{64})|(current|staging))\/([a-zA-Z][a-zA-Z0-9.-]*)$/);
  if(!m||!['GET','HEAD'].includes(request.method))return null;
  const [,site,version,channel,name]=m;let id=version;
  if(channel){let rows;try{rows=await db(env).prepare('SELECT id FROM releases WHERE publisher_id=? AND status=? LIMIT 2').bind(site,channel==='current'?'production':'staging').all();}catch{return null;}if(!rows.results.some(r=>ID.test(r.id)))return null;check(rows.results.length===1,'Channel is ambiguous.');id=rows.results[0].id;}

@@ -20,7 +20,7 @@ export default {
     const draftBlock = blockStoredDraftCdn(request);
     if (draftBlock) return draftBlock;
     const url = new URL(request.url);
-    const packageMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-releases(?:\/(builtin-release-[a-f0-9]{64})\/(index|files\/([a-z][a-z0-9.-]*)))?$/);
+    const packageMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-releases(?:\/(builtin-release-[a-f0-9]{64})\/(index|files\/([a-zA-Z][a-zA-Z0-9.-]*)))?$/);
     if(packageMatch){
       const actor=await getAuthenticatedUser(request,env);
       const fail=(error:string,status:number)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'private, no-store'}});
