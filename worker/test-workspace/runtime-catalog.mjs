@@ -16,8 +16,12 @@ export function descriptorForPin(pin){
   return descriptor;
 }
 export function previewInput(snapshot,descriptor,time,takeOver){
-  if(descriptor.id===next.id)return positionsInput(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
   const config=JSON.parse(snapshot.config.config_json);
+  if(descriptor.id===next.id){
+    const input=positionsInput(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
+    if(input.overlay?.demand==='site'&&config.enablePrebid!==true)throw Error('This TakeOver uses Prebid + GAM. Enable Prebid or explicitly change its demand to GAM only.');
+    return input;
+  }
   if(Object.keys(config.runtimeControls?.adPositions??{}).length)throw Error('TakeOver ad units require version 3.10.0. Earlier packages remain available in Releases.');
   return referenceInput(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
 }

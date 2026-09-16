@@ -19,7 +19,14 @@ export async function packageState(env,site,{testOnly=false}={}){
  const saved=await snapshot(env,site),revision=await digest(saved);let error=null,selected=null;
  try{selected=await readPinnedSiteRuntime({siteId:site,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);}catch(e){error=e.message;}
  const rows=await db(env).prepare("SELECT * FROM releases WHERE publisher_id=? AND version LIKE ? ORDER BY created_at DESC,id DESC LIMIT 50").bind(site,testOnly?'builtin-draft-%':'builtin-release-%').all();
- return {site:saved.site,revision,ready:!error,error,runtime:selected?.pin??null,testOnly,releases:rows.results.map(payload)};
+ // Keep prior production packages reachable after selecting a built-in runtime.
+ const earlier=testOnly?{results:[]}:await db(env).prepare(`SELECT r.*,
+   EXISTS(SELECT 1 FROM audit_log a WHERE a.publisher_id=r.publisher_id AND
+    ((a.entity_id=r.id AND a.action IN ('release.production_published','release.rolled_back')) OR
+     (a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id))) AS was_production
+   FROM releases r WHERE r.publisher_id=? AND r.id NOT LIKE 'builtin-%' AND r.version NOT LIKE 'builtin-%'
+   ORDER BY CASE WHEN r.status='production' OR EXISTS(SELECT 1 FROM audit_log a WHERE a.publisher_id=r.publisher_id AND a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id) THEN 0 ELSE 1 END,r.created_at DESC,r.id DESC LIMIT 50`).bind(site).all();
+ return {site:saved.site,revision,ready:!error,error,runtime:selected?.pin??null,testOnly,releases:rows.results.map(payload),earlierReleases:earlier.results.map(r=>({...payload(r),canRestore:r.status==='archived'&&Boolean(r.was_production)}))};
 }
 async function build(env,site,revision,stamp){
  const saved=await snapshot(env,site);check(await digest(saved)===revision,'Settings changed. Reload before generating.');
@@ -122,7 +129,7 @@ export async function changePackageChannel(env,site,id,actor,action,body,{testOn
  if(action==='staging')check(['draft','archived','staging'].includes(p.release.status),'This package is already in production.');
  const auditId=crypto.randomUUID(),time=new Date().toISOString();
  const result=await db(env).batch([
-  db(env).prepare(`INSERT INTO audit_log(id,actor,action,publisher_id,entity_type,entity_id,details_json,created_at) SELECT ?,?,?,?,'release',?,?,? WHERE (SELECT json_group_array(json_array(id,status,published_at)) FROM (SELECT id,status,published_at FROM releases WHERE publisher_id=? ORDER BY id))=?`).bind(auditId,actor,`builtin_release.${action}`,site,id,JSON.stringify({version:id,channel}),time,site,JSON.stringify(rows.map(r=>[r.id,r.status,r.published_at]))),
+  db(env).prepare(`INSERT INTO audit_log(id,actor,action,publisher_id,entity_type,entity_id,details_json,created_at) SELECT ?,?,?,?,'release',?,?,? WHERE (SELECT json_group_array(json_array(id,status,published_at)) FROM (SELECT id,status,published_at FROM releases WHERE publisher_id=? ORDER BY id))=?`).bind(auditId,actor,`builtin_release.${action}`,site,id,JSON.stringify({version:id,channel,previousReleaseId:channel==='production'?rows.find(r=>r.status==='production')?.id??null:null}),time,site,JSON.stringify(rows.map(r=>[r.id,r.status,r.published_at]))),
   db(env).prepare("UPDATE releases SET status='archived' WHERE publisher_id=? AND status=? AND id<>? AND EXISTS(SELECT 1 FROM audit_log WHERE id=?)").bind(site,channel,id,auditId),
   db(env).prepare('UPDATE releases SET status=?,published_at=? WHERE publisher_id=? AND id=? AND EXISTS(SELECT 1 FROM audit_log WHERE id=?)').bind(channel,time,site,id,auditId),
   ...(channel==='production'?[db(env).prepare("UPDATE publishers SET current_release_id=?,current_version=?,last_published_at=?,status='live',updated_at=? WHERE id=? AND EXISTS(SELECT 1 FROM audit_log WHERE id=?)").bind(id,id,time,time,site,auditId)]:[]),

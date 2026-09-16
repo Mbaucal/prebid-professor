@@ -144,3 +144,63 @@ test('main browser ZIP uses scoped artifact reads, preserves stored bytes and re
   assert.equal(f.sqlite.prepare('SELECT status FROM releases').get().status,'draft');
  }finally{Object.assign(globalThis,{fetch:saved.fetch,document:saved.document,setTimeout:saved.timeout});URL.createObjectURL=saved.create;URL.revokeObjectURL=saved.revoke;}
 });
+
+test('saved site-demand TakeOver cannot generate after Prebid is disabled, and can be explicitly repaired',async()=>{
+ const {packageState}=await import('../../worker/site-runtime/releases.mjs');
+ const {siteRuntimeBundle}=await import('../../worker/site-runtime/service.mjs');
+ const {defaultOverlay}=await import('../../worker/runtime-next/position-settings.mjs');
+ const f=await fixture(),config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ // This is also the state left by an older demand-mode editor switching Prebid off.
+ config.runtimeControls.adPositions={Billboard:{...defaultOverlay(),demand:'site'}};
+ config.enablePrebid=false;config.builtinRuntimeSelection.prebid=null;
+ f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+ const before=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ let state=await siteRuntimeSettings(f.env,'first');assert.match(state.validationIssue,/Prebid \+ GAM/);
+ assert.equal((await packageState(f.env,'first')).ready,false);
+ await assert.rejects(generate(f),/saved settings are not supported/);
+ await assert.rejects(siteRuntimeBundle(f.env,'first',{action:'bundle',revision:state.revision,acknowledge:true}),/saved settings are not supported/);
+ await assert.rejects(changeSiteRuntime(f.env,'first','tester',{action:'version',revision:state.revision,runtime:state.runtimes[0].pin,allowPreview:true}),/saved settings are not supported/);
+ assert.equal(f.objects.size,0);assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
+ await changeSiteRuntime(f.env,'first','tester',{action:'position',revision:state.revision,position:{code:'Billboard',display:'takeover',overlay:{...defaultOverlay(),demand:'gam'},lazy:null}});
+ assert.equal((await packageState(f.env,'first')).ready,true);
+});
+
+test('first built-in publication retains the prior legacy release and its existing rollback route',async()=>{
+ const {packageState}=await import('../../worker/site-runtime/releases.mjs');
+ const {default:mainWorker}=await import('../../worker/app-builtin-runtime-preview.ts');
+ const {handleLogin}=await import('../../worker/auth.ts');
+ const {TEST_EMAIL,TEST_PASSWORD,TEST_SECRET}=await import('../support/test-workspace-store.mjs');
+ const f=await fixture(),release=await generate(f),builtin=await readPackage(f.env,'first',release.id);
+ const version='20260901_120000',legacyId='legacy-live',prefix=`publishers/first/releases/${version}/`;
+ f.sqlite.prepare("INSERT INTO releases(id,publisher_id,version,status,manifest_key,created_at,published_at) VALUES(?,'first',?,'production',?,'2000-01-01','2000-01-02')").run(legacyId,version,prefix+'manifest.json');
+ f.sqlite.prepare("UPDATE publishers SET current_release_id=?,current_version=? WHERE id='first'").run(legacyId,version);
+ for(let i=0;i<51;i++)f.sqlite.prepare("INSERT INTO releases(id,publisher_id,version,status) VALUES(?,'first',?,'draft')").run('old-draft-'+i,'older-package-'+i);
+ const legacyFiles={};
+ for(const name of ['ads.js','ads.min.js','prebid.js','config.json','manifest.json','min-height.css','sticky.css','div-export.csv','implementation.html']){
+  const bytes=new TextEncoder().encode(name==='manifest.json'?JSON.stringify({version,siteId:'first'}):'saved legacy '+name);
+  legacyFiles[name]=bytes;f.objects.set(prefix+name,{bytes,meta:{sha256:await sha256(bytes)}});
+ }
+ const settings=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ await promote(f,release.id,'staging');await promote(f,release.id,'production');
+ const earlier=(await packageState(f.env,'first')).earlierReleases;
+ assert.equal(earlier.length,50);assert.equal(earlier[0].id,legacyId);assert.equal(earlier[0].canRestore,true);
+ const rawGet=f.env.BUILDS.get;
+ f.env.BUILDS.get=async key=>{const o=await rawGet(key);if(!o)return null;const bytes=new Uint8Array(await o.arrayBuffer());return {...o,body:bytes,httpEtag:'"fixture"',text:async()=>new TextDecoder().decode(bytes),writeHttpMetadata(headers){headers.set('content-type','application/javascript');}};};
+ let copies=0;f.env.BUILDS.put=async(key,bytes,options)=>{
+  assert.ok(key.startsWith('publishers/first/current/'));
+  const current=await builtInCdn(new Request('https://tessera.invalid/cdn/first/current/ads.js'),f.env);
+  assert.deepEqual(new Uint8Array(await current.arrayBuffer()),builtin.files['ads.js'],'active built-in stays intact while old files are prepared');
+  copies++;f.objects.set(key,{bytes:new Uint8Array(bytes),meta:options.customMetadata});
+ };
+ Object.assign(f.env,{ADMIN_EMAIL:TEST_EMAIL,ADMIN_PASSWORD:TEST_PASSWORD,SESSION_SECRET:TEST_SECRET});
+ const login=await handleLogin(new Request('https://tessera.invalid/api/auth/login',{method:'POST',headers:{origin:'https://tessera.invalid','content-type':'application/json'},body:JSON.stringify({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);
+ const cookie=login.headers.get('set-cookie').split(';')[0];
+ const response=await mainWorker.fetch(new Request(`https://tessera.invalid/api/publishers/first/releases/${legacyId}/rollback`,{method:'POST',headers:{cookie,origin:'https://tessera.invalid'}}),f.env,{});
+ assert.equal(response.status,200,await response.text());assert.equal(copies,9);
+ assert.equal(f.sqlite.prepare("SELECT current_release_id FROM publishers WHERE id='first'").get().current_release_id,legacyId);
+ assert.equal(f.sqlite.prepare('SELECT status FROM releases WHERE id=?').get(release.id).status,'archived');
+ const current=await mainWorker.fetch(new Request('https://tessera.invalid/cdn/first/current/ads.js'),f.env,{});
+ assert.equal(current.status,200);assert.deepEqual(new Uint8Array(await current.arrayBuffer()),legacyFiles['ads.js']);
+ assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,settings);
+ assert.deepEqual((await readPackage(f.env,'first',release.id)).files,builtin.files);
+});
