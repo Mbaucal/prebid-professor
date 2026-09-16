@@ -89,6 +89,21 @@ export async function readPackage(env,site,id,{testOnly=false,requestedFile=null
  }
  return {files,release:row,manifest:m};
 }
+/** Authenticated browser downloads read one artifact per request; ZIP work stays in the browser. */
+export async function packageAssetResponse(request,env,site,id,name){
+ const headers={'cache-control':'private, no-store','x-content-type-options':'nosniff'};
+ const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{...headers,'content-type':'application/json'}});
+ try{
+  check(request.method==='GET','Method not allowed.',405);
+  check(!new URL(request.url).search,'Unknown query.',400);
+  const p=await readPackage(env,site,id,{requestedFile:name??'manifest.json'});
+  if(name)return new Response(p.files[name],{headers:{...headers,'content-type':type(name)}});
+  const files=Object.entries(p.manifest.files).map(([name,e])=>({name,byteSize:e.byteSize,sha256:e.sha256}));
+  files.push({name:'manifest.json',byteSize:p.files['manifest.json'].length,sha256:await sha256(p.files['manifest.json'])});
+  files.sort((a,b)=>a.name.localeCompare(b.name,'en'));
+  return json({descriptor:{releaseId:id,siteId:site,files}});
+ }catch(e){return json({error:e.message},e.status??422);}
+}
 export async function packageDownload(env,site,id,options){const p=await readPackage(env,site,id,options);return new Response(zip(p.files),{headers:{'content-type':'application/zip','cache-control':'private, no-store','content-disposition':`attachment; filename="${id}.zip"`}});}
 
 export async function changePackageChannel(env,site,id,actor,action,body,{testOnly=false}={}){

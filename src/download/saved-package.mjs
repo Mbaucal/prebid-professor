@@ -1,15 +1,16 @@
 import { zipSync } from 'fflate';
 const hash=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
-export async function downloadStoredPackage(id, progress=()=>{}) {
- if(!/^builtin-draft-[a-f0-9]{64}$/.test(id))throw Error('Invalid saved package.');
- const base='/test-api/releases/'+id;
+export async function downloadStoredPackage(id, progress=()=>{}, {siteId=null}={}) {
+ const main=siteId!==null;
+ if(main?(!/^[a-z0-9][a-z0-9-]{0,97}$/.test(siteId)||!/^builtin-release-[a-f0-9]{64}$/.test(id)):!/^builtin-draft-[a-f0-9]{64}$/.test(id))throw Error('Invalid saved package.');
+ const base=main?'/api/publishers/'+siteId+'/builtin-releases/'+id:'/test-api/releases/'+id;
  const indexResponse=await fetch(base+'/index',{credentials:'same-origin',cache:'no-store'});
  if(!indexResponse.ok)throw Error('Cannot read saved package. Sign in and try again.');
  const {descriptor}=await indexResponse.json(),files={};
- if(descriptor.releaseId!==id||!Array.isArray(descriptor.files)||descriptor.files.length<9||descriptor.files.length>10)throw Error('Invalid package inventory.');
+ if(!descriptor||descriptor.releaseId!==id||descriptor.siteId!==(main?siteId:'test-site')||!Array.isArray(descriptor.files)||descriptor.files.length<9||descriptor.files.length>10)throw Error('Invalid package inventory.');
  let total=0;
  for(const entry of descriptor.files){
-  if(!['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','manifest.json','min-height.css','sticky.css','prebid.js'].includes(entry.name)||Object.hasOwn(files,entry.name)||!Number.isSafeInteger(entry.byteSize)||entry.byteSize<=0||entry.byteSize>8*1024*1024)throw Error('Invalid saved file.');
+  if(!['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','manifest.json','min-height.css','sticky.css','prebid.js'].includes(entry.name)||Object.hasOwn(files,entry.name)||!Number.isSafeInteger(entry.byteSize)||entry.byteSize<=0||entry.byteSize>8*1024*1024||!/^[a-f0-9]{64}$/.test(entry.sha256))throw Error('Invalid saved file.');
   total+=entry.byteSize;if(total>12*1024*1024)throw Error('Package exceeds limit.');
   progress('Downloading '+entry.name+'…');
   const response=await fetch(base+'/files/'+encodeURIComponent(entry.name),{credentials:'same-origin',cache:'no-store'});
@@ -19,7 +20,13 @@ export async function downloadStoredPackage(id, progress=()=>{}) {
   files[entry.name]=[bytes,{level:0,mtime:new Date(1980,0,1)}];
  }
  const inventory=descriptor.files;
- if(await hash(new TextEncoder().encode(JSON.stringify({siteId:descriptor.siteId,inventory})))!==id.slice('builtin-draft-'.length))throw Error('Package identity differs.');
+ if(!main&&await hash(new TextEncoder().encode(JSON.stringify({siteId:descriptor.siteId,inventory})))!==id.slice('builtin-draft-'.length))throw Error('Package identity differs.');
+ if(!['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','manifest.json','min-height.css','sticky.css'].every(n=>Object.hasOwn(files,n)))throw Error('Package file set differs.');
+ if(main){
+  const manifest=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(files['manifest.json'][0]));
+  if(manifest.kind!=='builtin-runtime-release'||manifest.completeRelease!==true||manifest.siteId!==siteId||manifest.releaseId!==id||manifest.version!==id||!manifest.files||Object.hasOwn(files,'prebid.js')!==Boolean(manifest.prebidBuild))throw Error('Package identity differs.');
+  if(Object.keys(manifest.files).length!==inventory.length-1||inventory.some(e=>e.name!=='manifest.json'&&(manifest.files[e.name]?.sha256!==e.sha256||manifest.files[e.name]?.byteSize!==e.byteSize)))throw Error('Manifest inventory differs.');
+ }
  progress('Preparing ZIP…');
  const blob=new Blob([zipSync(files,{level:0})],{type:'application/zip'}),url=URL.createObjectURL(blob),a=document.createElement('a');
  a.href=url;a.download=id+'.zip';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
