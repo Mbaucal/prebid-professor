@@ -3,6 +3,9 @@ import { cacheDeliveryZip, readDeliveryZip } from './deployment-store.mjs';
 import { verifyDeliveryZip, SITES } from './deployment-contract.mjs';
 import { WorkspaceError, jsonBody } from './boundary.mjs';
 import { createExperimentDelivery, EXPERIMENT_PROFILE } from '../experiments/delivery.mjs';
+import { createCollectedDelivery, COLLECTED_PROFILE } from '../experiments/collected-delivery.mjs';
+import { issueAssignmentTicket, verifyAssignmentTicket } from './assignment-ticket.mjs';
+import { storeAssignment, assignmentSummary } from './assignment-store.mjs';
 import { experimentPage, experimentScript } from './experiments-page.mjs';
 import { reportingPlan, reportingCsv } from '../experiments/reporting.mjs';
 import { readReporting, storeReporting } from './experiment-report-store.mjs';
@@ -43,10 +46,17 @@ async function verifiedPackage(env,siteId,pin) {
   const bytes=await readDeliveryZip(env.BUILDS,pin);
   return verifyDeliveryZip(bytes,{siteId,packageSha256:pin.packageSha256,zipSha256:pin.zipSha256});
 }
+function makeDelivery(env,item,active,packages) {
+  const collected=item.deliveryProfile===COLLECTED_PROFILE;
+  check(!item.deliveryProfile||collected,'Unsupported experiment delivery profile.',409);
+  const build=collected?createCollectedDelivery:createExperimentDelivery;
+  return build({profile:collected?COLLECTED_PROFILE:EXPERIMENT_PROFILE,siteId:item.siteId,experimentId:item.id,revision:item.version,
+    enabled:active,trafficB:item.trafficB,controlPackageSha256:item.a.packageSha256,testPackageSha256:item.b.packageSha256},packages,
+    {issueTicket:context=>issueAssignmentTicket(context,env.TEST_SESSION_SECRET)});
+}
 async function delivery(env,item,active) {
   const entries=await Promise.all([item.a,item.b].map(async pin=>[pin.packageSha256,await verifiedPackage(env,item.siteId,pin)]));
-  const handler=await createExperimentDelivery({profile:EXPERIMENT_PROFILE,siteId:item.siteId,experimentId:item.id,revision:item.version,
-    enabled:active,trafficB:item.trafficB,controlPackageSha256:item.a.packageSha256,testPackageSha256:item.b.packageSha256},Object.fromEntries(entries));
+  const handler=await makeDelivery(env,item,active,Object.fromEntries(entries));
   if(active) {
     const plan=(await readReporting(env.BUILDS)).plans.find(p=>p.experimentId===item.id);
     check(!plan||plan.deliverySha256===handler.deliverySha256,'Delivery changed since reporting was prepared. Save a new experiment to keep its GAM values separate.',409);
@@ -54,6 +64,7 @@ async function delivery(env,item,active) {
   return handler;
 }
 export async function saveExperiment(env,actor,body) {
+  check(body.collectAssignments===undefined||typeof body.collectAssignments==='boolean','Choose whether to collect TEST assignments.');
   check(revision(body.expectedRevision)&&SITES.includes(body.siteId),'Choose a TEST site and refresh its history.');
   check(Number.isInteger(body.trafficB)&&body.trafficB>=0&&body.trafficB<=100,'B traffic must be a whole percentage from 0 to 100.');
   const initial=await readExperiments(env.BUILDS);
@@ -68,7 +79,7 @@ export async function saveExperiment(env,actor,body) {
   return change(env.BUILDS,body.expectedRevision,state=>{
     check(state.experiments.length<100,'Experiment history is full. Existing versions are retained.',409);
     state.experiments.push({id:'experiment-'+crypto.randomUUID(),siteId:body.siteId,version:state.revision+1,
-      trafficB:body.trafficB,a:pins[0],b:pins[1],createdAt:new Date().toISOString(),createdBy:actor.email});
+      ...(body.collectAssignments?{deliveryProfile:COLLECTED_PROFILE}:{}),trafficB:body.trafficB,a:pins[0],b:pins[1],createdAt:new Date().toISOString(),createdBy:actor.email});
   });
 }
 export async function transitionExperiment(env,actor,body,type) {
@@ -77,6 +88,7 @@ export async function transitionExperiment(env,actor,body,type) {
   check(state.revision===body.expectedRevision,'Experiment history changed. Refresh before trying again.',409);
   const item=state.experiments.find(e=>e.id===body.experimentId);
   check(item,'Saved experiment not found.',404);
+  if(type==='started'&&item.deliveryProfile===COLLECTED_PROFILE)await prepareReporting(env,body);
   if(type==='started')await delivery(env,item,true); // refuse corrupt/missing archives before activation
   return change(env.BUILDS,body.expectedRevision,next=>{
     check(next.events.length<(type==='started'?499:500),'Experiment history is full. Existing events are retained.',409);
@@ -94,9 +106,7 @@ export async function prepareReporting(env,body) {
   const item=state.experiments.find(e=>e.id===body.experimentId);
   check(item,'Saved experiment not found.',404);
   const packages=await Promise.all([item.a,item.b].map(pin=>verifiedPackage(env,item.siteId,pin)));
-  const handler=await createExperimentDelivery({profile:EXPERIMENT_PROFILE,siteId:item.siteId,experimentId:item.id,
-    revision:item.version,enabled:true,trafficB:item.trafficB,controlPackageSha256:item.a.packageSha256,
-    testPackageSha256:item.b.packageSha256},Object.fromEntries(packages.map(p=>[p.descriptor.packageSha256,p])));
+  const handler=await makeDelivery(env,item,true,Object.fromEntries(packages.map(p=>[p.descriptor.packageSha256,p])));
   const plan=reportingPlan(item,handler.deliverySha256,packages.map(p=>p.descriptor));
   // A concurrent Start/Stop must not silently turn a reviewed state into another.
   check((await readExperiments(env.BUILDS)).state.revision===state.revision,'Experiment history changed. Refresh before preparing the report.',409);
@@ -117,6 +127,22 @@ export async function experimentResponse(request,env,actor,headers) {
   }
   if(path==='/test-api/experiments/reporting/prepare'&&request.method==='POST') {
     return response(JSON.stringify(await prepareReporting(env,await jsonBody(request,['expectedRevision','experimentId']))));
+  }
+  const collectionMatch=path.match(/^\/test-api\/experiments\/collection\/(experiment-[a-f0-9-]{36})\.json$/);
+  if(collectionMatch&&request.method==='GET') {
+    const plan=(await readReporting(env.BUILDS)).plans.find(p=>p.experimentId===collectionMatch[1]);
+    check(plan&&plan.denominatorStatus==='test-collection','No TEST collection for this experiment.',404);
+    return response(JSON.stringify(await assignmentSummary(env.BUILDS,plan)));
+  }
+  const collectMatch=path.match(/^\/test-api\/experiments\/preview\/(tanjug-test|test-site)\/collect$/);
+  if(collectMatch&&request.method==='POST') {
+    const body=await jsonBody(request,['ticket','types']);
+    const claim=await verifyAssignmentTicket(body.ticket,env.TEST_SESSION_SECRET);
+    check(claim.siteId===collectMatch[1],'Assignment belongs to a different TEST site.',403);
+    const plan=(await readReporting(env.BUILDS)).plans.find(p=>p.experimentId===claim.experimentId);
+    check(plan&&plan.denominatorStatus==='test-collection','TEST collection is not enabled for this experiment.',403);
+    await storeAssignment(env.BUILDS,plan,claim,body.types);
+    return new Response(null,{status:204,headers});
   }
   const reportMatch=path.match(/^\/test-api\/experiments\/reporting\/(experiment-[a-f0-9-]{36})\.(json|csv)$/);
   if(reportMatch&&request.method==='GET') {
@@ -141,14 +167,14 @@ export async function experimentResponse(request,env,actor,headers) {
     const handler=await delivery(env,current.item,current.active);
     const rewritten=new Request(url.origin+tail,{method:'GET'});
     Object.defineProperty(rewritten,'cf',{value:request.cf});
-    const served=handler.fetch(rewritten);
+    const served=await handler.fetch(rewritten);
     // Authenticated preview responses cannot enter shared caches, even assets.
     return new Response(served.body,{status:served.status,headers:{...Object.fromEntries(served.headers),...headers,
       'cdn-cache-control':'no-store','cloudflare-cdn-cache-control':'no-store'}});
   }
   if(request.method==='POST'&&['/test-api/experiments/save','/test-api/experiments/start','/test-api/experiments/stop'].includes(path)) {
     const saving=path.endsWith('/save');
-    const body=await jsonBody(request,saving?['expectedRevision','siteId','releaseA','releaseB','trafficB']:['expectedRevision','experimentId']);
+    const body=await jsonBody(request,saving?['expectedRevision','siteId','releaseA','releaseB','trafficB','collectAssignments']:['expectedRevision','experimentId']);
     const state=saving?await saveExperiment(env,actor,body):await transitionExperiment(env,actor,body,path.endsWith('/start')?'started':'stopped');
     return response(JSON.stringify(state));
   }

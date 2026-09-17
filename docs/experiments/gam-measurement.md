@@ -49,8 +49,9 @@ investigated; ad delivery itself is not stopped by measurement failures.
    intended metrics appear in GAM. Check compatibility with existing slot targeting
    and Prebid; do not allow custom configuration to overwrite this reserved key.
 6. Collect an assignment denominator that includes no-request pages and failures.
-   Local console diagnostics are not a durable collector. No such collector is
-   shipped in this candidate. Revenue per assigned page cannot yet be calculated.
+   Local console diagnostics are not a durable collector. The opt-in private TEST
+   collector below supplies a bounded received sample; full traffic coverage and
+   revenue per assigned page are not verified.
 
 GAM revenue is the outcome source; Prebid bid CPM and local render callbacks are
 not realized revenue. Keep request count, filled/empty responses, latency and
@@ -93,8 +94,8 @@ prepared active mapping; restarting the same experiment reuses its labels.
 
 ## Assignment analysis contract
 
-`worker/experiments/assignments.mjs` implements offline counting for a future
-collector. It counts all valid `assigned` records once per random 128-bit page ID,
+`worker/experiments/assignments.mjs` implements counting for the private
+collector and offline analysis. It counts all valid `assigned` records once per random 128-bit page ID,
 including pages with load errors, conflicts or no outcome. Retries are deduplicated;
 out-of-order outcomes are supported. Outcomes without an assignment are reported
 as orphans, and contradictory outcomes are reported as ambiguous. Foreign delivery
@@ -116,8 +117,52 @@ node scripts/analyze-experiment-assignments.mjs reporting-plan.json events.json
 
 The output includes totals per arm, daily UTC counts, duplicate/orphan counts and
 observed allocation. It contains no individual IDs and always reports coverage as
-unknown. No collector or automatic network transmission is shipped in this step.
+unknown. The standalone analyzer never transmits data; the opt-in TEST collector
+is described below.
 Do not call these counts site pageviews or compute experiment revenue per page
 until collection completeness, GAM time zone and both arms' coverage are verified.
 The existing console snapshot cannot supply this contract: it has no assignment
-ID/time suitable for durable deduplication. A new versioned emitter is required.
+ID/time suitable for durable deduplication. The new collected loader emits directly
+using a signed ticket, without exposing it through the console snapshot.
+
+## Opt-in automatic collection for private TEST
+
+A newly saved experiment can now select **Collect TEST assignments and load
+outcomes**. This selects a separate `experiment-collected-preview-v1` loader;
+old experiment records continue to use the original unchanged loader. The packaged
+3.12 runtime is unchanged. The new loader keeps the existing runtime context
+contract and includes the sender implementation in its delivery hash. Start
+prepares its reporting mapping automatically. The private page's **Show received
+assignments** action and JSON endpoint show the received sample per arm.
+
+The authenticated TEST server signs a fresh random assignment ID, exact delivery,
+package, arm and issue time with a domain-separated HMAC key. The ticket is returned
+only in the private no-store loader body, never in a URL or console snapshot. It
+expires after one hour. The browser acknowledges `assigned` before loading the
+selected script and then reports `script-loaded`, `load-error` or `conflict`.
+This is asynchronous and does not wait before loading ads. Duplicate loader tags
+return before creating a sender. Each retry carries the same ticket and cumulative
+outcomes, so a lost acknowledgement cannot create another assignment.
+
+The endpoint requires TEST login, same-origin POST, strict JSON fields and a valid
+ticket matching a stored reporting plan. It stores one record per signed assignment
+under `test-experiments/assignments-v1/<delivery hash>.json` with atomic R2 writes.
+No page URL, IP, cookie value, consent string or cross-page visitor ID is collected
+in these records. The HTTP platform may have its own logging outside this module.
+Reported outcomes are not independent proof that the runtime or an ad executed.
+
+The sender has a two-second request timeout and at most six send attempts per
+page. Its acknowledgement/failure state appears in A/B console inspect. Collection
+failures do not prevent the runtime from loading. Stop disables collection for new
+loads, while previously issued tickets may finish their original outcome until
+expiry. The assignment timestamp is the server's allocation time, not browser
+navigation time. Issued-but-unexecuted loaders and fully blocked collection are
+not counted as received assignments; coverage remains unknown.
+
+This is a bounded private TEST sample, not a production collector: at most 1,000
+unique assignments per experiment. Existing assignments can still receive outcomes
+at capacity; new ones receive HTTP 429. Records are retained in this bounded ledger;
+there is no automatic deletion/expiry policy for stored records and no bucket
+lifecycle configuration is changed. Production rollout requires a separate reviewed
+retention/aggregation policy, scale/rate controls, consent assessment for real
+traffic, and coverage validation before these counts can be a revenue denominator.

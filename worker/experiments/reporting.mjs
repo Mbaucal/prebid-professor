@@ -35,8 +35,8 @@ export function reportingPlan(item, deliverySha256, descriptors) {
     blockers:[...arms.filter(a=>!a.supported).map(a=>'Variant '+a.variant+' has no verified measurement support.'),
       ...(arms.some(a=>a.trafficPercent===0)?['Both variants need traffic for a comparison.']:[]),
       'GAM reporting setup and actual report verification are pending.',
-      'Automatic assignment collection is not connected.'],
-    scope:'private-test-preview', denominatorStatus:'not-connected'};
+      item.deliveryProfile==='experiment-collected-preview-v1'?'TEST collection is enabled; real traffic coverage is not verified.':'Automatic assignment collection is not connected.'],
+    scope:'private-test-preview', denominatorStatus:item.deliveryProfile==='experiment-collected-preview-v1'?'test-collection':'not-connected'};
 }
 export function reportingCsv(plan) {
   check(plan.labelsReady, 'Both script versions need measurement support before exporting GAM values.');

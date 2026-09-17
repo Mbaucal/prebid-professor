@@ -40,3 +40,7 @@ test('measurement inspector exposes bounded reporting labels without claiming re
  assert.equal(report.gamMeasurement[0].appliedSlots,3);assert.equal(report.gamMeasurement[0].variant,'B');
  assert(!copied.includes('do-not-export'));assert(report.notes.some(n=>n.includes('not confirmation of GAM')));
 });
+test('collection diagnostics expose acknowledgements without signed tickets or page IDs',()=>{
+ const {report,copied}=run({__tesseraExperiments:{site:{context:{siteId:'test-site'},snapshot:()=>({collection:{status:'acknowledged',attempts:2,acknowledgedTypes:['assigned','script-loaded'],pendingTypes:[],ticket:'never-export-ticket',assignmentId:'never-export-id'}})}}});
+ assert.equal(report.experiments[0].collection.attempts,2);assert.equal(report.experiments[0].collection.acknowledgedTypes.length,2);assert(!copied.includes('never-export'));
+});

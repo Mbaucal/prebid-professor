@@ -11,6 +11,7 @@ export function inspectExperiments() {
     return {...identity,revision:Number.isSafeInteger(c.revision)?c.revision:null,active:c.active===true,status:clean(state.status),
       loaderAttempts:Number.isSafeInteger(snapshot.loaderAttempts)?snapshot.loaderAttempts:null,
       blockedDuplicates:Number.isSafeInteger(snapshot.blockedDuplicates)?snapshot.blockedDuplicates:null,
+      collection:snapshot.collection?{status:clean(snapshot.collection.status),attempts:Number.isSafeInteger(snapshot.collection.attempts)?snapshot.collection.attempts:null,acknowledgedTypes:(snapshot.collection.acknowledgedTypes||[]).slice(0,4).map(clean),pendingTypes:(snapshot.collection.pendingTypes||[]).slice(0,4).map(clean)}:null,
       events:(snapshot.events||[]).slice(0,100).map(e=>({type:clean(e.type),elapsedMs:Number.isFinite(e.elapsedMs)?e.elapsedMs:null})),
       matchingPackageTags:scripts.filter(s=>s.url?.includes('/releases/'+c.packageSha256+'/')).length};
   });
@@ -31,6 +32,7 @@ export function inspectExperiments() {
     runtimeMarkerPresent:!!window.__TESSERA_RUNTIME_STARTED,
     confirmedRuntimeExecutions:null,
     notes:['Script tags and load events do not prove runtime initialization or impressions.',
+      'Collection acknowledgement confirms receipt of reported events, not complete page coverage.',
       'GAM measurement shows local targeting configuration, not confirmation of GAM reporting or revenue.',
       'Total execution count is unknown for uninstrumented runtimes; runtimeEntries counts entry into the new runtime, not successful auctions.',
       'Load errors alone cannot distinguish SRI, CSP and network failures. Check browser Console/Network.',
