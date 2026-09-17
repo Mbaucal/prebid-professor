@@ -36,7 +36,8 @@ pattern retains usable auction history in this exact build.
 * Match GPT slots by exact owned object identity. Preserve publisher/GAM experiment
   keys; clear only `hb_` keys before a new submission. One targeting submission is
   allowed per ad-unit/auction. The policy does not refresh GPT or schedule auctions.
-* A caller-supplied page-local eligibility epoch and live slot/size context are
+* A caller-supplied page-local, monotonically increasing eligibility epoch (never
+  reused within the page) and live slot/size context are
   captured at auctionInit. Changed epoch, replaced slot or size set invalidates
   older offers. A change during the current auction blocks submission too. Missing
   context/history, unsupported formats and malformed lifetimes fail closed.
@@ -55,7 +56,8 @@ Snapshot counters distinguish filter evaluations from actual primary targeting
 selections. Repeated Prebid reads may evaluate a bid multiple times; these are
 not unique cache hits. A selection records fresh/cache origin and bid age, not an
 impression, render or realized revenue. Snapshots expose no ad IDs, creatives,
-consent values or user identifiers.
+consent values or user identifiers. Errors expose only a fixed failure-stage
+label, not arbitrary exception messages or bid data.
 
 ## Verification and remaining integration
 
@@ -70,6 +72,15 @@ winning, fresh-only control, targeted/used offers, TTL and additional age limit,
 changed eligibility/size, another ad unit, secondary deal targeting, empty bids,
 duplicate calls and context changes before targeting.
 
+Verified on 2026-09-17 at code commit
+`eeb67dffa4aa96ccb1edffebe235b31a12d538ec`: six policy unit tests and all
+12 native-core Chromium checks passed. All six existing CI workflows also passed.
+The [workspace run](https://github.com/Mbaucal/prebid-professor/actions/runs/35279131010)
+contains `cache-evidence/browser.json` in its synthetic evidence artifact.
+The first fixture run exposed a missing GPT `updateTargetingFromMap` mock; the
+mock now implements native map updates including null-key removal. Existing
+runtime history verification preserved all five recorded versions.
+
 Before registering/selecting a new script version:
 
 1. Connect the policy to a new compiler and snapshot option only. Bind the actual
@@ -80,7 +91,9 @@ Before registering/selecting a new script version:
 3. Replace all manual targeting paths in the new version, including initial ATF,
    refresh, per-unit lazy and TakeOver, with exact owned-slot mapping. Validate
    delayed render, TTL at use time, resize and failsafe timing without duplicate
-   auctions or displays. Do not alter refresh timing, floors, partners or consent.
+   auctions or displays. Review native automatic `presetGPTTargeting` as well:
+   no ad request may use a preset before the policy's final eligibility check.
+   Do not alter refresh timing, floors, partners or consent.
 4. Verify compiled/minified packages and pinned provenance; preserve old packages
    byte-for-byte. Only then add an explicitly selectable private TEST candidate.
 5. Run instrumented A/A and the measured pilot gates from MBA-58 before making
