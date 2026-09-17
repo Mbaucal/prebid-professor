@@ -8,6 +8,14 @@ checks=[];errors=[];external=[];nonlocal_responses=[]
 def check(name,ok):
     assert ok,name
     checks.append({'name':name,'passed':True})
+def wait_for_state(page,predicate):
+    # Poll through the debugger, not waitForFunction's in-page eval. Keep the
+    # actual loader page's CSP intact (no unsafe-eval or bypass_csp).
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        if page.evaluate(predicate):return
+        page.wait_for_timeout(50)
+    raise AssertionError('Timed out waiting for cache loader state: '+predicate)
 with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
     key=pathlib.Path(tls)/'key.pem';cert=pathlib.Path(tls)/'cert.pem'
     subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-keyout',str(key),'-out',str(cert),'-subj','/CN='+hostname,'-addext','subjectAltName=DNS:'+hostname],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -63,12 +71,12 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                 cached_results=[]
                 for name,variant in [('cachea','A'),('cacheb','B')]:
                     page.goto(origin+'/case/'+name+'/')
-                    page.wait_for_function("__tesseraExperiments?.['test-site']?.status==='loaded' && fixtureRequests.some(r=>r.id==='Billboard') && fixtureRequests.some(r=>r.id==='adsx-takeover-slot')")
+                    wait_for_state(page,"() => window.__tesseraExperiments?.['test-site']?.status==='loaded' && window.fixtureRequests?.some(r=>r.id==='Billboard') && fixtureRequests.some(r=>r.id==='adsx-takeover-slot')")
                     page.evaluate("fixtureIntersect('P1','500px')")
-                    page.wait_for_function("fixtureBids.filter(b=>b.code==='P1').length===2")
+                    wait_for_state(page,"() => fixtureBids.filter(b=>b.code==='P1').length===2")
                     assert page.evaluate("adSlots.P1.getTargeting('hb_adid')")==[]
                     page.evaluate("fixtureIntersect('P1','0px')")
-                    page.wait_for_function("fixtureRequests.some(r=>r.id==='P1')")
+                    wait_for_state(page,"() => fixtureRequests.some(r=>r.id==='P1')")
                     result=page.evaluate("({context:__tesseraExperiments['test-site'].context,events:__tesseraExperiments['test-site'].snapshot().events,cache:__tesseraBidCache['test-site'].snapshot(),runtime:__tesseraRuntimeDiagnostics['test-site'].snapshot(),requests:fixtureRequests})")
                     cached_results.append(result);expected='d'+result['context']['deliverySha256'][:32]+'_'+variant.lower()
                     check(name+': stored 3.13 package and exact native Prebid load once with saved policy',result['context']['runtimeVersion']=='3.13.0' and result['context']['variant']==variant and result['runtime']['initializations']==1 and result['cache']['policy']['mode']=='auction-with-cache' and result['cache']['policy']['maxAgeSeconds']==60)
@@ -89,7 +97,8 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                 check('No page JavaScript errors or external requests',not errors and not external and not nonlocal_responses)
             except Exception:
                 page.screenshot(path=str(out/'failure.png'),full_page=True)
-                (out/'failure.json').write_text(json.dumps({'checks':checks,'pageErrors':errors,'text':page.locator('body').inner_text()[:2500]},indent=2));raise
+                failure={'checks':checks,'pageErrors':errors,'external':external,'text':page.locator('body').inner_text()[:2500]}
+                (out/'failure.json').write_text(json.dumps(failure,indent=2));print(json.dumps(failure,indent=2));raise
             finally: browser.close()
         report={'scope':'LOCAL Chromium + actual experimental loader and synthetic packages; NOT hosted or real auctions','checks':checks,'passed':len(checks),'failed':0}
         (out/'browser.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
