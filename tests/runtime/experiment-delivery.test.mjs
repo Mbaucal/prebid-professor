@@ -63,6 +63,8 @@ test('duplicate tags, new revisions and Stop cannot restart the same document',a
   const page=await load(await make({},0));
   await load(await make({revision:2,enabled:false}),'DE',page);
   assert.equal(page.entries.length,1);assert.equal(page.state().context.variant,'B');
+  assert.equal(page.state().snapshot().loaderAttempts,2);
+  assert.equal(page.state().snapshot().blockedDuplicates,1);
   assert.equal(page.state().context.country,'RS');assert.equal(page.state().context.revision,1);
   const fresh=await load(await make({revision:2,enabled:false}));
   assert.equal(fresh.state().context.variant,'A');assert.equal(fresh.entries.length,1);

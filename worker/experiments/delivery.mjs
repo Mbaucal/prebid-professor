@@ -36,11 +36,16 @@ function boot(context, assets) {
   if (!current || !current.src) return;
   var registry = window.__tesseraExperiments;
   if (!registry) registry = window.__tesseraExperiments = Object.create(null);
-  if (registry[context.siteId]) return;
+  if (registry[context.siteId]) {
+    if (typeof registry[context.siteId].duplicate === 'function') registry[context.siteId].duplicate();
+    return;
+  }
   var started = Date.now();
   var events = [];
+  var attempts = 1;
   var state = { context: Object.freeze(context), status: 'loading',
-    snapshot: function () { return { context: state.context, events: events.slice() }; } };
+    duplicate: function () { attempts = Math.min(attempts + 1, Number.MAX_SAFE_INTEGER); },
+    snapshot: function () { return { context: state.context, events: events.slice(), loaderAttempts: attempts, blockedDuplicates: attempts - 1 }; } };
   registry[context.siteId] = state;
   function record(type) {
     events.push(Object.freeze({ type: type, elapsedMs: Math.max(0, Date.now() - started) }));
@@ -94,7 +99,7 @@ export async function createExperimentDelivery(input, packages, { random = Math.
     requireThat(original.descriptor.packageSha256 === pin, 'Package pin does not match verified bytes.');
     const layout = await describeDelivery(original.descriptor, SCRIPT_LAYOUT);
     const delivery = await selectDelivery(original.files, original.descriptor, layout);
-    return {pin, layout, files: delivery.files};
+    return {pin, layout, files: delivery.files, runtimeVersion:original.descriptor.runtime.runtimeVersion, prebidVersion:original.descriptor.prebidBuild?.version || null};
   }));
   const assets = new Map();
   const scriptHashes = new Map();
@@ -131,7 +136,8 @@ export async function createExperimentDelivery(input, packages, { random = Math.
         const pin = variant === 'A' ? config.controlPackageSha256 : config.testPackageSha256;
         const value = request.cf?.country;
         const country = typeof value === 'string' && /^[A-Z]{2}$/.test(value) && !['XX','ZZ','EU'].includes(value) ? value : null;
-        const context = {profile:config.profile, siteId:config.siteId, experimentId:config.experimentId,
+        const selected = checked.find(item=>item.pin===pin);
+        const context = {runtimeVersion:selected.runtimeVersion, prebidVersion:selected.prebidVersion, profile:config.profile, siteId:config.siteId, experimentId:config.experimentId,
           revision:config.revision, active:config.enabled, variant, packageSha256:pin, deliverySha256, country};
         const body = '(' + boot.toString() + ')(' + encode(context) + ',' + encode({ads:integrity(scriptHashes.get(pin)),prebid:prebidHashes.has(pin)?integrity(prebidHashes.get(pin)):null}) + ');\n';
         return new Response(request.method === 'HEAD' ? null : body, {headers:noStore});

@@ -121,3 +121,19 @@ Sources checked 2026-09-17:
 
 New behavior requires new script/runtime releases. Existing release history,
 selected versions and Tanjug's active script remain untouched.
+
+## Console inspector (MBA-62)
+
+The existing Debug / Runtime section includes **A/B experiment inspect**. The
+private experiment editor also exposes the same command for copying to DevTools
+on the page under test. It reads assignments, selected runtime/Prebid versions,
+script URLs, timeline and bounded loader-attempt/blocked-duplicate counters.
+The JSON report is available at `window.__TESSERA_AB_DEBUG` and copied when the
+DevTools `copy()` helper exists. Query strings, fragments, URL credentials, CMP
+strings and user IDs are excluded. No network or auction is triggered.
+
+A script tag is not an execution. Existing runtime markers are reported as markers,
+not a trustworthy execution count. The counter remains unknown until a new runtime
+provides initialization evidence. Generic script errors do not prove SRI vs CSP vs
+network failure; the inspector directs the operator to Console/Network evidence.
+This tool does not retrospectively instrument or modify archived runtime files.

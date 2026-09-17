@@ -35,6 +35,8 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                 page.get_by_role('link',name='A/B TEST',exact=True).click()
                 expect(page.locator('#release-a')).to_contain_text('tanjug-test-v1')
                 expect(page.locator('#comparison')).to_contain_text('A/A check')
+                expect(page.locator('#inspect-code')).to_have_value(__import__('re').compile('inspectExperiments'))
+                expect(page.locator('#copy-inspect')).to_be_visible()
                 page.locator('#save').click();expect(page.locator('#history')).to_contain_text('Saved')
                 stale=context.new_page();stale.goto(origin+'/experiments');expect(stale.locator('#history')).to_contain_text('Saved')
                 page.get_by_role('button',name='Start preview',exact=True).click()
