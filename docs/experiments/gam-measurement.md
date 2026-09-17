@@ -51,7 +51,7 @@ investigated; ad delivery itself is not stopped by measurement failures.
 6. Collect an assignment denominator that includes no-request pages and failures.
    Local console diagnostics are not a durable collector. The opt-in private TEST
    collector below supplies a bounded received sample; full traffic coverage and
-revenue per assigned page are not verified.
+   revenue per assigned page are not verified.
 
 GAM revenue is the outcome source; Prebid bid CPM and local render callbacks are
 not realized revenue. Keep request count, filled/empty responses, latency and
