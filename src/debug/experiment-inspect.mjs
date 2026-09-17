@@ -28,12 +28,28 @@ export function inspectExperiments() {
       appliedSlots:Number.isSafeInteger(s.appliedSlots)?s.appliedSlots:null,
       failedSlots:Number.isSafeInteger(s.failedSlots)?s.failedSlots:null};
   });
-  const report={schemaVersion:1,experiments,scripts,runtimeDiagnostics,gamMeasurement,observedPrebidVersion:clean(window.pbjs?.version),
+  const cacheDiagnostics=Object.values(window.__tesseraBidCache||{}).slice(0,20).map(d=>{
+    const s=typeof d.snapshot==='function'?d.snapshot():{},p=s.policy||{};
+    const count=v=>Number.isSafeInteger(v)&&v>=0?v:null;
+    const pick=(value,keys)=>Object.fromEntries(keys.map(k=>[k,count(value?.[k])]));
+    const mode=['fresh-only','auction-with-cache'].includes(s.mode)?s.mode:null;
+    const last=p.lastSelection;
+    return {siteId:clean(s.siteId),runtimeVersion:clean(s.runtimeVersion),mode,maxAgeSeconds:count(s.maxAgeSeconds),stopped:s.stopped===true,
+      trackedSlots:count(s.trackedSlots),totals:pick(s.totals,['auctions','submissionAttempts','fallbacks','blocked','lateCallbacks','errors']),
+      contextEpoch:count(s.consent?.epoch),cacheContextReady:s.consent?.cacheAllowed===true,
+      capacityBlocked:p.capacityBlocked===true,trackedAuctions:count(p.trackedAuctions),trackedSubmittedBids:count(p.trackedSubmittedBids),
+      selections:pick(p.selections,['fresh','cache','none','errors','blockedDuplicates']),
+      filterChecks:{accepted:count(p.checks?.accepted),rejected:pick(p.checks?.rejected,['disabled','consent','capacity','format','used','untracked','context','size','expired'])},
+      lastSelection:last?{code:clean(last.code),origin:['fresh','cache','none','error'].includes(last.origin)?last.origin:null,ageMs:count(last.ageMs),
+        reason:['clear-targeting','context-changed','configuration-changed','native-targeting','targeting-status'].includes(last.reason)?last.reason:null}:null};
+  });
+  const report={schemaVersion:1,experiments,scripts,runtimeDiagnostics,gamMeasurement,cacheDiagnostics,observedPrebidVersion:clean(window.pbjs?.version),
     runtimeMarkerPresent:!!window.__TESSERA_RUNTIME_STARTED,
     confirmedRuntimeExecutions:null,
     notes:['Script tags and load events do not prove runtime initialization or impressions.',
       'Collection acknowledgement confirms receipt of reported events, not complete page coverage.',
       'GAM measurement shows local targeting configuration, not confirmation of GAM reporting or revenue.',
+      'Cache selections are targeting decisions, not rendered ads or revenue; filter evaluations are not unique cache hits.',
       'Total execution count is unknown for uninstrumented runtimes; runtimeEntries counts entry into the new runtime, not successful auctions.',
       'Load errors alone cannot distinguish SRI, CSP and network failures. Check browser Console/Network.',
       'No experiment records may mean a legacy loader or no experiment; it does not prove no script ran.']};

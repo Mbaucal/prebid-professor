@@ -44,3 +44,8 @@ test('collection diagnostics expose acknowledgements without signed tickets or p
  const {report,copied}=run({__tesseraExperiments:{site:{context:{siteId:'test-site'},snapshot:()=>({collection:{status:'acknowledged',attempts:2,acknowledgedTypes:['assigned','script-loaded'],pendingTypes:[],ticket:'never-export-ticket',assignmentId:'never-export-id'}})}}});
  assert.equal(report.experiments[0].collection.attempts,2);assert.equal(report.experiments[0].collection.acknowledgedTypes.length,2);assert(!copied.includes('never-export'));
 });
+test('cache inspect exposes decisions and age but never bids, consent strings or arbitrary errors',()=>{
+ const {report,copied}=run({__tcfapi(){throw Error('Read-only inspector must not call CMP');},__tesseraBidCache:{site:{snapshot:()=>({siteId:'test',runtimeVersion:'3.13.0',mode:'auction-with-cache',maxAgeSeconds:30,consent:{epoch:3,ready:true,tcString:'never-export-consent'},policy:{selections:{cache:1,fresh:2},checks:{accepted:4,rejected:{expired:1,secret:'never-export'}},lastSelection:{code:'P1',origin:'cache',ageMs:1200,adId:'never-export-bid',reason:'never-export-error'}}})}}});
+ assert.equal(report.cacheDiagnostics[0].selections.cache,1);assert.equal(report.cacheDiagnostics[0].lastSelection.ageMs,1200);
+ assert.equal(report.cacheDiagnostics[0].contextEpoch,3);assert.equal(report.cacheDiagnostics[0].lastSelection.reason,null);assert(!copied.includes('never-export'));
+});

@@ -1,9 +1,9 @@
 // Development policy only. No existing runtime imports this module.
 // The future versioned compiler must supply a context epoch that changes with
 // consent/eligibility and derive sizes + slot identity from its owned live slot.
-export function createBidCachePolicy({pbjs,siteId,contextForCode,mode='fresh-only',maxAgeSeconds=30,now=Date.now}) {
+export function createBidCachePolicy({pbjs,siteId,contextForCode,cacheAllowed=()=>true,mode='fresh-only',maxAgeSeconds=30,now=Date.now}) {
   if(!pbjs||!/^v?11\.34\.0$/.test(pbjs.version||''))throw Error('This candidate requires the reviewed Prebid 11.34.0 build.');
-  if(typeof siteId!=='string'||!siteId||typeof contextForCode!=='function'||typeof now!=='function')throw Error('Explicit site and eligibility context are required.');
+  if(typeof siteId!=='string'||!siteId||typeof contextForCode!=='function'||typeof cacheAllowed!=='function'||typeof now!=='function')throw Error('Explicit site and eligibility context are required.');
   if(!['fresh-only','auction-with-cache'].includes(mode)||!Number.isInteger(maxAgeSeconds)||maxAgeSeconds<1||maxAgeSeconds>300)throw Error('Unsupported bid cache policy.');
   for(const name of ['setConfig','getConfig','onEvent','offEvent','setTargetingForGPTAsync','getBidResponseByAdId'])if(typeof pbjs[name]!=='function')throw Error('Required Prebid API unavailable: '+name);
   if(pbjs.getConfig('bidCacheFilterFunction')||pbjs.getConfig('customGptSlotMatching'))throw Error('Review existing custom bid-cache or GPT matching rules before installing this policy.');
@@ -32,6 +32,7 @@ export function createBidCachePolicy({pbjs,siteId,contextForCode,mode='fresh-onl
   }
   function reason(bid) {
     if(stopped||mode!=='auction-with-cache')return 'disabled';
+    try{if(cacheAllowed()!==true)return 'consent';}catch{return 'consent';}
     if(capacityBlocked)return 'capacity';
     if(!bid||bid.mediaType!=='banner')return 'format';
     if(submitted.has(bid.adId))return 'used';
@@ -57,7 +58,7 @@ export function createBidCachePolicy({pbjs,siteId,contextForCode,mode='fresh-onl
   return {
     // Native targeting marks the primary bid targetingSet; also record every
     // secondary/deal offer submitted. Do not mark any of them rendered here.
-    target(code) {
+    target(code,auctionId) {
       if(stopped)return false;
       const c=context(code);if(!c){increment(selections,'errors');return false;}
       let stage='clear-targeting';
@@ -66,6 +67,7 @@ export function createBidCachePolicy({pbjs,siteId,contextForCode,mode='fresh-onl
         if(started?.targeted){increment(selections,'blockedDuplicates');return false;}
         clear(c.slot);
         stage='context-changed';
+        if(auctionId!==undefined&&latest.get(code)!==auctionId)throw Error('Auction ownership changed.');
         if(!started||started.epoch!==c.epoch||started.slot!==c.slot||started.sizes.join(',')!==c.sizes.join(','))throw Error('Eligibility changed during the auction.');
         stage='configuration-changed';
         if(pbjs.getConfig('customGptSlotMatching')!==match||pbjs.getConfig('bidCacheFilterFunction')!==filter||pbjs.getConfig('useBidCache')!==(mode==='auction-with-cache'))throw Error('Policy configuration changed.');
@@ -94,6 +96,10 @@ export function createBidCachePolicy({pbjs,siteId,contextForCode,mode='fresh-onl
     snapshot(){return {profile:'prebid-cache-policy-candidate-v1',siteId,prebidVersion:pbjs.version,mode,maxAgeSeconds,stopped,
       trackedAuctions:auctions.size,auctionLimit:limit,trackedSubmittedBids:submitted.size,submittedLimit,capacityBlocked,checks:{accepted:checks.accepted,rejected:{...checks.rejected}},
       selections:{...selections},lastSelection:lastSelection?{...lastSelection}:null};},
+    discardAuction(id,code){
+      if(code!==undefined){const rows=auctions.get(id);rows?.delete(code);if(!rows?.size)auctions.delete(id);if(latest.get(code)===id)latest.delete(code);}
+      else {auctions.delete(id);for(const [key,current] of latest)if(current===id)latest.delete(key);}
+    },
     stop(){
       if(stopped)return;stopped=true;auctions.clear();latest.clear();submitted.clear();pbjs.offEvent('auctionInit',auctionInit);
       // Do not overwrite configuration installed by another owner after us.
