@@ -4,6 +4,7 @@ window.fixtureState={epoch:0,sizes:[[300,250]],next:{a:{cpm:10,ttl:300},b:{cpm:4
 function fixtureSlot(id,path){
   const values={publisher:['preserved'],tessera_ab:['synthetic-experiment']};
   return {getSlotElementId:()=>id,getAdUnitPath:()=>path,getTargetingKeys:()=>Object.keys(values),getTargeting:key=>values[key]||[],
+    updateTargetingFromMap(map){for(const [key,value] of Object.entries(map)){if(value==null)delete values[key];else this.setTargeting(key,value);}return this;},
     setTargeting(key,value){values[key]=Array.isArray(value)?value.map(String):[String(value)];return this;},clearTargeting(key){delete values[key];return this;}};
 }
 window.fixtureSlots={P1:fixtureSlot('P1','/fixture/P1'),P2:fixtureSlot('P2','/fixture/P2')};

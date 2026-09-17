@@ -55,19 +55,24 @@ export function createBidCachePolicy({pbjs,siteId,contextForCode,mode='fresh-onl
   try{pbjs.setConfig({useBidCache:mode==='auction-with-cache',bidCacheFilterFunction:filter,customGptSlotMatching:match});}
   catch(error){pbjs.offEvent('auctionInit',auctionInit);throw error;}
   return {
-    // Standard Prebid targeting marks all submitted bids targetingSet. Never
-    // replace this with manual key copying or markWinningBidAsUsed before render.
+    // Native targeting marks the primary bid targetingSet; also record every
+    // secondary/deal offer submitted. Do not mark any of them rendered here.
     target(code) {
       if(stopped)return false;
       const c=context(code);if(!c){increment(selections,'errors');return false;}
+      let stage='clear-targeting';
       try{
         const started=auctions.get(latest.get(code))?.get(code);
         if(started?.targeted){increment(selections,'blockedDuplicates');return false;}
         clear(c.slot);
+        stage='context-changed';
         if(!started||started.epoch!==c.epoch||started.slot!==c.slot||started.sizes.join(',')!==c.sizes.join(','))throw Error('Eligibility changed during the auction.');
+        stage='configuration-changed';
         if(pbjs.getConfig('customGptSlotMatching')!==match||pbjs.getConfig('bidCacheFilterFunction')!==filter||pbjs.getConfig('useBidCache')!==(mode==='auction-with-cache'))throw Error('Policy configuration changed.');
         started.targeted=true;
+        stage='native-targeting';
         pbjs.setTargetingForGPTAsync([code]);
+        stage='targeting-status';
         const ids=new Set(c.slot.getTargetingKeys().filter(k=>k==='hb_adid'||k.startsWith('hb_adid_')).flatMap(k=>c.slot.getTargeting(k)||[]));
         if(!ids.size){increment(selections,'none');lastSelection={code,origin:'none',ageMs:null};return true;}
         for(const [id,expiry] of submitted)if(expiry<=now())submitted.delete(id);
@@ -84,7 +89,7 @@ export function createBidCachePolicy({pbjs,siteId,contextForCode,mode='fresh-onl
           lastSelection={code,origin,ageMs:Math.max(0,now()-bid.responseTimestamp)};
         }
         return true;
-      }catch{try{clear(c.slot);}catch{}increment(selections,'errors');lastSelection={code,origin:'error',ageMs:null};return false;}
+      }catch{try{clear(c.slot);}catch{}increment(selections,'errors');lastSelection={code,origin:'error',ageMs:null,reason:stage};return false;}
     },
     snapshot(){return {profile:'prebid-cache-policy-candidate-v1',siteId,prebidVersion:pbjs.version,mode,maxAgeSeconds,stopped,
       trackedAuctions:auctions.size,auctionLimit:limit,trackedSubmittedBids:submitted.size,submittedLimit,capacityBlocked,checks:{accepted:checks.accepted,rejected:{...checks.rejected}},

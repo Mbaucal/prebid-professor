@@ -51,3 +51,9 @@ test('submitted-ID capacity disables cached reuse rather than forgetting consume
   assert.equal(f.config.bidCacheFilterFunction({...f.bid,status:'good'}),false);
   f.bid.auctionId='another-fresh-auction';f.auction(f.bid.auctionId);assert.equal(f.policy.target('P1'),true);
 });
+test('targeting failures expose a bounded stage without logging raw errors or bid data',()=>{
+  const f=fixture();f.pbjs.setTargetingForGPTAsync=()=>{throw Error('private-ad-id arbitrary data');};
+  assert.equal(f.policy.target('P1'),false);assert.equal(f.policy.snapshot().lastSelection.reason,'native-targeting');
+  assert(!JSON.stringify(f.policy.snapshot()).includes('private-ad-id'));
+  assert.equal(f.values.hb_old,undefined);assert.deepEqual(f.values.publisher,['keep']);
+});
