@@ -82,6 +82,16 @@ full-source rejection, exact old published ZIP preservation, source/dependency
 guards and disabled delivery. Browser checks only render the review and download
 ZIPs; they never execute these Tanjug bidder settings.
 
+Verified code commit `911e943fbe2758f771d8e004806a05ed0be9029a` passed all six CI
+workflows. [Workspace run](https://github.com/Mbaucal/prebid-professor/actions/runs/35288822304)
+passed all five new static review/download browser checks and the existing 19
+cache lifecycle, 13 native policy, 14 editor and 35 loader checks. Seventeen local
+pilot/history checks and the six-record provenance guard passed. The
+[review artifact](https://github.com/Mbaucal/prebid-professor/actions/runs/35288822304/artifacts/10525591665)
+contains the two exact ZIPs; it expires on 1 October 2026 and can be reproduced
+from the pinned source afterward. No candidate with these actual Tanjug bidder
+settings was executed, and no live baseline/CMP/GAM verification is claimed.
+
 ## Information still needed for an actual pilot
 
 The available source is the frozen 14 September TEST snapshot. Current live Tanjug
