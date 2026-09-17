@@ -205,6 +205,34 @@ and currency responses. These are ephemeral local/CI checks, not hosted activati
 
 ## Remaining pilot gates
 
+Recovery verification at code commit
+`39e948525e80a7f930023c8d03f1b5b13ce86de0` passed all six CI workflows.
+[Workspace evidence](https://github.com/Mbaucal/prebid-professor/actions/runs/35285783191)
+contains 19 exact-package lifecycle checks, 13 native-policy checks, 14 editor
+checks and 35 loader checks, all passing with no external ad traffic. Local
+validation passed 24 cache tests and 29 delivery/inspector/history regressions;
+the six-record provenance guard also passed. This step changes tests/fixtures
+and documentation only, not 3.13.0 or any older runtime source/package.
+
+The recovery regression suite adds coverage without changing any frozen runtime:
+
+* Six controlled transitions: synthetic persisted pagehide/pageshow, changed TCF
+  callback, CMP error/recovery, CMP API replacement, unsupported privacy API, and
+  viewport resize. A prepared lazy offer is blocked; the next ordinary auction
+  can submit fresh bids; only unused bids from the new eligible context can win
+  the following refresh. These are simulated TCF/page events, not real BFCache
+  navigation or a Google Funding Choices integration test.
+* Bottom Sticky's initial request, native cached selection at timed refresh, and
+  close behavior with additional refreshes still permitted by its rule. Both
+  bidders are called on each auction; no post-close Sticky auction is permitted.
+* 600 deterministic lifecycle auctions verify bounded slot/auction/submitted-ID
+  state and timer cleanup, including a pending callback after stop. 140 additional
+  native-Prebid auctions verify eviction of old policy eligibility and continuing
+  fresh selection. This checks the policy's bounds, not a browser heap audit or
+  Prebid's independent auction-history retention.
+
+These checks do not replace the remaining pilot requirements:
+
 1. Review an explicit Tanjug TEST configuration and age limit for its actual
    refresh schedule. Keep main defaults unchanged; do not silently activate live
    delivery. Any hosted setup/deployment remains separately authorized.
