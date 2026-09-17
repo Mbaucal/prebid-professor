@@ -31,29 +31,49 @@ function validate(input) {
 }
 
 // Kept self-contained so exactly this function is serialized and exercised by tests.
-function boot(context, integrity) {
+function boot(context, assets) {
   var current = document.currentScript;
   if (!current || !current.src) return;
   var registry = window.__tesseraExperiments;
   if (!registry) registry = window.__tesseraExperiments = Object.create(null);
-  // A second tag or a newly stopped/revised experiment must not start another
-  // wrapper on the same document. A real navigation creates a fresh registry.
   if (registry[context.siteId]) return;
-  var entry = document.createElement('script');
-  var state = { context: Object.freeze(context), status: 'loading' };
+  var started = Date.now();
+  var events = [];
+  var state = { context: Object.freeze(context), status: 'loading',
+    snapshot: function () { return { context: state.context, events: events.slice() }; } };
   registry[context.siteId] = state;
+  function record(type) {
+    events.push(Object.freeze({ type: type, elapsedMs: Math.max(0, Date.now() - started) }));
+  }
+  record('assigned'); // denominator includes conflicts, empty pages and failed loads
+  // One experiment owns the shared GPT/Prebid namespace on this document.
+  if (window.__tesseraExperimentOwner || window.__TESSERA_RUNTIME_STARTED || window.pbjs) {
+    state.status = 'conflict'; record('conflict'); return;
+  }
+  window.__tesseraExperimentOwner = context.siteId;
   var loaderUrl = new URL(current.src);
-  entry.src = new URL('./releases/' + context.packageSha256 + '/ads.js', loaderUrl).href;
-  entry.integrity = integrity;
-  entry.crossOrigin = 'anonymous';
-  entry.async = true;
-  if (current.nonce) entry.nonce = current.nonce;
-  entry.onload = function () { state.status = 'loaded'; };
-  // Fail closed: an error/timeout cannot establish that no code executed. Never
-  // load a second runtime and risk duplicate auctions or impressions.
-  entry.onerror = function () { state.status = 'load-error'; };
-  try { (document.head || document.documentElement).appendChild(entry); }
-  catch (_) { state.status = 'load-error'; }
+  var nonce = current.nonce;
+  function fail() { state.status = 'load-error'; record('load-error'); }
+  function insert(name, hash, done) {
+    var entry = document.createElement('script');
+    entry.src = new URL('./releases/' + context.packageSha256 + '/' + name, loaderUrl).href;
+    entry.integrity = hash;
+    entry.crossOrigin = 'anonymous';
+    entry.async = true;
+    if (nonce) entry.nonce = nonce;
+    var settled = false;
+    entry.onload = function () { if (settled) return; settled = true; done(); };
+    entry.onerror = function () { if (settled) return; settled = true; fail(); };
+    try { (document.head || document.documentElement).appendChild(entry); }
+    catch (_) { entry.onerror(); }
+  }
+  function ads() {
+    // Detect a legacy runtime inserted while the pinned dependency was loading.
+    if (window.__TESSERA_RUNTIME_STARTED) { state.status = 'conflict'; record('conflict'); return; }
+    insert('ads.js', assets.ads, function () { state.status = 'loaded'; record('script-loaded'); });
+  }
+  if (assets.prebid) insert('prebid.js', assets.prebid, function () { record('prebid-loaded'); ads(); });
+  else ads();
 }
 
 function integrity(hash) {
@@ -78,13 +98,16 @@ export async function createExperimentDelivery(input, packages, { random = Math.
   }));
   const assets = new Map();
   const scriptHashes = new Map();
+  const prebidHashes = new Map();
   for (const {pin, layout, files} of checked) {
     for (const file of layout.files) {
       assets.set('/releases/' + pin + '/' + file.name, {bytes: files[file.name], hash: file.sha256});
       if (file.name === 'ads.js') scriptHashes.set(pin, file.sha256);
+      if (file.name === 'prebid.js') prebidHashes.set(pin, file.sha256);
     }
   }
-  const identity = {config, deliveries: checked.map(({pin,layout}) => ({packageSha256: pin, deliverySha256: layout.sha256}))};
+  const loaderSha256 = await sha256(new TextEncoder().encode(boot.toString()));
+  const identity = {config, loaderSha256, deliveries: checked.map(({pin,layout}) => ({packageSha256: pin, deliverySha256: layout.sha256}))};
   const deliverySha256 = await sha256(new TextEncoder().encode(JSON.stringify(identity)));
 
   return Object.freeze({
@@ -110,7 +133,7 @@ export async function createExperimentDelivery(input, packages, { random = Math.
         const country = typeof value === 'string' && /^[A-Z]{2}$/.test(value) && !['XX','ZZ','EU'].includes(value) ? value : null;
         const context = {profile:config.profile, siteId:config.siteId, experimentId:config.experimentId,
           revision:config.revision, active:config.enabled, variant, packageSha256:pin, deliverySha256, country};
-        const body = '(' + boot.toString() + ')(' + encode(context) + ',' + encode(integrity(scriptHashes.get(pin))) + ');\n';
+        const body = '(' + boot.toString() + ')(' + encode(context) + ',' + encode({ads:integrity(scriptHashes.get(pin)),prebid:prebidHashes.has(pin)?integrity(prebidHashes.get(pin)):null}) + ');\n';
         return new Response(request.method === 'HEAD' ? null : body, {headers:noStore});
       }
       const asset = assets.get(url.pathname);

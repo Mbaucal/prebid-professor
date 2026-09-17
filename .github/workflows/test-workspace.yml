@@ -80,6 +80,8 @@ jobs:
         run: python scripts/verify-deployment-ui.py
       - name: A/B TEST controls and stale-tab protection (local synthetic browser)
         run: python scripts/verify-experiment-ui.py
+      - name: Browser A/B loader dependency ordering, SRI, CSP and duplicate guards
+        run: python scripts/verify-experiment-loader.py
       - name: Keep only synthetic report and screenshots, never sessions or databases
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -94,5 +96,7 @@ jobs:
             .generated/delivery-evidence/*.png
             .generated/experiment-evidence/*.json
             .generated/experiment-evidence/*.png
+            .generated/experiment-loader-evidence/*.json
+            .generated/experiment-loader-evidence/*.png
           if-no-files-found: ignore
           retention-days: 14

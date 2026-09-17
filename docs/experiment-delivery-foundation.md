@@ -24,10 +24,25 @@ cookie, localStorage, fingerprint or IP identifier is used. Failure never starts
 second runtime after potentially partial execution. `loaded` is a script load event,
 not proof of successful ad initialization or a billable impression.
 
+The loader first loads the exact pinned `prebid.js` when the package contains it,
+then the unchanged `ads.js`. A dependency error never starts the wrapper or a
+fallback. Existing `pbjs`, an existing Tessera runtime marker, or another experiment
+owning the shared page namespace causes a conflict. The host still provides the
+approved CMP and GPT. Arbitrary third-party wrappers cannot all be detected;
+removing conflicting legacy tags remains a rollout requirement.
+
+A page-local `snapshot()` records `assigned`, `prebid-loaded`, `script-loaded`,
+`load-error` or `conflict`, with elapsed milliseconds and the immutable assignment.
+It sends no requests, stores no identifiers and changes no consent/GAM targeting.
+Assignment is recorded before errors, so later reporting can keep failed pages in
+the denominator. `script-loaded` is not an impression or runtime-success signal.
+No timeout or runtime-exception outcome is inferred from a script load event.
+The delivery identity includes the loader code hash as well as package/rule pins.
+
 The loader records country only as diagnostic metadata. It does not change
 `gdprApplies`, load/hide a CMP or synthesize consent. All dynamic responses prohibit
 browser and CDN caching. Public asset paths include the full source package hash;
-asset responses are immutable and the entry script has SRI. Config and manifest
+asset responses are immutable and both Prebid and the entry script have SRI. Config and manifest
 files are not exposed. Caller-selected URLs, query overrides and write methods
 are not accepted.
 
@@ -61,8 +76,13 @@ A/A and A/B identities, Stop on a new document, duplicate loading, load failure,
 country isolation, no consent writes, cache headers, SRI, invalid manifests/pins,
 cross-site rejection, caller mutation races, and original Tanjug asset preservation.
 The second test uses compiled **local workerd/Miniflare HTTP** with all outbound
-traffic forbidden. Loader execution is simulated in Node VM, not a real browser;
-this is not a hosted test, live auction, GAM report or revenue result.
+traffic forbidden. Unit loader execution uses Node VM. CI also runs
+`scripts/verify-experiment-loader.py`: real Chromium executes the actual loader
+against loopback-only synthetic packages, checking A/B, A/A, Stop, pinned dependency
+ordering, SRI rejection, CSP rejection, duplicate tags, SPA reinsertion and legacy
+conflicts. This is not a hosted test, live auction, GAM report or revenue result.
+CSP rejection removes the nonce in the local fixture only; the normal loader
+propagates the original nonce and works with a strict-dynamic policy.
 
 ## Next integration gates
 
@@ -70,11 +90,11 @@ this is not a hosted test, live auction, GAM report or revenue result.
    synthetic storage, loopback TLS, stale tabs and desktop/mobile layouts.
 2. Add a separate preview delivery build and verification before any hosted route.
    Do not replace the existing Pages delivery profile or publisher URL by default.
-3. Verify real script loading in a browser including CSP, SRI, legacy-tag collisions,
-   SPA lifecycle and dependency URLs. Existing packages may rely on separately
-   loaded GPT/Prebid or configured absolute paths: these are **not rewritten** by
-   this loader. New runtime versions must support pinned dependency loading;
-   unsuitable old packages must be rejected for the experiment, not silently edited.
+3. Extend synthetic browser evidence to the new runtime on an approved test page.
+   Verify actual GPT/CMP integration and configured absolute resource paths, which
+   are **not rewritten** by this loader. The archived implementation expects GPT
+   and the approved CMP from the host; Prebid is now loaded from its package pin.
+   Unsuitable packages must be rejected rather than silently edited.
 4. Implement MBA-58 assignment/render/error measurement and GAM reportable keys;
    count assigned pageviews even with no-fill or errors. Verify A/A reporting before
    comparing cached bidding strategies.

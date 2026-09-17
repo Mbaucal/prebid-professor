@@ -149,6 +149,34 @@ test('delivery identity changes with rules, but original Tanjug package remains 
   const changed=await createExperimentDelivery({...settings,revision:2,trafficB:10},{[pin]:{files}});
   assert.notEqual(changed.deliverySha256,delivery.deliverySha256);
   const page=await load(delivery);
-  const expected=metadata.descriptor.files.find(f=>f.name==='ads.min.js').sha256;
-  assert.equal(page.entries[0].integrity,'sha256-'+Buffer.from(expected,'hex').toString('base64'));
+  for(const [index,name] of [[0,'prebid.js'],[1,'ads.min.js']]) {
+    const expected=metadata.descriptor.files.find(f=>f.name===name).sha256;
+    assert.equal(page.entries[index].integrity,'sha256-'+Buffer.from(expected,'hex').toString('base64'));
+    page.entries[index].onload();
+  }
+});
+
+test('pinned dependency loads before ads and an error never starts ads or fallback',async()=>{
+  const candidate=await experimentFixture('pinned',{prebid:true});
+  const delivery=await createExperimentDelivery(experimentConfig(candidate),{[candidate.descriptor.packageSha256]:candidate});
+  const page=await load(delivery);
+  assert.equal(page.entries.length,1);assert.match(page.entries[0].src,/prebid.js$/);
+  page.run(await delivery.fetch(new Request(page.entries[0].src)).text());
+  page.entries[0].onload();page.entries[0].onload();
+  assert.equal(page.entries.length,2);assert.match(page.entries[1].src,/ads.js$/);
+  page.run(await delivery.fetch(new Request(page.entries[1].src)).text());page.entries[1].onload();
+  assert.equal(page.window.fixtureExecutions,1);
+  assert.deepEqual(Array.from(page.state().snapshot().events,e=>e.type),['assigned','prebid-loaded','script-loaded']);
+  const broken=await load(delivery);broken.entries[0].onerror();broken.entries[0].onload();
+  assert.equal(broken.entries.length,1);assert.equal(broken.state().status,'load-error');
+  assert.deepEqual(Array.from(broken.state().snapshot().events,e=>e.type),['assigned','load-error']);
+});
+test('legacy and cross-site conflicts remain in assignment counts without starting scripts',async()=>{
+  for(const key of ['pbjs','__TESSERA_RUNTIME_STARTED','__tesseraExperimentOwner']) {
+    const page=browser();page.window[key]={existing:true};await load(await make(),'RS',page);
+    assert.equal(page.entries.length,0);assert.equal(page.state().status,'conflict');
+    assert.deepEqual(Array.from(page.state().snapshot().events,e=>e.type),['assigned','conflict']);
+    const snapshot=page.state().snapshot();snapshot.events.length=0;
+    assert.equal(page.state().snapshot().events.length,2);
+  }
 });
