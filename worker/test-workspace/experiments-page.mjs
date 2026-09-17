@@ -23,6 +23,7 @@ function appendReporting(actions,article,row){
  if(plan.labelsReady){const key=document.createElement('p');key.textContent='GAM key: '+plan.key;detail.append(key);for(const arm of plan.arms){const line=document.createElement('p');line.textContent=arm.variant+': ';const code=document.createElement('code');code.textContent=arm.value;line.append(code);detail.append(line);}}
  const list=document.createElement('ul');for(const blocker of plan.blockers){const li=document.createElement('li');li.textContent=blocker;list.append(li);}detail.append(list);
  const links=document.createElement('div');links.className='actions';for(const format of plan.labelsReady?['csv','json']:['json']){const link=document.createElement('a');link.href='/test-api/experiments/reporting/'+row.id+'.'+format;link.textContent=format==='csv'?'Download GAM values (CSV)':'Download report details (JSON)';link.download='';links.append(link);}detail.append(links);article.append(detail);
+ if(plan.labelsReady){const link=document.createElement('a');link.href='/experiments/report/'+row.id;link.textContent='Review GAM report';actions.append(link);}
  if(plan.denominatorStatus==='test-collection')appendCounts(actions,article,row);
 }
 function appendCounts(actions,article,row){

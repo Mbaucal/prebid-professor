@@ -51,7 +51,7 @@ investigated; ad delivery itself is not stopped by measurement failures.
 6. Collect an assignment denominator that includes no-request pages and failures.
    Local console diagnostics are not a durable collector. The opt-in private TEST
    collector below supplies a bounded received sample; full traffic coverage and
-   revenue per assigned page are not verified.
+revenue per assigned page are not verified.
 
 GAM revenue is the outcome source; Prebid bid CPM and local render callbacks are
 not realized revenue. Keep request count, filled/empty responses, latency and
@@ -167,3 +167,12 @@ there is no automatic deletion/expiry policy for stored records and no bucket
 lifecycle configuration is changed. Production rollout requires a separate reviewed
 retention/aggregation policy, scale/rate controls, consent assessment for real
 traffic, and coverage validation before these counts can be a revenue denominator.
+
+## Reviewing a GAM report
+
+Prepared measured experiments now offer **Review GAM report** with a normalized
+daily CSV template, exact revenue/count aggregation and explicit data-quality
+blockers. This is a read-only private preview; no GAM connection or stored report.
+See [the import contract](gam-report-import.md) for field mapping, timezone/coverage
+limits, JSON download and verification. It does not calculate page RPM or select
+a winning variant.

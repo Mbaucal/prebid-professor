@@ -9,6 +9,8 @@ import { storeAssignment, assignmentSummary } from './assignment-store.mjs';
 import { experimentPage, experimentScript } from './experiments-page.mjs';
 import { reportingPlan, reportingCsv } from '../experiments/reporting.mjs';
 import { readReporting, storeReporting } from './experiment-report-store.mjs';
+import { previewGamReport, gamReportTemplate } from '../experiments/gam-report.mjs';
+import { gamReportPage, gamReportScript } from './gam-report-page.mjs';
 
 export const EXPERIMENT_KEY = 'test-experiments/v1/state.json';
 const check=(ok,message,status=422)=>{if(!ok)throw new WorkspaceError(status,message);};
@@ -116,11 +118,28 @@ export async function prepareReporting(env,body) {
 // Runs only inside the existing exact TEST boundary, login and Origin guards.
 export async function experimentResponse(request,env,actor,headers) {
   const url=new URL(request.url),path=url.pathname;
-  if(!['/experiments','/experiments.js'].includes(path)&&!path.startsWith('/test-api/experiments'))return null;
+  if(!['/experiments','/experiments.js','/experiment-report.js'].includes(path)&&!path.startsWith('/experiments/report/')&&!path.startsWith('/test-api/experiments'))return null;
   check(!url.search,'Not found.',404);
   const response=(body,type='application/json; charset=utf-8')=>new Response(body,{headers:{...headers,'content-type':type}});
   if(path==='/experiments'&&request.method==='GET')return response(experimentPage,'text/html; charset=utf-8');
   if(path==='/experiments.js'&&request.method==='GET')return response(experimentScript,'application/javascript; charset=utf-8');
+  if(path==='/experiment-report.js'&&request.method==='GET')return response(gamReportScript,'application/javascript; charset=utf-8');
+  const review=path.match(/^\/experiments\/report\/(experiment-[a-f0-9-]{36})$/);
+  const template=path.match(/^\/test-api\/experiments\/reporting\/(experiment-[a-f0-9-]{36})\/template\.csv$/);
+  if((review||template)&&request.method==='GET'){
+    const plan=(await readReporting(env.BUILDS)).plans.find(p=>p.experimentId===(review||template)[1]);
+    check(plan?.labelsReady,'Prepare verified labels for both script versions first.',409);
+    if(review)return response(gamReportPage(plan),'text/html; charset=utf-8');
+    return new Response(gamReportTemplate(plan),{headers:{...headers,'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="gam-daily-template.csv"'}});
+  }
+  if(path==='/test-api/experiments/reporting/analyze'&&request.method==='POST'){
+    const {experimentId,...input}=await jsonBody(request,['experimentId','csv','startDate','endDate','currency','timeZone','revenueBasis','revenueMetric'],262144);
+    const plan=(await readReporting(env.BUILDS)).plans.find(p=>p.experimentId===experimentId);
+    check(plan?.labelsReady,'Prepare verified labels for both script versions first.',409);
+    const assignments=plan.denominatorStatus==='test-collection'?await assignmentSummary(env.BUILDS,plan):null;
+    try{return response(JSON.stringify(await previewGamReport(plan,input,assignments)));}
+    catch(error){throw new WorkspaceError(422,error.message);}
+  }
   if(path==='/test-api/experiments'&&request.method==='GET') {
     const {state}=await readExperiments(env.BUILDS);
     return response(JSON.stringify({...state,sources:await sources(env),reporting:(await readReporting(env.BUILDS)).plans,scope:'private-test-preview'}));

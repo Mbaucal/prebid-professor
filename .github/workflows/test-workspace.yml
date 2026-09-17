@@ -50,7 +50,7 @@ jobs:
       - name: Verify read-only ads version UI routes
         run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
       - name: Verify isolated experimental delivery, original package bytes and LOCAL A/A Worker
-        run: node --experimental-strip-types --test tests/runtime/experiment-delivery.test.mjs tests/runtime/experiment-workerd.test.mjs tests/runtime/experiment-controls.test.mjs tests/runtime/experiment-reporting.test.mjs tests/runtime/assignment-collection.test.mjs tests/runtime/experiment-inspect.test.mjs tests/runtime/observed-runtime.test.mjs tests/runtime/observed-candidate.test.mjs tests/runtime/measured-runtime.test.mjs tests/runtime/measured-candidate.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/experiment-delivery.test.mjs tests/runtime/experiment-workerd.test.mjs tests/runtime/experiment-controls.test.mjs tests/runtime/experiment-reporting.test.mjs tests/runtime/gam-report.test.mjs tests/runtime/assignment-collection.test.mjs tests/runtime/experiment-inspect.test.mjs tests/runtime/observed-runtime.test.mjs tests/runtime/observed-candidate.test.mjs tests/runtime/measured-runtime.test.mjs tests/runtime/measured-candidate.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:
