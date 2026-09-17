@@ -62,7 +62,7 @@ with sync_playwright() as p:
         auction(page,bid(2),bid(3));r=page.evaluate('fixtureTarget()');assert r['ok'] and r['cpm']==3,r
         page.close();checks.append('Offers marked used through the public Prebid API cannot reenter targeting')
         page=fresh();seed(page,bid(4,dealId='fixture-deal'))
-        assert page.evaluate("fixtureSlots.P1.getTargeting('hb_adid_cachefixtureb').length")==1
+        assert page.evaluate("fixtureSlots.P1.getTargeting('hb_adid_cacheb').length")==1
         auction(page,bid(2),bid(3));r=page.evaluate('fixtureTarget()');assert r['ok'] and r['cpm']==3,r
         page.close();checks.append('Secondary deal offers sent to GAM are excluded too, even when not the primary winner')
         page=fresh();auction(page,bid(0),bid(0));r=page.evaluate('fixtureTarget()')
