@@ -148,6 +148,14 @@ Prebid bytes even when their declared version and report checksum are updated.
 The package browser suite consumes the exact emitted ads.js/ads.min.js files,
 not a separately patched mock runtime.
 
+Registration/package commit `3e40b5ebd93eb4dcf44027ec304f51bbf2db1c67`
+passed all six CI workflows. [Exact-package workspace run](https://github.com/Mbaucal/prebid-professor/actions/runs/35282795656)
+passed all 12 lifecycle browser checks against `.generated/cache-package-evidence`,
+including the minified script, plus the 12 standalone native-policy checks.
+The six-record provenance guard, 31 focused local tests, 22 previous-package/
+experiment regressions and production build also passed. No live deployment or
+external ad traffic was involved. This final evidence note does not change code.
+
 Before making the candidate selectable or starting a pilot:
 
 1. Add explicit private TEST catalog/editor support for the new pin and cache
