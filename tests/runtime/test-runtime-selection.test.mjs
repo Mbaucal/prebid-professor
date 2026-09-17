@@ -123,8 +123,15 @@ test('3.12 is explicit TEST-only: generate and save a measured A/A source while 
  const saved=await request(f,'/test-api/experiments/save',cookie,{expectedRevision:ex.data.revision,siteId:'test-site',releaseA:releaseId,releaseB:releaseId,trafficB:50});
  assert.equal(saved.r.status,200,JSON.stringify(saved.data));
  const row=saved.data.experiments.at(-1);
+ const prepared=await request(f,'/test-api/experiments/reporting/prepare',cookie,{expectedRevision:saved.data.revision,experimentId:row.id});
+ assert.equal(prepared.r.status,200);assert.equal(prepared.data.labelsReady,true);assert.equal(prepared.data.revenueReady,false);
+ const reportPath='/test-api/experiments/reporting/'+row.id;
+ const report=await request(f,reportPath+'.json',cookie);assert.deepEqual(report.data,prepared.data);
+ const csv=await request(f,reportPath+'.csv',cookie);assert.equal(csv.r.status,200);assert.match(csv.r.headers.get('content-disposition'),/attachment/);
+ assert.match(await csv.r.text(),/tessera_ab/);
  assert.equal((await request(f,'/test-api/experiments/start',cookie,{expectedRevision:saved.data.revision,experimentId:row.id})).r.status,200);
  const loader=await request(f,'/test-api/experiments/preview/test-site/ads.js',cookie);
- assert.equal(loader.r.status,200);assert.match(await loader.r.text(),/3.12.0-tessera.preview.1/);
+ assert.equal(loader.r.status,200);const loaderSource=await loader.r.text();assert.match(loaderSource,/3.12.0-tessera.preview.1/);assert(loaderSource.includes(prepared.data.deliverySha256));
+ assert.deepEqual((await request(f,reportPath+'.json',cookie)).data,prepared.data);
  const retained=new Uint8Array(await (await request(f,oldUrl,cookie)).r.arrayBuffer());assert.deepEqual(retained,original);
 });

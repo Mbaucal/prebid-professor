@@ -4,6 +4,8 @@ import { verifyDeliveryZip, SITES } from './deployment-contract.mjs';
 import { WorkspaceError, jsonBody } from './boundary.mjs';
 import { createExperimentDelivery, EXPERIMENT_PROFILE } from '../experiments/delivery.mjs';
 import { experimentPage, experimentScript } from './experiments-page.mjs';
+import { reportingPlan, reportingCsv } from '../experiments/reporting.mjs';
+import { readReporting, storeReporting } from './experiment-report-store.mjs';
 
 export const EXPERIMENT_KEY = 'test-experiments/v1/state.json';
 const check=(ok,message,status=422)=>{if(!ok)throw new WorkspaceError(status,message);};
@@ -43,8 +45,13 @@ async function verifiedPackage(env,siteId,pin) {
 }
 async function delivery(env,item,active) {
   const entries=await Promise.all([item.a,item.b].map(async pin=>[pin.packageSha256,await verifiedPackage(env,item.siteId,pin)]));
-  return createExperimentDelivery({profile:EXPERIMENT_PROFILE,siteId:item.siteId,experimentId:item.id,revision:item.version,
+  const handler=await createExperimentDelivery({profile:EXPERIMENT_PROFILE,siteId:item.siteId,experimentId:item.id,revision:item.version,
     enabled:active,trafficB:item.trafficB,controlPackageSha256:item.a.packageSha256,testPackageSha256:item.b.packageSha256},Object.fromEntries(entries));
+  if(active) {
+    const plan=(await readReporting(env.BUILDS)).plans.find(p=>p.experimentId===item.id);
+    check(!plan||plan.deliverySha256===handler.deliverySha256,'Delivery changed since reporting was prepared. Save a new experiment to keep its GAM values separate.',409);
+  }
+  return handler;
 }
 export async function saveExperiment(env,actor,body) {
   check(revision(body.expectedRevision)&&SITES.includes(body.siteId),'Choose a TEST site and refresh its history.');
@@ -81,6 +88,21 @@ export async function transitionExperiment(env,actor,body,type) {
   });
 }
 
+export async function prepareReporting(env,body) {
+  const {state}=await readExperiments(env.BUILDS);
+  check(revision(body.expectedRevision)&&body.expectedRevision===state.revision,'Experiment history changed. Refresh before preparing the report.',409);
+  const item=state.experiments.find(e=>e.id===body.experimentId);
+  check(item,'Saved experiment not found.',404);
+  const packages=await Promise.all([item.a,item.b].map(pin=>verifiedPackage(env,item.siteId,pin)));
+  const handler=await createExperimentDelivery({profile:EXPERIMENT_PROFILE,siteId:item.siteId,experimentId:item.id,
+    revision:item.version,enabled:true,trafficB:item.trafficB,controlPackageSha256:item.a.packageSha256,
+    testPackageSha256:item.b.packageSha256},Object.fromEntries(packages.map(p=>[p.descriptor.packageSha256,p])));
+  const plan=reportingPlan(item,handler.deliverySha256,packages.map(p=>p.descriptor));
+  // A concurrent Start/Stop must not silently turn a reviewed state into another.
+  check((await readExperiments(env.BUILDS)).state.revision===state.revision,'Experiment history changed. Refresh before preparing the report.',409);
+  return storeReporting(env.BUILDS,plan);
+}
+
 // Runs only inside the existing exact TEST boundary, login and Origin guards.
 export async function experimentResponse(request,env,actor,headers) {
   const url=new URL(request.url),path=url.pathname;
@@ -91,7 +113,20 @@ export async function experimentResponse(request,env,actor,headers) {
   if(path==='/experiments.js'&&request.method==='GET')return response(experimentScript,'application/javascript; charset=utf-8');
   if(path==='/test-api/experiments'&&request.method==='GET') {
     const {state}=await readExperiments(env.BUILDS);
-    return response(JSON.stringify({...state,sources:await sources(env),scope:'private-test-preview'}));
+    return response(JSON.stringify({...state,sources:await sources(env),reporting:(await readReporting(env.BUILDS)).plans,scope:'private-test-preview'}));
+  }
+  if(path==='/test-api/experiments/reporting/prepare'&&request.method==='POST') {
+    return response(JSON.stringify(await prepareReporting(env,await jsonBody(request,['expectedRevision','experimentId']))));
+  }
+  const reportMatch=path.match(/^\/test-api\/experiments\/reporting\/(experiment-[a-f0-9-]{36})\.(json|csv)$/);
+  if(reportMatch&&request.method==='GET') {
+    const plan=(await readReporting(env.BUILDS)).plans.find(p=>p.experimentId===reportMatch[1]);
+    check(plan,'Prepare the reporting values first.',404);
+    const csv=reportMatch[2]==='csv';
+    check(!csv||plan.labelsReady,'Both script versions need measurement support before exporting GAM values.');
+    return new Response(csv?reportingCsv(plan):JSON.stringify(plan,null,2)+'\n',{headers:{...headers,
+      'content-type':csv?'text/csv; charset=utf-8':'application/json; charset=utf-8',
+      'content-disposition':'attachment; filename="'+plan.experimentId+'.'+reportMatch[2]+'"'}});
   }
   const match=path.match(/^\/test-api\/experiments\/preview\/(tanjug-test|test-site)(\/ads\.js|\/releases\/[a-f0-9]{64}\/(?:ads|prebid)\.js)$/);
   if(match&&request.method==='GET') {

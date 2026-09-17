@@ -53,7 +53,7 @@ test('missing/corrupt pinned bytes cannot start but Stop remains available',asyn
 });
 test('actual Worker routes enforce TEST login, same-origin writes, immutable selection and private preview caching',async()=>{
   const f=deploymentStore();try{
-    for(const path of ['/experiments','/experiments.js','/test-api/experiments','/test-api/experiments/preview/tanjug-test/ads.js'])assert.equal((await worker.fetch(new Request(origin+path),f.env)).status,path.startsWith('/test-api')?401:303);
+    for(const path of ['/experiments','/experiments.js','/test-api/experiments','/test-api/experiments/reporting/experiment-00000000-0000-4000-8000-000000000000.json','/test-api/experiments/preview/tanjug-test/ads.js'])assert.equal((await worker.fetch(new Request(origin+path),f.env)).status,path.startsWith('/test-api')?401:303);
     const login=await worker.fetch(new Request(origin+'/api/auth/login',{method:'POST',headers:{origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:actor.email,password:'Local-fixture-only-password-927!'})}),f.env);
     assert.equal(login.status,303);const cookie=login.headers.get('set-cookie').split(';')[0];
     const call=(path,body,extra={})=>worker.fetch(new Request(origin+path,{method:body?'POST':'GET',headers:{cookie,...(body?{origin,'content-type':'application/json'}:{}),...extra},body:body?JSON.stringify(body):undefined}),f.env);
@@ -62,6 +62,13 @@ test('actual Worker routes enforce TEST login, same-origin writes, immutable sel
     assert.equal((await call(api+'/save',{...body(),sourceCode:'untrusted'})).status,422);
     const saved=await (await call(api+'/save',body())).json();assert.equal(saved.experiments.length,1);
     const row=saved.experiments[0];
+    assert.equal((await call(api+'/reporting/prepare',{expectedRevision:1,experimentId:row.id},{origin:'https://other.invalid'})).status,403);
+    assert.equal((await call(api+'/reporting/prepare',{expectedRevision:0,experimentId:row.id})).status,409);
+    const prepared=await call(api+'/reporting/prepare',{expectedRevision:1,experimentId:row.id});assert.equal(prepared.status,200);
+    assert.equal((await prepared.json()).labelsReady,false);
+    assert.equal((await call(api+'/reporting/'+row.id+'.csv')).status,422);
+    const details=await call(api+'/reporting/'+row.id+'.json');assert.equal(details.status,200);assert.match(details.headers.get('cache-control'),/no-store/);
+    assert.equal((await readExperiments(f.env.BUILDS)).state.revision,1);
     assert.equal((await call(api+'/preview/tanjug-test/ads.js')).status,409);
     assert.equal((await call(api+'/start',{expectedRevision:1,experimentId:row.id})).status,200);
     const loader=await call(api+'/preview/tanjug-test/ads.js');assert.equal(loader.status,200);
@@ -77,4 +84,16 @@ test('actual Worker routes enforce TEST login, same-origin writes, immutable sel
     assert.equal((await worker.fetch(new Request('https://tanjug.rs'+api,{headers:{cookie}}),f.env)).status,404);
     assert.equal(f.log.puts.length,0);
   }finally{f.close();}
+});
+test('changed reporting identity blocks Start while retaining the saved experiment',async()=>{
+ const {prepareReporting}=await import('../../worker/test-workspace/experiments.mjs');
+ const {REPORT_KEY}=await import('../../worker/test-workspace/experiment-report-store.mjs');
+ const f=deploymentStore();try{
+  const saved=await saveExperiment(f.env,actor,body()),row=saved.experiments[0];
+  await prepareReporting(f.env,{expectedRevision:1,experimentId:row.id});
+  const entry=f.deliveryObjects.get(REPORT_KEY),state=JSON.parse(new TextDecoder().decode(entry.bytes));
+  state.plans[0].deliverySha256='f'.repeat(64);entry.bytes=new TextEncoder().encode(JSON.stringify(state));
+  await assert.rejects(transitionExperiment(f.env,actor,{expectedRevision:1,experimentId:row.id},'started'),/Delivery changed/);
+  assert.deepEqual((await readExperiments(f.env.BUILDS)).state,saved);
+ }finally{f.close();}
 });

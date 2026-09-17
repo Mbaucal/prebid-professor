@@ -38,6 +38,11 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                 expect(page.locator('#inspect-code')).to_have_value(__import__('re').compile('inspectExperiments'))
                 expect(page.locator('#copy-inspect')).to_be_visible()
                 page.locator('#save').click();expect(page.locator('#history')).to_contain_text('Saved')
+                page.get_by_role('button',name='Prepare GAM values',exact=True).click()
+                expect(page.locator('#history')).to_contain_text('Measurement unavailable for these versions')
+                page.locator('#history details summary').click()
+                expect(page.locator('#history')).to_contain_text('Variant A has no verified measurement support')
+                check('Legacy A/A stays explicitly unmeasured and cannot export misleading GAM values',page.get_by_role('link',name='Download GAM values (CSV)').count()==0)
                 stale=context.new_page();stale.goto(origin+'/experiments');expect(stale.locator('#history')).to_contain_text('Saved')
                 page.get_by_role('button',name='Start preview',exact=True).click()
                 expect(page.locator('#history')).to_contain_text('Running preview')
@@ -56,6 +61,28 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                 page.locator('#history article').first.get_by_role('button',name='Start preview',exact=True).click()
                 expect(page.locator('#history article').first).to_contain_text('Running preview')
                 check('Explicit Stop then Start selects the new allocation','10% to B' in page.locator('#history article').first.inner_text())
+                page.evaluate("""async()=>{
+                  async function call(path,body){const r=await fetch('/test-api/'+path,{method:body?'POST':'GET',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});const v=await r.json();if(!r.ok)throw Error(JSON.stringify(v));return v;}
+                  await call('setup',{confirm:'prepare-empty-test-database'});
+                  const state=await call('runtime-selection'),runtime=state.runtimes.find(r=>r.version==='3.12.0-tessera.preview.1');
+                  await call('runtime-selection',{expectedRevision:state.revision,selection:{runtime:runtime.pin,allowPreview:true,enablePrebid:false,prebidBuildId:null}});
+                  const packages=await call('site-packages');
+                  await call('site-packages',{action:'generate',revision:packages.revision,notes:'Reporting UI fixture'});
+                }""")
+                page.locator('#refresh').click()
+                expect(page.locator('#message')).to_contain_text('history refreshed')
+                page.locator('#site').select_option('test-site')
+                page.locator('#save').click()
+                expect(page.locator('#history article')).to_have_count(1)
+                page.get_by_role('button',name='Prepare GAM values',exact=True).click()
+                expect(page.locator('#history')).to_contain_text('GAM values prepared')
+                page.locator('#history details summary').click()
+                expect(page.locator('#history')).to_contain_text('GAM key: tessera_ab')
+                with page.expect_download() as download:
+                    page.get_by_role('link',name='Download GAM values (CSV)',exact=True).click()
+                csv=pathlib.Path(download.value.path()).read_text()
+                check('Measured A/A exports exact A/B labels with full identity', 'tessera_ab' in csv and '_a' in csv and '_b' in csv and 'deliverySha256' in csv and '3.12.0-tessera.preview.1' in csv)
+                check('Preparing reports does not start ads or claim connected revenue',page.get_by_role('button',name='Start preview',exact=True).is_enabled() and page.evaluate('typeof window.__TESSERA_RUNTIME_STARTED')=='undefined' and 'Revenue reporting is not connected' in page.locator('#history').inner_text())
                 page.screenshot(path=str(out/'history-desktop.png'),full_page=True)
                 page.set_viewport_size({'width':390,'height':844})
                 check('Experiment controls fit a phone viewport',page.evaluate('document.documentElement.scrollWidth<=innerWidth'))

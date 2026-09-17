@@ -40,7 +40,8 @@ investigated; ad delivery itself is not stopped by measurement failures.
 2. Both A and B must implement this measurement contract. A legacy control without
    labels cannot support a valid two-arm GAM revenue comparison. Begin with A/A of
    the new measured runtime; only then introduce a separately versioned cache arm.
-3. Export both values and their full ledger mapping, checking for collisions.
+3. Use Prepare GAM values and download the CSV/JSON mapping. Collision checks run
+   against the prepared reporting registry; verify any values already in GAM too.
 4. In the publisher's GAM network, verify `tessera_ab` is an unused reserved key,
    register the two values and enable the supported reporting setting. Do not target
    campaigns or pricing rules to A/B values: that would confound the experiment.
@@ -71,3 +72,52 @@ integration only, not real GAM reporting or earnings.
 - [GPT slot-level targeting and persistence](https://developers.google.com/publisher-tag/guides/key-value-targeting)
 - [GAM key/value setup and Report on values](https://support.google.com/admanager/answer/9796369)
 - [Valid key/value names](https://support.google.com/admanager/answer/10020177)
+
+## Prepared exports
+
+The private A/B page now offers **Prepare GAM values** for each saved experiment.
+It verifies both original ZIPs and runtime source pins, calculates the active
+preview's delivery identity and saves an append-only reporting plan separately
+from experiment Start/Stop history. The registry checks compact-label collisions
+across prepared plans with atomic R2 writes. Repeating preparation is idempotent;
+changed delivery identity requires a new experiment. A prepared mapping also
+blocks Start/active preview if later loader changes would change its GAM labels.
+
+Supported pairs offer CSV values and JSON details. Unsupported legacy arms are
+identified individually, and their CSV export is blocked. CSV is a reference
+mapping, not a claim of automatic GAM account import. It includes both full package
+pins and the full delivery hash. Preparing or downloading does not activate ads,
+configure GAM or collect events. An experiment with a 0% arm can export its labels,
+but is explicitly not ready for a two-arm comparison. Stop does not rewrite the
+prepared active mapping; restarting the same experiment reuses its labels.
+
+## Assignment analysis contract
+
+`worker/experiments/assignments.mjs` implements offline counting for a future
+collector. It counts all valid `assigned` records once per random 128-bit page ID,
+including pages with load errors, conflicts or no outcome. Retries are deduplicated;
+out-of-order outcomes are supported. Outcomes without an assignment are reported
+as orphans, and contradictory outcomes are reported as ambiguous. Foreign delivery
+hashes, changed identities, wrong package pins and unexpected fields are rejected.
+
+Input is an array of records with exactly `assignmentId`, `deliverySha256`,
+`packageSha256`, `variant`, `assignedAt` (original ISO UTC time) and `type`.
+Types are `assigned`, `script-loaded`, `load-error`, `conflict`. The future emitter
+must create a random ID once per document assignment, never reuse user/session IDs,
+and preserve it and the original timestamp across retries. This is a data contract,
+not an authentication mechanism: a future collector must verify delivery attribution,
+validate intake, address abuse and enforce retention before accepting real traffic.
+
+For offline fixtures or reviewed exports:
+
+```sh
+node scripts/analyze-experiment-assignments.mjs reporting-plan.json events.json
+```
+
+The output includes totals per arm, daily UTC counts, duplicate/orphan counts and
+observed allocation. It contains no individual IDs and always reports coverage as
+unknown. No collector or automatic network transmission is shipped in this step.
+Do not call these counts site pageviews or compute experiment revenue per page
+until collection completeness, GAM time zone and both arms' coverage are verified.
+The existing console snapshot cannot supply this contract: it has no assignment
+ID/time suitable for durable deduplication. A new versioned emitter is required.
