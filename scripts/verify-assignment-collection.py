@@ -5,6 +5,12 @@ hostname='prebid-professor-test.mbaucal.workers.dev'
 origin='https://'+hostname
 out=pathlib.Path('.generated/experiment-evidence');out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[];external=[]
+def wait_for(page,expression,timeout=30):
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        if page.evaluate('()=>('+expression+')'): return
+        page.wait_for_timeout(50)
+    raise AssertionError('Condition not reached: '+expression)
 with tempfile.TemporaryDirectory(prefix='tessera-collection-tls-') as tls:
     key=pathlib.Path(tls)/'key.pem';cert=pathlib.Path(tls)/'cert.pem'
     subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-keyout',str(key),'-out',str(cert),'-subj','/CN='+hostname,'-addext','subjectAltName=DNS:'+hostname],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -49,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='tessera-collection-tls-') as tls:
                     else: route.continue_()
                 page.route('**/preview/test-site/collect',lost_ack)
                 page.goto(origin+'/__fixture/collection-page')
-                page.wait_for_function("__tesseraExperiments?.['test-site']?.snapshot().collection.acknowledgedTypes.includes('script-loaded')")
+                wait_for(page,"window.__tesseraExperiments?.['test-site']?.snapshot().collection.acknowledgedTypes.includes('script-loaded')")
                 s=summary();assert s['totals']['B']['assigned']==1 and s['totals']['B']['scriptLoaded']==1
                 assert len(attempts)>=2
                 assert page.evaluate("__tesseraRuntimeDiagnostics['test-site'].snapshot().initializations")==1
@@ -60,23 +66,23 @@ with tempfile.TemporaryDirectory(prefix='tessera-collection-tls-') as tls:
                 page.close()
                 page=context.new_page();page.route('**/releases/*/ads.js',lambda r:r.abort());page.on('pageerror',lambda e:errors.append(str(e)))
                 page.goto(origin+'/__fixture/collection-page')
-                page.wait_for_function("__tesseraExperiments?.['test-site']?.snapshot().collection.acknowledgedTypes.includes('load-error')")
+                wait_for(page,"window.__tesseraExperiments?.['test-site']?.snapshot().collection.acknowledgedTypes.includes('load-error')")
                 assert summary()['totals']['B']['loadError']==1;page.close()
                 page=context.new_page();page.add_init_script('window.__TESSERA_RUNTIME_STARTED=true;');page.on('pageerror',lambda e:errors.append(str(e)))
                 page.goto(origin+'/__fixture/collection-page')
-                page.wait_for_function("__tesseraExperiments?.['test-site']?.snapshot().collection.acknowledgedTypes.includes('conflict')")
+                wait_for(page,"window.__tesseraExperiments?.['test-site']?.snapshot().collection.acknowledgedTypes.includes('conflict')")
                 assert summary()['totals']['B']['conflict']==1;page.close()
                 checks.append('Script load failures and existing-runtime conflicts remain in the assignment denominator')
                 page=context.new_page();page.route('**/preview/test-site/collect',lambda r:r.abort());page.on('pageerror',lambda e:errors.append(str(e)))
                 page.goto(origin+'/__fixture/collection-page')
-                page.wait_for_function("__tesseraExperiments?.['test-site']?.snapshot().collection.attempts===6 && __tesseraExperiments['test-site'].snapshot().collection.status==='failed'",timeout=30000)
+                wait_for(page,"window.__tesseraExperiments?.['test-site']?.snapshot().collection.attempts===6 && __tesseraExperiments['test-site'].snapshot().collection.status==='failed'",timeout=30)
                 assert page.evaluate("__tesseraRuntimeDiagnostics['test-site'].snapshot().initializations")==1
                 assert summary()['totals']['B']['assigned']==3
                 checks.append('Blocked collector stops after six attempts without blocking the runtime or inventing received pages')
                 page.close()
                 admin.evaluate("s=>fixtureCall('experiments/stop',{expectedRevision:s.revision,experimentId:s.id})",saved)
                 page=context.new_page();page.goto(origin+'/__fixture/collection-page')
-                page.wait_for_function("__tesseraExperiments?.['test-site']?.status==='loaded'")
+                wait_for(page,"window.__tesseraExperiments?.['test-site']?.status==='loaded'")
                 assert page.evaluate("__tesseraExperiments['test-site'].snapshot().collection.status")=='disabled'
                 assert summary()['totals']['B']['assigned']==3
                 checks.append('Stop disables collection for new pages and preserves previous counts')
