@@ -31,4 +31,3 @@ export async function prepareCachedRuntime(root){
   const descriptor={id,version,configSchemaVersion,channel,capabilities,codeSha256};
   await writeFile(resolve(root,'.generated/runtime-cache-manifest.mjs'),`// Generated from verified versioned sources.\nexport const descriptor=${JSON.stringify(descriptor)};\nexport const sourceComponents=${JSON.stringify(components)};\n`);
 }
-

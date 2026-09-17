@@ -80,4 +80,3 @@ ${htmlUnits}
   files['manifest.json'] = text.encode(`${JSON.stringify(manifest, null, 2)}\n`);
   return { manifest, files };
 }
-
