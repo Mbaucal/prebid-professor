@@ -1,3 +1,4 @@
+import * as privateRuntime from './private-runtime-catalog.mjs';
 import { workspaceJs,workspaceCss } from '../../.generated/site-workspace.mjs';
 import { siteRuntimeResponse } from '../site-runtime/service.mjs';
 import { packageResponse } from '../site-runtime/releases.mjs';
@@ -11,7 +12,7 @@ export async function siteWorkspaceResponse(request,env,actor,headers){
  if(url.pathname==='/test-api/site-runtime'||url.pathname==='/test-api/site-packages'){
   if(!(await inspectTestSchema(env.DB)).ready)return new Response(JSON.stringify({error:'Prepare TEST data first.'}),{status:409,headers:{...headers,'content-type':'application/json'}});
   assertWorkspaceSiteScope(await readPreviewSnapshot(env.DB.withSession('first-primary'),'test-site',{includePrebid:true}));
-  return url.pathname==='/test-api/site-packages'?packageResponse(request,env,'test-site',actor.email,{testOnly:true}):siteRuntimeResponse(request,env,'test-site',actor.email);
+  return url.pathname==='/test-api/site-packages'?packageResponse(request,env,'test-site',actor.email,{testOnly:true,runtime:privateRuntime}):siteRuntimeResponse(request,env,'test-site',actor.email,privateRuntime);
  }
  if(request.method!=='GET')return new Response('Method not allowed',{status:405,headers});
  if(url.pathname.endsWith('.js'))return new Response(workspaceJs,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});

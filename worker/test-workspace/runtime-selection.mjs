@@ -1,4 +1,4 @@
-import { runtimeCatalog, prepareSiteRuntimeSelection, readPinnedSiteRuntime } from './runtime-catalog.mjs';
+import { runtimeCatalog, prepareSiteRuntimeSelection, readPinnedSiteRuntime } from './private-runtime-catalog.mjs';
 import { assertWorkspaceSiteScope } from './site-draft.mjs';
 /** Authenticated TEST settings service. The router enforces host, session,
  * same-origin, methods and request size before calling these functions.

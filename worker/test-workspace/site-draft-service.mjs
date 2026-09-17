@@ -1,4 +1,4 @@
-import { descriptorForPin, previewInput } from './runtime-catalog.mjs';
+import { descriptorForPin, previewInput } from './private-runtime-catalog.mjs';
 import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { readSiteDraft, planSiteDraft } from './site-draft.mjs';

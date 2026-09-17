@@ -172,3 +172,19 @@ Chromium using mocked GPT/Prebid; it does not call real ad services.
 Event meanings follow the official [GPT event listener sample](https://developers.google.com/publisher-tag/samples/ad-event-listeners)
 and [GPT reference](https://developers.google.com/publisher-tag/reference), checked
 2026-09-17. Real Tanjug/GPT/CMP integration remains a separate verification gate.
+
+## Private TEST selection integration
+
+The TEST router and editors now use `private-runtime-catalog.mjs`, appending 3.11.0
+without changing the default. Shared application services retain their original
+catalog unless the authenticated TEST adapter supplies the private catalog. Main
+application routes still reject the experimental pin. No existing source closure
+or archived package is changed by this catalog integration.
+
+An explicit Preview opt-in enables Generate/Save and both TEST editors. The resulting
+saved package appears as an A/B source; its full runtime/package identity is preserved
+through Start and delivery. Integration tests compare an earlier ZIP byte-for-byte
+after selecting and saving 3.11.0. Browser checks select the new version, generate and
+save a second package without executing publisher ads in the admin page. This is
+source integration only until the TEST branch is merged/deployed; it does not activate
+an experiment, change a publisher version or configure GAM/CMP.

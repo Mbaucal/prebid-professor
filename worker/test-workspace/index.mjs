@@ -14,7 +14,7 @@ import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
 import { SelectionWriteError } from './selection-transaction.mjs';
 import { readRuntimeSelectionSettings, saveRuntimeSelectionSettings, selectedWorkspaceRuntime } from './runtime-selection.mjs';
 import { runtimeSelectionPage, runtimeSelectionScript } from './runtime-selection-page.mjs';
-import { runtimeDescriptor, runtimeCatalog, descriptorForPin, buildArtifactCandidate } from './runtime-catalog.mjs';
+import { runtimeDescriptor, runtimeCatalog, descriptorForPin, buildArtifactCandidate } from './private-runtime-catalog.mjs';
 import { describeCandidate, saveDraftRelease, readDraftRelease, readDraftReleaseIndex, readDraftReleaseFile } from '../runtime/draft-release-store.mjs';
 import { WorkspaceError, workspaceBoundary, sameOrigin, boundedText, jsonBody, TEST_SITE } from './boundary.mjs';
 import { inspectTestSchema, initializeTestSchema } from './schema.mjs';
