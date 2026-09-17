@@ -57,7 +57,7 @@ def exercise(page):
         check('Preview opt-in is not preselected',page.locator('#save-selection').is_disabled())
         page.locator('#allow-preview').check()
         expect(page.locator('#release-history article')).to_have_count(len(json.loads(pathlib.Path('worker/runtime/runtime-releases.json').read_text())))
-        expect(page.locator('#release-history article[data-available="true"]')).to_have_count(4)
+        expect(page.locator('#release-history article[data-available="true"]')).to_have_count(5)
         for row in page.locator('#release-history article[data-available="false"]').all():
             expect(row).to_contain_text('Not selectable')
         writes_before=sum(event['method']=='POST' for event in http_events)

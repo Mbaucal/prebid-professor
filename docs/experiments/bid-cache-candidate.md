@@ -3,7 +3,8 @@
 The standalone policy is now integrated into a separate compiler and complete
 candidate package under `worker/runtime-cache/`. Version **3.13.0** is recorded
 with its own exact source closure; all five older releases remain unchanged.
-It is **not in either selectable catalog, not deployed and not live on Tanjug**.
+It is **explicitly selectable in the private TEST catalog only**, not in the main
+catalog, not deployed and not live on Tanjug. The default remains 3.10.0.
 No site is migrated, no experiment is started, and no GAM/CMP account is changed.
 
 Source commit: `b21431bcd9d6ddaee2cedb16cec080e2447d09de`.
@@ -156,20 +157,50 @@ The six-record provenance guard, 31 focused local tests, 22 previous-package/
 experiment regressions and production build also passed. No live deployment or
 external ad traffic was involved. This final evidence note does not change code.
 
-Before making the candidate selectable or starting a pilot:
+## Private TEST selection and package integration
 
-1. Add explicit private TEST catalog/editor support for the new pin and cache
-   snapshot, with a useful age limit for the unchanged refresh interval. Keep main
-   defaults unchanged; do not silently activate delivery or rewrite old packages.
-2. Verify package/storage/selection round trips and loader A/A with this new pin,
-   including exact dependency SRI and duplicate guards.
-3. Verify real Google Funding Choices callbacks and actual GPT/Prebid integration
+Both TEST editors now require explicit auction mode, whole-number maximum age
+(1–300 seconds), and approval when selecting 3.13.0. The initial mode is blank;
+the form suggests 60 seconds but saves nothing until confirmed. Changing either
+rule clears approval. A limit of 30 seconds or less shows an explanation of why
+offers past that age cannot compete at a 30-second-or-longer refresh. This does
+not change any refresh interval or extend bidder TTL.
+
+The private catalog validates the cache snapshot and exact reviewed Prebid hash
+both at selection and generation. Wrong bytes with the same declared version do
+not qualify. Main catalog and default selection are unchanged. Shared service/UI
+hooks expose cache controls only through the private adapter; main writes reject
+these extra fields. Older versions retain their behavior and may retain an unused
+cache setting in the site draft, but old packages are not rewritten and their
+compilers do not apply it.
+
+Mode, age and runtime pin commit together under the original snapshot revision.
+Stale tabs, concurrent edits, uncertain acknowledgements and stale generation
+receipts use the existing atomic protections. Changing a cache rule creates a
+different package; older ZIP bytes and active experiment selections are preserved.
+The selected mode and age are included in package config.json.
+
+HTTP tests exercise both editor endpoints, original ZIP preservation, distinct
+packages, A/A source selection, invalid/missing options, wrong Prebid bytes,
+old-version return, parallel/stale saves, lost acknowledgements and stale receipts.
+Browser checks cover both forms, a cross-editor stale tab, candidate download,
+mobile width and zero ad execution in administration screens. Loader tests take
+an actual HTTP-generated, stored and re-read 3.13.0 package, deliver the same bytes
+to A and B with dependency SRI, and run native Prebid against simulated bid/GPT/TCF
+and currency responses. These are ephemeral local/CI checks, not hosted activation.
+
+## Remaining pilot gates
+
+1. Review an explicit Tanjug TEST configuration and age limit for its actual
+   refresh schedule. Keep main defaults unchanged; do not silently activate live
+   delivery. Any hosted setup/deployment remains separately authorized.
+2. Verify real Google Funding Choices callbacks and actual GPT/Prebid integration
    on an explicitly authorized isolated pilot. Tests use the actual TCF listener
    code with simulated callbacks, not Google's live CMP or a compliance audit.
    Do not infer geo policy, consent correctness or compatibility with other
    Prebid builds from these fixtures. Validate sticky and long-session recovery,
    returning pages, CMP reopening and actual downstream viewability gates there.
-4. Run instrumented A/A and the measured pilot gates from MBA-58 before making
+3. Run instrumented A/A and the measured pilot gates from MBA-58 before making
    revenue claims. Cache-first remains a separate future experiment (MBA-60).
 
 This is a separately versioned development candidate, not live publisher
