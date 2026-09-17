@@ -19,7 +19,8 @@ export function createCacheLifecycle({win,pbjs,siteId,runtimeVersion,mode,maxAge
       // auction-end presets bypass the final eligibility/TTL check at GAM request.
       const controls=pbjs.getConfig('targetingControls')||{};
       pbjs.setConfig({targetingControls:{...controls,presetGPTTargeting:false}});
-      policy=policyFactory({pbjs,siteId,mode,maxAgeSeconds,contextForCode:context,cacheAllowed:()=>consent.read().cacheAllowed,now});
+      policy=policyFactory({pbjs,siteId,mode,maxAgeSeconds,contextForCode:context,cacheAllowed:()=>consent.read().cacheAllowed,
+        auctionAllowed:(id,code)=>{const r=records.get(code);return !!r&&r.auctionId===id&&!r.submitted&&!r.cancelled;},now});
     }
     if(pbjs.getConfig('targetingControls.presetGPTTargeting')!==false)throw Error('Native targeting presets changed.');
     return policy;
@@ -27,13 +28,13 @@ export function createCacheLifecycle({win,pbjs,siteId,runtimeVersion,mode,maxAge
   function onInit(event){
     // Native auctionInit follows CMP gating. Capture the actual eligible start,
     // not the time requestBids was queued while a CMP could still be loading.
-    for(const r of records.values())if(r.auctionId===event?.auctionId&&!r.submitted)r.started=context(r.code);
+    for(const r of records.values())if(r.auctionId===event?.auctionId&&!r.submitted&&!r.cancelled)r.started=context(r.code);
   }
   pbjs.onEvent('auctionInit',onInit);
   const api={
     requestBids(input){
       if(stopped)return;
-      ensure();
+      try{ensure();}catch(error){increment('errors');throw error;}
       const units=input?.adUnits;
       if(!Array.isArray(units)||!units.length||units.length>100||units.some(u=>!context(u.code)))throw Error('Only owned eligible banner units may enter this auction.');
       if(units.some(u=>{const r=records.get(u.code);return r&&!r.submitted;})){increment('blocked');return;}
@@ -46,7 +47,7 @@ export function createCacheLifecycle({win,pbjs,siteId,runtimeVersion,mode,maxAge
         settled=true;win.clearTimeout(timer);timers.delete(timer);
         const active=batch.filter(r=>records.get(r.code)===r&&!r.submitted);
         if(!active.length){increment('lateCallbacks');return;}
-        for(const r of active)r.ready=ready;
+        for(const r of active){r.ready=ready;if(!ready)r.cancelled=true;}
         if(!ready)policy.discardAuction(auctionId);
         input.bidsBackHandler?.(...args);
       }

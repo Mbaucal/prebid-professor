@@ -33,7 +33,7 @@ test('saved policy must be explicit, bounded, numeric-banner-only and backed by 
 });
 test('emit readable/minified compiled browser fixtures for both cache modes and both lazy paths',async()=>{
   await mkdir('.generated/cache-runtime-evidence',{recursive:true});
-  for(const [name,mode,lazy,refresh] of [['cached','auction-with-cache',false,false],['fresh','fresh-only',false,false],['default-lazy','auction-with-cache',true,false],['refresh','auction-with-cache',false,true]]){
+  for(const [name,mode,lazy,refresh] of [['cached','auction-with-cache',false,false],['fresh','fresh-only',false,false],['default-lazy','auction-with-cache',true,false],['refresh','auction-with-cache',false,true],['fresh-refresh','fresh-only',false,true]]){
     const result=compileCached(previewInput(fixture(mode,lazy,refresh),descriptor,timestamp),descriptor);
     const js=await finalizeJavaScript(result.adsJs);
     await writeFile('.generated/cache-runtime-evidence/'+name+'.js',js.adsJs);

@@ -39,7 +39,7 @@ function lifecycle(){
     policyFactory:createBidCachePolicy,consentFactory:createConsentEpoch,now:()=>time});
   function request(done=()=>api.refresh([slot])){api.requestBids({adUnits:[{code:'P1'}],timeout:100,bidsBackHandler:done});}
   function respond(index=nativeCalls.length-1){const input=nativeCalls[index],id='private-bid-'+index;bids.set(id,{adId:id,adUnitCode:'P1',auctionId:input.auctionId,mediaType:'banner',status:'good',width:300,height:250,responseTimestamp:time,ttl:60});input.bidsBackHandler();}
-  return {...f,api,slot,requests,nativeCalls,config,timers,request,respond,targetCalls:()=>targetCalls,replaceSlot:()=>liveSlot={...slot},advance:ms=>time+=ms};
+  return {...f,api,slot,requests,nativeCalls,config,timers,request,respond,lateInit:()=>emit('auctionInit',{auctionId:nativeCalls[0].auctionId,adUnitCodes:['P1']}),targetCalls:()=>targetCalls,replaceSlot:()=>liveSlot={...slot},advance:ms=>time+=ms};
 }
 test('targeting is deferred until render, then exactly one request preserves non-Prebid keys',()=>{
   const f=lifecycle();f.request(()=>{});f.respond();assert.equal(f.targetCalls(),0);
@@ -49,6 +49,7 @@ test('targeting is deferred until render, then exactly one request preserves non
 });
 test('failsafe submits clean GAM once; late bids cannot cause targeting or reenter the cache',()=>{
   const f=lifecycle();f.request();f.api.refresh([f.slot]);assert.equal(f.requests.length,1);assert(!f.requests[0][0].hb_adid);
+  f.lateInit();assert.equal(f.api.snapshot().policy.trackedAuctions,0);
   f.respond();assert.equal(f.requests.length,1);assert.equal(f.targetCalls(),0);assert.equal(f.api.snapshot().policy.trackedAuctions,0);
   f.request();f.respond();assert.equal(f.requests.length,2);assert.equal(f.targetCalls(),1);f.api.stop();
 });

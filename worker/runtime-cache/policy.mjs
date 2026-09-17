@@ -1,9 +1,9 @@
 // Development policy only. No existing runtime imports this module.
 // The future versioned compiler must supply a context epoch that changes with
 // consent/eligibility and derive sizes + slot identity from its owned live slot.
-export function createBidCachePolicy({pbjs,siteId,contextForCode,cacheAllowed=()=>true,mode='fresh-only',maxAgeSeconds=30,now=Date.now}) {
+export function createBidCachePolicy({pbjs,siteId,contextForCode,cacheAllowed=()=>true,auctionAllowed=()=>true,mode='fresh-only',maxAgeSeconds=30,now=Date.now}) {
   if(!pbjs||!/^v?11\.34\.0$/.test(pbjs.version||''))throw Error('This candidate requires the reviewed Prebid 11.34.0 build.');
-  if(typeof siteId!=='string'||!siteId||typeof contextForCode!=='function'||typeof cacheAllowed!=='function'||typeof now!=='function')throw Error('Explicit site and eligibility context are required.');
+  if(typeof siteId!=='string'||!siteId||typeof contextForCode!=='function'||typeof cacheAllowed!=='function'||typeof auctionAllowed!=='function'||typeof now!=='function')throw Error('Explicit site and eligibility context are required.');
   if(!['fresh-only','auction-with-cache'].includes(mode)||!Number.isInteger(maxAgeSeconds)||maxAgeSeconds<1||maxAgeSeconds>300)throw Error('Unsupported bid cache policy.');
   for(const name of ['setConfig','getConfig','onEvent','offEvent','setTargetingForGPTAsync','getBidResponseByAdId'])if(typeof pbjs[name]!=='function')throw Error('Required Prebid API unavailable: '+name);
   if(pbjs.getConfig('bidCacheFilterFunction')||pbjs.getConfig('customGptSlotMatching'))throw Error('Review existing custom bid-cache or GPT matching rules before installing this policy.');
@@ -24,7 +24,8 @@ export function createBidCachePolicy({pbjs,siteId,contextForCode,cacheAllowed=()
     const codes=event.adUnitCodes||event.adUnits?.map(u=>u.code);
     if(!Array.isArray(codes)||codes.length>100)return;
     const contexts=new Map();
-    for(const code of codes){const c=context(code);if(c){contexts.set(code,c);latest.set(code,event.auctionId);}}
+    for(const code of codes){let allowed=false;try{allowed=auctionAllowed(event.auctionId,code)===true;}catch{}const c=allowed?context(code):null;if(c){contexts.set(code,c);latest.set(code,event.auctionId);}}
+    if(!contexts.size)return;
     auctions.set(event.auctionId,contexts);
     while(auctions.size>limit)auctions.delete(auctions.keys().next().value);
     // Retain only tracked codes; page memory remains bounded by the auction cap.
@@ -82,6 +83,9 @@ export function createBidCachePolicy({pbjs,siteId,contextForCode,cacheAllowed=()
         for(const id of ids){
           const bid=pbjs.getBidResponseByAdId(id);
           if(!bid||bid.adUnitCode!==code||(id===primary&&bid.status!=='targetingSet'))throw Error('Targeting status was not recorded.');
+          const tracked=auctions.get(bid.auctionId)?.get(code);
+          if(!tracked||tracked.slot!==c.slot||tracked.epoch!==c.epoch||tracked.sizes.join(',')!==c.sizes.join(',')
+            ||bid.mediaType!=='banner'||!c.sizes.includes(bid.width+'x'+bid.height))throw Error('Unowned or incompatible bid targeting.');
           // Prebid marks the primary bid targetingSet; secondary/deal targeting
           // is tracked here too, without falsely marking it rendered.
           if(submitted.size>=submittedLimit){capacityBlocked=true;submitted.clear();}
