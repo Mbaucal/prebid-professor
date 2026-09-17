@@ -38,7 +38,7 @@ test('atomic collection deduplicates retries, unions outcomes and preserves full
 const settle=async predicate=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(r=>setTimeout(r,10));}assert(predicate());};
 test('new loader retries a lost acknowledgement, reports load errors and never restarts duplicate ads',async()=>{
  const a=await experimentFixture('A'),config={...experimentConfig(a),experimentId:identity.experimentId,profile:COLLECTED_PROFILE};
- const old=await createExperimentDelivery({...config,profile:'experiment-preview-v1'},{[a.descriptor.packageSha256]:a});
+ const old=await createExperimentDelivery({...config,profile:'experiment-preview-v1'},{[a.descriptor.packageSha256]:a},{random:()=>0.9});
  const oldBytes=await old.fetch(new Request(origin+'/ads.js')).text();
  const handler=await createCollectedDelivery(config,{[a.descriptor.packageSha256]:a},{issueTicket:c=>issueAssignmentTicket(c,secret),random:()=>0.9});
  const entries=[],requests=[];let seen=0;
