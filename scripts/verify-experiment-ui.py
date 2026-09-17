@@ -85,6 +85,7 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                 check('Measured A/A exports exact A/B labels with full identity', 'tessera_ab' in csv and '_a' in csv and '_b' in csv and 'deliverySha256' in csv and '3.12.0-tessera.preview.1' in csv)
                 page.get_by_role('button',name='Show received assignments',exact=True).click()
                 expect(page.locator('#history')).to_contain_text('A: 0 received')
+                page.locator('#history details summary').click()
                 check('Preparing reports does not start ads or claim connected revenue',page.get_by_role('button',name='Start preview',exact=True).is_enabled() and page.evaluate('typeof window.__TESSERA_RUNTIME_STARTED')=='undefined' and 'Revenue reporting and real traffic coverage are not verified' in page.locator('#history').inner_text())
                 page.screenshot(path=str(out/'history-desktop.png'),full_page=True)
                 page.set_viewport_size({'width':390,'height':844})
