@@ -1,5 +1,33 @@
 [
   {
+    "id": "tessera-observed-preview-1",
+    "version": "3.11.0-tessera.preview.1",
+    "codeSha256": "3482a9a6118e5ddf4e989590744cef1f20fe25fd3602558533db2afa1838804b",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "runtime-diagnostics",
+      "gpt-lifecycle-observer"
+    ],
+    "date": "2026-09-17",
+    "title": "Local runtime diagnostics and GPT lifecycle observation",
+    "sourceManifest": "scripts/prepare-observed-runtime.mjs",
+    "sourceCommit": "b8e510d2c83d7e7e400b8ae673a0e66c47300bad",
+    "changes": [
+      "Count new runtime entry attempts and blocked duplicate executions without changing archived engines.",
+      "Observe owned GPT slots: requests, filled/empty render responses, iframe load and viewability events with bounded local diagnostics.",
+      "Record ambiguous overlapping requests without assigning misleading latency; no telemetry, consent or GAM targeting changes.",
+      "Experimental candidate only; not automatically selectable or activated for publishers."
+    ]
+  },
+  {
     "id": "tessera-positions-preview-1",
     "version": "3.10.0-tessera.preview.1",
     "codeSha256": "ae98640d4c373547f1a2b9c6ac867010f5760c14ed71b49fb8907fcfeb3fc5cc",

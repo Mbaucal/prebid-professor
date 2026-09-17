@@ -28,3 +28,10 @@ test('old or missing instrumentation remains unknown and inspect tolerates unava
   const sandbox={window:{},document:{scripts:[]},URL,console:{group(){},groupEnd(){},table(){},log(){}}};
   assert.equal(vm.runInNewContext(experimentInspectCommand,sandbox).experiments.length,0);
 });
+test('new runtime evidence exposes entry counts and separate GPT outcomes without implying total execution count',()=>{
+  const {report,copied}=run({__tesseraRuntimeDiagnostics:{site:{snapshot:()=>({siteId:'test',runtimeVersion:'3.11.0-tessera.preview.1',attempts:2,initializations:1,blockedDuplicates:1,totals:{requests:2,empty:1,filled:1},events:[{type:'filled-render',slot:'P1',elapsedMs:40,requestToRenderMs:25,creativeId:'not-exported'}]})}}});
+  assert.equal(report.runtimeDiagnostics[0].runtimeEntries,1);
+  assert.equal(report.runtimeDiagnostics[0].blockedDuplicates,1);
+  assert.equal(report.runtimeDiagnostics[0].totals.empty,1);
+  assert.equal(report.confirmedRuntimeExecutions,null);assert(!copied.includes('not-exported'));
+});

@@ -137,3 +137,38 @@ not a trustworthy execution count. The counter remains unknown until a new runti
 provides initialization evidence. Generic script errors do not prove SRI vs CSP vs
 network failure; the inspector directs the operator to Console/Network evidence.
 This tool does not retrospectively instrument or modify archived runtime files.
+
+## Version 3.11.0 experimental runtime (MBA-58 / MBA-62)
+
+A separately registered `3.11.0-tessera.preview.1` candidate builder is under
+`worker/runtime-observed`. It uses the preserved position compiler and adds entry
+instrumentation and local GPT listeners only to the new output. The source closure
+has its own checksum and recorded source commit. Old release records, default
+selection and archived bytes remain unchanged. This candidate is not yet in the
+selectable publisher catalog and is not deployed.
+
+The debugger exposes per-runtime entry attempts, accepted entries and blocked
+reinsertions, plus owned-slot request/render/empty/filled counts. An accepted entry
+means the new runtime passed its duplicate guard, not that setup or an auction
+completed successfully. It listens through GPT's command queue before the runtime's
+own GPT setup. Foreign slots are ignored, including same-ID slots with a different
+object; TakeOver's internal element ID maps back to its configured unit code.
+
+Request-to-render latency is recorded only for an unambiguous request cycle.
+Overlapping requests and renders without an observed request have no attributed
+latency; duplicate render callbacks are ignored within the same cycle. Consequently
+ambiguous cycles must be excluded from comparisons, not treated as perfect fill.
+Iframe load and viewability event counts are separate observations, not billable
+impressions or revenue. First filled render is timed from runtime observation start,
+not navigation start or experiment assignment. Logs cap at 500 entries while totals
+continue; `droppedEvents` reports the truncation. Stop removes this observer's
+listeners, including when GPT has not loaded yet, without stopping ads.
+
+No identifiers, consent reads/writes, storage, telemetry requests, GAM targeting,
+cache changes or revenue estimates are added. Central aggregation, GAM keys and
+consent-aware telemetry remain pending. CI executes the compiled new candidate in
+Chromium using mocked GPT/Prebid; it does not call real ad services.
+
+Event meanings follow the official [GPT event listener sample](https://developers.google.com/publisher-tag/samples/ad-event-listeners)
+and [GPT reference](https://developers.google.com/publisher-tag/reference), checked
+2026-09-17. Real Tanjug/GPT/CMP integration remains a separate verification gate.
