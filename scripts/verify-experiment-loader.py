@@ -1,5 +1,5 @@
 """Synthetic A/B loader, SRI, CSP and dependency ordering. No live ad requests."""
-import json, os, pathlib, subprocess, tempfile, ssl, time, urllib.request, urllib.error
+import json, os, pathlib, subprocess, tempfile, ssl, time, urllib.request, urllib.error, urllib.parse, base64
 from playwright.sync_api import sync_playwright, expect
 hostname='prebid-professor-test.mbaucal.workers.dev'
 origin='https://'+hostname
@@ -25,6 +25,12 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
             browser=p.chromium.launch(headless=True,executable_path=os.environ.get('TESSERA_TEST_CHROMIUM'),args=['--no-proxy-server','--disable-quic','--host-resolver-rules=MAP '+hostname+' 127.0.0.1:8877, MAP * ~NOTFOUND'])
             context=browser.new_context(ignore_https_errors=True,viewport={'width':1280,'height':950},service_workers='block')
             def route(r):
+                if r.request.url.startswith('https://cache-fixture.invalid/bid?'):
+                    rows=json.loads(urllib.parse.parse_qs(urllib.parse.urlparse(r.request.url).query)['payload'][0])
+                    bids=[{**x,'creativeId':'synthetic','currency':'USD','netRevenue':True,'ad':'<div>Synthetic</div>','meta':{'advertiserDomains':['example.invalid']}} for x in rows]
+                    r.fulfill(status=200,headers={'content-type':'application/json','access-control-allow-origin':'*','x-tessera-local-fixture':'experiment-loader'},body=json.dumps({'bids':bids}));return
+                if r.request.url.startswith('https://cdn.jsdelivr.net/gh/prebid/currency-file@1/latest.json?date='):
+                    r.fulfill(status=200,headers={'content-type':'application/json','access-control-allow-origin':'*','x-tessera-local-fixture':'experiment-loader'},body=json.dumps({'conversions':{'USD':{'USD':1}}}));return
                 if not r.request.url.startswith(origin+'/'): external.append(r.request.url);r.abort()
                 else: r.continue_()
             context.route('**/*',route)
@@ -54,6 +60,27 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                     check(name+': inspector joins loader runtime and measurement',report['experiments'][0]['variant']==variant and report['gamMeasurement'][0]['value']==expected and report['runtimeDiagnostics'][0]['runtimeEntries']==1)
                 left,right=measured_results
                 check('Measured A/A uses identical package and delivery identity for both arms',left['context']['packageSha256']==right['context']['packageSha256'] and left['context']['deliverySha256']==right['context']['deliverySha256'] and left['measurement']['value']!=right['measurement']['value'])
+                cached_results=[]
+                for name,variant in [('cachea','A'),('cacheb','B')]:
+                    page.goto(origin+'/case/'+name+'/')
+                    page.wait_for_function("__tesseraExperiments?.['test-site']?.status==='loaded' && fixtureRequests.some(r=>r.id==='Billboard') && fixtureRequests.some(r=>r.id==='adsx-takeover-slot')")
+                    page.evaluate("fixtureIntersect('P1','500px')")
+                    page.wait_for_function("fixtureBids.filter(b=>b.code==='P1').length===2")
+                    assert page.evaluate("adSlots.P1.getTargeting('hb_adid')")==[]
+                    page.evaluate("fixtureIntersect('P1','0px')")
+                    page.wait_for_function("fixtureRequests.some(r=>r.id==='P1')")
+                    result=page.evaluate("({context:__tesseraExperiments['test-site'].context,events:__tesseraExperiments['test-site'].snapshot().events,cache:__tesseraBidCache['test-site'].snapshot(),runtime:__tesseraRuntimeDiagnostics['test-site'].snapshot(),requests:fixtureRequests})")
+                    cached_results.append(result);expected='d'+result['context']['deliverySha256'][:32]+'_'+variant.lower()
+                    check(name+': stored 3.13 package and exact native Prebid load once with saved policy',result['context']['runtimeVersion']=='3.13.0' and result['context']['variant']==variant and result['runtime']['initializations']==1 and result['cache']['policy']['mode']=='auction-with-cache' and result['cache']['policy']['maxAgeSeconds']==60)
+                    check(name+': initial TakeOver and lazy requests carry correct A/A labels',all(r['experiment']==[expected] and r['cpm']==10 and r['status']=='targetingSet' for r in result['requests']))
+                    check(name+': dependency loads before wrapper with exact SRI',[e['type'] for e in result['events']]==['assigned','prebid-loaded','script-loaded'] and page.locator('script[src$="/prebid.js"]').get_attribute('integrity')=='sha256-'+base64.b64encode(bytes.fromhex('384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b')).decode())
+                    page.evaluate("{const s=document.createElement('script');s.src='ads.js';s.nonce='fixture';document.head.append(s);}")
+                    page.wait_for_load_state('networkidle')
+                    check(name+': reinsertion does not restart auctions or wrapper',page.evaluate('fixtureRequests.length')==len(result['requests']) and page.evaluate("__tesseraRuntimeDiagnostics['test-site'].snapshot().initializations")==1)
+                    report=page.evaluate('() => {'+pathlib.Path('src/debug/experiment-inspect.mjs').read_text().split('export const experimentInspectCommand=')[0].replace('export function inspectExperiments()', 'function inspectExperiments()')+'\nreturn inspectExperiments();}')
+                    check(name+': inspector joins new cache policy and assignment',report['experiments'][0]['variant']==variant and report['cacheDiagnostics'][0]['mode']=='auction-with-cache')
+                left,right=cached_results
+                check('Stored 3.13 A/A preserves identical package and delivery in both arms',left['context']['packageSha256']==right['context']['packageSha256'] and left['context']['deliverySha256']==right['context']['deliverySha256'])
                 for name,status,event in [('corrupt','load-error','load-error'),('corruptads','load-error','load-error'),('blocked','load-error','load-error'),('legacy','conflict','conflict')]:
                     page.goto(origin+'/case/'+name+'/')
                     page.wait_for_function("window.__tesseraExperiments?.['tanjug-test']?.status==="+json.dumps(status))

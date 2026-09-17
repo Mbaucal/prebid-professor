@@ -7,10 +7,21 @@ import { buildArtifactCandidate, runtimeDescriptor } from '../worker/runtime-mea
 import { pinRuntime } from '../worker/runtime/version-pin.mjs';
 import { describeCandidate } from '../worker/runtime/draft-release-store.mjs';
 import { positionFixture } from '../tests/support/position-runtime-fixture.mjs';
+import {cacheSelectionFixture} from '../tests/support/cache-selection-fixture.mjs';
+import {readDraftRelease} from '../worker/runtime/draft-release-store.mjs';
 const [key,cert]=process.argv.slice(2);
 if(!key||!cert)throw Error('Local TLS files required');
 const a=await experimentFixture('A',{prebid:true}), b=await experimentFixture('B',{prebid:true});
 const cases=new Map();
+const cacheStore=await cacheSelectionFixture(),cacheState=await cacheStore.api('/test-api/runtime-selection');
+await cacheStore.api('/test-api/runtime-selection',{expectedRevision:cacheState.revision,selection:{runtime:cacheState.runtimes.find(r=>r.version==='3.13.0').pin,allowPreview:true,enablePrebid:true,prebidBuildId:cacheState.prebidBuildId,bidCache:{mode:'auction-with-cache',maxAgeSeconds:60}}});
+const readyCache=await cacheStore.api('/test-api/site-packages');
+const cacheRelease=await cacheStore.api('/test-api/site-packages',{action:'generate',revision:readyCache.revision,notes:'Stored 3.13 A/A'},201);
+const storedCache=await readDraftRelease({isolation:'explicit-test-store',db:cacheStore.env.DB,bucket:cacheStore.env.BUILDS},{siteId:'test-site',releaseId:cacheRelease.release.id});
+const cachePackage=await describeCandidate('test-site',storedCache);cacheStore.close();
+for(const [name,sample] of [['cachea',0.75],['cacheb',0.25]]){
+ cases.set(name,await createExperimentDelivery({profile:'experiment-preview-v1',siteId:'test-site',experimentId:'cached-aa',revision:1,enabled:true,trafficB:50,controlPackageSha256:cachePackage.descriptor.packageSha256,testPackageSha256:cachePackage.descriptor.packageSha256},{[cachePackage.descriptor.packageSha256]:cachePackage},{random:()=>sample}));
+}
 const measured=await describeCandidate('test-site',await buildArtifactCandidate({snapshot:positionFixture(false),pin:pinRuntime(runtimeDescriptor,{allowPreview:true}),buildTimestamp:'20260917_120000'}));
 const measuredConfig={profile:'experiment-preview-v1',siteId:'test-site',experimentId:'measured-aa',revision:1,enabled:true,trafficB:50,controlPackageSha256:measured.descriptor.packageSha256,testPackageSha256:measured.descriptor.packageSha256};
 for(const [name,sample] of [['measureda',0.75],['measuredb',0.25]]) {
@@ -28,15 +39,19 @@ createServer({key:readFileSync(key),cert:readFileSync(cert)},async(req,res)=>{
     if(path==='/health'){res.writeHead(200,marker);res.end('ready');return;}
     const match=path.match(/^\/case\/([a-z]+)(\/.*)?$/),name=match?.[1],tail=match?.[2]||'/';
     if(!cases.has(name)){res.writeHead(404,marker);res.end();return;}
+    if(name.startsWith('cache')&&tail==='/mock.js'){
+      res.writeHead(200,{...marker,'content-type':'application/javascript'});
+      res.end(readFileSync('tests/runtime/mock-ad-libraries.js','utf8')+'\n'+readFileSync('tests/runtime/cache-runtime-fixture.js','utf8')+'\ndocument.addEventListener("load",function(e){if(e.target.tagName==="SCRIPT"&&e.target.src.endsWith("/prebid.js"))installFixtureAdapters();},true);');return;
+    }
     if(name.startsWith('measured')&&tail==='/mock.js') {
       res.writeHead(200,{...marker,'content-type':'application/javascript'});
       res.end(readFileSync('tests/runtime/mock-ad-libraries.js','utf8')+'\ndelete window.pbjs;window.requestLabels=[];__testAds.service.addEventListener("slotRequested",function(e){requestLabels.push({id:e.slot.id,value:e.slot.getTargeting("tessera_ab")});});');return;
     }
     if(tail==='/') {
-      const csp=name==='blocked'?"default-src 'none'; script-src 'nonce-fixture'":"default-src 'none'; script-src 'nonce-fixture' 'strict-dynamic'";
+      const csp=(name==='blocked'?"default-src 'none'; script-src 'nonce-fixture'":"default-src 'none'; script-src 'nonce-fixture' 'strict-dynamic'")+(name.startsWith('cache')?"; connect-src https://cache-fixture.invalid https://cdn.jsdelivr.net; style-src 'unsafe-inline'":"");
       res.writeHead(200,{...marker,'content-type':'text/html','content-security-policy':csp});
       res.end('<!doctype html><title>Synthetic A/B loader</title><p>Local synthetic verification only</p>'+
-        (name.startsWith('measured')?'<div id="Billboard" class="wrapperAd"></div><div id="P1" class="wrapperAd"></div><div id="Overlay"></div><script nonce="fixture" src="mock.js"></script>':'')+
+        (name.startsWith('measured')||name.startsWith('cache')?'<div id="Billboard" class="wrapperAd"></div><div id="P1" class="wrapperAd"></div><div id="Overlay"></div><script nonce="fixture" src="mock.js"></script>':'')+
         (name==='legacy'?'<script nonce="fixture" src="legacy.js"></script>':'')+
         '<script nonce="fixture" src="ads.js"></script><script nonce="fixture" src="ads.js"></script>');return;
     }
