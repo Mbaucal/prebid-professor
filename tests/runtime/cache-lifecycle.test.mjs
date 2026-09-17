@@ -62,3 +62,30 @@ test('duplicate pending auction and teardown are bounded and do not run another 
   const f=lifecycle();f.request();f.request();assert.equal(f.nativeCalls.length,1);f.respond();f.api.stop();assert.equal(f.timers.size,0);
   f.respond();f.api.refresh([f.slot]);assert.equal(f.requests.length,1);assert.equal(f.api.snapshot().trackedSlots,0);
 });
+test('page return invalidates prepared targeting, then the next owned auction recovers',()=>{
+ const f=lifecycle();f.request(()=>{});f.respond();
+ const epoch=f.api.snapshot().consent.epoch;
+ f.events.get('pagehide')();f.events.get('pageshow')();
+ f.api.refresh([f.slot]);assert.equal(f.requests.length,0);assert.equal(f.targetCalls(),0);
+ assert.equal(f.api.snapshot().consent.epoch,epoch+2);
+ f.request();f.respond();assert.equal(f.requests.length,1);assert.equal(f.targetCalls(),1);
+ assert.equal(f.api.snapshot().policy.lastSelection.origin,'fresh');f.api.stop();
+});
+test('replaced CMP ignores queued old callbacks and teardown unregisters only owned listeners',()=>{
+ const old=cmp(),replacement=cmp(),observer=createConsentEpoch(old.win),queued=[...old.callbacks.values()][0];
+ old.win.__tcfapi=replacement.win.__tcfapi;
+ assert(observer.read().cacheAllowed);assert.equal(old.callbacks.size,0);assert.equal(replacement.callbacks.size,1);
+ const epoch=observer.read().epoch;queued({listenerId:1,gdprApplies:true,cmpStatus:'loaded',eventStatus:'cmpuishown',tcString:'private-stale'},true);
+ assert.equal(observer.read().epoch,epoch);assert(observer.read().cacheAllowed);
+ replacement.emit({gdprApplies:true,eventStatus:'cmpuishown',tcString:'private-choice'});assert(!observer.read().cacheAllowed);
+ replacement.emit({gdprApplies:true,eventStatus:'useractioncomplete',tcString:'private-choice'});assert(observer.read().cacheAllowed);
+ assert(!JSON.stringify(observer.snapshot()).includes('private-'));observer.stop();assert.equal(replacement.callbacks.size,0);
+});
+test('many lifecycle auctions bound state and timers; teardown prevents pending callbacks from submitting',()=>{
+ const f=lifecycle();
+ for(let i=0;i<600;i++){f.request();assert.equal(f.timers.size,1);f.respond();f.advance(1000);assert.equal(f.timers.size,0);}
+ const s=f.api.snapshot();assert.equal(s.trackedSlots,1);assert.equal(s.policy.trackedAuctions,128);
+ assert(s.policy.trackedSubmittedBids<=31);assert.equal(f.requests.length,600);assert.equal(s.totals.auctions,600);
+ f.request();f.api.stop();f.respond();assert.equal(f.requests.length,600);assert.equal(f.timers.size,0);
+ assert.equal(f.events.size,0);assert.equal(f.callbacks.size,0);assert.equal(f.api.snapshot().policy.trackedAuctions,0);
+});

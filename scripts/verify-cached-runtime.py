@@ -2,7 +2,7 @@
 import hashlib,json,urllib.parse,sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-root=Path(sys.argv[1] if len(sys.argv)>1 else '.generated/cache-runtime-evidence')
+root=Path(sys.argv[1] if len(sys.argv)>1 else '.generated/cache-package-evidence')
 bundle=Path('vendor/prebid/tanjug-11.34.0/prebid.js').read_bytes()
 assert hashlib.sha256(bundle).hexdigest()=='384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b'
 mock=Path('tests/runtime/mock-ad-libraries.js').read_text()
@@ -16,7 +16,7 @@ with sync_playwright() as p:
         page_calls[page]=[]
         page.on('pageerror',lambda e:errors.append(str(e)))
         def route(r):
-            if r.request.url=='https://cache-page.invalid/':r.fulfill(status=200,content_type='text/html',body=html);return
+            if r.request.url=='https://cache-page.invalid/':r.fulfill(status=200,content_type='text/html',body=html+('<div id="Sticky" class="wrapperAd"></div>' if name=='sticky' else ''));return
             if r.request.url.startswith('https://cdn.jsdelivr.net/gh/prebid/currency-file@1/latest.json?date='):
                 currency_fixtures.append(1);r.fulfill(status=200,content_type='application/json',headers={'access-control-allow-origin':'*'},body=json.dumps({'conversions':{'USD':{'USD':1}}}));return
             if not r.request.url.startswith('https://cache-fixture.invalid/bid?'):
@@ -80,9 +80,56 @@ with sync_playwright() as p:
         assert page.evaluate("__tesseraBidCache['test-site'].snapshot().totals.lateCallbacks")>=1
         assert not page.evaluate("pbjs.getConfig('bidCacheFilterFunction')(pbjs.getBidResponsesForAdUnitCode('P1').bids[0])")
         page.close();checks.append('Compiled lazy failsafe sends clean GAM once; late bids cannot trigger another request or cached reuse')
+        transitions=[
+            ('synthetic pagehide/pageshow',"dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true}));dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}));",''),
+            ('CMP change','changeFixtureConsent()',''),
+            ('CMP error',"fixtureEmitConsent({cmpStatus:'error'},false)","fixtureEmitConsent({cmpStatus:'loaded',eventStatus:'useractioncomplete'})"),
+            ('CMP API replacement',"window.previousCmp=__tcfapi;delete window.__tcfapi",'window.__tcfapi=(...args)=>previousCmp(...args)'),
+            ('unsupported privacy API','window.__gpp=()=>{}','delete window.__gpp'),
+            ('viewport change',None,'')]
+        for label,change,restore in transitions:
+            page=fresh('recovery');lazy_ready(page)
+            initial_epoch=page.evaluate("__tesseraBidCache['test-site'].snapshot().consent.epoch")
+            if change is None:page.set_viewport_size({'width':900,'height':900});page.wait_for_timeout(50)
+            else:page.evaluate('() => {'+change+'}')
+            page.evaluate("fixtureIntersect('P1','0px')");page.wait_for_timeout(80)
+            assert not page.evaluate("fixtureRequests.some(r=>r.id==='P1')"),label
+            blocked=page.evaluate("__tesseraBidCache['test-site'].snapshot()")
+            assert blocked['consent']['epoch']>initial_epoch and blocked['totals']['blocked']>0,label
+            if label in ['CMP error','CMP API replacement','unsupported privacy API']:assert not blocked['consent']['cacheAllowed'],label
+            if restore:page.evaluate('() => {'+restore+'}')
+            page.evaluate("fixtureNext={pubmatic:{cpm:2,ttl:300},openx:{cpm:3,ttl:300}};__testAds.emit('slotVisibilityChanged',{slot:adSlots.Billboard,inViewPercentage:100})")
+            page.wait_for_function("fixtureRequests.filter(r=>r.id==='Billboard').length===2")
+            requests=page.evaluate("fixtureRequests.filter(r=>r.id==='Billboard')")
+            assert requests[-1]['cpm']==3 and requests[-1]['status']=='targetingSet',(label,requests)
+            assert page_calls[page].count('Billboard')==4,(label,page_calls[page])
+            # A later ordinary refresh can use a still-unused offer from the NEW
+            # eligible context. Old pre-transition offers may not return.
+            page.evaluate("fixtureNext={pubmatic:{cpm:1,ttl:300},openx:{cpm:1.5,ttl:300}}")
+            page.wait_for_function("fixtureRequests.filter(r=>r.id==='Billboard').length===3")
+            requests=page.evaluate("fixtureRequests.filter(r=>r.id==='Billboard')")
+            assert requests[-1]['cpm']==2 and requests[-1]['status']=='targetingSet',(label,requests)
+            assert page_calls[page].count('Billboard')==6,(label,page_calls[page])
+            assert page.evaluate("__tesseraRuntimeDiagnostics['test-site'].snapshot().initializations")==1
+            assert all(r['experiment']==['d'+'a'*32+'_b'] for r in requests)
+            page.close();checks.append(label+': prepared lazy offer blocked, fresh auction recovers, only new-context unused bid can later win')
+        page=fresh('sticky');page.wait_for_function("fixtureRequests.some(r=>r.id==='Sticky')")
+        page.locator('#adsx-takeover-close').click()
+        page.evaluate("fixtureNext={pubmatic:{cpm:2,ttl:300},openx:{cpm:3,ttl:300}}")
+        page.wait_for_function("fixtureRequests.filter(r=>r.id==='Sticky').length===2")
+        sticky=page.evaluate("fixtureRequests.filter(r=>r.id==='Sticky')")
+        assert [r['cpm'] for r in sticky]==[10,4] and all(r['status']=='targetingSet' for r in sticky),sticky
+        assert page_calls[page].count('Sticky')==4,page_calls[page]
+        page.locator('#close_sticky_ad').click();page.wait_for_timeout(2300)
+        assert page.evaluate("fixtureRequests.filter(r=>r.id==='Sticky').length")==2
+        assert page_calls[page].count('Sticky')==4
+        assert all(r['experiment']==['d'+'a'*32+'_b'] for r in sticky)
+        page.close();checks.append('Bottom Sticky uses native cached selection on refresh and closing it stops further Sticky auctions')
         assert not errors,errors
         assert not external,external
         checks.append('No external ad requests, no JavaScript errors, no live CMP/GAM changes')
+    except Exception:
+        print(json.dumps({'completed':checks,'pageErrors':errors,'external':external},indent=2));raise
     finally:browser.close()
 report={'scope':'Compiled candidate + exact Prebid 11.34.0; synthetic adapters, GPT, TCF and currency response; no real network or hosted pilot','mockedCurrencyRequests':len(currency_fixtures),'checks':checks,'passed':len(checks)}
 (root/'browser.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))

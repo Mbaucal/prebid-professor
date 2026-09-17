@@ -49,8 +49,15 @@ test('another file claiming the same Prebid version cannot enter a cached packag
 test('emit exact packaged readable/minified scripts for native browser verification',async()=>{
   await mkdir('.generated/cache-package-evidence',{recursive:true});
   const metadata=[];
-  for(const [name,mode,lazy,refresh] of [['cached','auction-with-cache',false,false],['fresh','fresh-only',false,false],['default-lazy','auction-with-cache',true,false],['refresh','auction-with-cache',false,true],['fresh-refresh','fresh-only',false,true]]){
-    const snapshot=fixture(mode,lazy,refresh),candidate=await buildArtifactCandidate({snapshot,pin,buildTimestamp:timestamp,prebid:await checked(snapshot)});
+  for(const [name,mode,lazy,refresh] of [['cached','auction-with-cache',false,false],['fresh','fresh-only',false,false],['default-lazy','auction-with-cache',true,false],['refresh','auction-with-cache',false,true],['fresh-refresh','fresh-only',false,true],['recovery','auction-with-cache',false,true],['sticky','auction-with-cache',false,true]]){
+    const snapshot=fixture(mode,lazy,refresh);
+    if(name==='recovery')snapshot.rules.find(r=>r.rule_key==='__DEFAULT__').rule_json=JSON.stringify({refresh:{enabled:true,minSeconds:2,maxRefreshes:3,minViewPct:50}});
+    if(name==='sticky'){
+      const config=JSON.parse(snapshot.config.config_json);config.runtimeControls.sticky.bottomAdUnitId='Sticky';snapshot.config.config_json=JSON.stringify(config);
+      snapshot.units.push({code:'Sticky',type:'ATF',media_type:'banner',size_map_key:'display',enabled:1,sort_order:3});
+      snapshot.rules.push({rule_key:'Sticky',rule_json:JSON.stringify({lazy:{enabled:false},refresh:{enabled:true,minSeconds:2,maxRefreshes:3}})});
+    }
+    const candidate=await buildArtifactCandidate({snapshot,pin,buildTimestamp:timestamp,prebid:await checked(snapshot)});
     await writeFile('.generated/cache-package-evidence/'+name+'.js',candidate.files['ads.js']);
     await writeFile('.generated/cache-package-evidence/'+name+'.min.js',candidate.files['ads.min.js']);
     metadata.push({name,runtime:pin,prebidSha256:PREBID_SHA256,files:candidate.manifest.files});

@@ -71,6 +71,16 @@ with sync_playwright() as p:
         page=fresh();auction(page,bid(2),bid(3));page.evaluate('fixtureState.epoch++');r=page.evaluate('fixtureTarget()')
         assert not r['ok'] and r['cpm'] is None,r
         page.close();checks.append('Context changed during an auction blocks submission until a new eligible auction')
+        page=fresh(age=300);seed(page)
+        page.evaluate("window.earliestUnused=pbjs.getBidResponsesForAdUnitCode('P1').bids.find(b=>b.cpm===4)")
+        for index in range(140):
+            auction(page,bid(100+index),bid(2));r=page.evaluate('fixtureTarget()')
+            assert r['ok'] and r['cpm']==100+index and r['snapshot']['lastSelection']['origin']=='fresh',r
+        assert r['snapshot']['trackedAuctions']==128 and r['snapshot']['trackedSubmittedBids']<=141,r
+        assert not page.evaluate("pbjs.getConfig('bidCacheFilterFunction')(earliestUnused)")
+        assert page.evaluate("cachePolicy.snapshot().checks.rejected.untracked")>0
+        page.evaluate('cachePolicy.stop()');assert page.evaluate('cachePolicy.snapshot().trackedAuctions')==0
+        page.close();checks.append('140 native auctions keep policy tracking bounded, evict old eligibility and preserve fresh-auction operation')
         assert not errors,errors
         assert not external,external
         checks.append('No external requests, no JavaScript errors, and no real GAM or SSP traffic')

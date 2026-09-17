@@ -7,10 +7,11 @@ window.__tcfapi=(command,version,callback,id)=>{
   if(command==='addEventListener'){const key=++cmpId;cmpListeners.set(key,callback);callback({...fixtureConsent,listenerId:key},true);}
   else if(command==='removeEventListener'){cmpListeners.delete(id);callback(true);}
 };
-window.changeFixtureConsent=()=>{
-  fixtureConsent={...fixtureConsent,eventStatus:'useractioncomplete',addtlConsent:'synthetic-change'};
-  for(const [id,cb] of [...cmpListeners])cb({...fixtureConsent,listenerId:id},true);
+window.fixtureEmitConsent=(patch,ok=true)=>{
+  fixtureConsent={...fixtureConsent,...patch};
+  for(const [id,cb] of [...cmpListeners])cb({...fixtureConsent,listenerId:id},ok);
 };
+window.changeFixtureConsent=()=>fixtureEmitConsent({eventStatus:'useractioncomplete',addtlConsent:'synthetic-change'});
 const observers=[];
 window.IntersectionObserver=class{
   constructor(callback,options={}){this.callback=callback;this.options=options;this.elements=new Set();observers.push(this);}
