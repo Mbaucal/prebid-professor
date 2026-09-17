@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='tessera-collection-tls-') as tls:
                 def lost_ack(route):
                     attempts.append(1)
                     if len(attempts)==1:
-                        response=route.fetch();assert response.status==204
+                        response=route.fetch(url='https://127.0.0.1:8877/test-api/experiments/preview/test-site/collect');assert response.status==204
                         route.fulfill(status=503,headers={'x-tessera-local-fixture':'delivery-synthetic'},body='Lost acknowledgement fixture')
                     else: route.continue_()
                 page.route('**/preview/test-site/collect',lost_ack)
