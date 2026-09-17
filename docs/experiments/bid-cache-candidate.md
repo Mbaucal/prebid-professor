@@ -178,6 +178,20 @@ Mode, age and runtime pin commit together under the original snapshot revision.
 Stale tabs, concurrent edits, uncertain acknowledgements and stale generation
 receipts use the existing atomic protections. Changing a cache rule creates a
 different package; older ZIP bytes and active experiment selections are preserved.
+
+Verified at code commit `09c64b2b7b89656c738f5e646116b64c1685243a`:
+all six CI workflows passed. The [workspace run](https://github.com/Mbaucal/prebid-professor/actions/runs/35284773933)
+passed 14 editor browser checks and 35 loader checks (including 11 new stored-3.13
+A/A checks), in addition to the 12 exact-package lifecycle and 12 native-policy
+checks. The loader used the actual HTTP-selected, generated and stored package
+and exact Prebid bytes with strict CSP/SRI intact; adapters/GPT/TCF/currency were
+synthetic and no real ad request escaped. Initial, TakeOver and lazy requests had
+the correct arm label, duplicate tags did not restart auctions, and the inspector
+joined the saved policy to the assignment. Local validation passed 80 TEST
+selection/editor/Prebid tests, 30 shared-service/package tests, production build
+and the six-record history guard. No frozen runtime source or version record was
+changed. An earlier browser run exposed a test-harness CSP eval limitation;
+debugger-side state polling fixed the test without relaxing the page's policy.
 The selected mode and age are included in package config.json.
 
 HTTP tests exercise both editor endpoints, original ZIP preservation, distinct
