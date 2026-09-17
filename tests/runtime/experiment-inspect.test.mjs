@@ -35,3 +35,8 @@ test('new runtime evidence exposes entry counts and separate GPT outcomes withou
   assert.equal(report.runtimeDiagnostics[0].totals.empty,1);
   assert.equal(report.confirmedRuntimeExecutions,null);assert(!copied.includes('not-exported'));
 });
+test('measurement inspector exposes bounded reporting labels without claiming revenue',()=>{
+ const {report,copied}=run({__tesseraGamMeasurement:{site:{snapshot:()=>({runtimeVersion:'3.12.0',key:'tessera_ab',value:'d'+'a'.repeat(32)+'_b',identity:{deliverySha256:'a'.repeat(64),variant:'B',secret:'do-not-export'},appliedSlots:3,failedSlots:0,secret:'do-not-export'})}}});
+ assert.equal(report.gamMeasurement[0].appliedSlots,3);assert.equal(report.gamMeasurement[0].variant,'B');
+ assert(!copied.includes('do-not-export'));assert(report.notes.some(n=>n.includes('not confirmation of GAM')));
+});

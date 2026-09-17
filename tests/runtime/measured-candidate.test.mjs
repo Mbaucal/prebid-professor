@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdir,writeFile } from 'node:fs/promises';
+import { positionFixture } from '../support/position-runtime-fixture.mjs';
+import { buildArtifactCandidate,runtimeDescriptor } from '../../worker/runtime-measured/artifact-candidate.mjs';
+import { pinRuntime } from '../../worker/runtime/version-pin.mjs';
+import { describeCandidate } from '../../worker/runtime/draft-release-store.mjs';
+import { buildArtifactCandidate as oldBuild } from '../../worker/runtime-next/artifact-candidate.mjs';
+import { descriptor as oldDescriptor } from '../../.generated/runtime-next-manifest.mjs';
+test('new measured package is independently pinned and leaves the old generator byte-identical',async()=>{
+  const snapshot=positionFixture(false),before=structuredClone(snapshot),buildTimestamp='20260917_120000';
+  const oldArgs={snapshot,buildTimestamp,pin:pinRuntime(oldDescriptor,{allowPreview:true})};
+  const old=await oldBuild(oldArgs);
+  const candidate=await buildArtifactCandidate({snapshot,buildTimestamp,pin:pinRuntime(runtimeDescriptor,{allowPreview:true})});
+  const checked=await describeCandidate('test-site',candidate);
+  assert.equal(checked.descriptor.runtime.runtimeVersion,'3.12.0-tessera.preview.1');
+  assert.match(new TextDecoder().decode(candidate.files['ads.js']),/__tesseraGamMeasurement/);
+  assert.notDeepEqual(candidate.files['ads.js'],old.files['ads.js']);
+  assert.deepEqual((await oldBuild(oldArgs)).files,old.files);assert.deepEqual(snapshot,before);
+  await assert.rejects(buildArtifactCandidate(oldArgs),/pin|match|version|identity/i);
+  await mkdir('.generated/measured-evidence',{recursive:true});
+  await writeFile('.generated/measured-evidence/ads.js',candidate.files['ads.js']);
+});

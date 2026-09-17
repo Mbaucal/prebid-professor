@@ -50,7 +50,7 @@ jobs:
       - name: Verify read-only ads version UI routes
         run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
       - name: Verify isolated experimental delivery, original package bytes and LOCAL A/A Worker
-        run: node --experimental-strip-types --test tests/runtime/experiment-delivery.test.mjs tests/runtime/experiment-workerd.test.mjs tests/runtime/experiment-controls.test.mjs tests/runtime/experiment-inspect.test.mjs tests/runtime/observed-runtime.test.mjs tests/runtime/observed-candidate.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/experiment-delivery.test.mjs tests/runtime/experiment-workerd.test.mjs tests/runtime/experiment-controls.test.mjs tests/runtime/experiment-inspect.test.mjs tests/runtime/observed-runtime.test.mjs tests/runtime/observed-candidate.test.mjs tests/runtime/measured-runtime.test.mjs tests/runtime/measured-candidate.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:
@@ -84,6 +84,8 @@ jobs:
         run: python scripts/verify-experiment-loader.py
       - name: New observed runtime entry and GPT lifecycle in local Chromium
         run: python scripts/verify-observed-runtime.py
+      - name: New measured runtime targeting before local mock requests
+        run: python scripts/verify-measured-runtime.py
       - name: Keep only synthetic report and screenshots, never sessions or databases
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -101,5 +103,6 @@ jobs:
             .generated/experiment-loader-evidence/*.json
             .generated/experiment-loader-evidence/*.png
             .generated/observed-evidence/*.json
+            .generated/measured-evidence/*.json
           if-no-files-found: ignore
           retention-days: 14

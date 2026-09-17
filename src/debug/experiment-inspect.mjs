@@ -20,10 +20,18 @@ export function inspectExperiments() {
     const totals={};for(const k of ['requests','renders','empty','filled','iframeLoads','viewableEvents','ambiguousRenders'])totals[k]=safeNumber(s.totals?.[k]);
     return {siteId:clean(s.siteId),runtimeVersion:clean(s.runtimeVersion),runtimeEntries:safeNumber(s.initializations),attempts:safeNumber(s.attempts),blockedDuplicates:safeNumber(s.blockedDuplicates),stopped:s.stopped===true,firstFilledRenderMs:safeNumber(s.firstFilledRenderMs),totals,droppedEvents:safeNumber(s.droppedEvents),events:(s.events||[]).slice(0,100).map(e=>({type:clean(e.type),slot:clean(e.slot),elapsedMs:safeNumber(e.elapsedMs),requestToRenderMs:safeNumber(e.requestToRenderMs)}))};
   });
-  const report={schemaVersion:1,experiments,scripts,runtimeDiagnostics,observedPrebidVersion:clean(window.pbjs?.version),
+  const gamMeasurement=Object.entries(window.__tesseraGamMeasurement||{}).slice(0,20).map(([siteId,d])=>{
+    const s=typeof d.snapshot==='function'?d.snapshot():{};
+    return {siteId:clean(siteId),runtimeVersion:clean(s.runtimeVersion),key:clean(s.key),value:clean(s.value),
+      deliverySha256:clean(s.identity?.deliverySha256),variant:clean(s.identity?.variant),
+      appliedSlots:Number.isSafeInteger(s.appliedSlots)?s.appliedSlots:null,
+      failedSlots:Number.isSafeInteger(s.failedSlots)?s.failedSlots:null};
+  });
+  const report={schemaVersion:1,experiments,scripts,runtimeDiagnostics,gamMeasurement,observedPrebidVersion:clean(window.pbjs?.version),
     runtimeMarkerPresent:!!window.__TESSERA_RUNTIME_STARTED,
     confirmedRuntimeExecutions:null,
     notes:['Script tags and load events do not prove runtime initialization or impressions.',
+      'GAM measurement shows local targeting configuration, not confirmation of GAM reporting or revenue.',
       'Total execution count is unknown for uninstrumented runtimes; runtimeEntries counts entry into the new runtime, not successful auctions.',
       'Load errors alone cannot distinguish SRI, CSP and network failures. Check browser Console/Network.',
       'No experiment records may mean a legacy loader or no experiment; it does not prove no script ran.']};

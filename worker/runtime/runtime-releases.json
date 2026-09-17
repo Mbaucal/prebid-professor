@@ -1,5 +1,34 @@
 [
   {
+    "id": "tessera-measured-preview-1",
+    "version": "3.12.0-tessera.preview.1",
+    "codeSha256": "901a1850e72cd35fcd43533a039042ecc52e0785fce63248bc27502150e9e870",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "runtime-diagnostics",
+      "gpt-lifecycle-observer",
+      "experiment-slot-targeting"
+    ],
+    "date": "2026-09-17",
+    "title": "Owned-slot GAM experiment measurement",
+    "sourceManifest": "scripts/prepare-measured-runtime.mjs",
+    "sourceCommit": "649c1f5d3eb36e6e3ec6763121c0b43f856471da",
+    "changes": [
+      "Attach one delivery/variant reporting value to runtime-owned GPT slots before requests, including TakeOver.",
+      "Require a matching active loader context; preserve page-local assignment and existing bid targeting.",
+      "Retain bounded local runtime diagnostics and add measurement snapshots; no user identifiers, telemetry or CMP changes.",
+      "Candidate only, not yet selectable in the private catalog; existing versions and publisher routes remain unchanged."
+    ]
+  },
+  {
     "id": "tessera-observed-preview-1",
     "version": "3.11.0-tessera.preview.1",
     "codeSha256": "3482a9a6118e5ddf4e989590744cef1f20fe25fd3602558533db2afa1838804b",
