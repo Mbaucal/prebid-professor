@@ -33,7 +33,7 @@ try{
   assert.equal(logged.status,303);cookie=logged.headers.get('set-cookie').split(';')[0];
   await json('/test-api/setup',{confirm:'prepare-empty-test-database'});
   const state=await json('/test-api/runtime-selection');
-  check('Compiled settings GET returns both real runtimes and no implicit saved selection',state.selected===null&&state.runtimes.length===2);
+  check('Compiled settings GET returns all three TEST runtimes and no implicit saved selection',state.selected===null&&state.runtimes.length===3 && state.runtimes[2].version==='3.11.0-tessera.preview.1');
   const input=selection(state);input.selection.allowPreview=false;
   await json('/test-api/runtime-selection',input,422);
   check('Compiled settings writer requires Preview opt-in',true);
