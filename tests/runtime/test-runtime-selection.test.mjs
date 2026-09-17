@@ -35,7 +35,10 @@ test('history identifies an earlier saved build without changing its pin or enab
   f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));
   const before=config(f),auditCount=audits(f),{r,data}=await settings(f,cookie);
   assert.equal(r.status,200);assert.equal(data.selected,null);assert(data.validationIssue);
-  assert.equal(data.releaseHistory[0].available,true);assert.equal(data.releaseHistory[0].saved,false);
+  const bundled=data.releaseHistory.find(r=>r.codeSha256===runtimeDescriptor.codeSha256);
+  assert.equal(bundled.available,true);assert.equal(bundled.saved,false);
+  const experimental=data.releaseHistory.find(r=>r.id==='tessera-observed-preview-1');
+  assert.equal(experimental.available,false);assert.equal(experimental.saved,false);
   assert.equal(data.releaseHistory.at(-1).available,false);assert.equal(data.releaseHistory.at(-1).saved,true);
   assert.equal(data.runtimes.length,2);assert.equal(data.runtimes[0].pin.runtimeSha256,runtimeDescriptor.codeSha256);
   assert.deepEqual(config(f),before);assert.equal(audits(f),auditCount);assert.equal(f.objects.size,0);
