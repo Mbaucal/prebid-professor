@@ -103,11 +103,12 @@ hashes, changed identities, wrong package pins and unexpected fields are rejecte
 
 Input is an array of records with exactly `assignmentId`, `deliverySha256`,
 `packageSha256`, `variant`, `assignedAt` (original ISO UTC time) and `type`.
-Types are `assigned`, `script-loaded`, `load-error`, `conflict`. The future emitter
-must create a random ID once per document assignment, never reuse user/session IDs,
-and preserve it and the original timestamp across retries. This is a data contract,
-not an authentication mechanism: a future collector must verify delivery attribution,
-validate intake, address abuse and enforce retention before accepting real traffic.
+Types are `assigned`, `script-loaded`, `load-error`, `conflict`. Emitters must use a
+random ID once per document assignment, never reuse user/session IDs, and preserve
+it and the original timestamp across retries. This is a data contract, not an
+authentication mechanism. The private collector below verifies signed attribution;
+production intake still requires abuse controls and a retention policy before
+accepting real traffic.
 
 For offline fixtures or reviewed exports:
 
@@ -138,7 +139,7 @@ assignments** action and JSON endpoint show the received sample per arm.
 The authenticated TEST server signs a fresh random assignment ID, exact delivery,
 package, arm and issue time with a domain-separated HMAC key. The ticket is returned
 only in the private no-store loader body, never in a URL or console snapshot. It
-expires after one hour. The browser acknowledges `assigned` before loading the
+expires after one hour. The browser records `assigned` before loading the
 selected script and then reports `script-loaded`, `load-error` or `conflict`.
 This is asynchronous and does not wait before loading ads. Duplicate loader tags
 return before creating a sender. Each retry carries the same ticket and cumulative
