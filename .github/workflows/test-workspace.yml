@@ -50,7 +50,7 @@ jobs:
       - name: Verify read-only ads version UI routes
         run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
       - name: Verify isolated bid-cache policy without changing any existing runtime
-        run: node --experimental-strip-types --test tests/runtime/bid-cache-policy.test.mjs tests/runtime/cache-lifecycle.test.mjs tests/runtime/cache-compiler.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/bid-cache-policy.test.mjs tests/runtime/cache-lifecycle.test.mjs tests/runtime/cache-compiler.test.mjs tests/runtime/cache-candidate.test.mjs
       - name: Verify isolated experimental delivery, original package bytes and LOCAL A/A Worker
         run: node --experimental-strip-types --test tests/runtime/experiment-delivery.test.mjs tests/runtime/experiment-workerd.test.mjs tests/runtime/experiment-controls.test.mjs tests/runtime/experiment-reporting.test.mjs tests/runtime/gam-report.test.mjs tests/runtime/assignment-collection.test.mjs tests/runtime/experiment-inspect.test.mjs tests/runtime/observed-runtime.test.mjs tests/runtime/observed-candidate.test.mjs tests/runtime/measured-runtime.test.mjs tests/runtime/measured-candidate.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
@@ -87,7 +87,7 @@ jobs:
       - name: Native pinned Prebid cache selection with synthetic bids only
         run: python scripts/verify-bid-cache-policy.py
       - name: Compiled cache candidate lifecycle with synthetic GPT and TCF only
-        run: python scripts/verify-cached-runtime.py
+        run: python scripts/verify-cached-runtime.py .generated/cache-package-evidence
       - name: Browser A/B loader dependency ordering, SRI, CSP and duplicate guards
         run: python scripts/verify-experiment-loader.py
       - name: New observed runtime entry and GPT lifecycle in local Chromium
@@ -110,6 +110,7 @@ jobs:
             .generated/experiment-evidence/*.png
             .generated/cache-evidence/*.json
             .generated/cache-runtime-evidence/*.json
+            .generated/cache-package-evidence/*.json
             .generated/experiment-loader-evidence/*.json
             .generated/experiment-loader-evidence/*.png
             .generated/observed-evidence/*.json

@@ -1,8 +1,8 @@
 """Compiled new wrapper + actual pinned Prebid; all bids/GPT/CMP are synthetic."""
-import hashlib,json,urllib.parse
+import hashlib,json,urllib.parse,sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-root=Path('.generated/cache-runtime-evidence')
+root=Path(sys.argv[1] if len(sys.argv)>1 else '.generated/cache-runtime-evidence')
 bundle=Path('vendor/prebid/tanjug-11.34.0/prebid.js').read_bytes()
 assert hashlib.sha256(bundle).hexdigest()=='384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b'
 mock=Path('tests/runtime/mock-ad-libraries.js').read_text()

@@ -30,7 +30,7 @@ export function verifyRuntimeReleaseProvenance(releases,readSource=readGitSource
       for(const value of Object.values(node))if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')visit(value);
     }
     const manifest=release.sourceManifest??'scripts/prepare-builtin-runtime.mjs';
-    assert(['scripts/prepare-builtin-runtime.mjs','scripts/prepare-next-runtime.mjs','scripts/prepare-observed-runtime.mjs','scripts/prepare-measured-runtime.mjs'].includes(manifest),'Known source manifest required');
+    assert(['scripts/prepare-builtin-runtime.mjs','scripts/prepare-next-runtime.mjs','scripts/prepare-observed-runtime.mjs','scripts/prepare-measured-runtime.mjs','scripts/prepare-cached-runtime.mjs'].includes(manifest),'Known source manifest required');
     visit(parse(readSource(release.sourceCommit,manifest).toString('utf8'),{ecmaVersion:'latest',sourceType:'module'}));
     const files=declarations.filter(d=>d.id.name==='sourceFiles'),module=declarations.filter(d=>d.id.name==='MODULE_SHA256');
     assert(files.length===1&&files[0].init?.type==='ArrayExpression','Recorded source closure must declare one literal file list');

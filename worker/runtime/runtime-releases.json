@@ -1,5 +1,35 @@
 [
   {
+    "id": "tessera-cache-preview-1",
+    "version": "3.13.0",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "runtime-diagnostics",
+      "gpt-lifecycle-observer",
+      "experiment-slot-targeting",
+      "bid-cache-policy",
+      "cache-lifecycle-diagnostics"
+    ],
+    "codeSha256": "df61a0f1dfd4c12e64e5968078ffa0b7f0934afc89ef2389b21867acb4a88fb5",
+    "date": "2026-09-17",
+    "title": "Consent-aware bid cache and final-request targeting",
+    "sourceManifest": "scripts/prepare-cached-runtime.mjs",
+    "sourceCommit": "b21431bcd9d6ddaee2cedb16cec080e2447d09de",
+    "changes": [
+      "Add explicit fresh-only and new-auction-plus-cache modes in a separately pinned runtime; enforce exact reviewed Prebid 11.34.0 artifact bytes.",
+      "Defer native targeting until owned-slot GAM submission, including both lazy paths and TakeOver; enforce TTL, size, consent-context, duplicate and late-auction guards.",
+      "Observe TCF, viewport and page lifecycle changes without overriding consent; unknown or unsupported privacy contexts cannot reuse cached offers.",
+      "Expose bounded cache selection and failure diagnostics; preserve existing runtime source closures, archived packages and catalog defaults. Candidate only, not live activation."
+    ]
+  },
+  {
     "id": "tessera-measured-preview-1",
     "version": "3.12.0-tessera.preview.1",
     "codeSha256": "901a1850e72cd35fcd43533a039042ecc52e0785fce63248bc27502150e9e870",

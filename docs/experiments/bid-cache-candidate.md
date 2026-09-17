@@ -1,9 +1,21 @@
-# Standard bid-cache policy candidate
+# Standard bid-cache runtime candidate — 3.13.0
 
-Development module only: `worker/runtime-cache/policy.mjs`. Not imported by an
-existing compiler, catalog, loader or live publisher route. No new runtime release
-is registered yet. Integration must produce a separately pinned new version;
-the existing five releases and their source closures remain unchanged.
+The standalone policy is now integrated into a separate compiler and complete
+candidate package under `worker/runtime-cache/`. Version **3.13.0** is recorded
+with its own exact source closure; all five older releases remain unchanged.
+It is **not in either selectable catalog, not deployed and not live on Tanjug**.
+No site is migrated, no experiment is started, and no GAM/CMP account is changed.
+
+Source commit: `b21431bcd9d6ddaee2cedb16cec080e2447d09de`.
+Runtime source SHA-256:
+`df61a0f1dfd4c12e64e5968078ffa0b7f0934afc89ef2389b21867acb4a88fb5`.
+
+The new snapshot requires an explicit `runtimeControls.bidCache` value, e.g.
+`{"mode":"auction-with-cache","maxAgeSeconds":30}`. It writes the normalized
+policy into package `config.json`; `fresh-only` uses the same new lifecycle with
+reuse disabled. No rule is inferred from another saved version. The chosen age
+must be intentional: a 30-second cap cannot reuse offers older than 30 seconds
+at a normal 30-second-or-longer refresh interval. It never extends bidder TTL.
 
 ## Baseline and intended difference
 
@@ -52,6 +64,38 @@ pattern retains usable auction history in this exact build.
   cross-page reuse is introduced. Stop unregisters listeners and disables owned
   caching settings without overwriting a later owner's configuration.
 
+## New compiler and lifecycle
+
+The new compiler routes all five auction paths and eleven refresh call sites
+through its private lifecycle (four auction paths when TakeOver is absent).
+AST checks reject an unreviewed path instead of partially applying the policy.
+Existing compiler modules are called without modification. Both ordinary and
+configured lazy prefetch leave GPT bid targeting empty until the final refresh;
+native automatic `presetGPTTargeting` is explicitly disabled in this version.
+Native targeting then rechecks TTL, status, slot, sizes and context at use time.
+PUC version and experiment/publisher keys are retained.
+
+An observer uses the standard TCF `addEventListener` interface to advance a
+page-local eligibility epoch when CMP state changes. It does not interpret a
+country as consent, supply/override `gdprApplies`, open the CMP, or export TC data.
+Prebid's existing TCF enforcement and the wrapper's existing privacy settings
+remain authoritative. Missing/error/unknown TCF and detected unsupported GPP/USP
+contexts disable **cached reuse**, not the native fresh-auction consent logic.
+See the [TCF API specification](https://github.com/InteractiveAdvertisingBureau/GDPR-Transparency-and-Consent-Framework/blob/master/TCFv2/IAB%20Tech%20Lab%20-%20CMP%20API%20v2.md#addeventlistener).
+
+The auction epoch is captured on native auctionInit, after CMP gating rather
+than merely when requestBids is queued. Resize, pagehide/pageshow and API
+replacement invalidate earlier context. A changed context blocks a prepared
+submission; it does not start an extra replacement auction. A later ordinary
+eligible request may proceed. The TakeOver queue follows existing bidder/CMP/
+floor configuration, including when there are no initial ATF positions.
+
+Failsafe submission carries no bid targeting. Late callbacks and even late
+auctionInit after a cancelled request cannot re-enter the policy. Auction IDs
+are random page-local request identifiers, not stored user identifiers. Foreign
+or unowned auctions cannot supply targeting. Existing refresh intervals, bidder
+parameters, deal/floor rules and viewability gates are not rewritten.
+
 Snapshot counters distinguish filter evaluations from actual primary targeting
 selections. Repeated Prebid reads may evaluate a bid multiple times; these are
 not unique cache hits. A selection records fresh/cache origin and bid age, not an
@@ -59,7 +103,14 @@ impression, render or realized revenue. Snapshots expose no ad IDs, creatives,
 consent values or user identifiers. Errors expose only a fixed failure-stage
 label, not arbitrary exception messages or bid data.
 
-## Verification and remaining integration
+The existing A/B console inspector now adds `cacheDiagnostics`: mode, age limit,
+eligibility readiness/epoch, bounded decision counters and last selection age.
+`submissionAttempts` counts delegation to the existing GPT/viewability pipeline;
+it is not proof that a request passed that gate. The independent GPT observer
+continues to count actual slotRequested/render events. Consumed targeting is
+conservatively excluded even if a downstream gate suppresses the request.
+
+## Verification and remaining pilot gates
 
 Unit checks exercise context/size/TTL guards, bounded tracking, primary targeting,
 duplicate submission, changed settings and teardown. CI loads the exact pinned
@@ -77,27 +128,42 @@ Verified on 2026-09-17 at code commit
 12 native-core Chromium checks passed. All six existing CI workflows also passed.
 The [workspace run](https://github.com/Mbaucal/prebid-professor/actions/runs/35279131010)
 contains `cache-evidence/browser.json` in its synthetic evidence artifact.
-The first fixture run exposed a missing GPT `updateTargetingFromMap` mock; the
+The first policy fixture run exposed a missing GPT `updateTargetingFromMap` mock; the
 mock now implements native map updates including null-key removal. Existing
 runtime history verification preserved all five recorded versions.
 
-Before registering/selecting a new script version:
+Compiler/lifecycle verification at `1762ea73b4b0edf63456b3226707d87a54b403c3`
+passed all six CI workflows. [Workspace run](https://github.com/Mbaucal/prebid-professor/actions/runs/35281761218)
+passed 12 new compiled Chromium checks, in addition to the 12 native-policy
+checks: readable/minified first/TakeOver/lazy requests, cache-disabled control,
+both lazy TTL-expiry paths, TCF change, resize, native dwell refresh with both
+bidders called again, missing CMP (fresh only), and a delayed callback beyond the
+lazy failsafe. Real Prebid runs against simulated GPT, CMP, adapter and currency
+responses. All other URLs are blocked; no real ad or dependency request escapes.
+Source commit `b21431b` only removes extra EOF blank lines before pinning.
 
-1. Connect the policy to a new compiler and snapshot option only. Bind the actual
-   Prebid file checksum, not merely the version string. Keep current catalogs and
-   defaults unchanged until explicit private TEST integration.
-2. Supply and verify epoch changes from the real consent/eligibility lifecycle.
-   The present tests simulate that signal; they do not establish CMP integration.
-3. Replace all manual targeting paths in the new version, including initial ATF,
-   refresh, per-unit lazy and TakeOver, with exact owned-slot mapping. Validate
-   delayed render, TTL at use time, resize and failsafe timing without duplicate
-   auctions or displays. Review native automatic `presetGPTTargeting` as well:
-   no ad request may use a preset before the policy's final eligibility check.
-   Do not alter refresh timing, floors, partners or consent.
-4. Verify compiled/minified packages and pinned provenance; preserve old packages
-   byte-for-byte. Only then add an explicitly selectable private TEST candidate.
-5. Run instrumented A/A and the measured pilot gates from MBA-58 before making
+Package tests verify complete file/manifest hashes, deterministic generation,
+unchanged previous-generator files, saved policy, and rejection of modified
+Prebid bytes even when their declared version and report checksum are updated.
+The package browser suite consumes the exact emitted ads.js/ads.min.js files,
+not a separately patched mock runtime.
+
+Before making the candidate selectable or starting a pilot:
+
+1. Add explicit private TEST catalog/editor support for the new pin and cache
+   snapshot, with a useful age limit for the unchanged refresh interval. Keep main
+   defaults unchanged; do not silently activate delivery or rewrite old packages.
+2. Verify package/storage/selection round trips and loader A/A with this new pin,
+   including exact dependency SRI and duplicate guards.
+3. Verify real Google Funding Choices callbacks and actual GPT/Prebid integration
+   on an explicitly authorized isolated pilot. Tests use the actual TCF listener
+   code with simulated callbacks, not Google's live CMP or a compliance audit.
+   Do not infer geo policy, consent correctness or compatibility with other
+   Prebid builds from these fixtures. Validate sticky and long-session recovery,
+   returning pages, CMP reopening and actual downstream viewability gates there.
+4. Run instrumented A/A and the measured pilot gates from MBA-58 before making
    revenue claims. Cache-first remains a separate future experiment (MBA-60).
 
-This step proves isolated policy/native-core behavior, not a complete caching
-runtime, live publisher compatibility, CMP correctness or higher earnings.
+This is a separately versioned development candidate, not live publisher
+activation, verified Google CMP compatibility, an operational revenue experiment
+or evidence of higher earnings.

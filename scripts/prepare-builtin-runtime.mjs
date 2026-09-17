@@ -7,6 +7,7 @@ import { runtimeReleaseHistory, assertRuntimeReleaseSource } from '../worker/run
 
 import { prepareObservedRuntime } from './prepare-observed-runtime.mjs';
 import { prepareMeasuredRuntime } from './prepare-measured-runtime.mjs';
+import { prepareCachedRuntime } from './prepare-cached-runtime.mjs';
 import { prepareNextRuntime } from './prepare-next-runtime.mjs';
 const currentRuntimeRelease=runtimeReleaseHistory.find(r=>r.codeSha256==='222569881b377c085f0b5d373523d092d64e2ac5dab05d421c3cc9f371078de9');
 
@@ -69,6 +70,7 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareNextRuntime(root);
   await prepareObservedRuntime(root);
   await prepareMeasuredRuntime(root);
+  await prepareCachedRuntime(root);
   return descriptor;
 }
 
