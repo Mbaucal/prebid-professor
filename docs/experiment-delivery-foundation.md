@@ -7,7 +7,7 @@ managed by Marko. No production activation is authorized by this development ste
 ## Compatibility boundary
 
 `worker/experiments/delivery.mjs` defines a separate `experiment-preview-v1`
-delivery profile. Neither application Worker imports it. The local fixture Worker
+delivery profile. The authenticated TEST Worker now imports it for private preview routes only. The main application Worker does not import it. The local fixture Worker
 is under `tests/support`, requires an explicit fixture binding and only serves
 `experiment.invalid`. It has no production bindings, credentials or deployment config.
 
@@ -31,6 +31,21 @@ asset responses are immutable and the entry script has SRI. Config and manifest
 files are not exposed. Caller-selected URLs, query overrides and write methods
 are not accepted.
 
+## Private TEST controls
+
+The TEST home links to `/experiments`: choose saved A/B packages and B percentage,
+save an immutable experiment, then explicitly Start or Stop its private preview.
+State and events use the separate `test-experiments/v1/state.json` R2 key, guarded
+by revision and conditional writes. A stale tab must refresh; it cannot overwrite
+newer decisions. Starting verifies both archives; stopping retains history.
+Saving new rules does not change the running experiment. New private loads after
+Stop select control A. Existing documents keep their original assignment.
+
+Delivery is login-protected under `/test-api/experiments/preview/<site>/ads.js`.
+All private responses, including pinned assets, prohibit shared caching. No public
+publisher path is added. These controls are not live traffic activation or revenue
+reporting; the interface does not automatically execute publisher ads.
+
 ## Verified locally
 
 Run after installing the existing locked dependencies:
@@ -38,7 +53,7 @@ Run after installing the existing locked dependencies:
 ```sh
 node scripts/prepare-builtin-runtime.mjs
 node scripts/prepare-test-workspace.mjs
-node --test tests/runtime/experiment-delivery.test.mjs tests/runtime/experiment-workerd.test.mjs
+node --experimental-strip-types --test tests/runtime/experiment-delivery.test.mjs tests/runtime/experiment-workerd.test.mjs tests/runtime/experiment-controls.test.mjs
 ```
 
 Tests cover allocation boundaries and a controlled 10,000-sample distribution,
@@ -51,8 +66,8 @@ this is not a hosted test, live auction, GAM report or revenue result.
 
 ## Next integration gates
 
-1. Add the authenticated experiment editor and persisted immutable experiment
-   revisions/explicit activation and Stop, preserving existing publisher targets.
+1. Verify the private editor in CI using `scripts/verify-experiment-ui.py` with
+   synthetic storage, loopback TLS, stale tabs and desktop/mobile layouts.
 2. Add a separate preview delivery build and verification before any hosted route.
    Do not replace the existing Pages delivery profile or publisher URL by default.
 3. Verify real script loading in a browser including CSP, SRI, legacy-tag collisions,

@@ -21,7 +21,7 @@ function revision(body) {check(validRevision(body.expectedRevision),'Osveži lis
 function assertSite(siteId) {check(SITES.includes(siteId),'Nepoznata TEST kopija.');}
 function cleanTarget(target) {try{return validateTarget(target);}catch(e){throw new WorkspaceError(422,e.message);}}
 function response(value, headers, status=200) {return new Response(JSON.stringify(value),{status,headers:{...headers,'content-type':'application/json; charset=utf-8'}});}
-async function sources(env) {
+export async function sources(env) {
   const result = [{siteId:'tanjug-test',releaseId:metadata.descriptor.releaseId,label:metadata.version,
     packageSha256:metadata.descriptor.packageSha256,runtimeVersion:metadata.descriptor.runtime.runtimeVersion,
     prebidVersion:metadata.descriptor.prebidBuild?.version ?? null,fileCount:metadata.descriptor.files.length,
@@ -50,7 +50,7 @@ export async function saveTarget(env, body) {
     state.targets[body.siteId] = target;
   });
 }
-async function sourcePackage(env, siteId, releaseId) {
+export async function sourcePackage(env, siteId, releaseId) {
   if (siteId === 'tanjug-test') {
     check(releaseId === metadata.descriptor.releaseId,'Nepoznat Tanjug paket.');
     const bytes = Uint8Array.from(atob(zipBase64),c => c.charCodeAt(0));
