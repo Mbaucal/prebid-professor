@@ -56,9 +56,10 @@ def exercise(page):
         page.locator('#runtime').select_option('0')
         check('Preview opt-in is not preselected',page.locator('#save-selection').is_disabled())
         page.locator('#allow-preview').check()
-        expect(page.locator('#release-history article')).to_have_count(3)
+        expect(page.locator('#release-history article')).to_have_count(len(json.loads(pathlib.Path('worker/runtime/runtime-releases.json').read_text())))
         expect(page.locator('#release-history article[data-available="true"]')).to_have_count(2)
-        expect(page.locator('#release-history article[data-available="false"]')).to_contain_text('Earlier build')
+        for row in page.locator('#release-history article[data-available="false"]').all():
+            expect(row).to_contain_text('Not selectable')
         writes_before=sum(event['method']=='POST' for event in http_events)
         page.get_by_role('link',name='View version history').click()
         page.locator('#release-history article').last.locator('summary').click()

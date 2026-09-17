@@ -11,7 +11,7 @@ function renderHistory(){
   for(const release of state.releaseHistory){
     const article=document.createElement('article');article.className='release';article.dataset.available=String(release.available);article.dataset.saved=String(release.saved);
     const heading=document.createElement('h3');heading.textContent=release.version+' · '+release.date;article.append(heading);
-    const status=document.createElement('p');status.className='release-status';status.textContent=(release.available?'Available on TEST':'Earlier build · saved packages only')+(release.saved?' · Saved on this site':'');article.append(status);
+    const status=document.createElement('p');status.className='release-status';status.textContent=(release.available?'Available on TEST':'Not selectable · saved packages unchanged')+(release.saved?' · Saved on this site':'');article.append(status);
     const title=document.createElement('p');title.className='release-title';title.textContent=release.title;article.append(title);
     const list=document.createElement('ul');for(const change of release.changes){const item=document.createElement('li');item.textContent=change;list.append(item);}article.append(list);
     const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Build details';details.append(summary);
