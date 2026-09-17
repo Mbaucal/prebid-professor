@@ -50,7 +50,9 @@ jobs:
       - name: Verify read-only ads version UI routes
         run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
       - name: Verify isolated bid-cache policy without changing any existing runtime
-        run: node --experimental-strip-types --test tests/runtime/bid-cache-policy.test.mjs tests/runtime/cache-lifecycle.test.mjs tests/runtime/cache-compiler.test.mjs tests/runtime/cache-candidate.test.mjs tests/runtime/cache-selection.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/bid-cache-policy.test.mjs tests/runtime/cache-lifecycle.test.mjs tests/runtime/cache-compiler.test.mjs tests/runtime/cache-candidate.test.mjs tests/runtime/cache-selection.test.mjs tests/runtime/tanjug-cache-review.test.mjs
+      - name: Prepare separate offline Tanjug cache pilot proposals without activation
+        run: node --experimental-strip-types scripts/prepare-tanjug-cache-review.mjs
       - name: Verify isolated experimental delivery, original package bytes and LOCAL A/A Worker
         run: node --experimental-strip-types --test tests/runtime/experiment-delivery.test.mjs tests/runtime/experiment-workerd.test.mjs tests/runtime/experiment-controls.test.mjs tests/runtime/experiment-reporting.test.mjs tests/runtime/gam-report.test.mjs tests/runtime/assignment-collection.test.mjs tests/runtime/experiment-inspect.test.mjs tests/runtime/observed-runtime.test.mjs tests/runtime/observed-candidate.test.mjs tests/runtime/measured-runtime.test.mjs tests/runtime/measured-candidate.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
@@ -78,6 +80,8 @@ jobs:
         run: python scripts/verify-test-workspace.py
       - name: Tanjug pilot preview and exact package download with all external traffic blocked
         run: python scripts/verify-tanjug-pilot.py
+      - name: Offline Tanjug cache proposal and exact candidate downloads without ads
+        run: python scripts/verify-tanjug-cache-review.py
       - name: New TEST deployment setup and version history (synthetic jobs only)
         run: python scripts/verify-deployment-ui.py
       - name: A/B TEST controls and stale-tab protection (local synthetic browser)
@@ -120,4 +124,11 @@ jobs:
             .generated/observed-evidence/*.json
             .generated/measured-evidence/*.json
           if-no-files-found: ignore
+          retention-days: 14
+      - name: Keep offline Tanjug proposals separately from synthetic test evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tanjug-cache-review-proposal
+          path: .generated/tanjug-cache-review/*
+          if-no-files-found: error
           retention-days: 14
