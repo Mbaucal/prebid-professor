@@ -14,11 +14,17 @@ export function inspectExperiments() {
       events:(snapshot.events||[]).slice(0,100).map(e=>({type:clean(e.type),elapsedMs:Number.isFinite(e.elapsedMs)?e.elapsedMs:null})),
       matchingPackageTags:scripts.filter(s=>s.url?.includes('/releases/'+c.packageSha256+'/')).length};
   });
-  const report={schemaVersion:1,experiments,scripts,observedPrebidVersion:clean(window.pbjs?.version),
+  const runtimeDiagnostics=Object.values(window.__tesseraRuntimeDiagnostics||{}).slice(0,20).map(d=>{
+    const s=typeof d.snapshot==='function'?d.snapshot():{};
+    const safeNumber=v=>Number.isFinite(v)&&v>=0?v:null;
+    const totals={};for(const k of ['requests','renders','empty','filled','iframeLoads','viewableEvents','ambiguousRenders'])totals[k]=safeNumber(s.totals?.[k]);
+    return {siteId:clean(s.siteId),runtimeVersion:clean(s.runtimeVersion),runtimeEntries:safeNumber(s.initializations),attempts:safeNumber(s.attempts),blockedDuplicates:safeNumber(s.blockedDuplicates),stopped:s.stopped===true,firstFilledRenderMs:safeNumber(s.firstFilledRenderMs),totals,droppedEvents:safeNumber(s.droppedEvents),events:(s.events||[]).slice(0,100).map(e=>({type:clean(e.type),slot:clean(e.slot),elapsedMs:safeNumber(e.elapsedMs),requestToRenderMs:safeNumber(e.requestToRenderMs)}))};
+  });
+  const report={schemaVersion:1,experiments,scripts,runtimeDiagnostics,observedPrebidVersion:clean(window.pbjs?.version),
     runtimeMarkerPresent:!!window.__TESSERA_RUNTIME_STARTED,
     confirmedRuntimeExecutions:null,
     notes:['Script tags and load events do not prove runtime initialization or impressions.',
-      'Execution count is unknown: existing runtimes do not expose a trustworthy counter.',
+      'Total execution count is unknown for uninstrumented runtimes; runtimeEntries counts entry into the new runtime, not successful auctions.',
       'Load errors alone cannot distinguish SRI, CSP and network failures. Check browser Console/Network.',
       'No experiment records may mean a legacy loader or no experiment; it does not prove no script ran.']};
   console.group('[Tessera] A/B inspect');console.table(experiments.map(({events,...row})=>row));console.table(scripts);console.log(report);console.groupEnd();
