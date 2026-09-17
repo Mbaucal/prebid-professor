@@ -49,6 +49,8 @@ jobs:
         run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs tests/runtime/site-runtime-selection.test.mjs tests/runtime/runtime-selection-cas.test.mjs tests/runtime/test-runtime-selection.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/tanjug-pilot.test.mjs
       - name: Verify read-only ads version UI routes
         run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
+      - name: Verify isolated experimental delivery, original package bytes and LOCAL A/A Worker
+        run: node --test tests/runtime/experiment-delivery.test.mjs tests/runtime/experiment-workerd.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:
