@@ -1,7 +1,7 @@
 # GAM measurement candidate — 3.12
 
-Status: candidate code in draft PR #63. Not in the selectable TEST catalog,
-not merged/deployed and not enabled on Tanjug. Existing engines and archives
+Status: candidate code in draft PR #63, explicitly selectable in the private TEST
+catalog. Not merged/deployed and not enabled on Tanjug. Existing engines and archives
 retain their exact bytes. No GAM account settings or CMP settings were changed.
 
 ## Request contract
@@ -33,8 +33,10 @@ investigated; ad delivery itself is not stopped by measurement failures.
 
 ## Before a measured pilot
 
-1. Make the candidate explicitly selectable in private TEST and verify full package
-   generation, pinned loader delivery and debugger together.
+1. Private TEST selection and package generation are integrated. Local Chromium
+   verification exercises the actual pinned loader, identical compiled A/A package,
+   both assignments, GPT request labels and debugger together with mock ad libraries.
+   This does not replace the approved staging check with real GPT.
 2. Both A and B must implement this measurement contract. A legacy control without
    labels cannot support a valid two-arm GAM revenue comparison. Begin with A/A of
    the new measured runtime; only then introduce a separately versioned cache arm.

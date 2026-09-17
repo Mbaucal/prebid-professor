@@ -40,6 +40,20 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                     page.evaluate("{const s=document.createElement('script');s.src='ads.js';s.nonce='fixture';document.head.append(s);}")
                     page.wait_for_load_state('networkidle')
                     check(name+': duplicate and SPA reinsertion cannot restart runtime',page.evaluate('window.fixtureExecutions')==1)
+                measured_results=[]
+                for name,variant in [('measureda','A'),('measuredb','B')]:
+                    page.goto(origin+'/case/'+name+'/')
+                    page.wait_for_function("window.__tesseraExperiments?.['test-site']?.status==='loaded' && requestLabels.some(r=>r.id==='Billboard') && requestLabels.some(r=>r.id==='adsx-takeover-slot')")
+                    result=page.evaluate("({context:__tesseraExperiments['test-site'].context,measurement:__tesseraGamMeasurement['test-site'].snapshot(),runtime:__tesseraRuntimeDiagnostics['test-site'].snapshot(),labels:requestLabels})")
+                    measured_results.append(result)
+                    expected='d'+result['context']['deliverySha256'][:32]+'_'+variant.lower()
+                    check(name+': original compiled 3.12 package runs once with correct request labels',result['context']['runtimeVersion']=='3.12.0-tessera.preview.1' and result['context']['variant']==variant and result['runtime']['initializations']==1 and all(r['value']==[expected] for r in result['labels']))
+                    page.evaluate("__testAds.service.refresh([adSlots.Billboard])")
+                    check(name+': refresh keeps assignment',page.evaluate('requestLabels.at(-1).value')==[expected])
+                    report=page.evaluate('() => {'+pathlib.Path('src/debug/experiment-inspect.mjs').read_text().split('export const experimentInspectCommand=')[0].replace('export function inspectExperiments()', 'function inspectExperiments()')+'\nreturn inspectExperiments();}')
+                    check(name+': inspector joins loader runtime and measurement',report['experiments'][0]['variant']==variant and report['gamMeasurement'][0]['value']==expected and report['runtimeDiagnostics'][0]['runtimeEntries']==1)
+                left,right=measured_results
+                check('Measured A/A uses identical package and delivery identity for both arms',left['context']['packageSha256']==right['context']['packageSha256'] and left['context']['deliverySha256']==right['context']['deliverySha256'] and left['measurement']['value']!=right['measurement']['value'])
                 for name,status,event in [('corrupt','load-error','load-error'),('corruptads','load-error','load-error'),('blocked','load-error','load-error'),('legacy','conflict','conflict')]:
                     page.goto(origin+'/case/'+name+'/')
                     page.wait_for_function("window.__tesseraExperiments?.['tanjug-test']?.status==="+json.dumps(status))

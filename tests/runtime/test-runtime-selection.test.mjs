@@ -27,7 +27,7 @@ test('unauthenticated settings API cannot read or write the database',async()=>{
 test('settings page and script require test authentication',async()=>{const f=fixture();for(const path of ['/runtime-selection','/runtime-selection.js']){const {r}=await request(f,path);assert.equal(r.status,303);assert.equal(r.headers.get('location'),'/login');}});
 test('settings screen preserves CSP and loads only its own client code',async()=>{const {f,cookie}=await ready();const {r}=await request(f,'/runtime-selection',cookie);assert.equal(r.status,200);assert.match(r.headers.get('content-security-policy'),/script-src 'self'/);const html=await r.text();assert.match(html,/Save runtime selection/);assert.match(html,/runtime-selection.js/);assert(!html.includes('gpt.js'));assert(!html.includes('<iframe'));});
 test('settings GET on an empty database does not initialize it',async()=>{const f=fixture(),cookie=await login(f);assert.equal((await settings(f,cookie)).r.status,409);assert.equal(f.sqlite.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table'").get().n,0);});
-test('settings GET exposes only the built-in catalog and public site fields',async()=>{const {f,cookie}=await ready();const c=config(f);c.internalOnly='do-not-expose-this-value';f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));const {r,data}=await settings(f,cookie);assert.equal(r.status,200);assert(!JSON.stringify(data).includes(c.internalOnly));assert.equal(data.selected,null);assert.equal(data.runtimes.length,3);assert.equal(data.runtimes[0].version,runtimeDescriptor.version);assert.equal(data.prebidEditable,false);assert.equal(f.log.puts.length,0);assert.equal(f.log.gets.length,0);});
+test('settings GET exposes only the built-in catalog and public site fields',async()=>{const {f,cookie}=await ready();const c=config(f);c.internalOnly='do-not-expose-this-value';f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));const {r,data}=await settings(f,cookie);assert.equal(r.status,200);assert(!JSON.stringify(data).includes(c.internalOnly));assert.equal(data.selected,null);assert.equal(data.runtimes.length,4);assert.equal(data.runtimes[0].version,runtimeDescriptor.version);assert.equal(data.prebidEditable,false);assert.equal(f.log.puts.length,0);assert.equal(f.log.gets.length,0);});
 test('history identifies an earlier saved build without changing its pin or enabling it',async()=>{
   const {f,cookie}=await ready();await selectCurrent(f,cookie);
   const c=config(f),old=runtimeReleaseHistory.at(-1);
@@ -40,7 +40,7 @@ test('history identifies an earlier saved build without changing its pin or enab
   const experimental=data.releaseHistory.find(r=>r.id==='tessera-observed-preview-1');
   assert.equal(experimental.available,true);assert.equal(experimental.saved,false);
   assert.equal(data.releaseHistory.at(-1).available,false);assert.equal(data.releaseHistory.at(-1).saved,true);
-  assert.equal(data.runtimes.length,3);assert.equal(data.runtimes[0].pin.runtimeSha256,runtimeDescriptor.codeSha256);
+  assert.equal(data.runtimes.length,4);assert.equal(data.runtimes[0].pin.runtimeSha256,runtimeDescriptor.codeSha256);
   assert.deepEqual(config(f),before);assert.equal(audits(f),auditCount);assert.equal(f.objects.size,0);
 });
 test('history reflects the exact explicitly saved build',async()=>{
@@ -93,5 +93,38 @@ test('3.11 is explicit TEST-only: both editors, saved package and A/B pins agree
  assert.equal((await request(f,'/test-api/experiments/start',cookie,{expectedRevision:saved.data.revision,experimentId:row.id})).r.status,200);
  const loader=await request(f,'/test-api/experiments/preview/test-site/ads.js',cookie);
  assert.equal(loader.r.status,200);assert.match(await loader.r.text(),/3.11.0-tessera.preview.1/);
+ const retained=new Uint8Array(await (await request(f,oldUrl,cookie)).r.arrayBuffer());assert.deepEqual(retained,original);
+});
+
+test('3.12 is explicit TEST-only: generate and save a measured A/A source while original archive stays identical',async()=>{
+ const {runtimeCatalog:mainCatalog,descriptorForPin:mainDescriptor}=await import('../../worker/test-workspace/runtime-catalog.mjs');
+ const {deploymentStore}=await import('../support/deployment-store.mjs');
+ const f=deploymentStore();fixtures.push(f);const cookie=await login(f);
+ assert.equal((await request(f,'/test-api/setup',cookie,{confirm:'prepare-empty-test-database'})).r.status,200);
+ await selectCurrent(f,cookie);
+ const baseline=await generate(f,cookie),old=await save(f,cookie,baseline.data.receipt);
+ const oldUrl='/test-api/releases/'+old.data.draft.id+'/download';
+ const original=new Uint8Array(await (await request(f,oldUrl,cookie)).r.arrayBuffer());
+ const state=(await settings(f,cookie)).data,observed=state.runtimes.find(r=>r.version==='3.12.0-tessera.preview.1');
+ assert(observed);assert.equal(mainCatalog.length,2);assert.throws(()=>mainDescriptor(observed.pin));
+ const selection=choice(state);selection.selection.runtime=observed.pin;selection.selection.allowPreview=false;
+ assert.equal((await select(f,cookie,selection)).r.status,422);
+ selection.selection.allowPreview=true;assert.equal((await select(f,cookie,selection)).r.status,200);
+ const editor=await request(f,'/test-api/site-runtime',cookie);
+ assert.equal(editor.data.selected.runtimeVersion,observed.version);assert.equal(editor.data.validationIssue,null);
+ const packages=await request(f,'/test-api/site-packages',cookie);assert.equal(packages.data.ready,true);
+ const generated=await request(f,'/test-api/site-packages',cookie,{action:'generate',revision:packages.data.revision,notes:'Measured TEST version'});
+ assert.equal(generated.r.status,201,JSON.stringify(generated.data));
+ const releaseId=generated.data.release.id;
+ const zip=unzipSync(new Uint8Array(await (await request(f,'/test-api/releases/'+releaseId+'/download',cookie)).r.arrayBuffer()));
+ assert.match(new TextDecoder().decode(zip['ads.js']),/__tesseraGamMeasurement/);
+ assert.equal(JSON.parse(new TextDecoder().decode(zip['manifest.json'])).runtime.runtimeVersion,observed.version);
+ const ex=await request(f,'/test-api/experiments',cookie);assert(ex.data.sources.some(s=>s.releaseId===releaseId));
+ const saved=await request(f,'/test-api/experiments/save',cookie,{expectedRevision:ex.data.revision,siteId:'test-site',releaseA:releaseId,releaseB:releaseId,trafficB:50});
+ assert.equal(saved.r.status,200,JSON.stringify(saved.data));
+ const row=saved.data.experiments.at(-1);
+ assert.equal((await request(f,'/test-api/experiments/start',cookie,{expectedRevision:saved.data.revision,experimentId:row.id})).r.status,200);
+ const loader=await request(f,'/test-api/experiments/preview/test-site/ads.js',cookie);
+ assert.equal(loader.r.status,200);assert.match(await loader.r.text(),/3.12.0-tessera.preview.1/);
  const retained=new Uint8Array(await (await request(f,oldUrl,cookie)).r.arrayBuffer());assert.deepEqual(retained,original);
 });
