@@ -1,5 +1,22 @@
 # Tanjug: first local check on the live page
 
+## Current standalone control kit — 3.14.1
+
+`TZ=UTC node --experimental-strip-types scripts/prepare-tanjug-local-3141.mjs`
+creates `.generated/tanjug-local-3141/tanjug-3.14.1-control-override.zip`.
+It uses the reviewed frozen 14 September TEST configuration, Billboard + Sticky
+only, fresh-only mode, and pinned Prebid 11.34.0. It does not claim those settings
+match the complete current live site. The original 3.13.0 kits below remain
+unchanged. Select the new ZIP's `overrides` folder instead of the old folder.
+
+This is a standalone runtime check, without an active experiment loader or
+fabricated assignment. **No `Variant=A/B` targeting value is expected here.**
+The 3.14.1 runtime supports that key when an actual loader assigns an arm;
+this package does not activate A/B delivery. The generator verifies the runtime
+pin, Prebid requirements and bytes, two-position scope, fresh-only configuration,
+manifest hashes, and exact ZIP entry round trips. Real browser override execution
+and Funding Choices/GPT verification remain pending.
+
 ## Current evidence
 
 On 18 September the live homepage was opened with its existing integration.
