@@ -70,7 +70,9 @@ try:
       r.fulfill(status=200,headers={'content-type':'application/javascript','access-control-allow-origin':'*'},body='window.BAD_ARM_RAN=true;');return
      r.continue_()
     context.route('**/*',route);page=context.new_page();errors=[];requested=[]
-    page.on('pageerror',lambda e:errors.append(str(e)))
+    def page_error(e):
+     errors.append(str(e));print(json.dumps({'case':case,'arm':arm,'pageError':str(e),'stack':e.stack}),flush=True)
+    page.on('pageerror',page_error)
     page.on('request',lambda r:requested.append(urllib.parse.urlsplit(r.url).path) if r.url.startswith(origin+'/') else None)
     page.goto(origin+'/fixture?case='+case)
     if case in ['wrong','failed','tampered']:
@@ -103,8 +105,9 @@ try:
      wait(page,'AdVariant.snapshot().blockedRuntimeEntries===1')
      check(label+': direct duplicate arm execution blocked',page.evaluate('AdVariant.snapshot().runtimeEntries===1'))
      check(label+': debugger agrees with actual slot targeting',page.evaluate('JSON.stringify(AdVariant.inspect().slots)===JSON.stringify(AdVariant.snapshot().slots)'))
-     page_errors+=errors;check(label+': no unhandled JavaScript error',not errors)
+     page_errors.extend({'case':label,'error':e} for e in errors)
     context.close()
+   check('No unhandled JavaScript error in any successful delivery case',not page_errors)
   finally:browser.close()
 finally:server.shutdown()
 report={'scope':'CI loopback Chromium; shipped ZIP scripts + native Prebid, synthetic GPT/TCF; external attempts blocked, no live auction',
