@@ -44,11 +44,19 @@ def check(name,ok):
  assert ok,name
  checks.append({'name':name,'passed':True});print('PASS '+name,flush=True)
 
+def wait(page,expression,timeout=30000):
+ deadline=time.monotonic()+timeout/1000
+ while time.monotonic()<deadline:
+  if page.evaluate(expression):return
+  time.sleep(.05)
+ print(json.dumps({'waitingFor':expression,'state':page.evaluate('window.AdVariant?.snapshot()'),'pageErrors':errors}),flush=True)
+ raise AssertionError('Timed out: '+expression)
+
 server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
 origin='http://127.0.0.1:'+str(server.server_port)
 try:
  with sync_playwright() as p:
-  browser=p.chromium.launch(headless=True,args=['--no-proxy-server','--disable-quic','--host-resolver-rules=MAP * ~NOTFOUND'])
+  browser=p.chromium.launch(headless=True,args=['--no-proxy-server','--disable-quic','--host-resolver-rules=EXCLUDE 127.0.0.1, MAP * ~NOTFOUND'])
   try:
    for arm,width,case in [('A',1280,'normal'),('B',390,'normal'),('A',1280,'delayed'),('B',1280,'auto'),('A',1280,'duplicate'),('A',1280,'wrong'),('A',1280,'failed'),('A',1280,'tampered')]:
     context=browser.new_context(viewport={'width':width,'height':900},service_workers='block')
@@ -64,12 +72,12 @@ try:
     page.on('request',lambda r:requested.append(urllib.parse.urlsplit(r.url).path) if r.url.startswith(origin+'/') else None)
     page.goto(origin+'/fixture?case='+case)
     if case in ['wrong','failed','tampered']:
-     page.wait_for_function("window.AdVariant?.snapshot().status==='error'",timeout=35000)
+     wait(page,"window.AdVariant?.snapshot().status==='error'",timeout=35000)
      state=page.evaluate('AdVariant.snapshot()')
      check(case+': no runtime/auction after dependency or integrity failure',state['runtimeEntries']==0 and not page.evaluate('Boolean(window.BAD_ARM_RAN)'))
      check(case+': specific diagnostic',state['error']=={'wrong':'prebid-version-mismatch','failed':'prebid-load-error','tampered':'arm-load-error'}[case])
     else:
-     page.wait_for_function("window.AdVariant?.snapshot().status==='loaded' && window.AdVariant.snapshot().appliedSlots===19",timeout=35000)
+     wait(page,"window.AdVariant?.snapshot().status==='loaded' && window.AdVariant.snapshot().appliedSlots===19",timeout=35000)
      state=page.evaluate('AdVariant.snapshot()')
      label=arm+' '+str(width)+' '+case
      check(label+': exact packaged runtime once with native Prebid',state['runtimeEntries']==1 and state['variant']==arm and state['prebidVersion']=='11.34.0')
@@ -78,19 +86,19 @@ try:
      check(label+': only selected arm fetched',arm_paths==['/'+config['arms'][arm]['path']])
      check(label+': one Prebid fetch',len([x for x in requested if x.endswith('/prebid.js')])==1)
      check(label+': fluid and 1x1 retained',page.evaluate("adSlots.InText_1.sizes.some(s=>s==='fluid') && adSlots.InText_1.sizes.some(s=>Array.isArray(s)&&s[0]===1&&s[1]===1)"))
-     page.wait_for_function('__testAds.observations.requests.length>0',timeout=15000)
+     wait(page,'__testAds.observations.requests.length>0',timeout=15000)
      check(label+': every first request carries Variant',page.evaluate('__testAds.observations.requests.every(r=>r.Variant==='+json.dumps(arm)+')'))
      page.locator('#InText_1').scroll_into_view_if_needed()
-     page.wait_for_function("__testAds.observations.requests.some(r=>r.id==='InText_1')",timeout=15000)
+     wait(page,"__testAds.observations.requests.some(r=>r.id==='InText_1')",timeout=15000)
      check(label+': lazy request carries Variant',page.evaluate("__testAds.observations.requests.filter(r=>r.id==='InText_1').every(r=>r.Variant==="+json.dumps(arm)+')'))
      page.evaluate('__testAds.service.refresh(Object.values(adSlots))')
      check(label+': refresh keeps labels on all slots',page.evaluate('__testAds.observations.requests.every(r=>r.Variant==='+json.dumps(arm)+')'))
      if case=='duplicate':check('duplicate HTML loader blocked',state['blockedDuplicateLoaders']==1)
      page.evaluate("() => {const s=document.createElement('script');s.src='/ads.js';s.nonce='fixture';document.head.append(s);}")
-     page.wait_for_function('AdVariant.snapshot().blockedDuplicateLoaders>='+str(2 if case=='duplicate' else 1))
+     wait(page,'AdVariant.snapshot().blockedDuplicateLoaders>='+str(2 if case=='duplicate' else 1))
      check(label+': reinsertion does not switch or launch another arm',page.evaluate('AdVariant.snapshot().runtimeEntries===1 && AdVariant.snapshot().variant==='+json.dumps(arm)))
      page.evaluate("() => {const s=document.createElement('script');s.src=AdVariant.snapshot().script;s.nonce='fixture';document.head.append(s);}")
-     page.wait_for_function('AdVariant.snapshot().blockedRuntimeEntries===1')
+     wait(page,'AdVariant.snapshot().blockedRuntimeEntries===1')
      check(label+': direct duplicate arm execution blocked',page.evaluate('AdVariant.snapshot().runtimeEntries===1'))
      check(label+': debugger agrees with actual slot targeting',page.evaluate('JSON.stringify(AdVariant.inspect().slots)===JSON.stringify(AdVariant.snapshot().slots)'))
      page_errors+=errors;check(label+': no unhandled JavaScript error',not errors)
