@@ -5,6 +5,11 @@ test page. Real CMP/GPT validation will take place on live Tanjug when the pilot
 is ready. A separate hostname is no longer required. This supersedes the older
 isolated-page requirement in previous review artifacts and progress notes.
 
+The [first local live-page check](TANJUG-LOCAL-CHECK.md) now has separate
+response-override ZIPs and a read-only CDN capture tool. The live page's script
+URLs and Tanjug Funding Choices entry have been observed; the new candidate has
+not yet run in that page.
+
 `tanjug-cache-review-v1` prepares two new 3.13.0 candidate packages for
 **Billboard and Sticky only**. It is not deployed, stored as a release or
 activated. It does not change the frozen `tanjug-test-v1` package, the TEST

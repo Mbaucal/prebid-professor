@@ -1,0 +1,78 @@
+{
+  "observedAt": "2026-09-18T05:30:00Z",
+  "scope": "Read-only DOM and existing-wrapper console inspection in the cloud browser; no new runtime or override executed",
+  "cmpFrameNames": [
+    "googlefcPresent",
+    "__tcfapiLocator",
+    "googlefcInactive",
+    "googlefcLoaded"
+  ],
+  "pageUrl": "https://www.tanjug.rs/",
+  "scriptTags": [
+    {
+      "async": true,
+      "defer": false,
+      "integrity": null,
+      "src": "https://securepubads.g.doubleclick.net/tag/js/gpt.js"
+    },
+    {
+      "async": true,
+      "defer": false,
+      "integrity": null,
+      "src": "https://tanjug.pages.dev/ads.js"
+    },
+    {
+      "async": true,
+      "defer": false,
+      "integrity": null,
+      "src": "https://tanjug.pages.dev/prebid.js"
+    },
+    {
+      "async": true,
+      "defer": false,
+      "integrity": null,
+      "src": "https://fundingchoicesmessages.google.com/i/22852026051?ers=3"
+    }
+  ],
+  "slotElements": [
+    {
+      "id": "Billboard",
+      "iframeCount": 1
+    },
+    {
+      "id": "Billboard_2",
+      "iframeCount": 0
+    },
+    {
+      "id": "P1",
+      "iframeCount": 1
+    },
+    {
+      "id": "P2",
+      "iframeCount": 0
+    },
+    {
+      "id": "Billboard_3",
+      "iframeCount": 0
+    },
+    {
+      "id": "P3",
+      "iframeCount": 0
+    },
+    {
+      "id": "Sticky",
+      "iframeCount": 0
+    }
+  ],
+  "existingWarnings": [
+    "GPT display called for missing P4, P5 and P6 divs on the homepage.",
+    "Deprecated GPT targeting getter warnings."
+  ],
+  "limitations": [
+    "DOM script tags do not prove execution count, exact response bytes or initial loading order.",
+    "Funding Choices presence does not verify consent decisions or reopening.",
+    "Slot iframe presence does not prove filled impressions or revenue.",
+    "No candidate was executed; this ordinary baseline visit used the existing publisher integration and could request real ads.",
+    "No raw consent strings, tracking request URLs, cookies or bid identifiers are retained."
+  ]
+}
