@@ -17,6 +17,17 @@ and deprecated GPT targeting getters. These are baseline observations, not new
 candidate regressions. They have not been fixed by changing an old script.
 Raw tracking request URLs, consent strings, cookies and bid IDs were not saved.
 
+The read-only [18 September CDN capture](../evidence/tanjug-live-capture-20260918.json)
+succeeded in CI: current Prebid declares **10.10.0**, whereas both new candidates
+use the pinned **11.34.0**. Both current public script hashes match the earlier
+14 September compact-delivery baseline. Comparing the new A and B isolates cache
+mode within 3.13.0; comparing either with the old live setup also changes runtime
+and Prebid, so it cannot isolate the benefit of cache alone.
+
+The [captured public files](https://github.com/Mbaucal/prebid-professor/actions/runs/35311518659/artifacts/10533388504)
+are retained until 2 October 2026. Capture again immediately before testing;
+neither this observation nor the local kits pin future public CDN delivery.
+
 ## Prepared local replacement kits
 
 `node --experimental-strip-types scripts/prepare-tanjug-local-check.mjs`
@@ -72,3 +83,19 @@ source; they do not pin the CDN or automatically restore a previous deployment.
 Public cohort selection, complete inventory support and an actual hosted
 rollback are separate subsequent work. The existing experiment Stop still
 chooses the new control package, not the old live script.
+
+## Verification and downloads
+
+Code commit `95c33eb58546ee28a33c5fc29e3912672cfb817e` passed all six CI workflows,
+including both workspace jobs. Nine focused local checks passed; the existing
+six-record runtime provenance guard passed. The CDN capture made four read-only
+GETs and ran no downloaded code. Existing synthetic browser regressions passed.
+The response override mechanism itself has not been exercised in a real Chrome
+profile, and the new runtime has not been run against live Tanjug's CMP/GPT.
+
+- [CI evidence](https://github.com/Mbaucal/prebid-professor/actions/runs/35311518659)
+- [Both local override kits](https://github.com/Mbaucal/prebid-professor/actions/runs/35311518659/artifacts/10533129376)
+- [Current public script capture](https://github.com/Mbaucal/prebid-professor/actions/runs/35311518659/artifacts/10533388504)
+
+Artifacts expire on 2 October 2026. Candidate kits can be reproduced from the
+pinned source; recapturing the public baseline observes whatever is live then.

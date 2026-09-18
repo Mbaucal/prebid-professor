@@ -1,5 +1,5 @@
 {
-  "observedAt": "2026-09-18T05:30:00Z",
+  "observedAt": "2026-09-18",
   "scope": "Read-only DOM and existing-wrapper console inspection in the cloud browser; no new runtime or override executed",
   "cmpFrameNames": [
     "googlefcPresent",
