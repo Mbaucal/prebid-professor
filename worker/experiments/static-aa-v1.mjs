@@ -13,6 +13,7 @@ export function bootStaticAA(config) {
   var attempts = 1, entries = 0, blockedEntries = 0, applied = 0, failed = 0;
   var status = 'starting', reason = null, events = [], assigned = null;
   var cleanup = function() {}, owned = new WeakSet(), requests = 0, renders = 0;
+  function prebidVersion(){return window.pbjs&&typeof window.pbjs.version==='string'?window.pbjs.version.replace(/^v/,''):null;}
   function event(type) { if (events.length < 50) events.push({type:type,ms:Date.now()-started}); }
   function fail(code) { if (status === 'error') return; status='error';reason=code;cleanup();event(code); }
   function targeting(slot) {
@@ -26,7 +27,7 @@ export function bootStaticAA(config) {
     }); } catch (_) {}
     return {release:config.release,baseRuntime:config.baseRuntime,variant:assigned,status:status,error:reason,
       script:assigned?new URL(config.arms[assigned].path,base).href:null,scriptSha256:config.armSha256,
-      prebidVersion:window.pbjs&&window.pbjs.version||null,mode:'fresh-only',
+      prebidVersion:prebidVersion(),mode:'fresh-only',
       loaderAttempts:attempts,blockedDuplicateLoaders:attempts-1,runtimeEntries:entries,blockedRuntimeEntries:blockedEntries,
       configuredPositions:config.positions.slice(),appliedSlots:applied,targetingFailures:failed,
       requests:requests,renders:renders,slots:slots,events:events.slice()};
@@ -79,7 +80,7 @@ export function bootStaticAA(config) {
   function loadArm(){
     if(status==='error'||status==='loading-arm'||status==='loaded')return;
     if(window.__TESSERA_RUNTIME_STARTED){fail('existing-runtime-conflict');return;}
-    if(!window.pbjs||window.pbjs.version!==config.prebidVersion){fail('prebid-version-mismatch');return;}
+    if(prebidVersion()!==config.prebidVersion){fail('prebid-version-mismatch');return;}
     status='loading-arm';event('prebid-ready');
     insert(config.arms[assigned].path,config.arms[assigned].integrity,function(){
       if(entries!==1){fail('runtime-did-not-enter');return;}status='loaded';event('arm-loaded');

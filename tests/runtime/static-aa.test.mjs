@@ -46,6 +46,11 @@ test('existing runtime and wrong Prebid stop before an arm is requested',()=>{
   const f=fixture('A',patch);assert.equal(f.inserted.length,0);assert.equal(f.win.AdVariant.snapshot().status,'error');
  }
 });
+test('native Prebid v-prefixed version is accepted and normalized',()=>{
+ const f=fixture('A',{pbjs:{version:'v11.34.0'}});
+ assert.equal(f.inserted.length,1);assert(f.inserted[0].src.endsWith('/A.js'));
+ assert.equal(f.win.AdVariant.snapshot().prebidVersion,'11.34.0');
+});
 test('missing dependency is loaded once before arm and dependency failure cannot launch an arm',()=>{
  const f=fixture('B',{pbjs:undefined});assert.equal(f.inserted.length,1);assert(f.inserted[0].src.endsWith('/prebid.js'));
  f.win.pbjs={version:config.prebidVersion};f.inserted[0].onload();assert.equal(f.inserted.length,2);

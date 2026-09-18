@@ -23,7 +23,7 @@ class Handler(BaseHTTPRequestHandler):
    if case=='duplicate':tags+=tags
    if case not in ['auto','tampered']:
     tags+='<script nonce="fixture" src="/prebid.js?case='+case+'" async></script>'
-   data=('<!doctype html><meta charset="utf-8"><title>A/A fixture</title><script nonce="fixture" src="/mock.js"></script>'+tags+'<body>'+positions+'</body>').encode();typ='text/html'
+   data=('<!doctype html><meta charset="utf-8"><title>A/A fixture</title><link rel="stylesheet" href="/min-height.css"><script nonce="fixture" src="/mock.js"></script>'+tags+'<body>'+positions+'</body>').encode();typ='text/html'
   elif path=='/mock.js':data=mock.encode()
   elif path=='/prebid.js' and query.get('case')==['delayed']:
    time.sleep(2);data=(root/'prebid.js').read_bytes()
@@ -33,7 +33,9 @@ class Handler(BaseHTTPRequestHandler):
    self.send_error(404);return
   else:
    candidate=root/path.lstrip('/')
-   if candidate.is_file() and root.resolve() in candidate.resolve().parents:data=candidate.read_bytes()
+   if candidate.is_file() and root.resolve() in candidate.resolve().parents:
+    data=candidate.read_bytes()
+    if path.endswith('.css'):typ='text/css'
   if data is None:self.send_error(404);return
   self.send_response(200);self.send_header('Content-Type',typ);self.send_header('Access-Control-Allow-Origin','*')
   self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(data)))
