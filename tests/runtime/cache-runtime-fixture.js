@@ -28,7 +28,7 @@ window.fixtureRequests=[];window.fixtureBids=[];
 __testAds.service.addEventListener('slotRequested',({slot})=>{
   const id=slot.getTargeting('hb_adid')[0],bid=id?pbjs.getBidResponseByAdId(id):null;
   fixtureRequests.push({id:slot.id,cpm:bid?.cpm??null,status:bid?.status??null,ageMs:bid?Date.now()-bid.responseTimestamp:null,
-    version:slot.getTargeting('hb_ver'),experiment:slot.getTargeting('tessera_ab')});
+    version:slot.getTargeting('hb_ver'),experiment:slot.getTargeting('Varijant').length?slot.getTargeting('Varijant'):slot.getTargeting('tessera_ab'),publicVariant:slot.getTargeting('Varijant'),legacyExperiment:slot.getTargeting('tessera_ab')});
 });
 window.installFixtureAdapters=()=>{
   for(const bidder of ['pubmatic','openx'])pbjs.registerBidAdapter(null,bidder,{

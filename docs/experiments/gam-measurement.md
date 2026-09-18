@@ -1,3 +1,30 @@
+# Current public key: Varijant (3.14.0)
+
+The new 3.14.0 candidate sends exactly `Varijant=A` or `Varijant=B` on its
+owned GPT slots, before requests. It does not send the previous branded key.
+Register `Varijant` with predefined values `A` and `B` in GAM and enable
+Report on values. No experiment hash is part of the public value. The full
+experiment/revision/package identity remains in the private mapping and debugger.
+
+Both arms must use this measurement format. Prepare GAM values exports the
+literal A/B values; it does not activate the test. Unknown, inactive or mismatched
+loader contexts remain unlabelled. The standalone local-control ZIP is not an
+active A/B experiment and does not invent an assignment.
+
+A/B values are deliberately shared by subsequent experiments. Filter GAM reports
+to the selected site, ad units and test period; never combine overlapping tests
+or revisions in one report. A CSV containing just A/B cannot prove which test it
+came from. The importer retains this attribution limitation and cannot declare a
+winner. Legacy mappings stay append-only and use their original format.
+
+3.14.0 inherits 3.13.0 auction/cache/consent behavior without changing those frozen
+sources. It is selectable only in the private TEST catalog; no deployment or
+live activation is implied.
+
+The following documents the retained 3.12/3.13 measurement format and history.
+
+---
+
 # GAM measurement candidate — 3.12
 
 Status: candidate code in draft PR #63, explicitly selectable in the private TEST

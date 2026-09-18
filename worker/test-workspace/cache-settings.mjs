@@ -1,7 +1,7 @@
 // TEST editor policy only; never part of a frozen runtime source closure.
 import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
 export const CACHE_RUNTIME_ID='tessera-cache-preview-1';
-export const usesBidCache=pin=>pin?.runtimeId===CACHE_RUNTIME_ID;
+export const usesBidCache=pin=>[CACHE_RUNTIME_ID,'variant-labels-preview-1'].includes(pin?.runtimeId);
 export function normalizeBidCache(value){
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join('|')!=='maxAgeSeconds|mode'
     ||!['fresh-only','auction-with-cache'].includes(value.mode)||!Number.isInteger(value.maxAgeSeconds)||value.maxAgeSeconds<1||value.maxAgeSeconds>300)
@@ -13,5 +13,5 @@ export function readCacheSettings(snapshot){
 }
 export function validateCacheSelection(selection){
   if(usesBidCache(selection?.runtime))normalizeBidCache(selection.bidCache);
-  else if(Object.hasOwn(selection??{},'bidCache'))throw new RuntimeSelectionError('unsupported_cache_settings','Bid-cache settings require the explicit 3.13.0 TEST version.');
+  else if(Object.hasOwn(selection??{},'bidCache'))throw new RuntimeSelectionError('unsupported_cache_settings','Bid-cache settings require the explicit cache-capable TEST version.');
 }

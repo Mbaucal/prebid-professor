@@ -61,7 +61,7 @@ function parseCsv(csv) {
 }
 function validPlan(plan) {
   check(plan?.kind==='tessera-gam-reporting-plan'&&plan.labelsReady&&plan.arms?.length===2,'Both script versions need verified GAM labels.');
-  for(const [i,variant] of ['A','B'].entries())check(plan.arms[i].variant===variant&&plan.arms[i].value===gamValue(plan.deliverySha256,variant),'Invalid reporting mapping.');
+  for(const [i,variant] of ['A','B'].entries())check(plan.arms[i].variant===variant&&plan.arms[i].value===gamValue(plan.deliverySha256,variant,plan.key),'Invalid reporting mapping.');
 }
 export function gamReportTemplate(plan) {
   validPlan(plan);
@@ -92,7 +92,7 @@ export async function previewGamReport(plan,input,assignments=null,now=Date.now(
     const raw=Object.fromEntries(GAM_COLUMNS.map((k,i)=>[k,cells[i]]));
     const time=date(raw.date);check(time>=start&&time<=end,'CSV contains a date outside the chosen period.');
     const arm=plan.arms.find(a=>a.value===raw.value);
-    check(arm,'CSV contains a value from a different experiment or an unlabeled row.');
+    check(arm,'CSV contains an unsupported variant value or an unlabeled row.');
     const identity=raw.date+':'+arm.variant;
     check(!seen.has(identity),'Duplicate day/variant row. Remove totals or additional dimensions before importing.');seen.add(identity);
     const row={date:raw.date,variant:arm.variant,impressions:whole(raw.impressions),revenueMicros:money(raw.revenue)};
@@ -119,6 +119,7 @@ export async function previewGamReport(plan,input,assignments=null,now=Date.now(
   if(assignments?.atCapacity)blockers.push('The private assignment sample reached its limit.');
   blockers.push('Total assignment coverage is unknown; revenue per assigned page cannot be calculated.');
   blockers.push('Imported GAM data and inventory scope require verification against the source report.');
+  if(plan.key==='Varijant')blockers.push('A/B values do not identify a test. Verify the GAM site, ad units and date filters; do not combine overlapping tests or revisions.');
   const total=(selected,key)=>{
     if(selected.length===0||selected.some(r=>r[key]===null))return null;
     return selected.reduce((n,r)=>{const sum=n+r[key];check(Number.isSafeInteger(sum),'Report totals exceed the supported precision.');return sum;},0);

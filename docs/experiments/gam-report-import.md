@@ -22,7 +22,7 @@ UI/API export format. No localized-header or metric-name guessing is performed.
 | CSV column | Source / format |
 | --- | --- |
 | `date` | GAM report date, `YYYY-MM-DD`, in its original time zone |
-| `value` | Exact `tessera_ab` value from the selected experiment |
+| `value` | `A` or `B` for `Varijant` (3.14.0); original mapped value for legacy experiments |
 | `impressions` | Total impressions, whole number |
 | `revenue` | Selected Total revenue or Total CPM and CPC revenue, decimal currency units |
 | `adRequests` | Total ad requests, whole number, optional with responsesServed |
@@ -97,3 +97,14 @@ assert that review causes no R2 writes. The CI Chromium flow uses the actual TES
 Worker: generate measured A/A, prepare mapping, download template, upload synthetic
 CSV, download JSON, reject duplicate rows, show missing B/time-zone mismatch and
 check mobile layout. Synthetic data only; no live GAM requests.
+
+## Public A/B values in 3.14.0
+
+New candidates use `Varijant` with exactly `A` and `B`. Prepare GAM values and
+the CSV template use that key and those values. Legacy stored mappings are not
+rewritten, and mixed measurement formats cannot export a comparison.
+
+Because values are reused, the importer cannot detect a report from a different
+test by its A/B labels alone. Filter the source GAM report to the chosen site,
+ad units and non-overlapping test period/revision. The preview explicitly retains
+this verification requirement; revenue readiness and winner remain unavailable.

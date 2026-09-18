@@ -1,5 +1,6 @@
 /** Private TEST adapter only. Main application keeps the existing catalog. */
 import { runtimeDescriptor as measured, buildArtifactCandidate as measuredCandidate } from '../runtime-measured/artifact-candidate.mjs';
+import { runtimeDescriptor as variant, buildArtifactCandidate as variantCandidate } from '../runtime-variant/artifact-candidate.mjs';
 import { runtimeDescriptor as cached, buildArtifactCandidate as cachedCandidate } from '../runtime-cache/artifact-candidate.mjs';
 import { previewInput as cachedInput, PREBID_SHA256 } from '../runtime-cache/snapshot.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
@@ -16,7 +17,7 @@ import { buildArtifactCandidate as referenceCandidate } from '../runtime/artifac
 import { buildArtifactCandidate as positionsCandidate } from '../runtime-next/artifact-candidate.mjs';
 import { prepareSiteRuntimeSelection as prepare, readPinnedSiteRuntime as read } from '../runtime/site-runtime-selection.mjs';
 import { takeOverForBuild } from './takeover-settings.mjs';
-export const runtimeCatalog=[validateRuntimeDescriptor(next),reference,observed,measured,cached];
+export const runtimeCatalog=[validateRuntimeDescriptor(next),reference,observed,measured,cached,variant];
 export const runtimeDescriptor=runtimeCatalog[0];
 export function descriptorForPin(pin){
   const descriptor=runtimeCatalog.find(r=>r.id===pin?.runtimeId&&r.version===pin?.runtimeVersion);
@@ -25,10 +26,10 @@ export function descriptorForPin(pin){
 }
 export function previewInput(snapshot,descriptor,time,takeOver){
   const config=JSON.parse(snapshot.config.config_json);
-  if(descriptor.id===next.id||descriptor.id===observed.id||descriptor.id===measured.id||descriptor.id===cached.id){
+  if(descriptor.id===next.id||descriptor.id===observed.id||descriptor.id===measured.id||descriptor.id===cached.id||descriptor.id===variant.id){
     const codes=Object.keys(config.runtimeControls?.adPositions??{});
     if(codes.some(code=>snapshot.units.find(unit=>unit.code===code)?.enabled!==1))throw Error('Enable the TakeOver ad position, or explicitly change its display to Standard before disabling it.');
-    const input=(descriptor.id===cached.id?cachedInput:positionsInput)(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
+    const input=((descriptor.id===cached.id||descriptor.id===variant.id)?cachedInput:positionsInput)(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
     if(input.overlay?.demand==='site'&&config.enablePrebid!==true)throw Error('This TakeOver uses Prebid + GAM. Enable Prebid or explicitly change its demand to GAM only.');
     if(input.overlay){
       const base=input.overlay.unit.sizeMapName,maps=input.core.sizeMapsRaw;
@@ -40,12 +41,12 @@ export function previewInput(snapshot,descriptor,time,takeOver){
   return referenceInput(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
 }
 function exactCachePrebid(pin,prebid){
-  if(usesBidCache(pin)&&prebid?.sha256!==PREBID_SHA256)throw new RuntimeSelectionError('cache_prebid_mismatch','Version 3.13.0 requires the exact reviewed Prebid 11.34.0 file. Keep the current script version or explicitly choose that file in Prebid and bidders.');
+  if(usesBidCache(pin)&&prebid?.sha256!==PREBID_SHA256)throw new RuntimeSelectionError('cache_prebid_mismatch','This cache version requires the exact reviewed Prebid 11.34.0 file. Keep the current script version or explicitly choose that file in Prebid and bidders.');
 }
 export async function prepareSiteRuntimeSelection(args,bucket){
   const copy=structuredClone(args),original=copy.snapshot,selection=copy.selection,reviewedRevision=copy.expectedRevision;
   if(Object.hasOwn(selection??{},'bidCache')){
-    if(!usesBidCache(selection.runtime))throw new RuntimeSelectionError('unsupported_cache_settings','Bid-cache settings require the explicit 3.13.0 TEST version.');
+    if(!usesBidCache(selection.runtime))throw new RuntimeSelectionError('unsupported_cache_settings','Bid-cache settings require the explicit cache-capable TEST version.');
     const policy=normalizeBidCache(selection.bidCache);delete selection.bidCache;
     if(copy.expectedRevision!==await digest(original))throw new RuntimeSelectionError('configuration_changed','Site settings changed. Reload before saving.',409);
     const config=JSON.parse(original.config.config_json);config.runtimeControls??={};config.runtimeControls.bidCache=policy;
@@ -63,5 +64,5 @@ export async function readPinnedSiteRuntime(args,bucket){
 export async function buildArtifactCandidate(args){
   const descriptor=descriptorForPin(args.pin);
   previewInput(args.snapshot,descriptor,args.buildTimestamp,args.takeOver);
-  return descriptor.id===cached.id?cachedCandidate(args):descriptor.id===measured.id?measuredCandidate(args):descriptor.id===observed.id?observedCandidate(args):descriptor.id===next.id?positionsCandidate(args):referenceCandidate(args);
+  return descriptor.id===variant.id?variantCandidate(args):descriptor.id===cached.id?cachedCandidate(args):descriptor.id===measured.id?measuredCandidate(args):descriptor.id===observed.id?observedCandidate(args):descriptor.id===next.id?positionsCandidate(args):referenceCandidate(args);
 }
