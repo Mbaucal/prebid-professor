@@ -1,4 +1,5 @@
-// Self-contained console command. Reads only; no network, auctions or CMP calls.
+// Self-contained console command. Reads diagnostics; never starts an auction,
+// sets targeting, refreshes a slot, or exports diagnostics to the network.
 export function inspectExperiments() {
   const clean = value => typeof value === 'string' ? value.slice(0,180) : null;
   const url = value => { try { const u=new URL(value);return /^https?:$/.test(u.protocol)?u.origin+u.pathname:null; } catch { return null; } };

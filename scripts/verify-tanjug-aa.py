@@ -64,7 +64,9 @@ try:
   try:
    for arm,width,case in [('A',1280,'normal'),('B',390,'normal'),('A',1280,'delayed'),('B',1280,'auto'),('A',1280,'duplicate'),('A',1280,'wrong'),('A',1280,'failed'),('A',1280,'tampered')]:
     context=browser.new_context(viewport={'width':width,'height':900},service_workers='block')
-    context.add_init_script("Crypto.prototype.getRandomValues=function(a){a.fill("+('0' if arm=='A' else '4294967295')+");return a;};")
+    # Force the loader's one-word allocation draw only. Native Prebid UUID/bid-ID
+    # entropy must remain intact or different ad units can acquire the same ID.
+    context.add_init_script("{const original=Crypto.prototype.getRandomValues;let assigned=false;Crypto.prototype.getRandomValues=function(a){if(!assigned && a instanceof Uint32Array && a.length===1){assigned=true;a[0]="+('0' if arm=='A' else '4294967295')+";return a;}return original.call(this,a);};}")
     def route(r):
      if not r.request.url.startswith(origin+'/'):
       blocked.add(urllib.parse.urlsplit(r.request.url).hostname)
