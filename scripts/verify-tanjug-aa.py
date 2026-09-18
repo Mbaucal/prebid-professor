@@ -32,6 +32,7 @@ class Handler(BaseHTTPRequestHandler):
   elif path=='/prebid.js' and query.get('case')==['wrong']:
    data=b'window.pbjs={version:"10.10.0"};'
   elif path=='/prebid.js' and query.get('case')==['failed']:
+   time.sleep(.5)  # Let the loader attach to the parser-created async tag.
    self.send_error(404);return
   else:
    candidate=root/path.lstrip('/')
@@ -94,7 +95,10 @@ try:
      wait(page,"window.AdVariant?.snapshot().status==='error'",timeout=35000)
      state=page.evaluate('AdVariant.snapshot()')
      check(case+': no runtime/auction after dependency or integrity failure',state['runtimeEntries']==0 and not page.evaluate('Boolean(window.BAD_ARM_RAN)'))
-     check(case+': specific diagnostic',state['error']=={'wrong':'prebid-version-mismatch','failed':'prebid-load-error','tampered':'arm-load-error'}[case])
+     # An already-failed async HTML tag cannot replay its error event. The frozen
+     # loader then reaches its bounded dependency timeout; neither path enters an arm.
+     expected={'wrong':['prebid-version-mismatch'],'failed':['prebid-load-error','prebid-timeout'],'tampered':['arm-load-error']}
+     check(case+': specific diagnostic',state['error'] in expected[case])
     else:
      wait(page,"window.AdVariant?.snapshot().status==='loaded' && window.AdVariant.snapshot().appliedSlots===19",timeout=35000)
      state=page.evaluate('AdVariant.snapshot()')
