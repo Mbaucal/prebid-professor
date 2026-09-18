@@ -43,17 +43,43 @@ export function inspectExperiments() {
       lastSelection:last?{code:clean(last.code),origin:['fresh','cache','none','error'].includes(last.origin)?last.origin:null,ageMs:count(last.ageMs),
         reason:['clear-targeting','context-changed','configuration-changed','native-targeting','targeting-status'].includes(last.reason)?last.reason:null}:null};
   });
-  const report={schemaVersion:1,experiments,scripts,runtimeDiagnostics,gamMeasurement,cacheDiagnostics,observedPrebidVersion:clean(window.pbjs?.version),
+  let staticDelivery=null,bidReadiness=null;
+  const number=v=>Number.isFinite(v)&&v>=0?v:null;
+  try {
+    const s=window.AdVariant?.snapshot?.();
+    if(s)staticDelivery={release:clean(s.release),variant:['A','B'].includes(s.variant)?s.variant:null,status:clean(s.status),
+      script:url(s.script),prebidVersion:clean(s.prebidVersion),runtimeEntries:number(s.runtimeEntries),
+      blockedDuplicateLoaders:number(s.blockedDuplicateLoaders),blockedRuntimeEntries:number(s.blockedRuntimeEntries)};
+  }catch{}
+  try {
+    const s=window.AdBidReadiness?.snapshot?.();
+    if(s?.profile==='bid-readiness-observer-1.0.0'){
+      const reasons=['capacity','context-changed','consent-unavailable','bid-unavailable','already-used','history-unavailable',
+        'auction-pending','size-or-format','currency','floor','creative-unavailable','invalid-lifetime','expired-or-too-close',
+        'custom-selection-unverified','inspection-error','stopped'];
+      bidReadiness={profile:s.profile,mode:'observe-only',cacheEnabled:s.cacheEnabled===true,stopped:s.stopped===true,
+        capacityReached:s.capacityReached===true,errors:number(s.errors),maxAgeSeconds:number(s.maxAgeSeconds),
+        renderBudgetSeconds:number(s.renderBudgetSeconds),nativeSelectionVerified:false,guaranteedAds:null,
+        error:s.error==='observer-unavailable'?s.error:null,
+        rows:(Array.isArray(s.rows)?s.rows:[]).slice(0,100).map(r=>({position:clean(r.position),candidates:number(r.candidates),
+          earliestExpiryMs:number(r.earliestExpiryMs),rejected:Object.fromEntries(reasons.filter(k=>r.rejected?.[k]>0).map(k=>[k,number(r.rejected[k])])),
+          counters:Object.fromEntries(['received','submitted','bidWon','renderSucceeded','renderFailed','gamRequests','gamFilled','gamEmpty'].map(k=>[k,number(r.counters?.[k])]))}))};
+    }
+  }catch{}
+  const report={schemaVersion:1,experiments,scripts,runtimeDiagnostics,gamMeasurement,cacheDiagnostics,staticDelivery,bidReadiness,observedPrebidVersion:clean(window.pbjs?.version),
     runtimeMarkerPresent:!!window.__TESSERA_RUNTIME_STARTED,
     confirmedRuntimeExecutions:null,
     notes:['Script tags and load events do not prove runtime initialization or impressions.',
       'Collection acknowledgement confirms receipt of reported events, not complete page coverage.',
       'GAM measurement shows local targeting configuration, not confirmation of GAM reporting or revenue.',
       'Cache selections are targeting decisions, not rendered ads or revenue; filter evaluations are not unique cache hits.',
+      'Readiness candidates passed local screening only; they are not a native selection, guaranteed ads, or permission to refresh.',
       'Total execution count is unknown for uninstrumented runtimes; runtimeEntries counts entry into the new runtime, not successful auctions.',
       'Load errors alone cannot distinguish SRI, CSP and network failures. Check browser Console/Network.',
       'No experiment records may mean a legacy loader or no experiment; it does not prove no script ran.']};
-  console.group('[Tessera] A/B inspect');console.table(experiments.map(({events,...row})=>row));console.table(scripts);console.log(report);console.groupEnd();
+  console.group('[Tessera] A/B inspect');console.table(experiments.map(({events,...row})=>row));
+  if(staticDelivery)console.table([staticDelivery]);if(bidReadiness)console.table(bidReadiness.rows);
+  console.table(scripts);console.log(report);console.groupEnd();
   window.__TESSERA_AB_DEBUG=report;
   try { if(typeof copy==='function')copy(JSON.stringify(report,null,2)); } catch { /* manual copy remains available */ }
   return report;

@@ -49,3 +49,14 @@ test('cache inspect exposes decisions and age but never bids, consent strings or
  assert.equal(report.cacheDiagnostics[0].selections.cache,1);assert.equal(report.cacheDiagnostics[0].lastSelection.ageMs,1200);
  assert.equal(report.cacheDiagnostics[0].contextEpoch,3);assert.equal(report.cacheDiagnostics[0].lastSelection.reason,null);assert(!copied.includes('never-export'));
 });
+test('static delivery and readiness use allowlisted fields and preserve uncertainty',()=>{
+ const {report,copied}=run({AdVariant:{snapshot:()=>({release:'observed-v1',variant:'B',script:'https://user:SECRET@cdn.example/ads.js?SECRET',runtimeEntries:1,secret:'SECRET'})},
+   AdBidReadiness:{snapshot:()=>({profile:'bid-readiness-observer-1.0.0',cacheEnabled:false,guaranteedAds:50,nativeSelectionVerified:true,
+     rows:[{position:'P1',candidates:2,earliestExpiryMs:10000,rejected:{'already-used':1,SECRET:4},counters:{submitted:1},adId:'SECRET'}]})}});
+ assert.equal(report.staticDelivery.variant,'B');assert.equal(report.bidReadiness.rows[0].candidates,2);
+ assert.equal(report.bidReadiness.guaranteedAds,null);assert.equal(report.bidReadiness.nativeSelectionVerified,false);assert(!copied.includes('SECRET'));
+});
+test('unavailable readiness observer does not break the existing debug command',()=>{
+ const {report}=run({AdVariant:{snapshot(){throw Error('unavailable');}},AdBidReadiness:{snapshot(){throw Error('unavailable');}}});
+ assert.equal(report.staticDelivery,null);assert.equal(report.bidReadiness,null);
+});

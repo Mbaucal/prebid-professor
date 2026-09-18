@@ -3,7 +3,8 @@ import json, pathlib, threading, time, urllib.parse, os
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from playwright.sync_api import sync_playwright
 
-root=pathlib.Path('.generated/tanjug-aa/deploy'); manifest=json.loads((root/'release.json').read_text())
+root=pathlib.Path(os.environ.get('TANJUG_PACKAGE_DIR','.generated/tanjug-aa/deploy')); manifest=json.loads((root/'release.json').read_text())
+readiness=manifest.get('kind')=='static-aa-readiness-observer'
 config=manifest['config']; checks=[]; page_errors=[]; blocked=set()
 mock=pathlib.Path('tests/runtime/mock-ad-libraries.js').read_text()
 # Keep synthetic GPT and TCF. Prebid always comes from the actual shipped file.
@@ -11,6 +12,7 @@ a=mock.index('  window.pbjs = {');b=mock.index('  window.__tcfapi =',a)
 mock=mock[:a]+mock[b:]
 mock=mock.replace('const observations = { requests:', 'const observations = { requests:')
 mock=mock.replace('sizes: slot.sizes, at: Date.now()', 'sizes: slot.sizes, Variant: slot.getConfig().targeting.Variant, at: Date.now()')
+if readiness:mock+='\n'+pathlib.Path('tests/runtime/readiness-browser-fixture.js').read_text()
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
  def do_GET(self):
@@ -66,6 +68,10 @@ try:
     def route(r):
      if not r.request.url.startswith(origin+'/'):
       blocked.add(urllib.parse.urlsplit(r.request.url).hostname)
+      if readiness and r.request.url.startswith('https://readiness-fixture.invalid/bid?'):
+       rows=json.loads(urllib.parse.parse_qs(urllib.parse.urlsplit(r.request.url).query)['payload'][0])
+       rows=[{**x,'creativeId':'synthetic','currency':'EUR','netRevenue':True,'ad':'<div>Synthetic readiness test</div>','meta':{'advertiserDomains':['example.invalid']}} for x in rows]
+       r.fulfill(status=200,headers={'content-type':'application/json','access-control-allow-origin':origin},body=json.dumps({'bids':rows}));return
       if r.request.resource_type in ['fetch','xhr']:
        # Native user-ID modules receive an empty synthetic result, not a rejected
        # fetch Promise. No user IDs, bids, or real network response are supplied.
@@ -99,6 +105,12 @@ try:
      check(label+': fluid and 1x1 retained',page.evaluate("adSlots.InText_1.sizes.some(s=>s==='fluid') && adSlots.InText_1.sizes.some(s=>Array.isArray(s)&&s[0]===1&&s[1]===1)"))
      wait(page,'__testAds.observations.requests.length>0',timeout=15000)
      check(label+': every first request carries Variant',page.evaluate('__testAds.observations.requests.every(r=>r.Variant==='+json.dumps(arm)+')'))
+     if readiness:
+      wait(page,"window.AdBidReadiness?.snapshot().rows.find(r=>r.position==='Billboard')?.counters.received>=2",timeout=15000)
+      check(label+': full-slot readiness observer initialized',page.evaluate('AdBidReadiness.snapshot().rows.length===19 && AdBidReadiness.snapshot().rows.every(r=>r.registered)'))
+      check(label+': actual native losing bid passes screening and targeted winner is excluded',page.evaluate("(() => {const r=AdBidReadiness.snapshot().rows.find(r=>r.position==='Billboard');return r.candidates===1 && r.counters.submitted===1 && r.rejected['already-used']===1;})()"))
+      check(label+': inspection leaves native bids/config and GAM requests unchanged',page.evaluate("(() => {const read=()=>JSON.stringify([pbjs.getBidResponsesForAdUnitCode('Billboard'),pbjs.getConfig(),__testAds.observations.requests]);const before=read();AdBidReadiness.inspect();AdVariant.inspect();return before===read();})()"))
+      check(label+': cache and refresh remain unchanged',page.evaluate("AdBidReadiness.snapshot().cacheEnabled===false && AdBidReadiness.snapshot().mode==='observe-only' && AdVariant.snapshot().bidReadiness.nativeSelectionVerified===false"))
      page.locator('#InText_1').scroll_into_view_if_needed()
      wait(page,"__testAds.observations.requests.some(r=>r.id==='InText_1')",timeout=15000)
      check(label+': lazy request carries Variant',page.evaluate("__testAds.observations.requests.filter(r=>r.id==='InText_1').every(r=>r.Variant==="+json.dumps(arm)+')'))
@@ -119,5 +131,5 @@ try:
 finally:server.shutdown()
 report={'scope':'CI loopback Chromium; shipped ZIP scripts + native Prebid, synthetic GPT/TCF; external attempts blocked, no live auction',
  'checks':checks,'passed':len(checks),'failed':0,'pageErrors':page_errors,'blockedExternalHosts':sorted(x for x in blocked if x)}
-pathlib.Path('.generated/tanjug-aa/browser-report.json').write_text(json.dumps(report,indent=2))
+(root.parent/'browser-report.json').write_text(json.dumps(report,indent=2))
 print(json.dumps({'passed':len(checks),'failed':0}),flush=True)
