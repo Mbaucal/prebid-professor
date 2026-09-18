@@ -1,8 +1,8 @@
-# Current public key: Varijant (3.14.0)
+# Current public key: Variant (3.14.1)
 
-The new 3.14.0 candidate sends exactly `Varijant=A` or `Varijant=B` on its
+The new 3.14.1 candidate sends exactly `Variant=A` or `Variant=B` on its
 owned GPT slots, before requests. It does not send the previous branded key.
-Register `Varijant` with predefined values `A` and `B` in GAM and enable
+Register `Variant` with predefined values `A` and `B` in GAM and enable
 Report on values. No experiment hash is part of the public value. The full
 experiment/revision/package identity remains in the private mapping and debugger.
 
@@ -17,11 +17,13 @@ or revisions in one report. A CSV containing just A/B cannot prove which test it
 came from. The importer retains this attribution limitation and cannot declare a
 winner. Legacy mappings stay append-only and use their original format.
 
-3.14.0 inherits 3.13.0 auction/cache/consent behavior without changing those frozen
+3.14.1 inherits 3.14.0 auction/cache/consent behavior without changing those frozen
 sources. It is selectable only in the private TEST catalog; no deployment or
 live activation is implied.
 
-The following documents the retained 3.12/3.13 measurement format and history.
+The 3.14.0 candidate retains its original `Varijant` key; new tests should select
+3.14.1 for both arms. The following documents the retained 3.12/3.13 measurement
+format and history.
 
 ---
 

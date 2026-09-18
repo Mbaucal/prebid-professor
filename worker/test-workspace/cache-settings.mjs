@@ -1,7 +1,7 @@
 // TEST editor policy only; never part of a frozen runtime source closure.
 import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
 export const CACHE_RUNTIME_ID='tessera-cache-preview-1';
-export const usesBidCache=pin=>[CACHE_RUNTIME_ID,'variant-labels-preview-1'].includes(pin?.runtimeId);
+export const usesBidCache=pin=>[CACHE_RUNTIME_ID,'variant-labels-preview-1','variant-labels-en-preview-1'].includes(pin?.runtimeId);
 export function normalizeBidCache(value){
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join('|')!=='maxAgeSeconds|mode'
     ||!['fresh-only','auction-with-cache'].includes(value.mode)||!Number.isInteger(value.maxAgeSeconds)||value.maxAgeSeconds<1||value.maxAgeSeconds>300)

@@ -14,7 +14,7 @@ async function packageAt(f,note){const s=await f.api('/test-api/site-packages');
 const configFrom=p=>JSON.parse(new TextDecoder().decode(unzipSync(p.bytes)['config.json']));
 test('private explicit selection preserves defaults, old ZIPs, settings and both editor views; changed policy creates another immutable package',async()=>{
  const f=await ready(),old=await packageAt(f,'Before cache'),s=await state(f),before=f.readConfig();
- assert.equal(s.runtimes.length,6);assert.equal(s.runtimes[0].version,'3.10.0-tessera.preview.1');assert.equal(s.bidCache,null);
+ assert.equal(s.runtimes.length,7);assert.equal(s.runtimes[0].version,'3.10.0-tessera.preview.1');assert.equal(s.bidCache,null);
  assert.equal(mainCatalog.length,2);assert.throws(()=>mainDescriptor(choice(s).selection.runtime));
  await f.api('/test-api/runtime-selection',choice(s));
  let selected=await state(f);assert.equal(selected.selected.runtime.runtimeVersion,'3.13.0');assert.deepEqual(selected.bidCache,{mode:'auction-with-cache',maxAgeSeconds:60});

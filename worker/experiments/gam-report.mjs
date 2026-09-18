@@ -119,7 +119,7 @@ export async function previewGamReport(plan,input,assignments=null,now=Date.now(
   if(assignments?.atCapacity)blockers.push('The private assignment sample reached its limit.');
   blockers.push('Total assignment coverage is unknown; revenue per assigned page cannot be calculated.');
   blockers.push('Imported GAM data and inventory scope require verification against the source report.');
-  if(plan.key==='Varijant')blockers.push('A/B values do not identify a test. Verify the GAM site, ad units and date filters; do not combine overlapping tests or revisions.');
+  if(['Varijant','Variant'].includes(plan.key))blockers.push('A/B values do not identify a test. Verify the GAM site, ad units and date filters; do not combine overlapping tests or revisions.');
   const total=(selected,key)=>{
     if(selected.length===0||selected.some(r=>r[key]===null))return null;
     return selected.reduce((n,r)=>{const sum=n+r[key];check(Number.isSafeInteger(sum),'Report totals exceed the supported precision.');return sum;},0);

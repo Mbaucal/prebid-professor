@@ -13,7 +13,7 @@ function reportUI() {
   let result=null;
   const message=(s,error=false)=>{el('message').textContent=s;el('message').classList.toggle('error',error);};
   el('report-key').textContent=plan.key;
-  if(plan.key==='Varijant')el('scope-note').textContent='Filter the GAM export to this site, ad units and test period. A/B values are reused; exclude other tests and revisions.';
+  if(['Varijant','Variant'].includes(plan.key))el('scope-note').textContent='Filter the GAM export to this site, ad units and test period. A/B values are reused; exclude other tests and revisions.';
   el('identity').textContent=plan.comparison+' · '+plan.experimentId;
   el('identity').style.overflowWrap='anywhere';
   el('template').href='/test-api/experiments/reporting/'+plan.experimentId+'/template.csv';

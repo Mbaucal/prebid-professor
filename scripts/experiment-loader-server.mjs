@@ -13,7 +13,7 @@ const [key,cert]=process.argv.slice(2);
 if(!key||!cert)throw Error('Local TLS files required');
 const a=await experimentFixture('A',{prebid:true}), b=await experimentFixture('B',{prebid:true});
 const cases=new Map();
-for(const [version,prefix] of [['3.13.0','cache'],['3.14.0','cacheplain']]) {
+for(const [version,prefix] of [['3.13.0','cache'],['3.14.0','cacheplain'],['3.14.1','cacheenglish']]) {
  const cacheStore=await cacheSelectionFixture(),cacheState=await cacheStore.api('/test-api/runtime-selection');
  await cacheStore.api('/test-api/runtime-selection',{expectedRevision:cacheState.revision,selection:{runtime:cacheState.runtimes.find(r=>r.version===version).pin,allowPreview:true,enablePrebid:true,prebidBuildId:cacheState.prebidBuildId,bidCache:{mode:'auction-with-cache',maxAgeSeconds:60}}});
  const readyCache=await cacheStore.api('/test-api/site-packages');

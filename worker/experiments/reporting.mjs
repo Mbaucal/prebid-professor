@@ -4,8 +4,8 @@ const hash = /^[a-f0-9]{64}$/;
 const check = (ok, message) => { if (!ok) throw Error(message); };
 export function gamValue(deliverySha256, variant, key = 'tessera_ab') {
   check(hash.test(deliverySha256) && ['A','B'].includes(variant), 'Invalid reporting identity.');
-  check(['tessera_ab','Varijant'].includes(key), 'Invalid reporting key.');
-  if (key === 'Varijant') return variant;
+  check(['tessera_ab','Varijant','Variant'].includes(key), 'Invalid reporting key.');
+  if (key === 'Varijant' || key === 'Variant') return variant;
   return 'd' + deliverySha256.slice(0,32) + '_' + variant.toLowerCase();
 }
 export function assertUniqueValues(plans) {
@@ -14,7 +14,7 @@ export function assertUniqueValues(plans) {
     if (!arm.value) continue;
     // A/B are intentionally reused. Private mappings retain the complete pins;
     // GAM reports must be filtered to the chosen inventory and test period.
-    if (plan.key === 'Varijant') {
+    if (plan.key === 'Varijant' || plan.key === 'Variant') {
       check(arm.value === gamValue(plan.deliverySha256, arm.variant, plan.key), 'Invalid reporting mapping.');
       continue;
     }
@@ -27,7 +27,7 @@ export function reportingPlan(item, deliverySha256, descriptors) {
   check(hash.test(deliverySha256), 'Invalid delivery identity.');
   const releases = descriptors.map(({runtime}) => runtimeReleaseHistory.find(r => r.id === runtime.runtimeId
     && r.version === runtime.runtimeVersion && r.codeSha256 === runtime.runtimeSha256));
-  const keys = releases.map(r => r?.capabilities.includes('plain-variant-targeting') ? 'Varijant' : 'tessera_ab');
+  const keys = releases.map(r => r?.capabilities.includes('english-variant-targeting') ? 'Variant' : r?.capabilities.includes('plain-variant-targeting') ? 'Varijant' : 'tessera_ab');
   const key = keys[0];
   const arms = ['A','B'].map((variant,i) => {
     const pin = i === 0 ? item.a : item.b, descriptor = descriptors[i], runtime = descriptor.runtime;
@@ -44,7 +44,7 @@ export function reportingPlan(item, deliverySha256, descriptors) {
     labelsReady:arms.every(a=>a.supported), revenueReady:false,
     blockers:[...arms.filter(a=>!a.supported).map(a=>'Variant '+a.variant+' has no verified measurement support.'),
       ...(keys[0]!==keys[1]?['Both variants must use the same GAM key. Choose matching script versions.']:[]),
-      ...(key==='Varijant'?['Filter GAM reports to this site, inventory and test period; A/B values are shared across tests.']:[]),
+      ...(['Varijant','Variant'].includes(key)?['Filter GAM reports to this site, inventory and test period; A/B values are shared across tests.']:[]),
       ...(arms.some(a=>a.trafficPercent===0)?['Both variants need traffic for a comparison.']:[]),
       'GAM reporting setup and actual report verification are pending.',
       item.deliveryProfile==='experiment-collected-preview-v1'?'TEST collection is enabled; real traffic coverage is not verified.':'Automatic assignment collection is not connected.'],

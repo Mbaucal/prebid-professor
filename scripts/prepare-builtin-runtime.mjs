@@ -7,6 +7,7 @@ import { runtimeReleaseHistory, assertRuntimeReleaseSource } from '../worker/run
 
 import { prepareObservedRuntime } from './prepare-observed-runtime.mjs';
 import { prepareMeasuredRuntime } from './prepare-measured-runtime.mjs';
+import { prepareEnglishVariantRuntime } from './prepare-variant-en-runtime.mjs';
 import { prepareVariantRuntime } from './prepare-variant-runtime.mjs';
 import { prepareCachedRuntime } from './prepare-cached-runtime.mjs';
 import { prepareNextRuntime } from './prepare-next-runtime.mjs';
@@ -73,6 +74,7 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareMeasuredRuntime(root);
   await prepareCachedRuntime(root);
   await prepareVariantRuntime(root);
+  await prepareEnglishVariantRuntime(root);
   return descriptor;
 }
 

@@ -69,7 +69,7 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                 left,right=measured_results
                 check('Measured A/A uses identical package and delivery identity for both arms',left['context']['packageSha256']==right['context']['packageSha256'] and left['context']['deliverySha256']==right['context']['deliverySha256'] and left['measurement']['value']!=right['measurement']['value'])
                 cached_results=[]
-                for name,variant in [('cachea','A'),('cacheb','B'),('cacheplaina','A'),('cacheplainb','B')]:
+                for name,variant in [('cachea','A'),('cacheb','B'),('cacheplaina','A'),('cacheplainb','B'),('cacheenglisha','A'),('cacheenglishb','B')]:
                     page.goto(origin+'/case/'+name+'/')
                     wait_for_state(page,"() => window.__tesseraExperiments?.['test-site']?.status==='loaded' && window.fixtureRequests?.some(r=>r.id==='Billboard') && fixtureRequests.some(r=>r.id==='adsx-takeover-slot')")
                     page.evaluate("fixtureIntersect('P1','500px')")
@@ -78,8 +78,8 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                     page.evaluate("fixtureIntersect('P1','0px')")
                     wait_for_state(page,"() => fixtureRequests.some(r=>r.id==='P1')")
                     result=page.evaluate("({context:__tesseraExperiments['test-site'].context,events:__tesseraExperiments['test-site'].snapshot().events,cache:__tesseraBidCache['test-site'].snapshot(),runtime:__tesseraRuntimeDiagnostics['test-site'].snapshot(),requests:fixtureRequests})")
-                    cached_results.append(result);plain=name.startswith('cacheplain');expected=variant if plain else 'd'+result['context']['deliverySha256'][:32]+'_'+variant.lower()
-                    check(name+': stored package and exact native Prebid load once with saved policy',result['context']['runtimeVersion']==('3.14.0' if plain else '3.13.0') and result['context']['variant']==variant and result['runtime']['initializations']==1 and result['cache']['policy']['mode']=='auction-with-cache' and result['cache']['policy']['maxAgeSeconds']==60)
+                    cached_results.append(result);english=name.startswith('cacheenglish');plain=name.startswith('cacheplain') or english;expected=variant if plain else 'd'+result['context']['deliverySha256'][:32]+'_'+variant.lower()
+                    check(name+': stored package and exact native Prebid load once with saved policy',result['context']['runtimeVersion']==('3.14.1' if english else '3.14.0' if plain else '3.13.0') and result['context']['variant']==variant and result['runtime']['initializations']==1 and result['cache']['policy']['mode']=='auction-with-cache' and result['cache']['policy']['maxAgeSeconds']==60)
                     check(name+': initial TakeOver and lazy requests carry correct A/A labels',all(r['experiment']==[expected] and r['cpm']==10 and r['status']=='targetingSet' for r in result['requests']))
                     check(name+': dependency loads before wrapper with exact SRI',[e['type'] for e in result['events']]==['assigned','prebid-loaded','script-loaded'] and page.locator('script[src$="/prebid.js"]').get_attribute('integrity')=='sha256-'+base64.b64encode(bytes.fromhex('384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b')).decode())
                     page.evaluate("{const s=document.createElement('script');s.src='ads.js';s.nonce='fixture';document.head.append(s);}")
@@ -88,11 +88,14 @@ with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
                     report=page.evaluate('() => {'+pathlib.Path('src/debug/experiment-inspect.mjs').read_text().split('export const experimentInspectCommand=')[0].replace('export function inspectExperiments()', 'function inspectExperiments()')+'\nreturn inspectExperiments();}')
                     check(name+': inspector joins new cache policy and assignment',report['experiments'][0]['variant']==variant and report['cacheDiagnostics'][0]['mode']=='auction-with-cache')
                     if plain:
-                        check(name+': only Varijant=A/B is sent on owned slots',all(r['publicVariant']==[variant] and r['legacyExperiment']==[] for r in result['requests']))
+                        public_key='Variant' if english else 'Varijant';field='englishVariant' if english else 'publicVariant';other='publicVariant' if english else 'englishVariant'
+                        check(name+': only '+public_key+'=A/B is sent on owned slots',all(r[field]==[variant] and r[other]==[] and r['legacyExperiment']==[] for r in result['requests']))
                         page.evaluate("__testAds.service.refresh([adSlots.Billboard])")
-                        check(name+': refresh preserves the public variant',page.evaluate('fixtureRequests.at(-1).publicVariant')==[variant] and page.evaluate('fixtureRequests.at(-1).legacyExperiment')==[])
-                        check(name+': debugger reports literal key and value',report['gamMeasurement'][0]['key']=='Varijant' and report['gamMeasurement'][0]['value']==variant)
-                left,right=cached_results[2:]
+                        check(name+': refresh preserves the public variant',page.evaluate('fixtureRequests.at(-1).'+field)==[variant] and page.evaluate('fixtureRequests.at(-1).legacyExperiment')==[])
+                        check(name+': debugger reports literal key and value',report['gamMeasurement'][0]['key']==public_key and report['gamMeasurement'][0]['value']==variant)
+                left,right=cached_results[4:]
+                check('Stored 3.14.1 A/A keeps private package and delivery identities',left['context']['packageSha256']==right['context']['packageSha256'] and left['context']['deliverySha256']==right['context']['deliverySha256'])
+                left,right=cached_results[2:4]
                 check('Stored 3.14 A/A keeps private package and delivery identities',left['context']['packageSha256']==right['context']['packageSha256'] and left['context']['deliverySha256']==right['context']['deliverySha256'])
                 left,right=cached_results[:2]
                 check('Stored 3.13 A/A preserves identical package and delivery in both arms',left['context']['packageSha256']==right['context']['packageSha256'] and left['context']['deliverySha256']==right['context']['deliverySha256'])
