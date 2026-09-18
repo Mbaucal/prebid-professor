@@ -1,5 +1,10 @@
 # Tanjug cache pilot — offline review proposal
 
+**18 September 2026 decision:** Marko confirmed there is no separate publisher
+test page. Real CMP/GPT validation will take place on live Tanjug when the pilot
+is ready. A separate hostname is no longer required. This supersedes the older
+isolated-page requirement in previous review artifacts and progress notes.
+
 `tanjug-cache-review-v1` prepares two new 3.13.0 candidate packages for
 **Billboard and Sticky only**. It is not deployed, stored as a release or
 activated. It does not change the frozen `tanjug-test-v1` package, the TEST
@@ -72,8 +77,9 @@ The output directory is `.generated/tanjug-cache-review/`:
 - `README.txt`: preparation/activation distinction.
 
 The ZIPs' `implementation.html` files are real integration examples and can
-request ads if served. The actual approved CMP and isolated publisher page must
-be established before executing them. The static review never opens those pages.
+request ads if served. The actual live entry point and CMP must be inspected
+before executing them in a controlled live visit. The static review never opens
+those pages.
 
 CI retains a separate `tanjug-cache-review-proposal` artifact containing both ZIPs,
 review files and the browser check. Sources in this PR reproduce it after artifact
@@ -92,15 +98,41 @@ contains the two exact ZIPs; it expires on 1 October 2026 and can be reproduced
 from the pinned source afterward. No candidate with these actual Tanjug bidder
 settings was executed, and no live baseline/CMP/GAM verification is claimed.
 
-## Information still needed for an actual pilot
+## Preparing the agreed live pilot
 
 The available source is the frozen 14 September TEST snapshot. Current live Tanjug
 configuration has not been verified in this step. The existing Pages preview CDN
-address is recorded in earlier deployment evidence; that does not establish a
-publisher test page with a working Google Funding Choices installation.
+address is recorded in earlier deployment evidence; it is not the live publisher
+entry point or proof of the active Google Funding Choices installation.
 
-Before execution, identify the isolated test page URL/hostname and confirm its
-actual CMP installation, review the two-position scope and age cap, and compare
-the intended settings with the current baseline. Then verify real CMP/GPT,
-browser BFCache return, long sessions and instrumented A/A reporting. Only after
-that should a measured A/B pilot be activated. No revenue improvement is claimed.
+1. Inspect the live Tanjug integration and record the exact active ads.js/Prebid
+   files, settings and delivery route. Prepare a reversible switch back to those
+   exact files. The frozen TEST package is not assumed to be the current live
+   baseline.
+2. First run one controlled visit to a live page, replacing its original wrapper
+   before it loads; do not insert the candidate alongside an already running
+   wrapper. Verify the existing Funding Choices signals, one runtime/auction
+   owner, GPT requests/rendering, Sticky close/refresh, consent changes and
+   browser back/forward return. The concrete replacement mechanism still needs
+   implementation and verification; no live visit was executed in this step.
+3. The current proposal handles only Billboard and Sticky. It cannot replace all
+   live inventory without dropping the other 17 positions. Resolve the live
+   rollout scope before admitting ordinary visitors. Do not keep the old full
+   wrapper running in parallel to cover omitted positions. Full-size support, if
+   needed, belongs in another runtime version.
+4. After the single-visit checks, prepare a small live cohort with the exact old
+   delivery retained outside it. Then run instrumented A/A inside that cohort,
+   followed by cache A/B. Cohort size and duration must be concrete in the rollout
+   record. The existing `trafficB` only divides A vs B; it does not implement
+   overall cohort eligibility. Its disabled review plans still use 50/50, which
+   is not permission to expose half of the whole site to the new runtime.
+5. Stop the pilot on duplicate wrappers/requests, consent errors, unexpected
+   missing slots or script failures. Restore the captured live entry point for
+   new page loads and reload the controlled page. The current experiment Stop
+   serves its A package, which here is also new 3.13.0; it is not a return to the
+   old live script, and cannot undo code already running in open pages.
+
+This decision establishes live Tanjug as the test environment; it does not start
+the pilot now. Existing script versions stay immutable. Revenue comparison still
+requires verified A/A reporting and sufficient observations; a short functional
+test or two-position result does not establish a whole-site revenue improvement.
