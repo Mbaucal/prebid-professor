@@ -1,5 +1,35 @@
 [
   {
+    "id": "variant-labels-preview-1",
+    "version": "3.14.0",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "runtime-diagnostics",
+      "gpt-lifecycle-observer",
+      "experiment-slot-targeting",
+      "bid-cache-policy",
+      "cache-lifecycle-diagnostics",
+      "plain-variant-targeting"
+    ],
+    "codeSha256": "fd117b2ca218d952f202bd89931f779d27a343d9c3de2dd8aad21308690d756c",
+    "date": "2026-09-18",
+    "title": "Simple public A/B variant labels",
+    "sourceManifest": "scripts/prepare-variant-runtime.mjs",
+    "sourceCommit": "d3533429a016c747e1e091e3d9559ade1053f38d",
+    "changes": [
+      "Send only Varijant=A or Varijant=B on owned GPT slots with a valid active experiment context; keep full experiment and package identity in local diagnostics.",
+      "Retain the reviewed cache, auction, consent and Prebid behavior from 3.13.0 in a separate immutable version.",
+      "Existing versions and saved packages remain unchanged. GAM report comparisons require matching inventory and test dates because A/B labels are reused."
+    ]
+  },
+  {
     "id": "tessera-cache-preview-1",
     "version": "3.13.0",
     "configSchemaVersion": 1,
