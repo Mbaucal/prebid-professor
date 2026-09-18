@@ -3,7 +3,10 @@ import json, pathlib, threading, time, urllib.parse, os
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from playwright.sync_api import sync_playwright
 
-root=pathlib.Path(os.environ.get('TANJUG_PACKAGE_DIR','.generated/tanjug-aa/deploy')); manifest=json.loads((root/'release.json').read_text())
+root=pathlib.Path(os.environ.get('TANJUG_PACKAGE_DIR','.generated/tanjug-aa/deploy'))
+# Compact releases keep build metadata outside the public deployment directory.
+manifest_path=root/'release.json' if (root/'release.json').is_file() else root.parent/'release.json'
+manifest=json.loads(manifest_path.read_text())
 readiness=manifest.get('kind')=='static-aa-readiness-observer'
 config=manifest['config']; checks=[]; page_errors=[]; blocked=set()
 mock=pathlib.Path('tests/runtime/mock-ad-libraries.js').read_text()
