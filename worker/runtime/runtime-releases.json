@@ -1,5 +1,36 @@
 [
   {
+    "id": "variant-labels-en-preview-1",
+    "version": "3.14.1",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "runtime-diagnostics",
+      "gpt-lifecycle-observer",
+      "experiment-slot-targeting",
+      "bid-cache-policy",
+      "cache-lifecycle-diagnostics",
+      "plain-variant-targeting",
+      "english-variant-targeting"
+    ],
+    "codeSha256": "b56d25f3bbf97e604f4f161dda2edd1f27237ed0ae84e9a3e1f7a182b334035e",
+    "date": "2026-09-18",
+    "title": "English Variant key for A/B reporting",
+    "sourceManifest": "scripts/prepare-variant-en-runtime.mjs",
+    "sourceCommit": "fa320b4dd6ca52f2325f85dcf51852589dd5bf31",
+    "changes": [
+      "Use exactly Variant=A or Variant=B for public GPT targeting and measurement diagnostics.",
+      "Retain 3.14.0 cache, auction, consent and Prebid behavior; existing versions and saved packages keep their original keys and bytes.",
+      "Prepare GAM values and report templates use the exact key of the selected runtime. Both experiment arms must use the same format."
+    ]
+  },
+  {
     "id": "variant-labels-preview-1",
     "version": "3.14.0",
     "configSchemaVersion": 1,
