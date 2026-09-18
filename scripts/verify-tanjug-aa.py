@@ -65,7 +65,14 @@ try:
     context.add_init_script("Crypto.prototype.getRandomValues=function(a){a.fill("+('0' if arm=='A' else '4294967295')+");return a;};")
     def route(r):
      if not r.request.url.startswith(origin+'/'):
-      blocked.add(urllib.parse.urlsplit(r.request.url).hostname);r.abort();return
+      blocked.add(urllib.parse.urlsplit(r.request.url).hostname)
+      if r.request.resource_type in ['fetch','xhr']:
+       # Native user-ID modules receive an empty synthetic result, not a rejected
+       # fetch Promise. No user IDs, bids, or real network response are supplied.
+       body={'conversions':{'EUR':{'EUR':1,'USD':1},'USD':{'USD':1,'EUR':1}}} if r.request.url.startswith('https://cdn.jsdelivr.net/gh/prebid/currency-file@1/latest.json') else {}
+       r.fulfill(status=200,headers={'content-type':'application/json','access-control-allow-origin':origin,'access-control-allow-credentials':'true'},body=json.dumps(body))
+      else:r.abort()
+      return
      if case=='tampered' and r.request.url.endswith('/A.js'):
       r.fulfill(status=200,headers={'content-type':'application/javascript','access-control-allow-origin':'*'},body='window.BAD_ARM_RAN=true;');return
      r.continue_()
