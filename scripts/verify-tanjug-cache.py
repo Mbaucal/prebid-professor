@@ -85,7 +85,7 @@ try:
   browser=p.chromium.launch(headless=True,args=['--no-proxy-server','--disable-quic','--host-resolver-rules=EXCLUDE 127.0.0.1, MAP * ~NOTFOUND'])
   try:
    cases=[('A',1280,'normal'),('B',1280,'normal'),('B',390,'normal'),('A',1280,'delayed'),('B',1280,'auto'),('A',1280,'duplicate'),('A',1280,'wrong'),('A',1280,'failed'),('A',1280,'tampered')]
-   if cmp_fix:cases += [('A',1280,'cmp-late'),('B',390,'cmp-string'),('A',1280,'cmp-absent')]
+   if cmp_fix:cases += [('A',1280,'cmp-late'),('B',1280,'cmp-late'),('B',390,'cmp-string'),('A',1280,'cmp-absent'),('B',1280,'cmp-absent')]
    for arm,width,case in cases:
     context=browser.new_context(viewport={'width':width,'height':900},service_workers='block')
     # Force the loader's one-word allocation draw only. Native Prebid UUID/bid-ID

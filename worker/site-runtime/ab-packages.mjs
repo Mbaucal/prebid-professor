@@ -5,6 +5,8 @@ import {sha256} from '../runtime/prebid-artifact-check.mjs';
 export const AB_PACKAGES=Object.freeze([
   Object.freeze({release:'tanjug-aa-1.0.2',sha256:'bd0d9a6973903a3ec585f88e4b815eefb7a061ec8a32593f671b53ce211dfb1e',bytes:272833,
     label:'A/A · same script',a:'Fresh auction',b:'Fresh auction',positions:19,trafficB:50}),
+  Object.freeze({release:'tanjug-cache-1.0.0',sha256:'7438388a40bcf253773a9f27970679c296d18a0cdce63fe491e06efbb5012cb0',bytes:276856,
+    label:'A/B · bid cache',a:'Fresh auction',b:'Auction + valid cached bids (up to 60 s)',positions:19,trafficB:50}),
 ]);
 const check=(ok,message,status=422)=>{if(!ok)throw Object.assign(Error(message),{status});};
 const key=(site,release)=>`site-ab-packages/v1/${site}/${release}.zip`;

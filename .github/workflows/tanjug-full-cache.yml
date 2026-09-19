@@ -4,6 +4,8 @@ on:
     paths:
       - 'worker/experiments/full-cache-v1.mjs'
       - 'worker/runtime-cache/full-policy-v1.mjs'
+      - 'worker/runtime-cache/lifecycle.mjs'
+      - 'worker/runtime-cache/consent-epoch.mjs'
       - 'worker/site-runtime/ab-packages.mjs'
       - 'worker/app-builtin-runtime-preview.ts'
       - 'src/components/AbPackagesPanel.tsx'
@@ -42,7 +44,7 @@ jobs:
           node scripts/prepare-tanjug-compact.mjs
           node scripts/prepare-tanjug-cmp.mjs
           node scripts/prepare-tanjug-cache.mjs
-          node --test tests/runtime/cmp-aa.test.mjs tests/runtime/full-cache-policy.test.mjs tests/runtime/ab-packages.test.mjs
+          node --test tests/runtime/cmp-aa.test.mjs tests/runtime/full-cache-policy.test.mjs tests/runtime/full-cache-package.test.mjs tests/runtime/ab-packages.test.mjs
           npm run build
       - name: Install pinned browser tools
         run: |
