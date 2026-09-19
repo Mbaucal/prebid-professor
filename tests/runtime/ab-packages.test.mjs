@@ -41,11 +41,17 @@ test('corrupt saved objects cannot be downloaded or overwritten on retry',async(
 });
 test('both catalog versions round-trip without rebuilding, with independent history',async()=>{
  const f=fixture();
- for(const pin of AB_PACKAGES){
-  const folder=pin.release.includes('-cache-')?'tanjug-cache':'tanjug-cmp';
+ for(const pin of AB_PACKAGES.filter(p=>!p.withdrawn)){
+  const folder=pin.release.includes('-cache-')?'tanjug-cache-fixed':'tanjug-cmp';
   const bytes=readFileSync(`.generated/${folder}/${pin.release}.zip`);
   assert.equal((await f.call('PUT',pin.release,bytes)).status,201);
   assert.deepEqual(Buffer.from(await(await f.call('GET',pin.release)).arrayBuffer()),bytes);
  }
  assert.equal(f.objects.size,2);assert((await(await f.call()).json()).packages.every(p=>p.saved));
+});
+
+test('withdrawn pre-release candidate cannot be uploaded or downloaded',async()=>{
+ const f=fixture();assert.equal((await f.call('PUT','tanjug-cache-1.0.0')).status,409);
+ assert.equal((await f.call('GET','tanjug-cache-1.0.0')).status,409);assert.equal(f.puts(),0);
+ assert(!(await(await f.call()).json()).packages.some(p=>p.release==='tanjug-cache-1.0.0'));
 });

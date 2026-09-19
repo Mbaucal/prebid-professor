@@ -6,6 +6,8 @@ export const AB_PACKAGES=Object.freeze([
   Object.freeze({release:'tanjug-aa-1.0.2',sha256:'bd0d9a6973903a3ec585f88e4b815eefb7a061ec8a32593f671b53ce211dfb1e',bytes:272833,
     label:'A/A · same script',a:'Fresh auction',b:'Fresh auction',positions:19,trafficB:50}),
   Object.freeze({release:'tanjug-cache-1.0.0',sha256:'7438388a40bcf253773a9f27970679c296d18a0cdce63fe491e06efbb5012cb0',bytes:276856,
+    label:'A/B · bid cache',a:'Fresh auction',b:'Auction + valid cached bids (up to 60 s)',positions:19,trafficB:50,withdrawn:true}),
+  Object.freeze({release:'tanjug-cache-1.0.1',sha256:'430c321a614a4894ee512366a85fc4ef23f7789aadb55888097f6251a079c80e',bytes:276877,
     label:'A/B · bid cache',a:'Fresh auction',b:'Auction + valid cached bids (up to 60 s)',positions:19,trafficB:50}),
 ]);
 const check=(ok,message,status=422)=>{if(!ok)throw Object.assign(Error(message),{status});};
@@ -33,7 +35,7 @@ export async function abPackageResponse(request,env,site,release,actor){
     check(row,'Site not found.',404);
     if(!release&&request.method==='GET'){
       if(!supported(row.domain))return json({supported:false,packages:[]});
-      const packages=await Promise.all(AB_PACKAGES.map(async pin=>{
+      const packages=await Promise.all(AB_PACKAGES.filter(p=>!p.withdrawn).map(async pin=>{
         const object=await env.BUILDS.head(key(site,pin.release));
         const saved=!!object;
         return {...pin,saved,storedAt:object?.customMetadata?.storedAt??null};
@@ -41,6 +43,7 @@ export async function abPackageResponse(request,env,site,release,actor){
     }
     check(supported(row.domain),'This reviewed package belongs to tanjug.rs.',409);
     const pin=AB_PACKAGES.find(p=>p.release===release);check(pin,'Unknown reviewed A/B package.',404);
+    check(!pin.withdrawn,'This unreleased candidate was withdrawn. Choose the newer package.',409);
     const path=key(site,release);
     if(request.method==='GET'){
       const bytes=await verify(await env.BUILDS.get(path),pin);

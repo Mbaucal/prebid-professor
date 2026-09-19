@@ -3,7 +3,7 @@ import json, pathlib, threading, time, urllib.parse, os
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from playwright.sync_api import sync_playwright
 
-root=pathlib.Path(os.environ.get('TANJUG_PACKAGE_DIR','.generated/tanjug-cache/deploy'))
+root=pathlib.Path(os.environ.get('TANJUG_PACKAGE_DIR','.generated/tanjug-cache-fixed/deploy'))
 # Compact releases keep build metadata outside the public deployment directory.
 manifest_path=root/'release.json' if (root/'release.json').is_file() else root.parent/'release.json'
 manifest=json.loads(manifest_path.read_text())

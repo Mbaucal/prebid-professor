@@ -2,15 +2,15 @@ name: Tanjug full A/B cache and package storage
 on:
   pull_request:
     paths:
-      - 'worker/experiments/full-cache-v1.mjs'
+      - 'worker/experiments/full-cache-v*.mjs'
       - 'worker/runtime-cache/full-policy-v1.mjs'
-      - 'worker/runtime-cache/lifecycle.mjs'
+      - 'worker/runtime-cache/*lifecycle*.mjs'
       - 'worker/runtime-cache/consent-epoch.mjs'
       - 'worker/site-runtime/ab-packages.mjs'
       - 'worker/app-builtin-runtime-preview.ts'
       - 'src/components/AbPackagesPanel.tsx'
       - 'src/components/SitePackagesPanel.tsx'
-      - 'scripts/prepare-tanjug-cache.mjs'
+      - 'scripts/prepare-tanjug-cache*.mjs'
       - 'scripts/verify-tanjug-cache.py'
       - 'tests/runtime/full-cache*'
       - 'tests/runtime/ab-packages.test.mjs'
@@ -44,7 +44,8 @@ jobs:
           node scripts/prepare-tanjug-compact.mjs
           node scripts/prepare-tanjug-cmp.mjs
           node scripts/prepare-tanjug-cache.mjs
-          node --test tests/runtime/cmp-aa.test.mjs tests/runtime/full-cache-policy.test.mjs tests/runtime/full-cache-package.test.mjs tests/runtime/ab-packages.test.mjs
+          node scripts/prepare-tanjug-cache-fixed.mjs
+          node --test tests/runtime/cmp-aa.test.mjs tests/runtime/full-cache-policy.test.mjs tests/runtime/full-cache-package.test.mjs tests/runtime/full-cache-lifecycle.test.mjs tests/runtime/ab-packages.test.mjs
           npm run build
       - name: Install pinned browser tools
         run: |
@@ -52,15 +53,15 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Verify exact minified package without external ad traffic
         env:
-          TANJUG_PACKAGE_DIR: .generated/tanjug-cache/deploy
+          TANJUG_PACKAGE_DIR: .generated/tanjug-cache-fixed/deploy
         run: python scripts/verify-tanjug-cache.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: tanjug-full-cache-evidence
           path: |
-            .generated/tanjug-cache/*.zip
-            .generated/tanjug-cache/*.json
-            .generated/tanjug-cache/*.txt
+            .generated/tanjug-cache-fixed/*.zip
+            .generated/tanjug-cache-fixed/*.json
+            .generated/tanjug-cache-fixed/*.txt
           if-no-files-found: error
           retention-days: 30

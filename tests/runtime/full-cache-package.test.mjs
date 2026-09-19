@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {unzipSync} from 'fflate';
 import {parse} from 'acorn';
-import {cacheArm,CACHE_RELEASE} from '../../worker/experiments/full-cache-v1.mjs';
+import {cacheArm,CACHE_RELEASE} from '../../worker/experiments/full-cache-v2.mjs';
 import {instrumentCmpRuntime,CMP_RELEASE} from '../../worker/experiments/cmp-aa-v1.mjs';
 import {sha256,integrity} from '../../scripts/static-aa-package.mjs';
 const read=p=>readFileSync(p);
@@ -17,8 +17,8 @@ test('control keeps the accepted CMP runtime and all previous release bytes',()=
  assert.deepEqual(timers(b),timers(base));
 });
 test('complete cache archive contains only public files and pins both different arms',()=>{
- const m=JSON.parse(read('.generated/tanjug-cache/release.json'));
- const f=unzipSync(read('.generated/tanjug-cache/'+CACHE_RELEASE+'.zip'));
+ const m=JSON.parse(read('.generated/tanjug-cache-fixed/release.json'));
+ const f=unzipSync(read('.generated/tanjug-cache-fixed/'+CACHE_RELEASE+'.zip'));
  assert.equal(Object.keys(f).length,9);assert.deepEqual(Object.keys(f).sort(),Object.keys(m.files).sort());
  assert.equal(m.config.positions.length,19);assert.equal(new Set(m.config.positions).size,19);
  assert.notEqual(m.config.arms.A.sha256,m.config.arms.B.sha256);
