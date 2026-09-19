@@ -5,9 +5,9 @@ import { STATE_KEY } from '../../worker/test-workspace/deployment-store.mjs';
 
 export const TRANSFER_SECRET = 'Synthetic-TEST-transfer-only-not-a-live-key-12345';
 export const TARGET = {accountId:'1'.repeat(32),projectName:'tessera-fixture',previewBranch:'tessera-test',secretName:'CLOUDFLARE_API_TOKEN_FIXTURE'};
-export function deploymentStore() {
-  const f=workspaceStore(), base=f.env.BUILDS, objects=new Map(), puts=[];
-  const owns=key => key === STATE_KEY || /^test-deployments\/v1\/packages\/[a-f0-9]{64}\.zip$/.test(key);
+export function deploymentStore(options) {
+  const f=workspaceStore(options), base=f.env.BUILDS, objects=new Map(), puts=[];
+  const owns=key => key === STATE_KEY || /^test-experiments\/assignments-v1\/[a-f0-9]{64}\.json$/.test(key) || key === 'test-experiments/v1/state.json' || key === 'test-experiments/v1/reporting.json' || /^test-deployments\/v1\/packages\/[a-f0-9]{64}\.zip$/.test(key);
   const bucket={
     async get(key) {
       if(!owns(key))return base.get(key);

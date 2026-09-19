@@ -4,7 +4,7 @@ import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { pinRuntime } from '../runtime/version-pin.mjs';
 import { describeRuntimeReleases } from '../runtime/runtime-release-history.mjs';
-import { runtimeCatalog, descriptorForPin, previewInput, prepareSiteRuntimeSelection, readPinnedSiteRuntime, buildArtifactCandidate } from '../test-workspace/runtime-catalog.mjs';
+import * as defaultRuntime from '../test-workspace/runtime-catalog.mjs';
 import { readPositions, normalizeOverlay, normalizeLazy } from '../runtime-next/position-settings.mjs';
 import { takeOverForBuild } from '../test-workspace/takeover-settings.mjs';
 import { zipSync } from 'fflate';
@@ -57,28 +57,32 @@ export async function commitSiteConfiguration(env,snapshot,configJson,actor,{act
  if(result?.[0]?.meta?.changes!==1)fail('Site settings changed in another tab. Reload this site before saving.',409);
  return {changed,persisted:true,publishable:false};
 }
-export async function siteRuntimeSettings(env,siteId){
+export async function siteRuntimeSettings(env,siteId,runtime=defaultRuntime){
+ const {runtimeCatalog,descriptorForPin,previewInput,prepareSiteRuntimeSelection,readPinnedSiteRuntime,buildArtifactCandidate}=runtime;
  const saved=await read(env,siteId),config=JSON.parse(saved.config.config_json);
  const pin=config.builtinRuntimeSelection?.runtime;let validationIssue=null;
  try{if(pin)previewInput(saved,descriptorForPin(pin),'20000101_000000');}catch(e){validationIssue=e.message;}
  const positions=readPositions(config,saved.units),sticky=config.runtimeControls?.sticky;
  const stickyId=Object.hasOwn(sticky??{},'bottomAdUnitId')?sticky.bottomAdUnitId:(saved.units.some(u=>u.code==='Sticky'&&u.enabled===1)?'Sticky':'');
  return {site:saved.site,revision:await digest(saved),selected:pin??null,validationIssue,enablePrebid:config.enablePrebid===true,...siteSetupState(saved),
+  ...(runtime.readCacheSettings?{bidCache:runtime.readCacheSettings(saved)}:{}),
   runtimes:runtimeCatalog.map(r=>({version:r.version,pin:pinRuntime(r,{allowPreview:true})})),history:describeRuntimeReleases(runtimeCatalog,pin),
   positions:saved.units.filter(u=>u.media_type==='banner'&&u.type!=='DRAFT').map(u=>({code:u.code,type:u.type,sizeMap:u.size_map_key,enabled:u.enabled===1,
    display:positions[u.code]?'takeover':stickyId===u.code?'sticky':'standard',overlay:positions[u.code]??null,
    lazy:Object.hasOwn(config.advancedUnitRules?.[u.code]??{},'lazy')?config.advancedUnitRules[u.code].lazy:JSON.parse(saved.rules.find(r=>r.rule_key===u.code)?.rule_json??'{}').lazy??null})),
   publishable:false};
 }
-export async function changeSiteRuntime(env,siteId,actor,body){
+export async function changeSiteRuntime(env,siteId,actor,body,runtime=defaultRuntime){
+ const {runtimeCatalog,descriptorForPin,previewInput,prepareSiteRuntimeSelection,readPinnedSiteRuntime,buildArtifactCandidate}=runtime;
  const saved=await read(env,siteId),config=JSON.parse(saved.config.config_json);
  if(typeof body?.revision!=='string'||body.revision!==await digest(saved))fail('Site settings changed. Reload before saving.',409);
  if(body.action==='version'){
-  keys(body,['action','revision','runtime','allowPreview']);
+  keys(body,['action','revision','runtime','allowPreview',...(runtime.validateCacheSelection&&Object.hasOwn(body,'bidCache')?['bidCache']:[])]);
+  if(runtime.validateCacheSelection)runtime.validateCacheSelection(body);
   const setup=siteSetupState(saved);if(setup.nextStep==='prebid')fail(setup.setupMessage);
   const currentId=saved.prebidBuilds.length===1?saved.prebidBuilds[0].id:null;
   const plan=await prepareSiteRuntimeSelection({siteId,snapshot:saved,catalog:runtimeCatalog,expectedRevision:body.revision,
-   selection:{runtime:body.runtime,allowPreview:body.allowPreview,enablePrebid:config.enablePrebid,prebidBuildId:config.enablePrebid?currentId:null}},env.BUILDS);
+   selection:{runtime:body.runtime,allowPreview:body.allowPreview,enablePrebid:config.enablePrebid,prebidBuildId:config.enablePrebid?currentId:null,...(Object.hasOwn(body,'bidCache')?{bidCache:body.bidCache}:{})}},env.BUILDS);
   return commitSiteConfiguration(env,saved,plan.configJson,actor);
  }
  if(body.action!=='position')fail('Unknown settings action.');
@@ -106,7 +110,8 @@ export async function changeSiteRuntime(env,siteId,actor,body){
  previewInput(next,descriptor,'20000101_000000');
  return commitSiteConfiguration(env,saved,next.config.config_json,actor);
 }
-export async function siteRuntimeBundle(env,siteId,body){
+export async function siteRuntimeBundle(env,siteId,body,runtime=defaultRuntime){
+ const {runtimeCatalog,descriptorForPin,previewInput,prepareSiteRuntimeSelection,readPinnedSiteRuntime,buildArtifactCandidate}=runtime;
  keys(body,['action','revision','acknowledge']);if(body.action!=='bundle'||body.acknowledge!==true)fail('Review this candidate before downloading.');
  const saved=await read(env,siteId);if(body.revision!==await digest(saved))fail('Site settings changed. Reload before generating.',409);
  const selected=await readPinnedSiteRuntime({siteId,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);
@@ -116,17 +121,17 @@ export async function siteRuntimeBundle(env,siteId,body){
  const zip=zipSync(Object.fromEntries(Object.entries(candidate.files).map(([name,bytes])=>[name,[bytes,{level:0,mtime:new Date('1980-01-01T00:00:00Z')}]])),{level:0});
  return new Response(zip,{headers:{'content-type':'application/zip','cache-control':'private, no-store','x-content-type-options':'nosniff','content-disposition':`attachment; filename="${siteId}-${selected.descriptor.version}-candidate.zip"`}});
 }
-export async function siteRuntimeResponse(request,env,siteId,actor){
+export async function siteRuntimeResponse(request,env,siteId,actor,runtime=defaultRuntime){
  const headers={'content-type':'application/json; charset=utf-8','cache-control':'private, no-store','x-content-type-options':'nosniff'};
  const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
  try{
-  if(request.method==='GET')return json(await siteRuntimeSettings(env,siteId));
+  if(request.method==='GET')return json(await siteRuntimeSettings(env,siteId,runtime));
   if(request.method!=='POST')return json({error:'Method not allowed.'},405);
   if((request.headers.get('content-type')??'').split(';')[0]!=='application/json')return json({error:'JSON required.'},415);
   const reader=request.body?.getReader();if(!reader)fail('JSON required.',400);
   let size=0;const chunks=[];try{for(;;){const item=await reader.read();if(item.done)break;size+=item.value.length;if(size>24000){await reader.cancel();fail('Request exceeds 24 KB.',413);}chunks.push(item.value);}}finally{reader.releaseLock();}
   const bytes=new Uint8Array(size);let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.length;}
   let body;try{body=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{fail('Invalid JSON.',400);}
-  return body?.action==='bundle'?await siteRuntimeBundle(env,siteId,body):json(await changeSiteRuntime(env,siteId,actor,body));
+  return body?.action==='bundle'?await siteRuntimeBundle(env,siteId,body,runtime):json(await changeSiteRuntime(env,siteId,actor,body,runtime));
  }catch(e){return json({error:e.status?e.message:'These saved settings need review before using this script version.'},e.status??422);}
 }

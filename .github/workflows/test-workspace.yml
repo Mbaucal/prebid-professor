@@ -49,6 +49,16 @@ jobs:
         run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs tests/runtime/site-runtime-selection.test.mjs tests/runtime/runtime-selection-cas.test.mjs tests/runtime/test-runtime-selection.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/tanjug-pilot.test.mjs
       - name: Verify read-only ads version UI routes
         run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
+      - name: Verify isolated bid-cache policy without changing any existing runtime
+        run: node --experimental-strip-types --test tests/runtime/bid-cache-policy.test.mjs tests/runtime/cache-lifecycle.test.mjs tests/runtime/cache-compiler.test.mjs tests/runtime/cache-candidate.test.mjs tests/runtime/cache-selection.test.mjs tests/runtime/tanjug-cache-review.test.mjs
+      - name: Prepare separate offline Tanjug cache pilot proposals without activation
+        run: node --experimental-strip-types scripts/prepare-tanjug-cache-review.mjs
+      - name: Verify and prepare local Tanjug response replacements without activation
+        run: |
+          node --experimental-strip-types --test tests/runtime/tanjug-local-check.test.mjs
+          node --experimental-strip-types scripts/prepare-tanjug-local-check.mjs
+      - name: Verify isolated experimental delivery, original package bytes and LOCAL A/A Worker
+        run: node --experimental-strip-types --test tests/runtime/experiment-delivery.test.mjs tests/runtime/experiment-workerd.test.mjs tests/runtime/experiment-controls.test.mjs tests/runtime/experiment-reporting.test.mjs tests/runtime/variant-targeting.test.mjs tests/runtime/variant-english-targeting.test.mjs tests/runtime/gam-report.test.mjs tests/runtime/assignment-collection.test.mjs tests/runtime/experiment-inspect.test.mjs tests/runtime/observed-runtime.test.mjs tests/runtime/observed-candidate.test.mjs tests/runtime/measured-runtime.test.mjs tests/runtime/measured-candidate.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:
@@ -74,8 +84,26 @@ jobs:
         run: python scripts/verify-test-workspace.py
       - name: Tanjug pilot preview and exact package download with all external traffic blocked
         run: python scripts/verify-tanjug-pilot.py
+      - name: Offline Tanjug cache proposal and exact candidate downloads without ads
+        run: python scripts/verify-tanjug-cache-review.py
       - name: New TEST deployment setup and version history (synthetic jobs only)
         run: python scripts/verify-deployment-ui.py
+      - name: A/B TEST controls and stale-tab protection (local synthetic browser)
+        run: python scripts/verify-experiment-ui.py
+      - name: Automatic TEST assignment collection and retry handling in Chromium
+        run: python scripts/verify-assignment-collection.py
+      - name: Native pinned Prebid cache selection with synthetic bids only
+        run: python scripts/verify-bid-cache-policy.py
+      - name: Compiled cache candidate lifecycle with synthetic GPT and TCF only
+        run: python scripts/verify-cached-runtime.py .generated/cache-package-evidence
+      - name: Both TEST cache editors and exact candidate download without ad execution
+        run: python scripts/verify-cache-selection.py
+      - name: Browser A/B loader dependency ordering, SRI, CSP and duplicate guards
+        run: python scripts/verify-experiment-loader.py
+      - name: New observed runtime entry and GPT lifecycle in local Chromium
+        run: python scripts/verify-observed-runtime.py
+      - name: New measured runtime targeting before local mock requests
+        run: python scripts/verify-measured-runtime.py
       - name: Keep only synthetic report and screenshots, never sessions or databases
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -88,5 +116,51 @@ jobs:
             .generated/tanjug-pilot-evidence/*.png
             .generated/delivery-evidence/*.json
             .generated/delivery-evidence/*.png
+            .generated/experiment-evidence/*.json
+            .generated/experiment-evidence/*.png
+            .generated/cache-evidence/*.json
+            .generated/cache-runtime-evidence/*.json
+            .generated/cache-package-evidence/*.json
+            .generated/cache-selection-evidence/*.json
+            .generated/cache-selection-evidence/*.png
+            .generated/experiment-loader-evidence/*.json
+            .generated/experiment-loader-evidence/*.png
+            .generated/observed-evidence/*.json
+            .generated/measured-evidence/*.json
           if-no-files-found: ignore
+          retention-days: 14
+      - name: Keep offline Tanjug proposals separately from synthetic test evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tanjug-cache-review-proposal
+          path: .generated/tanjug-cache-review/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Keep local browser replacement kits without deploying them
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tanjug-local-check
+          path: .generated/tanjug-local-check/*
+          if-no-files-found: error
+          retention-days: 14
+  tanjug-live-baseline:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feature/ab-delivery-foundation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Read the two publicly observed CDN scripts twice without executing them
+        run: node scripts/capture-tanjug-live-baseline.mjs
+      - name: Keep captured public bytes and report, including failure status
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tanjug-live-baseline
+          path: .generated/tanjug-live-capture/*
+          if-no-files-found: error
           retention-days: 14

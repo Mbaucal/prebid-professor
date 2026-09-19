@@ -1,4 +1,4 @@
-import { descriptorForPin, previewInput } from './runtime-catalog.mjs';
+import { descriptorForPin, previewInput } from './private-runtime-catalog.mjs';
 /** Data-only Prebid Download plan. Uses the same normalized input as activation. */
 import { fields, params, normalizePrebidDraft } from './prebid-draft.mjs';
 import { WorkspaceError } from './boundary.mjs';

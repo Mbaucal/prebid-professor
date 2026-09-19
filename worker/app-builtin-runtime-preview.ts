@@ -8,6 +8,7 @@ import { handleArtifactBundle } from './runtime/artifact-bundle-service.mjs';
 import type { ReleaseEnv } from './releases';
 import { siteRuntimeResponse } from './site-runtime/service.mjs';
 import { packageResponse, packageAssetResponse, builtInCdn } from './site-runtime/releases.mjs';
+import { abPackageResponse } from './site-runtime/ab-packages.mjs';
 interface Env extends AuthEnv, ReleaseEnv { ASSETS: Fetcher }
 const downstream = baseApp as {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
@@ -20,6 +21,14 @@ export default {
     const draftBlock = blockStoredDraftCdn(request);
     if (draftBlock) return draftBlock;
     const url = new URL(request.url);
+    const abMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/ab-packages(?:\/(tanjug-[a-z]+-\d+\.\d+\.\d+))?$/);
+    if(abMatch){
+      const actor=await getAuthenticatedUser(request,env);
+      const fail=(error:string,status:number)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'private, no-store'}});
+      if(!actor)return fail('Authentication required.',401);
+      if(!isSameOriginMutation(request)||(request.method==='PUT'&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
+      return abPackageResponse(request,env,abMatch[1],abMatch[2]??null,actor.email);
+    }
     const packageMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-releases(?:\/(builtin-release-[a-f0-9]{64})\/(index|files\/([a-zA-Z][a-zA-Z0-9.-]*)))?$/);
     if(packageMatch){
       const actor=await getAuthenticatedUser(request,env);

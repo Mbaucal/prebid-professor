@@ -1,3 +1,4 @@
+import { experimentInspectCommand } from '../debug/experiment-inspect.mjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { AdUnit, Bidder } from '../shared/types';
@@ -769,6 +770,7 @@ function liveLoggerCommand(scope: DebugScope): string {
 
 function buildCommands(scope: DebugScope): DebugCommand[] {
   return [
+    {id:'ab-inspect',category:'Runtime',title:'A/B experiment inspect',description:'Inspect selected packages, Prebid, duplicate loader attempts and loading errors. Copies JSON in DevTools; execution counts remain unknown without runtime evidence.',code:experimentInspectCommand},
     {
       id: 'full-diagnostic',
       category: 'Overview',

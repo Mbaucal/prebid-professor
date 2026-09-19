@@ -1,0 +1,14 @@
+{
+  "version": "tanjug-cache-review-v1",
+  "sourceFile": "worker/pilots/tanjug-v1.json",
+  "sourceSha256": "4bbf9264730a2de8577cca8e43b1db3857d6a3bce59aa74c2e321e28e26506b7",
+  "buildTimestamp": "20260917_230000",
+  "runtimeVersion": "3.13.0",
+  "runtimeSha256": "df61a0f1dfd4c12e64e5968078ffa0b7f0934afc89ef2389b21867acb4a88fb5",
+  "siteId": "tanjug-cache-test",
+  "siteName": "Tanjug — cache pilot review",
+  "includedUnits": ["Billboard", "Sticky"],
+  "maxAgeSeconds": 60,
+  "modes": {"control": "fresh-only", "cache": "auction-with-cache"},
+  "takeOver": {"enabled": false}
+}
