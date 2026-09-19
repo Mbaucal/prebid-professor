@@ -2,6 +2,28 @@
 
 _Last updated: 2026-07-29_
 
+## Update — 2026-09-19: A/B and cache diagnostics
+
+PR #64 adds **Debug → Runtime → A/B and bid cache inspect** to the main dashboard.
+Copy command, Preview command and Download .js use one self-contained, page-wide
+inspector. It reads the selected release/variant/hash, per-slot Variant labels,
+duplicate starts, fresh/cache/none selections, rejected offers and fallback counts.
+Fresh-only, waiting, unavailable and stopped instrumentation are distinct states.
+Targeting decisions are not evidence of rendered ads or earned revenue.
+
+Validation: 14 targeted read-only inspector tests and the production dashboard/Worker
+build pass. The main CI runs the inspector tests. This change has no database,
+authentication, Worker route, generated publisher script or refresh-setting changes.
+The command is available once this dashboard change is deployed; release status is
+tracked in MBA-62 and PR #64.
+
+Product status: the Tanjug A/A split and GAM Variant labels were accepted by Marko.
+The full `tanjug-cache-1.0.1` package is prepared, but cache revenue improvement is
+not established. The main A/B configuration editor, per-variant refresh controls,
+new-package generation and additional reporting labels remain development work
+(MBA-57/58/63). Bidder parameter forms are recorded in MBA-64. Existing immutable
+publisher packages are preserved; editing a future draft must create a new release.
+
 This document is the durable source of truth for the Tessera product. It should be updated whenever a feature is completed, a product decision changes, or a new requirement is recovered from earlier planning.
 
 > The product name is **Tessera**. The repository, Worker, database, bucket, and deployment identifiers may continue to use `prebid-professor` for compatibility.
