@@ -1,4 +1,4 @@
-import { runtimeCatalog, descriptorForPin, previewInput, prepareSiteRuntimeSelection, readPinnedSiteRuntime } from './runtime-catalog.mjs';
+import { runtimeCatalog, descriptorForPin, previewInput, prepareSiteRuntimeSelection, readPinnedSiteRuntime } from './private-runtime-catalog.mjs';
 /** Authenticated TEST configuration service. No live endpoints or ad execution. */
 import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';

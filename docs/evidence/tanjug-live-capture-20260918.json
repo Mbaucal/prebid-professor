@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "status": "captured",
+  "startedAt": "2026-09-18T05:37:22.040Z",
+  "completedAt": "2026-09-18T05:37:22.245Z",
+  "prebidHeader": {
+    "version": "10.10.0",
+    "modules": [
+      "consentManagementGpp",
+      "consentManagementTcf",
+      "criteoBidAdapter",
+      "criteoIdSystem",
+      "gppControl_usnat",
+      "gppControl_usstates",
+      "gptPreAuction",
+      "id5IdSystem",
+      "lotamePanoramaIdSystem",
+      "openxBidAdapter",
+      "pubmaticBidAdapter",
+      "sharedIdSystem",
+      "storageControl",
+      "tcfControl",
+      "teadsBidAdapter",
+      "teadsIdSystem",
+      "userId"
+    ]
+  },
+  "scripts": {
+    "ads.js": {
+      "url": "https://tanjug.pages.dev/ads.js",
+      "byteSize": 122756,
+      "sha256": "62fc33c7ece330d87cc3e684b7f3eba5009e36d74e43cc426b636eb956a6d2c4",
+      "contentType": "application/javascript",
+      "cacheControl": "public, max-age=0, must-revalidate"
+    },
+    "prebid.js": {
+      "url": "https://tanjug.pages.dev/prebid.js",
+      "byteSize": 288642,
+      "sha256": "c201f89c622fe33ff5131741750b2d07cf089414b01b8b609efee3ad8ba745b4",
+      "contentType": "application/javascript",
+      "cacheControl": "public, max-age=0, must-revalidate"
+    }
+  },
+  "repeatedReadsMatch": true,
+  "limitations": [
+    "Read-only CDN capture; no script was executed.",
+    "Two matching reads are not an atomic deployment snapshot.",
+    "Verify the live URLs again immediately before testing.",
+    "This does not verify CMP decisions, runtime initialization or revenue."
+  ],
+  "evidence": {
+    "codeCommit": "95c33eb58546ee28a33c5fc29e3912672cfb817e",
+    "runUrl": "https://github.com/Mbaucal/prebid-professor/actions/runs/35311518659",
+    "jobId": 105494371097,
+    "artifactId": 10533388504,
+    "artifactSha256": "008b8443deda412e8a5ed569240410aa7b7d9e9a55a2e3c3df21d110eb83f636",
+    "expiresAt": "2026-10-02T05:37:22Z"
+  }
+}

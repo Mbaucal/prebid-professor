@@ -1,4 +1,4 @@
-import { runtimeCatalog, prepareSiteRuntimeSelection, readPinnedSiteRuntime } from './runtime-catalog.mjs';
+import { runtimeCatalog, prepareSiteRuntimeSelection, readPinnedSiteRuntime } from './private-runtime-catalog.mjs';
 import { assertWorkspaceSiteScope } from './site-draft.mjs';
 /** Authenticated TEST settings service. The router enforces host, session,
  * same-origin, methods and request size before calling these functions.
@@ -12,6 +12,7 @@ import { inspectTestSchema } from './schema.mjs';
 import { WorkspaceError, TEST_SITE } from './boundary.mjs';
 import { commitTestRuntimeSelection } from './selection-transaction.mjs';
 import { describeRuntimeReleases } from '../runtime/runtime-release-history.mjs';
+import { readCacheSettings, validateCacheSelection } from './cache-settings.mjs';
 
 async function savedSettings(env) {
   if (!(await inspectTestSchema(env.DB)).ready) throw new WorkspaceError(409,'Prepare the empty test database on the Generate screen first.');
@@ -33,12 +34,13 @@ export async function readRuntimeSelectionSettings(env) {
   }
   // Do not return saved configJson, arbitrary fields, connector data or a file URL.
   return {site:{id:TEST_SITE,name:saved.site.name,domain:saved.site.domain,gamPath:saved.site.gam_path},
-    revision:await digest(saved),selected,validationIssue,publishable:false,prebidEditable:false,enablePrebid:config.enablePrebid,prebidBuildId:config.builtinRuntimeSelection?.prebid?.id??null,
+    revision:await digest(saved),selected,validationIssue,bidCache:readCacheSettings(saved),publishable:false,prebidEditable:false,enablePrebid:config.enablePrebid,prebidBuildId:config.builtinRuntimeSelection?.prebid?.id??null,
     releaseHistory:describeRuntimeReleases(runtimeCatalog,config.builtinRuntimeSelection?.runtime),
     runtimes:runtimeCatalog.map(r=>({id:r.id,version:r.version,channel:r.channel,pin:pinRuntime(r,{allowPreview:true})}))};
 }
 export async function saveRuntimeSelectionSettings(env,actor,body) {
   const {saved,config} = await savedSettings(env);
+  validateCacheSelection(body?.selection);
   if(body?.selection?.enablePrebid!==config.enablePrebid || body?.selection?.prebidBuildId!==(config.builtinRuntimeSelection?.prebid?.id??null))throw new WorkspaceError(422,'Use Prebid and bidders to change Prebid mode or file. The script-version form preserves that choice.');
   const plan = await prepareSiteRuntimeSelection({siteId:TEST_SITE,snapshot:saved,catalog:runtimeCatalog,
     expectedRevision:body.expectedRevision,selection:body.selection},env.BUILDS);

@@ -3,7 +3,7 @@ import '../site-workspace/runtime.css';
 import { runtimeLabel } from '../site-workspace/runtime-labels';
 
 type Position={code:string;type:string;sizeMap:string;enabled:boolean;display:string;overlay:any;lazy:any};
-type State={site:{id:string;name:string;domain:string};revision:string;selected:any;validationIssue:string|null;enablePrebid:boolean;prebid:{status:string;message:string};runtimes:Array<{version:string;pin:any}>;history:any[];positions:Position[]};
+type State={site:{id:string;name:string;domain:string};revision:string;selected:any;validationIssue:string|null;enablePrebid:boolean;bidCache?:{mode:string;maxAgeSeconds:number}|null;prebid:{status:string;message:string};runtimes:Array<{version:string;pin:any}>;history:any[];positions:Position[]};
 type Props={publisherId:string;view:'versions'|'positions';unitCode?:string;endpoint?:string;onChanged?:()=>void|Promise<void>;onOpenPrebid?:()=>void};
 const overlayDefaults={demand:'gam',desktopMinWidth:1024,desktopSeconds:10,mobileSeconds:5,countdown:true,frequencyMinutes:0};
 
@@ -11,14 +11,17 @@ export default function SiteRuntimePanel({publisherId,view,unitCode,endpoint,onC
  const url=endpoint??`/api/publishers/${encodeURIComponent(publisherId)}/builtin-site-settings`;
  const [state,setState]=useState<State|null>(null),[version,setVersion]=useState(''),[approved,setApproved]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[failed,setFailed]=useState(false),[stale,setStale]=useState(false);
  const [draft,setDraft]=useState<Position|null>(null);
+ const [cacheMode,setCacheMode]=useState(''),[cacheAge,setCacheAge]=useState('60');
  async function request(body?:unknown){const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});if(!r.ok){const e=await r.json();throw Error(e.error||'Request failed.');}return r;}
- function accept(data:State){setState(data);setVersion(data.selected?.runtimeSha256??'');setApproved(false);setDraft(null);setStale(false);}
+ function accept(data:State){setState(data);setVersion(data.selected?.runtimeSha256??'');setCacheMode(data.bidCache?.mode??'');setCacheAge(String(data.bidCache?.maxAgeSeconds??60));setApproved(false);setDraft(null);setStale(false);}
  useEffect(()=>{let active=true;setState(null);setDraft(null);setMessage('');setFailed(false);setStale(false);setBusy(false);request().then(r=>r.json()).then(data=>{if(active)accept(data);}).catch(e=>{if(active){setMessage(e.message);setFailed(true);}});return()=>{active=false;};},[url,publisherId]);
  async function run(fn:()=>Promise<void>){if(busy)return;setBusy(true);setFailed(false);try{await fn();}catch(e){setMessage(e instanceof Error?e.message:'Could not complete this action.');setFailed(true);setStale(true);}finally{setBusy(false);}}
  async function reload(note='Saved settings loaded.'){accept(await(await request()).json());setMessage(note);}
  const needsPrebid=state?.prebid.status==='missing'||state?.prebid.status==='ambiguous';
  const selected=state?.runtimes.find(r=>r.pin.runtimeSha256===version);
- async function saveVersion(){if(!selected||!state)return;await request({action:'version',revision:state.revision,runtime:selected.pin,allowPreview:approved});await reload('Script version saved. Your site settings and Prebid choice are retained.');await onChanged?.();}
+ const cached=Object.hasOwn(state??{},'bidCache')&&selected?.pin.capabilities.includes('bid-cache-policy');
+ const cacheValid=['fresh-only','auction-with-cache'].includes(cacheMode)&&Number.isInteger(Number(cacheAge))&&Number(cacheAge)>=1&&Number(cacheAge)<=300;
+ async function saveVersion(){if(!selected||!state)return;await request({action:'version',revision:state.revision,runtime:selected.pin,allowPreview:approved,...(cached?{bidCache:{mode:cacheMode,maxAgeSeconds:Number(cacheAge)}}:{})});await reload('Script version saved. Your site settings and Prebid choice are retained.');await onChanged?.();}
  async function savePosition(){if(!draft||!state)return;const position={code:draft.code,display:draft.display,overlay:draft.display==='takeover'?draft.overlay:null,lazy:draft.display==='takeover'?null:draft.lazy};await request({action:'position',revision:state.revision,position});await reload('Position settings saved. They apply to the next generated package.');await onChanged?.();}
  async function bundle(){if(!state)return;const response=await request({action:'bundle',revision:state.revision,acknowledge:true}),blob=await response.blob();const link=document.createElement('a'),objectUrl=URL.createObjectURL(blob);link.href=objectUrl;link.download=`${publisherId}-candidate.zip`;link.click();setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);setMessage('Candidate downloaded. It has not been published.');}
  const field=(label:string,key:string)=> <label key={key}>{label}<input type="number" min="0" step="1" value={draft?.overlay[key]??0} onChange={e=>setDraft(draft?{...draft,overlay:{...draft.overlay,[key]:Number(e.target.value)}}:null)}/></label>;
@@ -29,13 +32,20 @@ export default function SiteRuntimePanel({publisherId,view,unitCode,endpoint,onC
   {state?.validationIssue?<p className="runtime-error">{state.validationIssue}</p>:null}
   {state&&view==='versions'?<>
    <p>Tessera creates ads.js from this site’s saved settings. Choose a script version; no template upload is needed.</p>
-   <label>Script version<select aria-label="Script version" value={version} disabled={busy} onChange={e=>{setVersion(e.target.value);setApproved(false);}}><option value="">Choose a version</option>{state.runtimes.map(r=><option key={r.pin.runtimeSha256} value={r.pin.runtimeSha256}>{runtimeLabel(r.version)}</option>)}</select></label>
+   <label>Script version<select aria-label="Script version" value={version} disabled={busy} onChange={e=>{setVersion(e.target.value);setCacheMode(state.bidCache?.mode??'');setCacheAge(String(state.bidCache?.maxAgeSeconds??60));setApproved(false);}}><option value="">Choose a version</option>{state.runtimes.map(r=><option key={r.pin.runtimeSha256} value={r.pin.runtimeSha256}>{runtimeLabel(r.version)}</option>)}</select></label>
    <p>Saved version: <strong>{state.selected?runtimeLabel(state.selected.runtimeVersion):'Not selected'}</strong> · Prebid {state.enablePrebid?'enabled':'off'}</p>
    <div className={needsPrebid?"runtime-error":"runtime-message"}><p>{state.prebid.message}</p>{onOpenPrebid?<button onClick={onOpenPrebid}>Open Prebid.js</button>:null}</div>
+   {cached?<fieldset disabled={busy} className="runtime-edit"><legend>Bid cache · TEST</legend>
+    <label>Auction mode<select aria-label="Auction mode" value={cacheMode} onChange={e=>{setCacheMode(e.target.value);setApproved(false);}}><option value="">Choose a mode</option><option value="fresh-only">New auction only · cache off</option><option value="auction-with-cache">New auction + valid cached bids</option></select></label>
+    <label>Maximum bid age (seconds)<input aria-label="Maximum bid age (seconds)" type="number" min="1" max="300" step="1" value={cacheAge} onChange={e=>{setCacheAge(e.target.value);setApproved(false);}}/></label>
+    <p>Both modes call bidders. Cached bids stay on this page, cannot be reused after submission, and never outlive bidder TTL. Requires the exact reviewed Prebid 11.34.0 file.</p>
+    {!state.enablePrebid?<p className="runtime-error">Enable Prebid and choose its file first.</p>:null}
+    <p>{Number(cacheAge)<=30?'At a 30-second-or-longer refresh, offers older than this limit cannot compete. The refresh interval is not changed.':'Choose an age that fits your refresh interval. This limit never extends bidder TTL.'}</p>
+   </fieldset>:null}
    <label className="runtime-check"><input type="checkbox" checked={approved} disabled={busy} onChange={e=>setApproved(e.target.checked)}/>Use this script version for this site’s next package.</label>
-   <div className="runtime-actions"><button disabled={busy||stale||!selected||!approved||needsPrebid} onClick={()=>void run(saveVersion)}>Save script version</button><button disabled={busy||stale||!state.selected||needsPrebid||Boolean(state.validationIssue)} onClick={()=>void run(bundle)}>Download candidate ZIP</button></div>
+   <div className="runtime-actions"><button disabled={busy||stale||!selected||!approved||needsPrebid||(cached&&(!cacheValid||!state.enablePrebid))} onClick={()=>void run(saveVersion)}>Save script version</button><button disabled={busy||stale||!state.selected||needsPrebid||Boolean(state.validationIssue)} onClick={()=>void run(bundle)}>Download candidate ZIP</button></div>
    <p>Downloads are review candidates. Saved releases and live files are unchanged.</p>
-   <h3>Version history</h3>{state.history.map(r=><article className="runtime-release" key={r.codeSha256}><strong>{runtimeLabel(r.version)} · {r.date}</strong><p>{r.title} · {r.available?'Available':'Saved packages only'}{r.saved?' · Selected on this site':''}</p><ul>{r.changes.map((c:string)=><li key={c}>{c}</li>)}</ul><details><summary>Build details</summary><p>Build: {r.version} · {r.version.includes(".preview.")?"Test release":"Release"}</p><code>{r.codeSha256}</code></details></article>)}
+   <h3>Version history</h3>{state.history.map(r=><article className="runtime-release" key={r.codeSha256}><strong>{runtimeLabel(r.version)} · {r.date}</strong><p>{r.title} · {r.available?'Available':'Saved packages only'}{r.saved?' · Selected on this site':''}</p><ul>{r.changes.map((c:string)=><li key={c}>{c}</li>)}</ul><details><summary>Build details</summary><p>Build: {r.version} · {r.channel==='preview'?"Test release":"Release"}</p><code>{r.codeSha256}</code></details></article>)}
   </>:null}
   {state&&view==='positions'?<>
    <p>Use the ad unit’s existing size map and bidder overrides. These settings apply with script version 3.10.0.</p>

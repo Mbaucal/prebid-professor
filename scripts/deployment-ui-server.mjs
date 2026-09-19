@@ -16,7 +16,11 @@ const server=createServer({key:readFileSync(key),cert:readFileSync(cert)},async(
   try {
     let response;
     // Test controls exist only on this loopback harness, outside the application.
-    if(req.method==='POST'&&req.url==='/__fixture/connect'){fixture.env.TEST_GITHUB_ACTIONS_TOKEN=token;response=Response.json({synthetic:true});}
+    if(req.method==='GET'&&req.url==='/__fixture/collection-page'){
+      response=new Response('<!doctype html><title>Local collection fixture</title><div id="Billboard" class="wrapperAd"></div><div id="P1" class="wrapperAd"></div><script src="/__fixture/mock-ads.js"></script><script src="/test-api/experiments/preview/test-site/ads.js"></script><script src="/test-api/experiments/preview/test-site/ads.js"></script>',{headers:{'content-type':'text/html','content-security-policy':"default-src 'self'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self' about:"}});
+    }else if(req.method==='GET'&&req.url==='/__fixture/mock-ads.js'){
+      response=new Response(readFileSync('tests/runtime/mock-ad-libraries.js','utf8')+'\ndelete window.pbjs;',{headers:{'content-type':'application/javascript'}});
+    }else if(req.method==='POST'&&req.url==='/__fixture/connect'){fixture.env.TEST_GITHUB_ACTIONS_TOKEN=token;response=Response.json({synthetic:true});}
     else if(req.method==='POST'&&req.url==='/__fixture/complete'){
       const run=(await readLedger(fixture.env.BUILDS)).state.runs[0];if(!run)throw Error('No synthetic job.');
       const base=DEPLOY_ORIGIN+'/test-api/deployment-runner/'+run.id;

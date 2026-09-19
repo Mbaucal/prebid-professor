@@ -2,7 +2,7 @@ import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { sha256 } from '../runtime/prebid-artifact-check.mjs';
 import { describeCandidate, saveDraftRelease, readDraftRelease } from '../runtime/draft-release-store.mjs';
-import { runtimeCatalog, readPinnedSiteRuntime, buildArtifactCandidate } from '../test-workspace/runtime-catalog.mjs';
+import * as defaultRuntime from '../test-workspace/runtime-catalog.mjs';
 import { takeOverForBuild } from '../test-workspace/takeover-settings.mjs';
 import { zipSync } from 'fflate';
 import { siteSetupState } from './setup-state.mjs';
@@ -16,7 +16,8 @@ const key=(site,id,name)=>`publishers/${site}/releases/${id}/${name}`;
 const type=name=>name.endsWith('.js')?'application/javascript':name.endsWith('.json')?'application/json':name.endsWith('.css')?'text/css':name.endsWith('.html')?'text/html':'text/plain';
 const zip=files=>zipSync(Object.fromEntries(Object.entries(files).map(([n,b])=>[n,[b,{level:0,mtime:new Date(1980,0,1)}]])),{level:0});
 const payload=row=>({id:row.id,version:row.version,status:row.status,notes:row.notes,createdAt:row.created_at,publishedAt:row.published_at});
-export async function packageState(env,site,{testOnly=false}={}){
+export async function packageState(env,site,{testOnly=false,runtime=defaultRuntime}={}){
+ const {runtimeCatalog,readPinnedSiteRuntime}=runtime;
  const saved=await snapshot(env,site),revision=await digest(saved);let error=null,selected=null;
  try{selected=await readPinnedSiteRuntime({siteId:site,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);}catch(e){error=e.message;}
  const setup=siteSetupState(saved);if(error&&setup.setupMessage)error=setup.setupMessage;
@@ -30,7 +31,8 @@ export async function packageState(env,site,{testOnly=false}={}){
    ORDER BY CASE WHEN r.status='production' OR EXISTS(SELECT 1 FROM audit_log a WHERE a.publisher_id=r.publisher_id AND a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id) THEN 0 ELSE 1 END,was_production DESC,r.created_at DESC,r.id DESC LIMIT 50`).bind(site).all();
  return {site:saved.site,revision,ready:!error,error,nextStep:error?setup.nextStep:null,runtime:selected?.pin??null,testOnly,releases:rows.results.map(payload),earlierReleases:earlier.results.map(r=>({...payload(r),canRestore:r.status==='archived'&&Boolean(r.was_production)}))};
 }
-async function build(env,site,revision,stamp){
+async function build(env,site,revision,stamp,runtime){
+ const {runtimeCatalog,readPinnedSiteRuntime,buildArtifactCandidate}=runtime;
  const saved=await snapshot(env,site);check(await digest(saved)===revision,'Settings changed. Reload before generating.');
  const selected=await readPinnedSiteRuntime({siteId:site,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);
  const candidate=await buildArtifactCandidate({snapshot:selected.snapshot,pin:selected.pin,prebid:selected.prebid,takeOver:takeOverForBuild(saved),buildTimestamp:stamp});
@@ -39,11 +41,11 @@ async function build(env,site,revision,stamp){
  return {candidate,saved};
 }
 /** Explicit generation creates a stored package, never changes a channel. */
-export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
+export async function generatePackage(env,site,actor,body,{testOnly=false,runtime=defaultRuntime}={}){
  check(body&&Object.keys(body).sort().join('|')==='notes|revision','Use the displayed generation fields.',422);
  check(typeof body.notes==='string'&&body.notes.length<=160,'Use a release note of up to 160 characters.',422);
  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace('T','_').slice(0,15);
- const {candidate,saved}=await build(env,site,body.revision,stamp);
+ const {candidate,saved}=await build(env,site,body.revision,stamp,runtime);
  if(testOnly){
   check(site==='test-site','Only the existing TEST site is allowed.',403);
   const result=await saveDraftRelease({isolation:'explicit-test-store',db:env.DB,bucket:env.BUILDS},{siteId:site,candidate,actor,note:body.notes});

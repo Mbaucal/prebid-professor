@@ -1,0 +1,11 @@
+import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
+import {prepareTanjugCacheReview,cacheReviewHtml} from '../worker/pilots/tanjug-cache-review.mjs';
+const root=new URL('../',import.meta.url),read=path=>readFileSync(new URL(path,root));
+const proposal=JSON.parse(read('worker/pilots/tanjug-cache-review-v1.json'));
+const result=await prepareTanjugCacheReview({proposal,sourceBytes:read(proposal.sourceFile),prebidBytes:read('vendor/prebid/tanjug-11.34.0/prebid.js')});
+const out=new URL('.generated/tanjug-cache-review/',root);mkdirSync(out,{recursive:true});
+for(const [arm,candidate] of Object.entries(result.candidates))writeFileSync(new URL(`${proposal.version}-${arm}.zip`,out),candidate.zip);
+writeFileSync(new URL('review.json',out),JSON.stringify(result.report,null,2)+'\n');
+writeFileSync(new URL('review.html',out),cacheReviewHtml(result.report));
+writeFileSync(new URL('README.txt',out),'Offline review only. Open review.html to inspect the proposed scope. Both ZIPs are complete immutable candidates, not a deployed experiment. Their implementation.html files can request real ads if served. Do not load both wrappers. Marko selected live Tanjug for eventual testing; no separate test page is required. First capture the active live files and prepare rollback, then one controlled visit replacing the original wrapper before loading. This two-position proposal cannot replace all live inventory. Small-cohort eligibility still needs preparation; trafficB is only the A/B split. Stop selects the new A package, not the old live script. No live Tanjug configuration was inspected or changed. Both experiment plans in review.json are disabled.\n');
+console.log(`Prepared ${proposal.version}: two exact 3.13.0 packages; Billboard + Sticky; full-source InText incompatibility reported. No network, storage bindings or activation.`);

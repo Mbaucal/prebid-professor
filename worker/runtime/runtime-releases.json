@@ -1,5 +1,153 @@
 [
   {
+    "id": "variant-labels-en-preview-1",
+    "version": "3.14.1",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "runtime-diagnostics",
+      "gpt-lifecycle-observer",
+      "experiment-slot-targeting",
+      "bid-cache-policy",
+      "cache-lifecycle-diagnostics",
+      "plain-variant-targeting",
+      "english-variant-targeting"
+    ],
+    "codeSha256": "b56d25f3bbf97e604f4f161dda2edd1f27237ed0ae84e9a3e1f7a182b334035e",
+    "date": "2026-09-18",
+    "title": "English Variant key for A/B reporting",
+    "sourceManifest": "scripts/prepare-variant-en-runtime.mjs",
+    "sourceCommit": "fa320b4dd6ca52f2325f85dcf51852589dd5bf31",
+    "changes": [
+      "Use exactly Variant=A or Variant=B for public GPT targeting and measurement diagnostics.",
+      "Retain 3.14.0 cache, auction, consent and Prebid behavior; existing versions and saved packages keep their original keys and bytes.",
+      "Prepare GAM values and report templates use the exact key of the selected runtime. Both experiment arms must use the same format."
+    ]
+  },
+  {
+    "id": "variant-labels-preview-1",
+    "version": "3.14.0",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "runtime-diagnostics",
+      "gpt-lifecycle-observer",
+      "experiment-slot-targeting",
+      "bid-cache-policy",
+      "cache-lifecycle-diagnostics",
+      "plain-variant-targeting"
+    ],
+    "codeSha256": "fd117b2ca218d952f202bd89931f779d27a343d9c3de2dd8aad21308690d756c",
+    "date": "2026-09-18",
+    "title": "Simple public A/B variant labels",
+    "sourceManifest": "scripts/prepare-variant-runtime.mjs",
+    "sourceCommit": "d3533429a016c747e1e091e3d9559ade1053f38d",
+    "changes": [
+      "Send only Varijant=A or Varijant=B on owned GPT slots with a valid active experiment context; keep full experiment and package identity in local diagnostics.",
+      "Retain the reviewed cache, auction, consent and Prebid behavior from 3.13.0 in a separate immutable version.",
+      "Existing versions and saved packages remain unchanged. GAM report comparisons require matching inventory and test dates because A/B labels are reused."
+    ]
+  },
+  {
+    "id": "tessera-cache-preview-1",
+    "version": "3.13.0",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "runtime-diagnostics",
+      "gpt-lifecycle-observer",
+      "experiment-slot-targeting",
+      "bid-cache-policy",
+      "cache-lifecycle-diagnostics"
+    ],
+    "codeSha256": "df61a0f1dfd4c12e64e5968078ffa0b7f0934afc89ef2389b21867acb4a88fb5",
+    "date": "2026-09-17",
+    "title": "Consent-aware bid cache and final-request targeting",
+    "sourceManifest": "scripts/prepare-cached-runtime.mjs",
+    "sourceCommit": "b21431bcd9d6ddaee2cedb16cec080e2447d09de",
+    "changes": [
+      "Add explicit fresh-only and new-auction-plus-cache modes in a separately pinned runtime; enforce exact reviewed Prebid 11.34.0 artifact bytes.",
+      "Defer native targeting until owned-slot GAM submission, including both lazy paths and TakeOver; enforce TTL, size, consent-context, duplicate and late-auction guards.",
+      "Observe TCF, viewport and page lifecycle changes without overriding consent; unknown or unsupported privacy contexts cannot reuse cached offers.",
+      "Expose bounded cache selection and failure diagnostics; preserve existing runtime source closures, archived packages and catalog defaults. Candidate only, not live activation."
+    ]
+  },
+  {
+    "id": "tessera-measured-preview-1",
+    "version": "3.12.0-tessera.preview.1",
+    "codeSha256": "901a1850e72cd35fcd43533a039042ecc52e0785fce63248bc27502150e9e870",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "runtime-diagnostics",
+      "gpt-lifecycle-observer",
+      "experiment-slot-targeting"
+    ],
+    "date": "2026-09-17",
+    "title": "Owned-slot GAM experiment measurement",
+    "sourceManifest": "scripts/prepare-measured-runtime.mjs",
+    "sourceCommit": "649c1f5d3eb36e6e3ec6763121c0b43f856471da",
+    "changes": [
+      "Attach one delivery/variant reporting value to runtime-owned GPT slots before requests, including TakeOver.",
+      "Require a matching active loader context; preserve page-local assignment and existing bid targeting.",
+      "Retain bounded local runtime diagnostics and add measurement snapshots; no user identifiers, telemetry or CMP changes.",
+      "Candidate only, not yet selectable in the private catalog; existing versions and publisher routes remain unchanged."
+    ]
+  },
+  {
+    "id": "tessera-observed-preview-1",
+    "version": "3.11.0-tessera.preview.1",
+    "codeSha256": "3482a9a6118e5ddf4e989590744cef1f20fe25fd3602558533db2afa1838804b",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "runtime-diagnostics",
+      "gpt-lifecycle-observer"
+    ],
+    "date": "2026-09-17",
+    "title": "Local runtime diagnostics and GPT lifecycle observation",
+    "sourceManifest": "scripts/prepare-observed-runtime.mjs",
+    "sourceCommit": "b8e510d2c83d7e7e400b8ae673a0e66c47300bad",
+    "changes": [
+      "Count new runtime entry attempts and blocked duplicate executions without changing archived engines.",
+      "Observe owned GPT slots: requests, filled/empty render responses, iframe load and viewability events with bounded local diagnostics.",
+      "Record ambiguous overlapping requests without assigning misleading latency; no telemetry, consent or GAM targeting changes.",
+      "Experimental candidate only; not automatically selectable or activated for publishers."
+    ]
+  },
+  {
     "id": "tessera-positions-preview-1",
     "version": "3.10.0-tessera.preview.1",
     "codeSha256": "ae98640d4c373547f1a2b9c6ac867010f5760c14ed71b49fb8907fcfeb3fc5cc",
