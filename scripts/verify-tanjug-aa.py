@@ -8,6 +8,7 @@ root=pathlib.Path(os.environ.get('TANJUG_PACKAGE_DIR','.generated/tanjug-aa/depl
 manifest_path=root/'release.json' if (root/'release.json').is_file() else root.parent/'release.json'
 manifest=json.loads(manifest_path.read_text())
 readiness=manifest.get('kind')=='static-aa-readiness-observer'
+cmp_fix=manifest.get('release')=='tanjug-aa-1.0.2'
 config=manifest['config']; checks=[]; page_errors=[]; blocked=set()
 mock=pathlib.Path('tests/runtime/mock-ad-libraries.js').read_text()
 # Keep synthetic GPT and TCF. Prebid always comes from the actual shipped file.
@@ -28,8 +29,25 @@ class Handler(BaseHTTPRequestHandler):
    if case=='duplicate':tags+=tags
    if case not in ['auto','tampered']:
     tags+='<script nonce="fixture" src="/prebid.js?case='+case+'" async></script>'
-   data=('<!doctype html><meta charset="utf-8"><title>A/A fixture</title><link rel="stylesheet" href="/min-height.css"><script nonce="fixture" src="/mock.js"></script>'+tags+'<body>'+positions+'</body>').encode();typ='text/html'
-  elif path=='/mock.js':data=mock.encode()
+   data=('<!doctype html><meta charset="utf-8"><title>A/A fixture</title><link rel="stylesheet" href="/min-height.css"><script nonce="fixture" src="/mock.js?case='+case+'"></script>'+tags+'<body>'+positions+'</body>').encode();typ='text/html'
+  elif path=='/mock.js':
+   case=query.get('case',['normal'])[0];extra=''
+   if cmp_fix and case in ['cmp-late','cmp-absent','cmp-string']:
+    extra=""";(()=>{const original=window.__tcfapi;delete window.__tcfapi;
+      window.__cmpInitialBidRequests=0;
+      const install=()=>{window.__tcfapi=(command,version,callback)=>{
+        if(command==='addEventListener'||command==='getTCData'){
+          const grants=Object.fromEntries(Array.from({length:1000},(_,i)=>[i+1,true]));
+          callback({gdprApplies:true,tcString:'synthetic-tcf-consent-fixture',listenerId:1,eventStatus:'tcloaded',cmpStatus:'loaded',
+            purpose:{consents:grants,legitimateInterests:grants},vendor:{consents:grants,legitimateInterests:grants},
+            specialFeatureOptins:grants,publisher:{restrictions:{}}},true);
+        }else callback(true);
+      };};
+    """
+    if case=='cmp-string':extra+='install();'
+    elif case=='cmp-late':extra+="setTimeout(()=>{window.__cmpInitialBidRequests=(window.pbjs?.getEvents?.()||[]).filter(e=>e.eventType==='bidRequested').length;install();},2000);"
+    extra+='})();'
+   data=(mock+extra).encode()
   elif path=='/prebid.js' and query.get('case')==['delayed']:
    time.sleep(2);data=(root/'prebid.js').read_bytes()
   elif path=='/prebid.js' and query.get('case')==['wrong']:
@@ -66,7 +84,9 @@ try:
  with sync_playwright() as p:
   browser=p.chromium.launch(headless=True,args=['--no-proxy-server','--disable-quic','--host-resolver-rules=EXCLUDE 127.0.0.1, MAP * ~NOTFOUND'])
   try:
-   for arm,width,case in [('A',1280,'normal'),('B',390,'normal'),('A',1280,'delayed'),('B',1280,'auto'),('A',1280,'duplicate'),('A',1280,'wrong'),('A',1280,'failed'),('A',1280,'tampered')]:
+   cases=[('A',1280,'normal'),('B',390,'normal'),('A',1280,'delayed'),('B',1280,'auto'),('A',1280,'duplicate'),('A',1280,'wrong'),('A',1280,'failed'),('A',1280,'tampered')]
+   if cmp_fix:cases += [('A',1280,'cmp-late'),('B',390,'cmp-string'),('A',1280,'cmp-absent')]
+   for arm,width,case in cases:
     context=browser.new_context(viewport={'width':width,'height':900},service_workers='block')
     # Force the loader's one-word allocation draw only. Native Prebid UUID/bid-ID
     # entropy must remain intact or different ad units can acquire the same ID.
@@ -114,6 +134,14 @@ try:
      check(label+': fluid and 1x1 retained',page.evaluate("adSlots.InText_1.sizes.some(s=>s==='fluid') && adSlots.InText_1.sizes.some(s=>Array.isArray(s)&&s[0]===1&&s[1]===1)"))
      wait(page,'__testAds.observations.requests.length>0',timeout=15000)
      check(label+': every first request carries Variant',page.evaluate('__testAds.observations.requests.every(r=>r.Variant==='+json.dumps(arm)+')'))
+     if cmp_fix:
+      check(label+': native TCF module stays enabled',page.evaluate("pbjs.getConfig('consentManagement').gdpr.enabled===true && pbjs.getConfig('consentManagement').gdpr.cmpApi==='iab'"))
+      if case in ['cmp-late','cmp-string']:
+       check(label+': actual native bidder requests receive CMP string',page.evaluate("pbjs.getEvents().some(e=>e.eventType==='bidRequested' && e.args.gdprConsent?.consentString==='synthetic-tcf-consent-fixture' && e.args.gdprConsent.gdprApplies===true)"))
+      if case=='cmp-late':
+       check('CMP late: no bidder request before real API appears',page.evaluate("__cmpInitialBidRequests===0 && AdConsent.snapshot().waitedMs>=1900 && AdConsent.snapshot().status==='available'"))
+      if case=='cmp-absent':
+       check('CMP absent: native consent prevents bidder calls; no disabling bypass',page.evaluate("AdConsent.snapshot().status==='api-timeout' && !pbjs.getEvents().some(e=>e.eventType==='bidRequested')"))
      if readiness:
       wait(page,"window.AdBidReadiness?.snapshot().rows.find(r=>r.position==='Billboard')?.counters.received>=2",timeout=15000)
       check(label+': full-slot readiness observer initialized',page.evaluate('AdBidReadiness.snapshot().rows.length===19 && AdBidReadiness.snapshot().rows.every(r=>r.registered)'))
