@@ -1,8 +1,42 @@
+.config-groups,
 .config-subnav {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 18px 32px 0;
   background: #edf0f4;
+}
+
+.config-groups {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #d4dbe5;
+}
+
+.config-groups button {
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 16px;
+  color: #5d6776;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.config-groups button.active {
+  color: #ffffff;
+  background: #273140;
+}
+
+.config-groups button:focus-visible,
+.config-subnav button:focus-visible {
+  outline: 2px solid #d85813;
+  outline-offset: 3px;
+}
+
+.config-section-note {
+  color: #5d6776;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .config-subnav button {
@@ -363,10 +397,12 @@
 }
 
 @media (max-width: 760px) {
+  .config-groups,
   .config-subnav {
     padding: 14px 18px 0;
-    overflow-x: auto;
   }
+
+  .config-groups { padding-bottom: 12px; }
 
   .config-subnav button {
     white-space: nowrap;

@@ -15,6 +15,7 @@ import type {
 type Props = {
   publisherId: string;
   onChanged?: () => void | Promise<void>;
+  onOpenRefresh?: () => void;
 };
 
 type FormMode = 'create' | 'edit' | 'duplicate';
@@ -229,7 +230,7 @@ function refreshText(rule: UnitRuleConfig): string {
   return `${rule.refresh.minSeconds}s · ${rule.refresh.minViewPct}% in view · ${previous}`;
 }
 
-export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
+export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }: Props) {
   const [unitRules, setUnitRules] = useState<UnitRule[]>([]);
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
   const [sizeMaps, setSizeMaps] = useState<SizeMap[]>([]);
@@ -483,6 +484,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
             </p>
           </div>
           <div className="unit-rule-toolbar-actions">
+            {onOpenRefresh ? <button className="button secondary" type="button" onClick={onOpenRefresh}>Refresh schedules</button> : null}
             {missingReserved.length ? (
               <button
                 className="button secondary"
