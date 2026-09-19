@@ -134,6 +134,15 @@ try:
      check(label+': fluid and 1x1 retained',page.evaluate("adSlots.InText_1.sizes.some(s=>s==='fluid') && adSlots.InText_1.sizes.some(s=>Array.isArray(s)&&s[0]===1&&s[1]===1)"))
      wait(page,'__testAds.observations.requests.length>0',timeout=15000)
      check(label+': every first request carries Variant',page.evaluate('__testAds.observations.requests.every(r=>r.Variant==='+json.dumps(arm)+')'))
+     if manifest.get('kind')=='tanjug-configurable-ab-v1':
+      arm_settings=manifest['settings']['arms'][arm]
+      check(label+': diagnostic matches saved arm settings',state['mode']==arm_settings['mode'] and state['refreshSeconds']==arm_settings['refreshSeconds'])
+      if width==1280 and case=='normal' and arm_settings['refreshSeconds']==10:
+       page.locator('#Billboard').scroll_into_view_if_needed()
+       page.evaluate("__testAds.emit('slotVisibilityChanged',{slot:adSlots.Billboard,inViewPercentage:100})")
+       wait(page,"__testAds.observations.requests.filter(r=>r.id==='Billboard').length>=2",timeout=25000)
+       gap=page.evaluate("(()=>{const r=__testAds.observations.requests.filter(r=>r.id==='Billboard');return r[1].at-r[0].at;})()")
+       check(label+': ten-second refresh reaches GAM without a hidden thirty-second minimum',10000<=gap<25000)
      if cmp_fix:
       check(label+': native TCF module stays enabled',page.evaluate("pbjs.getConfig('consentManagement').gdpr.enabled===true && pbjs.getConfig('consentManagement').gdpr.cmpApi==='iab'"))
       if case in ['cmp-late','cmp-string']:
