@@ -2,6 +2,25 @@
 
 _Last updated: 2026-07-29_
 
+## Update — 2026-09-20: Configurable Tanjug A/B packages
+
+**Tanjug → Releases → A/B testing** now connects the editor to authenticated
+generation, immutable R2 storage and verified whole-ZIP download. Both variants
+have independent fresh-auction/cache modes, cache age limits and standard refresh
+intervals; the traffic split is configurable. Reusing the same inputs returns the
+same release. Debug reports the configured interval and allocation.
+
+This first editor uses the reviewed Tanjug 19-position baseline and Prebid 11.34.0.
+It does not incorporate unrelated Config changes. Activation remains a manual
+whole-ZIP upload to the existing Pages project; generating a package changes no
+live script. A/A 1.0.2 stays available as a fallback. Other sites, adaptive ready-bid
+refresh and direct publication remain follow-up work (MBA-57/59/63/66).
+
+Verification covers schema/storage faults, bundled Worker parity with the offline
+compiler, real React generation/download/history and the minified downloaded
+package with synthetic GPT/TCF and native Prebid. Existing release bytes remain
+unchanged. Agency → Publisher → Site with agency logos is tracked in MBA-65.
+
 ## Update — 2026-09-19: A/B and cache diagnostics
 
 PR #64 adds **Debug → Runtime → A/B and bid cache inspect** to the main dashboard.

@@ -1,0 +1,49 @@
+name: A/B editor and generated delivery
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  ab-editor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - run: npm ci --ignore-scripts
+      - name: Build app and verify pinned package/service contracts
+        run: |
+          npm run build
+          node --test tests/runtime/configurable-ab.test.mjs tests/runtime/ab-editor.test.mjs tests/runtime/full-cache-policy.test.mjs tests/runtime/full-cache-lifecycle.test.mjs tests/runtime/experiment-inspect.test.mjs
+          node scripts/verify-ab-editor-workerd.mjs
+      - name: Install pinned browser tools
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Exercise the editor and downloaded package
+        run: |
+          python scripts/verify-ab-editor-ui.py
+          TANJUG_PACKAGE_DIR=.generated/ab-editor-delivered/deploy python scripts/verify-tanjug-cache.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: ab-editor-evidence
+          path: |
+            .generated/ab-editor-delivered/*.json
+            .generated/ab-editor-ui/*.json
+            .generated/ab-editor-ui/*.png
+          if-no-files-found: error
+          retention-days: 30
