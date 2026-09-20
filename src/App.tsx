@@ -114,7 +114,7 @@ export default function App() {
   const [activePublisherId, setActivePublisherId] = useState<string | null>(null);
   const [activeSiteId, setActiveSiteId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<PublisherTab>('Overview');
-  const [configEntry, setConfigEntry] = useState<'ad-units' | 'generator-profiles'>('ad-units');
+  const [configEntry, setConfigEntry] = useState<'ad-units' | 'generator-profiles' | 'demand-mode'>('ad-units');
   const [modal, setModal] = useState<ModalMode>(null);
   const [publisherForm, setPublisherForm] = useState<PublisherForm>(emptyPublisherForm);
   const [siteForm, setSiteForm] = useState<SiteForm>(emptySiteForm);
@@ -568,7 +568,7 @@ export default function App() {
           <ReleasesPanel
             onNavigate={destination => {
               if (destination === 'prebid') setActiveTab('Prebid.js');
-              else { setConfigEntry('generator-profiles'); setActiveTab('Config'); }
+              else { setConfigEntry(destination === 'demand' ? 'demand-mode' : 'generator-profiles'); setActiveTab('Config'); }
             }}
             onChanged={() => loadHierarchy(publisher?.id, site.id)}
             publisherId={site.id}

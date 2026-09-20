@@ -6,7 +6,7 @@ import AbExperimentPanel from './AbExperimentPanel';
 import ScriptLibraryPanel from './ScriptLibraryPanel';
 import '../site-workspace/runtime.css';
 import { runtimeLabel } from '../site-workspace/runtime-labels';
-type Props={publisherId:string;endpoint?:string;onChanged?:()=>void|Promise<void>;onNavigate?:(destination:'prebid'|'versions')=>void};
+type Props={publisherId:string;endpoint?:string;onChanged?:()=>void|Promise<void>;onNavigate?:(destination:'prebid'|'versions'|'demand')=>void};
 export default function SitePackagesPanel({publisherId,endpoint,onChanged,onNavigate}:Props){
  const url=endpoint??`/api/publishers/${encodeURIComponent(publisherId)}/builtin-releases`;
  const [state,setState]=useState<any>(null),[notes,setNotes]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[failed,setFailed]=useState(false);
@@ -28,14 +28,14 @@ export default function SitePackagesPanel({publisherId,endpoint,onChanged,onNavi
  {message?<p role="status" className={failed?'runtime-error':'runtime-message'}>{message}</p>:null}
  {!state?<p>Loading saved packages…</p>:<>
  <p>{state.site.name} · {state.runtime?runtimeLabel(state.runtime.runtimeVersion):'Setup needed'}</p>
- {state.error?<div className="runtime-error"><p>{state.error}</p>{state.nextStep&&onNavigate?<button onClick={()=>onNavigate(state.nextStep)}>{state.nextStep==='prebid'?'Open Prebid.js':'Choose ads.js version'}</button>:null}</div>:null}
+ {state.error?<div className="runtime-error"><p>{state.error}</p>{state.nextStep&&onNavigate?<button onClick={()=>onNavigate(state.nextStep)}>{state.nextStep==='prebid'?'Open Prebid.js':state.nextStep==='demand'?'Edit Prebid settings':'Choose ads.js version'}</button>:null}</div>:null}
  <p>Generate from this site’s saved ad units, size maps, bidders and script version. Each saved package keeps its original files.</p>
  <label>What changed?<input maxLength={160} value={notes} disabled={busy} onChange={e=>setNotes(e.target.value)} placeholder="Short release note"/></label>
  <div className="runtime-actions"><button disabled={busy||!state.ready} onClick={()=>void run(generate)}>{busy?'Working…':'Generate and save package'}</button><button disabled={busy} onClick={()=>void run(reload)}>Reload releases</button></div>
  {state.testOnly?<p>This is your TEST copy. Preview delivery is available in <a href="/deployments">TEST deployments</a>.</p>:<p>Stage a saved package before publishing. Existing site URLs stay the same.</p>}
  <h3>Saved versions</h3>{state.releases.length===0?<p>No built-in packages saved yet.</p>:state.releases.map((r:any)=><article key={r.id} className="runtime-release"><strong>{r.notes||'Generated package'}</strong><p>{new Date(r.createdAt).toLocaleString()} · {r.status}</p><details><summary>Package ID</summary><code>{r.id}</code></details><div className="runtime-actions"><button disabled={busy} onClick={()=>void run(()=>download(r.id))}>Download saved ZIP</button>{!state.testOnly?<><button disabled={busy||r.status==='production'} onClick={()=>void run(()=>channel(r.id,'staging'))}>Stage package</button>{r.status==='staging'?<button disabled={busy} onClick={()=>void run(()=>channel(r.id,'production'))}>Publish package</button>:null}{r.status==='archived'?<button disabled={busy} onClick={()=>void run(()=>channel(r.id,'rollback'))}>Restore published package</button>:null}{deleteButton(r)}</>:null}</div></article>)}
  {!state.testOnly&&state.earlierReleases?.length?<><h3>Earlier packages</h3><p>Packages created before the built-in generator remain available. Restore a previously published version without changing your current editor settings.</p>{state.earlierReleases.map((r:any)=><article key={r.id} className="runtime-release"><strong>{r.notes||r.version}</strong><p>{r.version} · {r.status} · {new Date(r.createdAt).toLocaleString()}</p>{r.canRestore?<button disabled={busy} onClick={()=>void run(()=>restoreEarlier(r))}>Restore earlier published package</button>:null}{deleteButton(r)}</article>)}</>:null}
- {!state.testOnly?<><ScriptLibraryPanel key={publisherId} publisherId={publisherId}/><AbExperimentPanel key={'earlier-'+publisherId} publisherId={publisherId} archiveOnly/><ExternalDeploymentsPanel publisherId={publisherId} releases={[...state.releases,...(state.earlierReleases??[])]} /></>:null}
+ {!state.testOnly?<><ScriptLibraryPanel key={publisherId} publisherId={publisherId} onOpenDemand={onNavigate?()=>onNavigate('demand'):undefined}/><AbExperimentPanel key={'earlier-'+publisherId} publisherId={publisherId} archiveOnly/><ExternalDeploymentsPanel publisherId={publisherId} releases={[...state.releases,...(state.earlierReleases??[])]} /></>:null}
  </>}
  </section>;
 }

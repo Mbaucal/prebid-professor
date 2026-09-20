@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {Miniflare} from 'miniflare';
 import {unzipSync} from 'fflate';
 import {buildSavedScript,buildSavedTest} from './saved-script-package.mjs';
+import {seedScriptLibrary} from './script-library-test-db.mjs';
 import {sha256} from './static-aa-package.mjs';
 
 const directory=await mkdtemp(join(tmpdir(),'script-library-'));
@@ -21,14 +22,26 @@ try {
     outboundService:()=>{outbound++;return new Response('External traffic blocked',{status:503});}});
   await mf.ready;
   const db=await mf.getD1Database('DB');
-  await db.exec("CREATE TABLE publishers(id TEXT PRIMARY KEY,name TEXT,domain TEXT,gam_path TEXT); INSERT INTO publishers VALUES('tanjug','Tanjug','tanjug.rs','/22852026051/Tanjug.rs-Display/');");
+  await seedScriptLibrary(db);
   const path='/api/publishers/tanjug/script-library';
   check('Unauthenticated settings are rejected',(await mf.dispatchFetch(origin+path)).status===401);
   const login=await mf.dispatchFetch(origin+'/api/auth/login',{method:'POST',headers:{origin,'content-type':'application/x-www-form-urlencoded'},
     body:new URLSearchParams({email:'tester@example.invalid',password}),redirect:'manual'});
   assert(login.headers.get('set-cookie'),'Fixture login failed.');const cookie=login.headers.get('set-cookie').split(';')[0];
   const call=(suffix='',body,extra={})=>mf.dispatchFetch(origin+path+suffix,{method:body?'POST':'GET',headers:{cookie,...(body?{origin,'content-type':'application/json'}:{}),...extra},body:body?JSON.stringify(body):undefined});
-  const state=await(await call()).json();check('Reviewed baseline is available',state.supported&&state.baseline.positions===19);
+  let state=await(await call()).json();check('Reviewed baseline is available',state.supported&&state.baseline.positions===19);
+  const demand=(body,headers={cookie,origin})=>mf.dispatchFetch(origin+'/api/publishers/tanjug/prebid-mode',{method:body?'PUT':'GET',headers:{...headers,'content-type':'application/json'},body:body?JSON.stringify(body):undefined});
+  const initialDemand=await(await demand()).json();
+  check('Demand defaults to fresh auctions without altering config',initialDemand.prebidMode.bidCache.enabled===false&&initialDemand.bidCacheAvailable===true);
+  const saveDemand=async enabled=>{
+    const current=await(await demand()).json();
+    const response=await demand({enabled:true,revision:current.revision,bidCache:{enabled,maxBidAgeSeconds:60}});
+    assert.equal(response.status,200,await response.clone().text());
+    const saved=await response.json();assert.equal(saved.prebidMode.bidCache.enabled,enabled);
+    return saved;
+  };
+  check('Cross-origin Demand save is rejected',(await demand({enabled:true,revision:initialDemand.revision,bidCache:{enabled:true,maxBidAgeSeconds:60}},{cookie,origin:'https://other.invalid'})).status===403);
+  check('Invalid cache age is rejected',(await demand({enabled:true,revision:initialDemand.revision,bidCache:{enabled:true,maxBidAgeSeconds:0}})).status===422);
   const inputs={base:await readFile('.generated/tanjug-pilot/ads.js'),previousArchive:await readFile('.generated/tanjug-cmp/tanjug-aa-1.0.2.zip')};
   const scripts={};const savedScripts={};
   const output='.generated/script-library-delivered/';await mkdir(output,{recursive:true});
@@ -40,10 +53,11 @@ try {
   }
   for(const variant of ['A','B']){
     const settings=variant==='A'?{mode:'fresh-only',refreshSeconds:10}:{mode:'auction-with-cache',refreshSeconds:10,maxBidAgeSeconds:60};
-    const body={revision:state.revision,name:variant==='A'?'Standard 10s':'Cache 60s',settings};
+    await saveDemand(variant==='B');state=await(await call()).json();
+    const body={revision:state.revision,name:variant==='A'?'Standard 10s':'Cache 60s',refreshSeconds:10};
     if(variant==='A')check('Cross-origin writes rejected',(await call('/scripts',body,{origin:'https://other.invalid'})).status===403);
     const response=await call('/scripts',body),data=await response.json();assert.equal(response.status,201,JSON.stringify(data));
-    const expected=scripts[variant]=await buildSavedScript({...inputs,...body});savedScripts[variant]=data.item;
+    const expected=scripts[variant]=await buildSavedScript({...inputs,...body,settings});savedScripts[variant]=data.item;
     check('Correct named script '+variant,data.item.id===expected.id&&data.item.name===body.name);
     await materialize('scripts',data.item.id,variant==='A'?'fresh':'cache',expected);
     const retry=await call('/scripts',body);check('Idempotent save '+variant,retry.status===200&&(await retry.json()).item.id===expected.id);
@@ -55,6 +69,19 @@ try {
     check('Saved references '+label,data.item.scripts.A.id===pair.A.id&&data.item.scripts.B.id===pair.B.id);
     await materialize('tests',data.item.id,label,expected);
   }
+  check('Stale Demand form cannot overwrite newer settings',(await demand({enabled:true,revision:initialDemand.revision,bidCache:{enabled:false,maxBidAgeSeconds:60}})).status===409);
+  const currentDemand=await(await demand()).json();
+  const config=JSON.parse((await db.prepare("SELECT config_json FROM publisher_configs WHERE publisher_id='tanjug'").first()).config_json);
+  check('Saving cache preserves currency and consent',config.currency==='EUR'&&config.consent.cmpApi==='iab');
+  check('Generation rejects a caller-supplied cache override',(await call('/scripts',{revision:state.revision,name:'Override',refreshSeconds:10,settings:{mode:'fresh-only',refreshSeconds:10}})).status===422);
+  const oldGenerator=await mf.dispatchFetch(origin+'/api/publishers/tanjug/releases/generate',{method:'POST',headers:{cookie,origin,'content-type':'application/json'},body:'{}'});
+  check('Older generator cannot silently ignore saved cache settings',oldGenerator.status===409&&(await oldGenerator.json()).error.includes('Bid caching'));
+  const off=await demand({enabled:false,revision:currentDemand.revision,bidCache:currentDemand.prebidMode.bidCache});
+  check('Turning Prebid off keeps the saved cache choice',off.status===200&&(await off.json()).prebidMode.bidCache.enabled===true);
+  state=await(await call()).json();
+  check('Prebid off blocks new named Prebid scripts',(await call('/scripts',{revision:state.revision,name:'Off',refreshSeconds:10})).status===409);
+  check('Saved scripts remain downloadable after Demand changes',(await call('/scripts/'+savedScripts.B.id+'.zip')).status===200);
+  await saveDemand(true);
   const history=await(await call()).json();check('Named script and test history',history.scripts.length===2&&history.tests.length===2);
   const recordKeys=(await (await mf.getR2Bucket('BUILDS')).list({prefix:'site-script-library/'})).objects;
   check('Only immutable script/test objects created',recordKeys.length===8);
@@ -71,7 +98,7 @@ try {
   check('Restore succeeds',(await mutate('PUT')).status===200);
   check('Restored ZIP retains original hash',sha256(new Uint8Array(await(await call(suffix)).arrayBuffer()))===item.sha256);
   // Existing permanent-delete routes must retain active-version guards and require confirmation.
-  await db.exec("ALTER TABLE publishers ADD COLUMN current_release_id TEXT; ALTER TABLE publishers ADD COLUMN current_version TEXT; CREATE TABLE releases(id TEXT PRIMARY KEY,publisher_id TEXT,version TEXT,status TEXT); INSERT INTO releases VALUES('active-release','tanjug','active','production'),('draft-release','tanjug','draft','draft'); CREATE TABLE prebid_builds(id TEXT PRIMARY KEY,publisher_id TEXT,version TEXT,file_key TEXT,file_url TEXT,modules_json TEXT,status TEXT,uploaded_by TEXT,uploaded_at TEXT); INSERT INTO prebid_builds VALUES('current-build','tanjug','11','fixture-current.js',NULL,'[]','current','fixture','2026-09-20'),('old-build','tanjug','10','fixture-old.js',NULL,'[]','archived','fixture','2026-09-20');");
+  await db.exec("ALTER TABLE publishers ADD COLUMN current_release_id TEXT; ALTER TABLE publishers ADD COLUMN current_version TEXT; CREATE TABLE releases(id TEXT PRIMARY KEY,publisher_id TEXT,version TEXT,status TEXT); INSERT INTO releases VALUES('active-release','tanjug','active','production'),('draft-release','tanjug','draft','draft'); INSERT INTO prebid_builds VALUES('current-build','tanjug','11','fixture-current.js',NULL,'[]','current','fixture','2026-09-20'),('old-build','tanjug','10','fixture-old.js',NULL,'[]','archived','fixture','2026-09-20');");
   const deletion=(resource,id,confirm)=>mf.dispatchFetch(origin+'/api/publishers/tanjug/'+resource+'/'+id,{method:'DELETE',headers:{cookie,origin,...(confirm?{'x-confirm-delete':id}:{})}});
   check('Active release remains protected',(await deletion('releases','active-release',true)).status===409);
   check('Draft release needs explicit confirmation',(await deletion('releases','draft-release',false)).status===422);

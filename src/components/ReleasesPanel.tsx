@@ -7,7 +7,7 @@ import SitePackagesPanel from './SitePackagesPanel';
 type Props = {
   publisherId: string;
   siteName: string;
-  onNavigate?: (destination: 'prebid' | 'versions') => void;
+  onNavigate?: (destination: 'prebid' | 'versions' | 'demand') => void;
   onChanged?: () => void | Promise<void>;
 };
 

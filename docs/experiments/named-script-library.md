@@ -1,8 +1,11 @@
 # Named scripts and optional A/B tests
 
 Tanjug → Releases → Scripts and A/B tests separates a saved script from the test
-that uses it. A script has a required, user-chosen name and its own auction/cache
-and standard refresh settings. Save script version creates an immutable standalone
+that uses it. Configure bid caching in **Config → Demand → Prebid**, alongside the
+Prebid on/off choice. Save the site settings, then name and generate a version in
+Releases. The release form shows a read-only cache summary and an Edit Prebid
+settings shortcut. Its standard refresh override stays in the new-version form.
+Save script version creates an immutable standalone
 ZIP and record. Download uses the chosen name plus a short version suffix.
 
 An A/B test only chooses a name, two existing script versions and traffic split.
@@ -13,10 +16,28 @@ remain independently usable. Standalone delivery does not add Variant targeting;
 A/B delivery adds exactly Variant=A or Variant=B.
 
 The existing accepted baseline is still Tanjug A/A 1.0.2: 19 positions, Prebid
-11.34.0 and its reviewed inventory, bidders and CMP behavior. Other Config edits
+11.34.0 and its reviewed inventory, bidders and CMP behavior. Demand cache settings
+and the site Prebid enabled flag are now read from the saved site configuration. Other Config edits
 and arbitrary site packages are not silently accepted. Composition verifies shared
 dependencies and baseline identity. Adaptive refresh and cache-first remain separate
 features. Standard cache mode continues to run an auction at each opportunity.
+
+## Demand settings and version boundaries
+
+`publisher_configs.config_json.prebidBidCache` stores `{enabled, maxBidAgeSeconds}`.
+Missing settings mean caching off with a remembered age of 60 seconds. The existing
+Prebid-mode API returns a configuration revision; cache edits require that revision
+and use a compare-and-swap update while preserving unrelated configuration and pins.
+Turning Prebid off retains the cache preference, hides its controls, and blocks new
+named Prebid scripts. Existing saved versions and A/B packages remain usable.
+
+Cache support is currently the reviewed Tanjug named generator. Other sites cannot
+enable it yet. Older generic generators cannot silently ignore an enabled cache
+choice: generation is blocked with a link to Demand and guidance to named scripts.
+No runtime source, saved package, default configuration or live channel is changed.
+
+To compare modes, save a fresh version, change Demand caching, save a cached version,
+and choose those two named versions in A/B. Later Demand edits never rebuild them.
 
 ## Identity and persistence
 
@@ -32,7 +53,9 @@ integrity verification and CMP entry flow. Debug reports delivery mode, script
 name/version, optional test name, allocation and cache/refresh settings.
 
 `/api/publishers/:site/script-library` is authenticated. POST `/scripts` and `/tests`
-require same-origin, strict bounded JSON and the site/baseline revision. Tests accept
+require same-origin, strict bounded JSON and the site/baseline/Prebid revision. New
+script requests accept only name, refreshSeconds and revision; auction mode and
+cache age come from the server-owned configuration, never a second browser form. Tests accept
 only script IDs saved under the same site. R2 uses a new `site-script-library/v1/`
 prefix; conditional writes, checksummed metadata and archive verification precede
 registration. Incomplete or corrupt packages cannot be downloaded or composed.

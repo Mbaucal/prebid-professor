@@ -4,6 +4,7 @@ import { readPreviewSnapshot } from './runtime/builtin-preview-service.mjs';
 import { digest } from './runtime/preview-snapshot.mjs';
 import { runtimeCatalog, prepareSiteRuntimeSelection } from './test-workspace/runtime-catalog.mjs';
 import { commitSiteConfiguration } from './site-runtime/service.mjs';
+import { bidCacheSettings, supportsNamedScripts } from './site-runtime/prebid-cache-settings.mjs';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -71,11 +72,15 @@ async function buildPayload(db: D1Database, siteId: string, config: JsonRecord):
   ]);
 
   const enabled = enabledFromConfig(config);
+  const site = await db.prepare('SELECT domain, gam_path FROM publishers WHERE id = ?').bind(siteId).first();
   return {
+    revision: await digest(config),
+    bidCacheAvailable: supportsNamedScripts(site),
     ok: true,
     prebidMode: {
       enabled,
       mode: enabled ? 'gam-prebid' : 'gam-adx-only',
+      bidCache: bidCacheSettings(config.prebidBidCache),
     },
     savedState: {
       bidders: Number(bidderCounts?.total ?? 0),
@@ -111,7 +116,8 @@ export async function getPrebidMode(env: DatabaseEnv, siteId: string): Promise<R
 
   const row = await readConfig(env.DB, siteId);
   if (!row) return apiError('Publisher config was not found.', 404);
-  return json(await buildPayload(env.DB, siteId, parseConfig(row.config_json)));
+  try { return json(await buildPayload(env.DB, siteId, parseConfig(row.config_json))); }
+  catch { return apiError('Saved Prebid settings need review.', 422); }
 }
 
 export async function updatePrebidMode(
@@ -137,6 +143,16 @@ export async function updatePrebidMode(
   if (!row) return apiError('Publisher config was not found.', 404);
 
   const config = parseConfig(row.config_json);
+  let bidCache;
+  try { bidCache = bidCacheSettings(Object.hasOwn(body,'bidCache') ? body.bidCache : config.prebidBidCache); }
+  catch (error) { return apiError((error as Error).message, 422); }
+  if (Object.hasOwn(body,'bidCache') && body.revision !== await digest(config)) {
+    return apiError('Prebid settings changed. Reload before saving.', 409);
+  }
+  if (body.enabled && bidCache.enabled) {
+    const site = await env.DB.prepare('SELECT domain, gam_path FROM publishers WHERE id = ?').bind(siteId).first();
+    if (!supportsNamedScripts(site)) return apiError('Bid caching is currently available for the reviewed Tanjug script generator.', 422);
+  }
   const previousEnabled = enabledFromConfig(config);
   const enabled = body.enabled;
   const controls = isRecord(config.runtimeControls) ? config.runtimeControls : {};
@@ -144,24 +160,28 @@ export async function updatePrebidMode(
   if (!enabled && Object.values(positions).some(value => isRecord(value) && value.demand === 'site')) {
     return apiError('This TakeOver uses Prebid + GAM. Change its demand to GAM only before disabling Prebid.', 422);
   }
-  if (isRecord(config.builtinRuntimeSelection)) {
+  if (isRecord(config.builtinRuntimeSelection) && enabled !== previousEnabled) {
     try {
       const saved = await readPreviewSnapshot(env.DB.withSession('first-primary'), siteId, { includePrebid: true });
       const current = JSON.parse(saved.config.config_json);
+      if (await digest(current) !== await digest(config)) return apiError('Prebid settings changed. Reload before saving.', 409);
       const plan = await prepareSiteRuntimeSelection({siteId, snapshot:saved, catalog:runtimeCatalog,
         expectedRevision:await digest(saved), selection:{runtime:current.builtinRuntimeSelection.runtime,
           allowPreview:true, enablePrebid:enabled, prebidBuildId:enabled && saved.prebidBuilds.length===1?saved.prebidBuilds[0].id:null}}, env.BUILDS);
-      await commitSiteConfiguration(env,saved,plan.configJson,getActor(request),{audit:{
+      const nextConfig = JSON.parse(plan.configJson);
+      if (Object.hasOwn(body,'bidCache')) nextConfig.prebidBidCache = bidCache;
+      await commitSiteConfiguration(env,saved,JSON.stringify(nextConfig),getActor(request),{audit:{
         action:'prebid_mode.updated',entityType:'prebid_mode',entityId:siteId,
-        details:{previousEnabled:enabledFromConfig(current),enabled,mode:enabled?'gam-prebid':'gam-adx-only',savedBidderConfigurationPreserved:true},
+        details:{previousEnabled:enabledFromConfig(current),enabled,mode:enabled?'gam-prebid':'gam-adx-only',savedBidderConfigurationPreserved:true,bidCache},
       }});
-      return json(await buildPayload(env.DB,siteId,JSON.parse(plan.configJson)));
+      return json(await buildPayload(env.DB,siteId,nextConfig));
     } catch (error) {
       const failure=error as Error & {status?:number};
       return apiError(failure.message||'Prebid mode could not be saved.',failure.status??422);
     }
   }
   config.enablePrebid = enabled;
+  if (Object.hasOwn(body,'bidCache')) config.prebidBidCache = bidCache;
 
   const actor = getActor(request);
   const now = new Date().toISOString();
@@ -181,6 +201,7 @@ export async function updatePrebidMode(
           siteId,
           siteId,
           JSON.stringify({
+            bidCache,
             previousEnabled,
             enabled,
             mode: enabled ? 'gam-prebid' : 'gam-adx-only',

@@ -1,20 +1,20 @@
 import ConfirmDeleteButton from './ConfirmDeleteButton';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
-import {scriptSettings,displayName} from '../../worker/experiments/saved-script-settings.mjs';
+import {displayName} from '../../worker/experiments/saved-script-settings.mjs';
 import './ab-experiments.css';
 
 type Settings={mode:'fresh-only'|'auction-with-cache';refreshSeconds:number|null;maxBidAgeSeconds?:number};
 type ScriptRef={id:string;name:string;settings:Settings};
 type Saved=ScriptRef&{collection:'scripts'|'tests';createdAt:string;bytes:number;sha256:string;trafficBPercent?:number;scripts?:{A:ScriptRef;B:ScriptRef}};
-type Library={supported:boolean;revision:string;baseline:{release:string;positions:number;prebidVersion:string};scripts:Saved[];tests:Saved[];deletedScripts:Saved[];deletedTests:Saved[];nextCursors:{scripts:string|null;tests:string|null}};
+type Library={supported:boolean;revision:string;baseline:{release:string;positions:number;prebidVersion:string};prebid:{enabled:boolean;bidCache:{enabled:boolean;maxBidAgeSeconds:number}};scripts:Saved[];tests:Saved[];deletedScripts:Saved[];deletedTests:Saved[];nextCursors:{scripts:string|null;tests:string|null}};
 type Kind='scripts'|'tests';
 const description=(s:Settings)=>`${s.mode==='fresh-only'?'Fresh auction':`Auction + cached bids, up to ${s.maxBidAgeSeconds} s`} · ${s.refreshSeconds===null?'baseline refresh rules':`${s.refreshSeconds} s refresh`}`;
 const merge=(items:Saved[],added:Saved[])=>[...new Map([...items,...added].map(p=>[p.id,p])).values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
 
-export default function ScriptLibraryPanel({publisherId}:{publisherId:string}) {
+export default function ScriptLibraryPanel({publisherId,onOpenDemand}:{publisherId:string;onOpenDemand?:()=>void}) {
   const base=`/api/publishers/${encodeURIComponent(publisherId)}/script-library`;
-  const [library,setLibrary]=useState<Library|null>(null),[name,setName]=useState(''),[mode,setMode]=useState<Settings['mode']>('fresh-only');
-  const [refresh,setRefresh]=useState('preserve'),[seconds,setSeconds]=useState('30'),[age,setAge]=useState('60');
+  const [library,setLibrary]=useState<Library|null>(null),[name,setName]=useState('');
+  const [refresh,setRefresh]=useState('preserve'),[seconds,setSeconds]=useState('30');
   const [testName,setTestName]=useState(''),[a,setA]=useState(''),[b,setB]=useState(''),[traffic,setTraffic]=useState('50');
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');const lock=useRef(false);
   async function request(path='',init:RequestInit={}) {
@@ -30,8 +30,7 @@ export default function ScriptLibraryPanel({publisherId}:{publisherId:string}) {
     return data.item as Saved;
   }
   async function saveScript(e:FormEvent){e.preventDefault();await run(async()=>{
-    const settings=scriptSettings({mode,refreshSeconds:refresh==='preserve'?null:Number(seconds),...(mode==='auction-with-cache'?{maxBidAgeSeconds:Number(age)}:{})});
-    const saved=await save('scripts',{name:displayName(name),settings});if(!a)setA(saved.id);else if(!b)setB(saved.id);
+    const saved=await save('scripts',{name:displayName(name),refreshSeconds:refresh==='preserve'?null:Number(seconds)});if(!a)setA(saved.id);else if(!b)setB(saved.id);
   });}
   async function saveTest(e:FormEvent){e.preventDefault();await run(async()=>{await save('tests',{name:displayName(testName),scriptA:a,scriptB:b,trafficBPercent:Number(traffic)});});}
   async function download(p:Saved) {
@@ -56,7 +55,7 @@ export default function ScriptLibraryPanel({publisherId}:{publisherId:string}) {
     }finally{lock.current=false;setBusy(false);}
   }
   function deleteButton(p:Saved){return <ConfirmDeleteButton name={p.name} disabled={busy} description={p.collection==='scripts'?'Delete this saved script from the list? Saved tests keep their own copy. You can restore this version from Deleted scripts and tests.':'Delete this saved test from the list? Its source scripts stay available. You can restore this test from Deleted scripts and tests.'} onConfirm={()=>removeSaved(p)}/>;}
-  function useScript(s:ScriptRef){setName((s.name+' copy').slice(0,80));setMode(s.settings.mode);setRefresh(s.settings.refreshSeconds===null?'preserve':'fixed');setSeconds(String(s.settings.refreshSeconds??30));setAge(String(s.settings.maxBidAgeSeconds??60));setMessage('Settings copied into New script. Choose a name and save a new version.');}
+  function useScript(s:ScriptRef){setName((s.name+' copy').slice(0,80));setRefresh(s.settings.refreshSeconds===null?'preserve':'fixed');setSeconds(String(s.settings.refreshSeconds??30));setMessage('Name and refresh copied. The new version will use the saved Demand → Prebid cache settings shown above.');}
   function option(s:Saved){return <option key={s.id} value={s.id}>{s.name} · {s.id.slice(-8)}</option>;}
   function details(s:Saved){return <details><summary>Version details</summary><code>{s.id}</code><p>SHA-256 <code>{s.sha256}</code></p></details>;}
   if(library?.supported===false)return null;
@@ -65,12 +64,16 @@ export default function ScriptLibraryPanel({publisherId}:{publisherId:string}) {
     {error?<p role="alert" className="runtime-error">{error}</p>:null}{message?<p role="status" className="runtime-message">{message}</p>:null}
     {!library?<p>Loading saved scripts…</p>:<>
       <p>Name and save each script once. Use it on its own, or select two saved versions for an A/B test.</p>
-      <details className="ab-baseline"><summary>Starting point: Tanjug · {library.baseline.positions} positions · Prebid {library.baseline.prebidVersion}</summary><p>Uses the reviewed {library.baseline.release} inventory, bidders and consent setup. Other Config changes are not included in this pilot.</p></details>
-      <form onSubmit={saveScript}><fieldset className="ab-form" disabled={busy}><legend>New script</legend>
+      <details className="ab-baseline"><summary>Starting point: Tanjug · {library.baseline.positions} positions · Prebid {library.baseline.prebidVersion}</summary><p>Uses the reviewed {library.baseline.release} inventory, bidders and consent setup. Bid caching uses the saved Demand → Prebid settings. Other Config changes are not included in this pilot.</p></details>
+      {!library.prebid.enabled?<p className="ab-help">Prebid is off. Enable it in Config → Demand → Prebid to create a new script. {onOpenDemand?<button type="button" onClick={onOpenDemand}>Edit Prebid settings</button>:null}</p>:null}
+      <form onSubmit={saveScript}><fieldset className="ab-form" disabled={busy || !library.prebid.enabled}><legend>New script</legend>
         <label>Script name<input required maxLength={80} value={name} onChange={e=>setName(e.target.value)} placeholder="For example: Standard 30s or Cache 60s"/></label>
         <div className="ab-arms"><div>
-          <label>Auction mode<select aria-label="Auction mode" value={mode} onChange={e=>setMode(e.target.value as Settings['mode'])}><option value="fresh-only">Fresh auction</option><option value="auction-with-cache">Auction + valid cached bids</option></select></label>
-          {mode==='auction-with-cache'?<label>Maximum bid age (seconds)<input aria-label="Maximum bid age (seconds)" type="number" required min={1} max={300} step={1} value={age} onChange={e=>setAge(e.target.value)}/><span>Bid TTL can be shorter. Each opportunity still starts a new auction.</span></label>:null}
+          <div className="ab-help" aria-label="Saved bid caching settings"><strong>Bid caching: {library.prebid.bidCache.enabled?'On':'Off'}</strong>
+            <p>{library.prebid.bidCache.enabled?`New auctions + valid cached bids, up to ${library.prebid.bidCache.maxBidAgeSeconds} s.`:'Fresh auction only.'}</p>
+            <p>Saved in Config → Demand → Prebid.</p>
+            {onOpenDemand?<button className="button secondary" type="button" onClick={onOpenDemand}>Edit Prebid settings</button>:null}
+          </div>
         </div><div>
           <label>Refresh<select aria-label="Refresh" value={refresh} onChange={e=>setRefresh(e.target.value)}><option value="preserve">Keep baseline position rules</option><option value="fixed">Set standard interval</option></select></label>
           {refresh==='fixed'?<label>Standard interval (seconds)<input type="number" required min={1} max={7200} step={1} value={seconds} onChange={e=>setSeconds(e.target.value)}/></label>:null}
@@ -79,7 +82,7 @@ export default function ScriptLibraryPanel({publisherId}:{publisherId:string}) {
       </fieldset></form>
       <h3>Saved scripts</h3>{!library.scripts.length?<p>No saved scripts yet. Create your first version above.</p>:library.scripts.map(s=><article className="ab-saved" key={s.id} aria-label={'Script: '+s.name}>
         <h4>{s.name}</h4><p>{description(s.settings)}</p><p>Version {s.id.slice(-8)} · {new Date(s.createdAt).toLocaleString()}</p>
-        <div className="runtime-actions"><button className="button primary" disabled={busy} onClick={()=>void run(()=>download(s))}>Download standalone ZIP</button><button className="button secondary" disabled={busy} onClick={()=>useScript(s)}>Create from these settings</button>{deleteButton(s)}</div>{details(s)}
+        <div className="runtime-actions"><button className="button primary" disabled={busy} onClick={()=>void run(()=>download(s))}>Download standalone ZIP</button><button className="button secondary" disabled={busy} onClick={()=>useScript(s)}>Create new version</button>{deleteButton(s)}</div>{details(s)}
       </article>)}
       {library.nextCursors.scripts?<button disabled={busy} onClick={()=>void run(()=>more('scripts'))}>Load more scripts</button>:null}
       <hr/><h3>A/B testing</h3><p>Choose saved versions. Their settings and original files stay unchanged. Each page runs one script with Variant=A or Variant=B.</p>

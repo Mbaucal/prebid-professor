@@ -1,22 +1,35 @@
 import {createInterface} from 'node:readline';
 import {build} from 'esbuild';
-import {scriptLibraryResponse} from '../worker/site-runtime/script-library.mjs';
-const objects=new Map();
-const env={DB:{withSession:()=>({prepare:()=>({bind:id=>({first:async()=>({id,name:'Tanjug',domain:'tanjug.rs',gam_path:'/22852026051/Tanjug.rs-Display/'})})})})},BUILDS:{
-  delete:async key=>objects.delete(key),
-  get:async key=>objects.get(key)||null,
-  list:async({prefix})=>({objects:[...objects].filter(([key])=>key.startsWith(prefix)).map(([key,o])=>({key,customMetadata:o.customMetadata})),truncated:false}),
-  put:async(key,bytes,options)=>{if(objects.has(key))return null;const data=Uint8Array.from(bytes);objects.set(key,{size:data.length,customMetadata:options.customMetadata,arrayBuffer:async()=>data.slice().buffer});return {};},
-}};
+import {Miniflare} from 'miniflare';
+import {randomBytes} from 'node:crypto';
+import {readFile,mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {seedScriptLibrary} from './script-library-test-db.mjs';
+const directory=await mkdtemp(join(tmpdir(),'demand-library-ui-'));
+const origin='https://tessera.fixture.invalid',password=randomBytes(20).toString('hex');
+const mf=new Miniflare({modules:true,script:await readFile('dist/prebid_professor/index.js','utf8'),
+  compatibilityDate:'2026-07-15',compatibilityFlags:['nodejs_compat'],cf:false,resourcePersistencePath:directory,
+  d1Databases:{DB:'demand-ui-d1'},r2Buckets:{BUILDS:'demand-ui-r2'},
+  bindings:{ADMIN_EMAIL:'tester@example.invalid',ADMIN_PASSWORD:password,SESSION_SECRET:randomBytes(40).toString('hex')},
+  serviceBindings:{ASSETS:()=>new Response('fixture asset',{status:404})},
+  outboundService:()=>{throw Error('External network forbidden in this fixture');}});
+await mf.ready;await seedScriptLibrary(await mf.getD1Database('DB'));
+const login=await mf.dispatchFetch(origin+'/api/auth/login',{method:'POST',headers:{origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:'tester@example.invalid',password}),redirect:'manual'});
+const cookie=login.headers.get('set-cookie').split(';')[0];
 const harness=await build({stdin:{contents:`
-  import {createRoot} from 'react-dom/client';
+  import {useState} from 'react';import {createRoot} from 'react-dom/client';
   import ScriptLibraryPanel from './src/components/ScriptLibraryPanel';
-  import './src/styles.css';import './src/site-workspace/runtime.css';
-  createRoot(document.getElementById('root')).render(<main className="site-runtime-panel" style={{maxWidth:1100,margin:'auto',padding:16}}><ScriptLibraryPanel publisherId="tanjug"/></main>);
+  import PrebidModePanel from './src/components/PrebidModePanel';
+  import './src/styles.css';import './src/site-workspace/runtime.css';import './src/prebid-mode.css';
+  function App(){const [tab,setTab]=useState('releases');return <main className="site-runtime-panel" style={{maxWidth:1100,margin:'auto',padding:16}}>
+    <nav><button onClick={()=>setTab('demand')}>Demand → Prebid</button><button onClick={()=>setTab('releases')}>Releases</button></nav>
+    {tab==='demand'?<PrebidModePanel publisherId="tanjug"/>:<ScriptLibraryPanel publisherId="tanjug" onOpenDemand={()=>setTab('demand')}/>}
+  </main>;}createRoot(document.getElementById('root')).render(<App/>);
 `,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,outdir:'.generated/ab-ui',jsx:'automatic',format:'iife',minify:true,define:{'process.env.NODE_ENV':'"production"'}});
-globalThis.fetch=()=>{throw Error('External network forbidden in this fixture');};
 console.log(JSON.stringify({ready:true}));
-for await(const line of createInterface({input:process.stdin})) {
+try {
+ for await(const line of createInterface({input:process.stdin})) {
   try {
     const input=JSON.parse(line);let response;
     if(input.path==='/')response=new Response('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"><div id="root"></div><script src="/fixture.js"></script>',{headers:{'content-type':'text/html'}});
@@ -24,11 +37,11 @@ for await(const line of createInterface({input:process.stdin})) {
       const ext=input.path.endsWith('.js')?'.js':'.css';
       response=new Response(harness.outputFiles.find(f=>f.path.endsWith(ext)).text,{headers:{'content-type':ext==='.js'?'application/javascript':'text/css'}});
     } else {
-      const match=input.path.split('?')[0].match(/\/script-library(?:\/(scripts|tests)(?:\/(.+)\.zip)?)?$/);
-      if(!match)throw Error('Unknown fixture route');
-      response=await scriptLibraryResponse(new Request('https://tessera.fixture.invalid'+input.path,{method:input.method,
-        headers:input.body?{'content-type':'application/json'}:{},body:input.body||undefined}),env,'tanjug',match[1]??null,match[2]??null,'fixture@example.invalid');
+      if(!input.path.startsWith('/api/publishers/tanjug/'))throw Error('Unknown fixture route');
+      response=await mf.dispatchFetch(origin+input.path,{method:input.method,
+        headers:{cookie,origin,...(input.body?{'content-type':'application/json'}:{})},body:input.body||undefined});
     }
     console.log(JSON.stringify({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer()).toString('base64')}));
   }catch(e){console.log(JSON.stringify({error:e.message}));}
-}
+ }
+}finally{await mf.dispose();await rm(directory,{recursive:true,force:true});}
