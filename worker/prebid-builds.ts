@@ -417,6 +417,8 @@ export async function deletePrebidBuild(
     return apiError('The current Prebid build cannot be deleted. Activate another build first.', 409);
   }
 
+  if (request.headers.get('x-confirm-delete') !== buildId) return apiError('Confirm this exact Prebid file before deleting.', 422);
+
   const actor = getActor(request);
   const now = new Date().toISOString();
 

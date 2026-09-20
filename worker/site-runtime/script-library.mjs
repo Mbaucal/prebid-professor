@@ -1,3 +1,4 @@
+import {deletedPackage,changePackageDeletion} from './saved-package-trash.mjs';
 import {Buffer} from 'node:buffer';
 import {baseReadable,previousArchiveBase64,preparedTemplates} from '../../.generated/site-ab-baseline.mjs';
 import {buildSavedScript,buildSavedTest,BASELINE_SHA} from '../../scripts/saved-script-package.mjs';
@@ -8,6 +9,7 @@ const headers={'cache-control':'private, no-store','x-content-type-options':'nos
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{...headers,'content-type':'application/json'}});
 const check=(value,message,status=409)=>{if(!value)throw Object.assign(Error(message),{status});};
 const key=(site,kind,id,ext)=>`site-script-library/v1/${site}/${kind}/${ext==='json'?'records':'archives'}/${id}.${ext}`;
+const trashKey=(site,kind,id)=>`site-script-library/v1/${site}/deleted/${kind}/${id}.json`;
 const validId=(kind,id)=>(kind==='scripts'?SCRIPT_ID:TEST_ID).test(id);
 const readSite=(env,site)=>env.DB.withSession('first-primary').prepare('SELECT id,name,domain,gam_path FROM publishers WHERE id=?').bind(site).first();
 const supports=row=>row&&/^(?:https?:\/\/)?(?:www\.)?tanjug\.rs\/?$/i.test(row.domain?.trim()||'')&&row.gam_path==='/22852026051/Tanjug.rs-Display/';
@@ -27,7 +29,8 @@ function summary(record) {
   }
   return result;
 }
-async function recordAt(env,site,kind,id) {
+async function recordAt(env,site,kind,id,{allowDeleted=false}={}) {
+  if(!allowDeleted)check(!await deletedPackage(env.BUILDS,trashKey(site,kind,id)),'This version was deleted. Restore it from Deleted scripts and tests first.',410);
   check(validId(kind,id),'Unknown saved version.',404);
   const object=await env.BUILDS.get(key(site,kind,id,'json'));check(object&&object.size<32768,'Saved version not found.',404);
   const bytes=Buffer.from(await object.arrayBuffer());check(sha256(bytes)===object.customMetadata?.sha256,'Saved version metadata checksum differs.');
@@ -42,8 +45,9 @@ async function archiveAt(env,site,record) {
 }
 async function list(env,site,kind,cursor) {
   const page=await env.BUILDS.list({prefix:key(site,kind,'','json').slice(0,-5),limit:100,include:['customMetadata'],...(cursor?{cursor}:{})});
-  const items=page.objects.map(o=>{const s=JSON.parse(o.customMetadata?.summary||'null');check(o.key===key(site,kind,s?.id,'json'),'Saved version index differs.');return summary(s);}).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-  return {collection:kind,items,nextCursor:page.truncated?page.cursor:null};
+  const rows=await Promise.all(page.objects.map(async o=>{const s=JSON.parse(o.customMetadata?.summary||'null');check(o.key===key(site,kind,s?.id,'json'),'Saved version index differs.');return {...summary(s),deletedAt:(await deletedPackage(env.BUILDS,trashKey(site,kind,s.id)))?.deletedAt??null};}));
+  rows.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  return {collection:kind,items:rows.filter(r=>!r.deletedAt),deleted:rows.filter(r=>r.deletedAt),nextCursor:page.truncated?page.cursor:null};
 }
 async function bodyOf(request) {
   check(request.headers.get('content-type')?.split(';')[0]==='application/json','Send JSON settings.',415);
@@ -61,15 +65,19 @@ export async function scriptLibraryResponse(request,env,site,kind,id,actor,{scri
     const url=new URL(request.url),collection=url.searchParams.get('collection'),cursor=url.searchParams.get('cursor');
     check(!url.search||(!kind&&request.method==='GET'&&['scripts','tests'].includes(collection)&&cursor&&cursor.length<=2048
       &&[...url.searchParams.keys()].sort().join(',')==='collection,cursor'),'Unknown query.',400);
-    check(['GET','POST'].includes(request.method)&&!(id&&request.method!=='GET')&&(request.method!=='POST'||['scripts','tests'].includes(kind)),'Method not allowed.',405);
+    check((id?['GET','DELETE','PUT']:['GET','POST']).includes(request.method)&&(request.method!=='POST'||['scripts','tests'].includes(kind)),'Method not allowed.',405);
     const row=await readSite(env,site);check(row,'Site not found.',404);
     if(!supports(row)){if(!kind&&request.method==='GET')return json({supported:false});check(false,'This baseline belongs to the reviewed Tanjug site and GAM path.');}
+    if(id&&request.method!=='GET'){
+      const record=await recordAt(env,site,kind,id,{allowDeleted:true});
+      return json(await changePackageDeletion(env.BUILDS,trashKey(site,kind,id),{id,sha256:record.archiveSha256,actor},await bodyOf(request),request.method==='DELETE'));
+    }
     if(id){const record=await recordAt(env,site,kind,id);return new Response(await archiveAt(env,site,record),{headers:{...headers,'content-type':'application/zip','content-disposition':`attachment; filename="${record.id}.zip"`,'x-package-sha256':record.archiveSha256}});}
     if(request.method==='GET') {
       check(!kind,'Unknown library route.',404);if(cursor)return json(await list(env,site,collection,cursor));
       const [scripts,tests]=await Promise.all([list(env,site,'scripts'),list(env,site,'tests')]);
       return json({supported:true,revision:revision(row),baseline:{release:'tanjug-aa-1.0.2',positions:19,prebidVersion:'11.34.0'},defaults:DEFAULT_SCRIPT_SETTINGS,
-        scripts:scripts.items,tests:tests.items,nextCursors:{scripts:scripts.nextCursor,tests:tests.nextCursor}});
+        scripts:scripts.items,tests:tests.items,deletedScripts:scripts.deleted,deletedTests:tests.deleted,nextCursors:{scripts:scripts.nextCursor,tests:tests.nextCursor}});
     }
     const body=await bodyOf(request),expected=kind==='scripts'?['revision','name','settings']:['revision','name','scriptA','scriptB','trafficBPercent'];
     check(body&&Object.keys(body).sort().join(',')===expected.sort().join(','),'Use the displayed fields.',422);

@@ -7,6 +7,7 @@ function fixture() {
   const row={id:'tanjug',name:'Tanjug',domain:'tanjug.rs',gam_path:'/22852026051/Tanjug.rs-Display/'};
   const objects=new Map();let writes=0;
   const env={DB:{withSession:()=>({prepare:()=>({bind:id=>({first:async()=>id===row.id?{...row}:null})})})},BUILDS:{
+    delete:async key=>objects.delete(key),
     get:async key=>objects.get(key)||null,
     list:async({prefix})=>({objects:[...objects.entries()].filter(([key])=>key.startsWith(prefix)).map(([key,o])=>({key,customMetadata:o.customMetadata})),truncated:false}),
     put:async(key,bytes,options)=>{assert.equal(options.onlyIf.get('if-none-match'),'*');if(objects.has(key))return null;writes++;
@@ -65,4 +66,19 @@ test('saved corruption cannot be downloaded or replaced; sites cannot read each 
   assert.equal((await f.call('POST',body)).status,409);assert.equal(f.writes(),2);
   f.row.id='another-tanjug';
   assert.equal((await f.call('GET',undefined,p.release,{},'another-tanjug')).status,404);
+});
+
+test('earlier package delete requires exact confirmation and restores original bytes',async()=>{
+ const f=fixture(),state=await(await f.call()).json(),body={revision:state.revision,settings:settings(),notes:'Disposable'};
+ const p=(await(await f.call('POST',body)).json()).package;
+ const bytes=Buffer.from(await(await f.call('GET',undefined,p.release)).arrayBuffer());
+ assert.equal((await f.call('DELETE',{confirmId:p.release,sha256:'wrong'},p.release)).status,422);
+ const confirm={confirmId:p.release,sha256:p.sha256};
+ assert.equal((await f.call('DELETE',confirm,p.release)).status,200);
+ const list=await(await f.call()).json();assert.equal(list.packages.length,0);assert.equal(list.deletedPackages[0].release,p.release);
+ assert.equal((await f.call('GET',undefined,p.release)).status,410);
+ assert.equal((await f.call('POST',body)).status,410);
+ assert.equal((await f.call('DELETE',confirm,'baseline')).status,405);
+ assert.equal((await f.call('PUT',confirm,p.release)).status,200);
+ assert.deepEqual(Buffer.from(await(await f.call('GET',undefined,p.release)).arrayBuffer()),bytes);
 });

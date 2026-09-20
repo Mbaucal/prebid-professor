@@ -27,7 +27,7 @@ export default {
       const actor=await getAuthenticatedUser(request,env);
       const fail=(error:string,status:number)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'private, no-store'}});
       if(!actor)return fail('Authentication required.',401);
-      if(!isSameOriginMutation(request)||(request.method==='POST'&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
+      if(!isSameOriginMutation(request)||(['POST','DELETE','PUT'].includes(request.method)&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
       return scriptLibraryResponse(request,env,libraryMatch[1],libraryMatch[2]??null,libraryMatch[3]??null,actor.email);
     }
     const abEditorMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/ab-experiments(?:\/(baseline|tanjug-ab-2\.0\.0-[a-f0-9]{64})\.zip)?$/);
@@ -35,7 +35,7 @@ export default {
       const actor=await getAuthenticatedUser(request,env);
       const fail=(error:string,status:number)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'private, no-store'}});
       if(!actor)return fail('Authentication required.',401);
-      if(!isSameOriginMutation(request)||(request.method==='POST'&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
+      if(!isSameOriginMutation(request)||(['POST','DELETE','PUT'].includes(request.method)&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
       return abEditorResponse(request,env,abEditorMatch[1],abEditorMatch[2]??null,actor.email);
     }
     const packageMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-releases(?:\/(builtin-release-[a-f0-9]{64})\/(index|files\/([a-zA-Z][a-zA-Z0-9.-]*)))?$/);

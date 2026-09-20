@@ -1,3 +1,4 @@
+import ConfirmDeleteButton from './ConfirmDeleteButton';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {scriptSettings,displayName} from '../../worker/experiments/saved-script-settings.mjs';
 import './ab-experiments.css';
@@ -5,7 +6,7 @@ import './ab-experiments.css';
 type Settings={mode:'fresh-only'|'auction-with-cache';refreshSeconds:number|null;maxBidAgeSeconds?:number};
 type ScriptRef={id:string;name:string;settings:Settings};
 type Saved=ScriptRef&{collection:'scripts'|'tests';createdAt:string;bytes:number;sha256:string;trafficBPercent?:number;scripts?:{A:ScriptRef;B:ScriptRef}};
-type Library={supported:boolean;revision:string;baseline:{release:string;positions:number;prebidVersion:string};scripts:Saved[];tests:Saved[];nextCursors:{scripts:string|null;tests:string|null}};
+type Library={supported:boolean;revision:string;baseline:{release:string;positions:number;prebidVersion:string};scripts:Saved[];tests:Saved[];deletedScripts:Saved[];deletedTests:Saved[];nextCursors:{scripts:string|null;tests:string|null}};
 type Kind='scripts'|'tests';
 const description=(s:Settings)=>`${s.mode==='fresh-only'?'Fresh auction':`Auction + cached bids, up to ${s.maxBidAgeSeconds} s`} · ${s.refreshSeconds===null?'baseline refresh rules':`${s.refreshSeconds} s refresh`}`;
 const merge=(items:Saved[],added:Saved[])=>[...new Map([...items,...added].map(p=>[p.id,p])).values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
@@ -43,8 +44,18 @@ export default function ScriptLibraryPanel({publisherId}:{publisherId:string}) {
   }
   async function more(kind:Kind) {
     const page=await(await request(`?collection=${kind}&cursor=${encodeURIComponent(library!.nextCursors[kind]!)}`)).json();
-    setLibrary(old=>old?{...old,[kind]:merge(old[kind],page.items),nextCursors:{...old.nextCursors,[kind]:page.nextCursor}}:old);
+    setLibrary(old=>old?{...old,[kind]:merge(old[kind],page.items),[kind==='scripts'?'deletedScripts':'deletedTests']:merge(old[kind==='scripts'?'deletedScripts':'deletedTests']||[],page.deleted||[]),nextCursors:{...old.nextCursors,[kind]:page.nextCursor}}:old);
   }
+  async function removeSaved(p:Saved,restore=false) {
+    if(lock.current)throw Error('Another action is in progress.');lock.current=true;setBusy(true);setError('');
+    try {
+      await request(`/${p.collection}/${p.id}.zip`,{method:restore?'PUT':'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({confirmId:p.id,sha256:p.sha256})});
+      setLibrary(await(await request()).json());
+      if(!restore&&p.collection==='scripts'){if(a===p.id)setA('');if(b===p.id)setB('');}
+      setMessage(restore?`${p.name} restored.`:`${p.name} deleted. You can restore it from Deleted scripts and tests.`);
+    }finally{lock.current=false;setBusy(false);}
+  }
+  function deleteButton(p:Saved){return <ConfirmDeleteButton name={p.name} disabled={busy} description={p.collection==='scripts'?'Delete this saved script from the list? Saved tests keep their own copy. You can restore this version from Deleted scripts and tests.':'Delete this saved test from the list? Its source scripts stay available. You can restore this test from Deleted scripts and tests.'} onConfirm={()=>removeSaved(p)}/>;}
   function useScript(s:ScriptRef){setName((s.name+' copy').slice(0,80));setMode(s.settings.mode);setRefresh(s.settings.refreshSeconds===null?'preserve':'fixed');setSeconds(String(s.settings.refreshSeconds??30));setAge(String(s.settings.maxBidAgeSeconds??60));setMessage('Settings copied into New script. Choose a name and save a new version.');}
   function option(s:Saved){return <option key={s.id} value={s.id}>{s.name} · {s.id.slice(-8)}</option>;}
   function details(s:Saved){return <details><summary>Version details</summary><code>{s.id}</code><p>SHA-256 <code>{s.sha256}</code></p></details>;}
@@ -68,7 +79,7 @@ export default function ScriptLibraryPanel({publisherId}:{publisherId:string}) {
       </fieldset></form>
       <h3>Saved scripts</h3>{!library.scripts.length?<p>No saved scripts yet. Create your first version above.</p>:library.scripts.map(s=><article className="ab-saved" key={s.id} aria-label={'Script: '+s.name}>
         <h4>{s.name}</h4><p>{description(s.settings)}</p><p>Version {s.id.slice(-8)} · {new Date(s.createdAt).toLocaleString()}</p>
-        <div className="runtime-actions"><button className="button primary" disabled={busy} onClick={()=>void run(()=>download(s))}>Download standalone ZIP</button><button className="button secondary" disabled={busy} onClick={()=>useScript(s)}>Create from these settings</button></div>{details(s)}
+        <div className="runtime-actions"><button className="button primary" disabled={busy} onClick={()=>void run(()=>download(s))}>Download standalone ZIP</button><button className="button secondary" disabled={busy} onClick={()=>useScript(s)}>Create from these settings</button>{deleteButton(s)}</div>{details(s)}
       </article>)}
       {library.nextCursors.scripts?<button disabled={busy} onClick={()=>void run(()=>more('scripts'))}>Load more scripts</button>:null}
       <hr/><h3>A/B testing</h3><p>Choose saved versions. Their settings and original files stay unchanged. Each page runs one script with Variant=A or Variant=B.</p>
@@ -82,9 +93,13 @@ export default function ScriptLibraryPanel({publisherId}:{publisherId:string}) {
       <h3>Saved tests</h3>{!library.tests.length?<p>No saved tests yet.</p>:library.tests.map(t=><article className="ab-saved" key={t.id} aria-label={'Test: '+t.name}>
         <h4>{t.name}</h4><p>Version {t.id.slice(-8)} · A {100-t.trafficBPercent!}% / B {t.trafficBPercent}%</p>
         <dl>{(['A','B'] as const).map(v=><div key={v}><dt>{v}: {t.scripts![v].name}</dt><dd>{description(t.scripts![v].settings)} · Version {t.scripts![v].id.slice(-8)}</dd></div>)}</dl>
-        <button className="button primary" disabled={busy} onClick={()=>void run(()=>download(t))}>Download A/B ZIP</button>{details(t)}
+        <button className="button primary" disabled={busy} onClick={()=>void run(()=>download(t))}>Download A/B ZIP</button> {deleteButton(t)}{details(t)}
       </article>)}
       {library.nextCursors.tests?<button disabled={busy} onClick={()=>void run(()=>more('tests'))}>Load more tests</button>:null}
+      {(library.deletedScripts?.length||library.deletedTests?.length)?<details className="ab-baseline"><summary>Deleted scripts and tests</summary>
+        <p>Deleted versions are kept here for recovery. They are not offered when creating a new test.</p>
+        {[...(library.deletedScripts||[]),...(library.deletedTests||[])].map(p=><article className="ab-saved" key={p.id} aria-label={'Deleted: '+p.name}><h4>{p.name}</h4><p>{p.collection==='scripts'?'Script':'A/B test'} · Version {p.id.slice(-8)}</p><button type="button" disabled={busy} onClick={()=>void removeSaved(p,true).catch(e=>setError(e.message))}>Restore</button></article>)}
+      </details>:null}
       <p>Saving creates a version. Upload its <strong>complete ZIP</strong> to the existing Tanjug Pages project to activate a standalone script or an A/B test. The active Pages deployment is not tracked here.</p>
     </>}
   </section>;

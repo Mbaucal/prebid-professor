@@ -1,3 +1,7 @@
+## 2026-09-20 — Confirmed script deletion and clean import preparation
+
+Added named Yes/No deletion dialogs across saved scripts/tests, old A/B packages, built-in and legacy releases, Prebid history, and legacy generator profiles. Named and older A/B packages can be restored from deleted lists without altering their original bytes or existing tests. Release/Prebid APIs require the exact confirmation ID and retain active-version protections. No hosted records are removed by deployment. User requested cleaning test data and rebuilding the inventory from the actual per-site ads.js/prebid.js files; inventory/cleanup needs authenticated access, and source files are still to be supplied. Preserve existing site settings and live delivery while reconciling.
+
 # Tessera — Product and Project Source of Truth
 
 _Last updated: 2026-07-29_

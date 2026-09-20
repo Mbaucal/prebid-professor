@@ -1,8 +1,10 @@
+import ConfirmDeleteButton from './ConfirmDeleteButton';
 import { useMemo, useState } from 'react';
 
 type ReleaseSummary = {
   id: string;
   version: string;
+  displayName?: string;
   status: string;
   manifest: Record<string, unknown> | null;
 };
@@ -66,17 +68,12 @@ export default function ReleaseDeleteButton({
   if (!deletable) return null;
 
   async function remove(): Promise<void> {
-    const confirmation = window.prompt(
-      `DELETE release ${release.version}?\n\nThis permanently removes its D1 metadata and all immutable R2 files.\nType the exact version to continue.`,
-    );
-    if (confirmation !== release.version) return;
-
     setDeleting(true);
     onError('');
     try {
       const response = await fetch(
         `/api/publishers/${encodeURIComponent(publisherId)}/releases/${encodeURIComponent(release.id)}`,
-        { method: 'DELETE' },
+        { method: 'DELETE', headers: {'x-confirm-delete':release.id} },
       );
       const text = await response.text();
       let payload: DeletePayload | { error?: string; details?: unknown };
@@ -95,20 +92,13 @@ export default function ReleaseDeleteButton({
       await onDeleted(message);
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Release could not be deleted.');
+      throw error;
     } finally {
       setDeleting(false);
     }
   }
 
-  return (
-    <button
-      className="delete-release-action"
-      disabled={disabled || deleting}
-      onClick={() => void remove()}
-      title={estimatedBytes ? `Estimated immutable storage: ${formatBytes(estimatedBytes)}` : 'Delete immutable release files'}
-      type="button"
-    >
-      {deleting ? 'Deleting…' : estimatedBytes ? `Delete · ${formatBytes(estimatedBytes)}` : 'Delete release'}
-    </button>
-  );
+  return <ConfirmDeleteButton name={release.displayName||release.version} disabled={disabled||deleting}
+    description="Delete this saved release and its files permanently? Download a ZIP first if you need a backup. Active releases cannot be deleted."
+    label={estimatedBytes ? `Delete · ${formatBytes(estimatedBytes)}` : 'Delete release'} onConfirm={remove}/>;
 }

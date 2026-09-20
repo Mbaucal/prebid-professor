@@ -58,6 +58,25 @@ try {
   const history=await(await call()).json();check('Named script and test history',history.scripts.length===2&&history.tests.length===2);
   const recordKeys=(await (await mf.getR2Bucket('BUILDS')).list({prefix:'site-script-library/'})).objects;
   check('Only immutable script/test objects created',recordKeys.length===8);
+  const item=savedScripts.B,suffix='/scripts/'+item.id+'.zip',confirmation={confirmId:item.id,sha256:item.sha256};
+  const mutate=(method,body=confirmation,headers={cookie,origin})=>mf.dispatchFetch(origin+path+suffix,{method,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(body)});
+  check('Unauthenticated deletion is rejected',(await mutate('DELETE',confirmation,{origin})).status===401);
+  check('Cross-origin deletion is rejected',(await mutate('DELETE',confirmation,{cookie,origin:'https://other.invalid'})).status===403);
+  check('Deletion without origin is rejected',(await mutate('DELETE',confirmation,{cookie})).status===403);
+  check('Deletion requires the displayed exact version',(await mutate('DELETE',{...confirmation,confirmId:savedScripts.A.id})).status===422);
+  check('Confirmed deletion succeeds',(await mutate('DELETE')).status===200);
+  const deleted=await(await call()).json();check('Deleted version is hidden and recoverable',deleted.scripts.length===1&&deleted.deletedScripts[0].id===item.id&&deleted.tests.length===2);
+  check('Deleted ZIP cannot be selected or downloaded',(await call(suffix)).status===410);
+  check('Cross-origin restore is rejected',(await mutate('PUT',confirmation,{cookie,origin:'https://other.invalid'})).status===403);
+  check('Restore succeeds',(await mutate('PUT')).status===200);
+  check('Restored ZIP retains original hash',sha256(new Uint8Array(await(await call(suffix)).arrayBuffer()))===item.sha256);
+  // Existing permanent-delete routes must retain active-version guards and require confirmation.
+  await db.exec("ALTER TABLE publishers ADD COLUMN current_release_id TEXT; ALTER TABLE publishers ADD COLUMN current_version TEXT; CREATE TABLE releases(id TEXT PRIMARY KEY,publisher_id TEXT,version TEXT,status TEXT); INSERT INTO releases VALUES('active-release','tanjug','active','production'),('draft-release','tanjug','draft','draft'); CREATE TABLE prebid_builds(id TEXT PRIMARY KEY,publisher_id TEXT,version TEXT,file_key TEXT,file_url TEXT,modules_json TEXT,status TEXT,uploaded_by TEXT,uploaded_at TEXT); INSERT INTO prebid_builds VALUES('current-build','tanjug','11','fixture-current.js',NULL,'[]','current','fixture','2026-09-20'),('old-build','tanjug','10','fixture-old.js',NULL,'[]','archived','fixture','2026-09-20');");
+  const deletion=(resource,id,confirm)=>mf.dispatchFetch(origin+'/api/publishers/tanjug/'+resource+'/'+id,{method:'DELETE',headers:{cookie,origin,...(confirm?{'x-confirm-delete':id}:{})}});
+  check('Active release remains protected',(await deletion('releases','active-release',true)).status===409);
+  check('Draft release needs explicit confirmation',(await deletion('releases','draft-release',false)).status===422);
+  check('Current Prebid remains protected',(await deletion('prebid-builds','current-build',true)).status===409);
+  check('Archived Prebid needs explicit confirmation',(await deletion('prebid-builds','old-build',false)).status===422);
   check('Generation made no external network request',outbound===0);
   await writeFile(output+'workerd-report.json',JSON.stringify({scope:'Compiled production Worker, ephemeral D1/R2 and synthetic identity only',checks,passed:checks.length,failed:0},null,2));
   console.log(JSON.stringify({passed:checks.length,failed:0}));

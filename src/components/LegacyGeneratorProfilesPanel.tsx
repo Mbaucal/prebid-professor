@@ -1,3 +1,4 @@
+import ConfirmDeleteButton from './ConfirmDeleteButton';
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 
 type Props = {
@@ -266,11 +267,6 @@ export default function GeneratorProfilesPanel({ publisherId }: Props) {
   }
 
   async function removeProfile(profile: GeneratorProfile) {
-    const answer = window.prompt(
-      `Delete generator profile ${profile.name}?\n\nType the exact profile ID to confirm:\n${profile.id}`,
-    );
-    if (answer !== profile.id) return;
-
     setBusyId(profile.id);
     setError(null);
     try {
@@ -278,6 +274,7 @@ export default function GeneratorProfilesPanel({ publisherId }: Props) {
       await load();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Generator profile could not be deleted.');
+      throw requestError;
     } finally {
       setBusyId(null);
     }
@@ -380,9 +377,9 @@ export default function GeneratorProfilesPanel({ publisherId }: Props) {
                       Download source
                     </a>
                   ) : null}
-                  <button className="button danger" disabled={busyId !== null} onClick={() => void removeProfile(profile)} type="button">
-                    Delete
-                  </button>
+                  <ConfirmDeleteButton name={profile.name} disabled={busyId!==null}
+                    description="Delete this generator profile and its stored files permanently? Download the template and source first if you need a backup."
+                    onConfirm={()=>removeProfile(profile)}/>
                 </div>
               </article>
             );
