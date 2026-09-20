@@ -76,6 +76,8 @@ try {
   check('Generation rejects a caller-supplied cache override',(await call('/scripts',{revision:state.revision,name:'Override',refreshSeconds:10,settings:{mode:'fresh-only',refreshSeconds:10}})).status===422);
   const oldGenerator=await mf.dispatchFetch(origin+'/api/publishers/tanjug/releases/generate',{method:'POST',headers:{cookie,origin,'content-type':'application/json'},body:'{}'});
   check('Older generator cannot silently ignore saved cache settings',oldGenerator.status===409&&(await oldGenerator.json()).error.includes('Bid caching'));
+  const oldBundle=await mf.dispatchFetch(origin+'/api/publishers/tanjug/builtin-runtime-bundle',{method:'POST',headers:{cookie,origin,'content-type':'application/json'},body:'{}'});
+  check('Older bundle endpoint cannot ignore saved cache settings',oldBundle.status===409&&(await oldBundle.json()).error.includes('Bid caching'));
   const off=await demand({enabled:false,revision:currentDemand.revision,bidCache:currentDemand.prebidMode.bidCache});
   check('Turning Prebid off keeps the saved cache choice',off.status===200&&(await off.json()).prebidMode.bidCache.enabled===true);
   state=await(await call()).json();
