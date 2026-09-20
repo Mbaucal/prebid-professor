@@ -3,6 +3,7 @@ import {build} from 'esbuild';
 import {scriptLibraryResponse} from '../worker/site-runtime/script-library.mjs';
 const objects=new Map();
 const env={DB:{withSession:()=>({prepare:()=>({bind:id=>({first:async()=>({id,name:'Tanjug',domain:'tanjug.rs',gam_path:'/22852026051/Tanjug.rs-Display/'})})})})},BUILDS:{
+  delete:async key=>objects.delete(key),
   get:async key=>objects.get(key)||null,
   list:async({prefix})=>({objects:[...objects].filter(([key])=>key.startsWith(prefix)).map(([key,o])=>({key,customMetadata:o.customMetadata})),truncated:false}),
   put:async(key,bytes,options)=>{if(objects.has(key))return null;const data=Uint8Array.from(bytes);objects.set(key,{size:data.length,customMetadata:options.customMetadata,arrayBuffer:async()=>data.slice().buffer});return {};},

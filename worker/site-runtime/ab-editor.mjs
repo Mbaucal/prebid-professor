@@ -1,3 +1,4 @@
+import {deletedPackage,changePackageDeletion} from './saved-package-trash.mjs';
 import {Buffer} from 'node:buffer';
 import {baseReadable, previousArchiveBase64, preparedTemplates} from '../../.generated/site-ab-baseline.mjs';
 import {buildConfigurableABPackage} from '../../scripts/configurable-ab-package.mjs';
@@ -13,6 +14,7 @@ const check = (ok,message,status=409) => {if(!ok)throw Object.assign(Error(messa
 const root = site => `site-ab-generated/v1/${site}/`;
 const metaKey = (site,release) => root(site)+'records/'+release+'.json';
 const zipKey = (site,release) => root(site)+'archives/'+release+'.zip';
+const trashKey=(site,release)=>root(site)+'deleted/'+release+'.json';
 const pinned = () => Buffer.from(previousArchiveBase64,'base64');
 const supports = row => row && /^(?:https?:\/\/)?(?:www\.)?tanjug\.rs\/?$/i.test(row.domain?.trim()||'')
   && row.gam_path === '/22852026051/Tanjug.rs-Display/';
@@ -36,7 +38,8 @@ function summary(record) {
     createdAt:record.createdAt,bytes:record.bytes,sha256:record.archiveSha256,baseline:BASELINE};
 }
 
-async function readRecord(env,site,release) {
+async function readRecord(env,site,release,{allowDeleted=false}={}) {
+  if(!allowDeleted)check(!await deletedPackage(env.BUILDS,trashKey(site,release)),'This package was deleted. Restore it from Deleted packages first.',410);
   const object=await env.BUILDS.get(metaKey(site,release));
   check(object && object.size<32768,'Saved package not found.',404);
   const bytes=Buffer.from(await object.arrayBuffer());
@@ -66,7 +69,7 @@ export async function abEditorResponse(request,env,site,resource,actor,{build=bu
     const url=new URL(request.url),cursor=url.searchParams.get('cursor');
     check([...url.searchParams.keys()].every(k=>k==='cursor') && url.searchParams.getAll('cursor').length<=1
       && (!cursor||cursor.length<=2048) && (!url.search||(!resource&&request.method==='GET')),'Unknown query.',400);
-    check(['GET','POST'].includes(request.method) && !(resource&&request.method!=='GET'),'Method not allowed.',405);
+    check((resource&&resource!=='baseline'?['GET','DELETE','PUT']:resource?['GET']:['GET','POST']).includes(request.method),'Method not allowed.',405);
     const row=await readSite(env,site);check(row,'Site not found.',404);
     if(!supports(row)) {
       if(!resource&&request.method==='GET')return json({supported:false});
@@ -76,18 +79,19 @@ export async function abEditorResponse(request,env,site,resource,actor,{build=bu
       'content-disposition':`attachment; filename="${BASELINE}.zip"`,'x-package-sha256':ARCHIVE_SHA}});
     if(resource) {
       check(ID.test(resource),'Unknown package.',404);
+      if(request.method!=='GET'){const record=await readRecord(env,site,resource,{allowDeleted:true});return json(await changePackageDeletion(env.BUILDS,trashKey(site,resource),{id:resource,sha256:record.archiveSha256,actor},await readBody(request),request.method==='DELETE'));}
       const record=await readRecord(env,site,resource);
       return new Response(await archive(env,site,record),{headers:{...headers,'content-type':'application/zip',
         'content-disposition':`attachment; filename="${record.release}.zip"`,'x-package-sha256':record.archiveSha256}});
     }
     if(request.method==='GET') {
       const page=await env.BUILDS.list({prefix:root(site)+'records/',limit:100,include:['customMetadata'],...(cursor?{cursor}:{})});
-      const packages=page.objects.map(object=>{
+      const rows=await Promise.all(page.objects.map(async object=>{
         const record=JSON.parse(object.customMetadata?.summary||'null');
-        check(object.key===metaKey(site,record?.release),'Saved package index differs.');return summary(record);
-      }).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+        check(object.key===metaKey(site,record?.release),'Saved package index differs.');return {...summary(record),deletedAt:(await deletedPackage(env.BUILDS,trashKey(site,record.release)))?.deletedAt??null};
+      }));rows.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
       return json({supported:true,baseline:{release:BASELINE,positions:19,prebidVersion:'11.34.0',sha256:ARCHIVE_SHA,bytes:pinned().length},
-        revision:revision(row),defaults:DEFAULT_PACKAGE_SETTINGS,packages,nextCursor:page.truncated?page.cursor:null});
+        revision:revision(row),defaults:DEFAULT_PACKAGE_SETTINGS,packages:rows.filter(r=>!r.deletedAt),deletedPackages:rows.filter(r=>r.deletedAt),nextCursor:page.truncated?page.cursor:null});
     }
     const body=await readBody(request);
     check(body&&Object.keys(body).sort().join(',')==='notes,revision,settings','Use the displayed generation fields.',422);

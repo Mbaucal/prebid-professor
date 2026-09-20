@@ -120,6 +120,8 @@ export async function deleteRelease(
     externalDeploymentCount = Number(count?.total ?? 0);
   }
 
+  if (request.headers.get('x-confirm-delete') !== releaseId) return apiError('Confirm this exact release before deleting.', 422);
+
   const prefix = `publishers/${siteId}/releases/${release.version}/`;
   let objects: { keys: string[]; bytes: number };
   try {

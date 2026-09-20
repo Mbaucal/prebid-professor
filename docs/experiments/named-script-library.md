@@ -53,3 +53,13 @@ cross-site/stale/corrupt input rejection, exact offline/compiled Worker ZIP pari
 real React save/select/download flows, long names on mobile and native Prebid
 delivery for standalone fresh/cache, A/B and A/A packages. External ad traffic is
 blocked in these tests. They do not establish revenue improvement.
+
+## Deleting a saved version
+
+Delete opens an “Are you sure?” dialog showing the selected name, with No focused by default and explicit Yes/No actions. No, Escape, and backdrop clicks send no mutation. Only Yes sends the exact saved ID and archive hash. Requests require a signed session and same-origin credentials.
+
+Named scripts, named tests, and older A/B packages use separate deletion markers. They disappear from active lists and selectors and cannot be downloaded or used for a new test until restored. Their original metadata and ZIP bytes are retained in Deleted scripts and tests / Deleted packages. Restore removes the marker and recovers the original version. Saving identical inputs cannot silently restore a deleted version. Existing tests contain complete copies of their selected scripts, so removing a source script never rewrites an existing test or external uploaded package.
+
+The older Releases and Prebid stores retain their existing permanent-deletion behavior, now with the same Yes/No dialog and a server confirmation ID. Production/staging/current items remain protected. Built-in release cards expose the existing guarded delete operation. The legacy generator-profile dialog uses Yes/No as well. Built-in runtime engines in the source catalog are product code, not uploaded site scripts.
+
+Cleaning up the user's actual records requires an authenticated session and an inventory of active references. No data migration or deployment automatically deletes stored scripts, resets site configuration, or replaces live Pages files. Real ads.js/prebid.js imports are a separate next step using the files provided by the user.

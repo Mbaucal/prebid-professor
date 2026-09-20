@@ -1,3 +1,4 @@
+import ConfirmDeleteButton from './ConfirmDeleteButton';
 import {
   useCallback,
   useEffect,
@@ -450,17 +451,17 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
   }
 
   async function removeBuild(build: StoredBuild) {
-    if (!window.confirm(`Delete ${build.fileName} from R2 and build history?`)) return;
     setBusyBuildId(build.id);
     setError(null);
     try {
       await requestJson<{ ok: true; deletedId: string }>(
         `/api/publishers/${encodeURIComponent(publisherId)}/prebid-builds/${encodeURIComponent(build.id)}`,
-        { method: 'DELETE' },
+        { method: 'DELETE', headers: {'x-confirm-delete':build.id} },
       );
       await load();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'The build could not be deleted.');
+      throw requestError;
     } finally {
       setBusyBuildId(null);
     }
@@ -763,14 +764,9 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
                   </button>
                 ) : null}
                 {build.status !== 'current' ? (
-                  <button
-                    className="button danger"
-                    disabled={busyBuildId === build.id}
-                    onClick={() => void removeBuild(build)}
-                    type="button"
-                  >
-                    Delete
-                  </button>
+                  <ConfirmDeleteButton name={build.fileName} disabled={busyBuildId!==null}
+                    description="Delete this Prebid file and its history entry permanently? Download it first if you need a backup. The current Prebid build cannot be deleted."
+                    onConfirm={()=>removeBuild(build)}/>
                 ) : null}
               </div>
             </section>
