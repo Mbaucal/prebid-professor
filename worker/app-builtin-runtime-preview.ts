@@ -9,6 +9,7 @@ import type { ReleaseEnv } from './releases';
 import { siteRuntimeResponse } from './site-runtime/service.mjs';
 import { packageResponse, packageAssetResponse, builtInCdn } from './site-runtime/releases.mjs';
 import { abEditorResponse } from './site-runtime/ab-editor.mjs';
+import {requireSupportedCacheGenerator} from './site-runtime/prebid-cache-settings.mjs';
 import { scriptLibraryResponse } from './site-runtime/script-library.mjs';
 interface Env extends AuthEnv, ReleaseEnv { ASSETS: Fetcher }
 const downstream = baseApp as {
@@ -53,6 +54,7 @@ export default {
     if(oldGenerate){
       if(!await getAuthenticatedUser(request,env))return new Response('Authentication required.',{status:401});
       const row=await env.DB?.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=?').bind(oldGenerate[1]).first<{config_json:string}>();
+      if(row){try{requireSupportedCacheGenerator(JSON.parse(row.config_json));}catch(e){return new Response(JSON.stringify({error:(e as Error).message}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});}}
       if(row&&JSON.parse(row.config_json).builtinRuntimeSelection)return new Response(JSON.stringify({error:'Use Generate and releases with the saved built-in script version.'}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});
     }
     const settingsMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-site-settings$/);
@@ -76,7 +78,11 @@ export default {
     if (!isSameOriginMutation(request) || (request.method === 'POST' && request.headers.get('origin') !== url.origin)) return fail('Same-origin request required.', 403);
     let siteId: string;
     try { siteId = decodeURIComponent(match[1]); } catch { return fail('Invalid site ID.', 400); }
-    if (bundle) return handleArtifactBundle(request, env, siteId);
+    if (bundle) {
+      const row=await env.DB?.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=?').bind(siteId).first<{config_json:string}>();
+      if(row){try{requireSupportedCacheGenerator(JSON.parse(row.config_json));}catch(e){return fail((e as Error).message,409);}}
+      return handleArtifactBundle(request, env, siteId);
+    }
     if (prebidCheck) return handlePrebidPreflight(request, env, siteId, {
       readSnapshot: readPreviewSnapshot, normalizeInput: previewInput, digest, runtime: runtimeDescriptor,
     });

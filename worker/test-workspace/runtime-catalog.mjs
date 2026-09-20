@@ -7,6 +7,7 @@ import { previewInput as positionsInput } from '../runtime-next/snapshot.mjs';
 import { buildArtifactCandidate as referenceCandidate } from '../runtime/artifact-candidate.mjs';
 import { buildArtifactCandidate as positionsCandidate } from '../runtime-next/artifact-candidate.mjs';
 import { prepareSiteRuntimeSelection as prepare, readPinnedSiteRuntime as read } from '../runtime/site-runtime-selection.mjs';
+import {requireSupportedCacheGenerator} from '../site-runtime/prebid-cache-settings.mjs';
 import { takeOverForBuild } from './takeover-settings.mjs';
 export const runtimeCatalog=[validateRuntimeDescriptor(next),reference];
 export const runtimeDescriptor=runtimeCatalog[0];
@@ -34,6 +35,7 @@ export function previewInput(snapshot,descriptor,time,takeOver){
 export const prepareSiteRuntimeSelection=(args,bucket)=>prepare({...args,inputAdapter:previewInput},bucket);
 export const readPinnedSiteRuntime=(args,bucket)=>read({...args,inputAdapter:previewInput},bucket);
 export async function buildArtifactCandidate(args){
+  requireSupportedCacheGenerator(JSON.parse(args.snapshot.config.config_json));
   const descriptor=descriptorForPin(args.pin);
   previewInput(args.snapshot,descriptor,args.buildTimestamp,args.takeOver);
   return descriptor.id===next.id?positionsCandidate(args):referenceCandidate(args);

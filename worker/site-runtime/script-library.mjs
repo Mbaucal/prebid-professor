@@ -3,7 +3,9 @@ import {Buffer} from 'node:buffer';
 import {baseReadable,previousArchiveBase64,preparedTemplates} from '../../.generated/site-ab-baseline.mjs';
 import {buildSavedScript,buildSavedTest,BASELINE_SHA} from '../../scripts/saved-script-package.mjs';
 import {sha256} from '../../scripts/static-aa-package.mjs';
-import {SCRIPT_ID,TEST_ID,displayName,scriptSettings,DEFAULT_SCRIPT_SETTINGS} from '../experiments/saved-scripts-v1.mjs';
+import {SCRIPT_ID,TEST_ID,displayName,scriptSettings} from '../experiments/saved-scripts-v1.mjs';
+
+import {supportsNamedScripts, savedPrebidSettings, settingsForScript} from './prebid-cache-settings.mjs';
 
 const headers={'cache-control':'private, no-store','x-content-type-options':'nosniff'};
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{...headers,'content-type':'application/json'}});
@@ -11,9 +13,10 @@ const check=(value,message,status=409)=>{if(!value)throw Object.assign(Error(mes
 const key=(site,kind,id,ext)=>`site-script-library/v1/${site}/${kind}/${ext==='json'?'records':'archives'}/${id}.${ext}`;
 const trashKey=(site,kind,id)=>`site-script-library/v1/${site}/deleted/${kind}/${id}.json`;
 const validId=(kind,id)=>(kind==='scripts'?SCRIPT_ID:TEST_ID).test(id);
-const readSite=(env,site)=>env.DB.withSession('first-primary').prepare('SELECT id,name,domain,gam_path FROM publishers WHERE id=?').bind(site).first();
-const supports=row=>row&&/^(?:https?:\/\/)?(?:www\.)?tanjug\.rs\/?$/i.test(row.domain?.trim()||'')&&row.gam_path==='/22852026051/Tanjug.rs-Display/';
-const revision=row=>sha256(JSON.stringify({baseline:BASELINE_SHA,site:row.id,domain:row.domain,gamPath:row.gam_path}));
+const readSite=(env,site)=>env.DB.withSession('first-primary').prepare('SELECT p.id,p.name,p.domain,p.gam_path,c.config_json FROM publishers p JOIN publisher_configs c ON c.publisher_id=p.id WHERE p.id=?').bind(site).first();
+const supports=supportsNamedScripts;
+const config=row=>JSON.parse(row.config_json);
+const revision=row=>sha256(JSON.stringify({baseline:BASELINE_SHA,site:row.id,domain:row.domain,gamPath:row.gam_path,prebid:savedPrebidSettings(config(row))}));
 const inputs=()=>({base:Buffer.from(baseReadable),previousArchive:Buffer.from(previousArchiveBase64,'base64'),preparedTemplates});
 function summary(record) {
   check(record?.schemaVersion===1&&['scripts','tests'].includes(record.collection)&&validId(record.collection,record.id)
@@ -76,13 +79,13 @@ export async function scriptLibraryResponse(request,env,site,kind,id,actor,{scri
     if(request.method==='GET') {
       check(!kind,'Unknown library route.',404);if(cursor)return json(await list(env,site,collection,cursor));
       const [scripts,tests]=await Promise.all([list(env,site,'scripts'),list(env,site,'tests')]);
-      return json({supported:true,revision:revision(row),baseline:{release:'tanjug-aa-1.0.2',positions:19,prebidVersion:'11.34.0'},defaults:DEFAULT_SCRIPT_SETTINGS,
+      return json({supported:true,revision:revision(row),baseline:{release:'tanjug-aa-1.0.2',positions:19,prebidVersion:'11.34.0'},prebid:savedPrebidSettings(config(row)),
         scripts:scripts.items,tests:tests.items,deletedScripts:scripts.deleted,deletedTests:tests.deleted,nextCursors:{scripts:scripts.nextCursor,tests:tests.nextCursor}});
     }
-    const body=await bodyOf(request),expected=kind==='scripts'?['revision','name','settings']:['revision','name','scriptA','scriptB','trafficBPercent'];
+    const body=await bodyOf(request),expected=kind==='scripts'?['revision','name','refreshSeconds']:['revision','name','scriptA','scriptB','trafficBPercent'];
     check(body&&Object.keys(body).sort().join(',')===expected.sort().join(','),'Use the displayed fields.',422);
-    check(body.revision===revision(row),'The site or baseline changed. Reload before saving.');
-    let name,settings;try{name=displayName(body.name);if(kind==='scripts')settings=scriptSettings(body.settings);}catch(e){check(false,e.message,422);}
+    check(body.revision===revision(row),'Site or Prebid settings changed. Reload before saving.');
+    let name,settings;try{name=displayName(body.name);if(kind==='scripts')settings=scriptSettings(settingsForScript(config(row),body.refreshSeconds));}catch(e){check(false,e.message,e.status??422);}
     let result;
     if(kind==='scripts')result=await scriptBuilder({...inputs(),name,settings});
     else {

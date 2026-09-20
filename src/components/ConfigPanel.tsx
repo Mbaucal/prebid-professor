@@ -41,8 +41,8 @@ const CONFIG_GROUPS: Array<{
     { id: 'size-maps', label: 'Size maps' },
   ] },
   { label: 'Demand', sections: [
+    { id: 'demand-mode', label: 'Prebid' },
     { id: 'bidders', label: 'Bidders' },
-    { id: 'demand-mode', label: 'Demand mode' },
     { id: 'supply-consent', label: 'Supply & consent' },
     { id: 'user-id', label: 'User ID modules' },
   ] },

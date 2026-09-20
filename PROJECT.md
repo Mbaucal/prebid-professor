@@ -1,3 +1,15 @@
+## 2026-09-20 — Bid caching belongs to Demand → Prebid
+
+Moved cache on/off and maximum bid age from the named release form into the site’s
+saved Demand → Prebid settings. Releases shows the saved choice and a direct edit
+shortcut; generation reads it on the server and rejects stale forms or overrides.
+Saved standalone versions and A/B tests retain their own exact settings/bytes.
+Prebid-off preserves the cache preference and blocks new Prebid script creation.
+The current cache-capable generator remains the reviewed Tanjug named profile;
+older generators explicitly reject enabled caching instead of ignoring it. No
+runtime sources, hosted site configuration or live ad delivery are changed by
+this platform update. Other site Config integration remains separate work.
+
 ## 2026-09-20 — Confirmed script deletion and clean import preparation
 
 Added named Yes/No deletion dialogs across saved scripts/tests, old A/B packages, built-in and legacy releases, Prebid history, and legacy generator profiles. Named and older A/B packages can be restored from deleted lists without altering their original bytes or existing tests. Release/Prebid APIs require the exact confirmation ID and retain active-version protections. No hosted records are removed by deployment. User requested cleaning test data and rebuilding the inventory from the actual per-site ads.js/prebid.js files; inventory/cleanup needs authenticated access, and source files are still to be supplied. Preserve existing site settings and live delivery while reconciling.

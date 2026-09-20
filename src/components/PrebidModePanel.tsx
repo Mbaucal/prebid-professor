@@ -7,9 +7,12 @@ type Props = {
 
 type ModePayload = {
   ok: true;
+  revision: string;
+  bidCacheAvailable: boolean;
   prebidMode: {
     enabled: boolean;
     mode: 'gam-prebid' | 'gam-adx-only';
+    bidCache: {enabled: boolean; maxBidAgeSeconds: number};
   };
   savedState: {
     bidders: number;
@@ -53,6 +56,8 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
 export default function PrebidModePanel({ publisherId, onChanged }: Props) {
   const [payload, setPayload] = useState<ModePayload | null>(null);
   const [selected, setSelected] = useState<boolean>(true);
+  const [cacheEnabled, setCacheEnabled] = useState(false);
+  const [maxAge, setMaxAge] = useState('60');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,12 +66,15 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setMessage(null);
     try {
       const next = await requestJson<ModePayload>(
         `/api/publishers/${encodeURIComponent(publisherId)}/prebid-mode`,
       );
       setPayload(next);
       setSelected(next.prebidMode.enabled);
+      setCacheEnabled(next.prebidMode.bidCache.enabled);
+      setMaxAge(String(next.prebidMode.bidCache.maxBidAgeSeconds));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Demand mode could not be loaded.');
     } finally {
@@ -88,14 +96,16 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
         {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ enabled: selected }),
+          body: JSON.stringify({ enabled: selected, revision: payload!.revision, bidCache: { enabled: cacheEnabled, maxBidAgeSeconds: Number(maxAge) } }),
         },
       );
       setPayload(next);
       setSelected(next.prebidMode.enabled);
+      setCacheEnabled(next.prebidMode.bidCache.enabled);
+      setMaxAge(String(next.prebidMode.bidCache.maxBidAgeSeconds));
       setMessage(
         next.prebidMode.enabled
-          ? 'Prebid is enabled. Releases require a valid current Prebid.js build.'
+          ? 'Prebid settings saved. Generate a new script version to use these settings.'
           : 'AdX-only mode is enabled. Bidder, override and User ID settings remain saved but are omitted from releases.',
       );
       await onChanged?.();
@@ -106,7 +116,9 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
     }
   }
 
-  const dirty = payload ? selected !== payload.prebidMode.enabled : false;
+  const dirty = payload ? selected !== payload.prebidMode.enabled || cacheEnabled !== payload.prebidMode.bidCache.enabled || Number(maxAge) !== payload.prebidMode.bidCache.maxBidAgeSeconds : false;
+  const validAge = Number.isInteger(Number(maxAge)) && Number(maxAge) >= 1 && Number(maxAge) <= 300;
+  function reset() { if (payload) { setSelected(payload.prebidMode.enabled); setCacheEnabled(payload.prebidMode.bidCache.enabled); setMaxAge(String(payload.prebidMode.bidCache.maxBidAgeSeconds)); } }
   const build = payload?.savedState.currentPrebidBuild;
 
   return (
@@ -127,13 +139,15 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
 
       {error ? <div className="form-error config-error">{error}</div> : null}
       {message ? <div className="prebid-mode-message">✓ {message}</div> : null}
-      {loading ? <div className="config-loading">Loading demand mode from D1…</div> : null}
+      {loading ? <div className="config-loading">Loading Prebid settings…</div> : null}
+      {!loading && error ? <button className="button secondary" type="button" disabled={saving} onClick={() => void load()}>Reload Prebid settings</button> : null}
 
-      {!loading ? (
+      {!loading && payload ? (
         <>
           <div className="prebid-mode-options" role="radiogroup" aria-label="Demand mode">
             <label className={selected ? 'selected' : ''}>
               <input
+                disabled={saving}
                 checked={selected}
                 name="prebid-mode"
                 onChange={() => setSelected(true)}
@@ -153,9 +167,10 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
 
             <label className={!selected ? 'selected adx-only' : 'adx-only'}>
               <input
+                disabled={saving}
                 checked={!selected}
                 name="prebid-mode"
-                onChange={() => setSelected(false)}
+                onChange={() => { setSelected(false); if (!validAge) setMaxAge(String(payload.prebidMode.bidCache.maxBidAgeSeconds)); }}
                 type="radio"
               />
               <div>
@@ -171,6 +186,21 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
               </div>
             </label>
           </div>
+
+          {selected ? <fieldset className="prebid-cache-settings" disabled={saving}>
+            <legend>Bid caching</legend>
+            <label className="prebid-cache-toggle">
+              <input type="checkbox" checked={cacheEnabled} disabled={!payload.bidCacheAvailable && !cacheEnabled} onChange={e => { setCacheEnabled(e.target.checked); if (!e.target.checked && !validAge) setMaxAge(String(payload.prebidMode.bidCache.maxBidAgeSeconds)); }} />
+              Reuse valid, unused bids
+            </label>
+            <p>{cacheEnabled ? 'Each opportunity starts a new auction. Valid, unused cached bids may also compete.' : 'Only bids from the new auction are used.'}</p>
+            {cacheEnabled ? <label className="prebid-cache-age">Maximum bid age (seconds)
+              <input aria-label="Maximum bid age (seconds)" type="number" min={1} max={300} step={1} required value={maxAge} onChange={e => setMaxAge(e.target.value)} />
+              <span>A bid may expire sooner according to its original TTL.</span>
+              {!validAge ? <span role="alert">Enter a whole number from 1 to 300.</span> : null}
+            </label> : null}
+            <p>{payload.bidCacheAvailable ? 'Applies to new named scripts in Releases → Scripts and A/B tests. Saved scripts and tests keep their own settings.' : 'Bid caching is currently available for the reviewed Tanjug script generator. This site keeps its existing auction behavior.'}</p>
+          </fieldset> : <p>Bid caching is inactive while Prebid is off. Its saved settings are kept.</p>}
 
           <div className="prebid-mode-state-grid">
             <div><strong>{payload?.savedState.bidders ?? 0}</strong><span>Saved bidders</span></div>
@@ -193,13 +223,11 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
           ) : null}
 
           <div className="prebid-mode-actions">
-            <button className="button secondary" disabled={saving || !dirty} onClick={() => {
-              if (payload) setSelected(payload.prebidMode.enabled);
-            }} type="button">
+            <button className="button secondary" disabled={saving || !dirty} onClick={reset} type="button">
               Reset
             </button>
-            <button className="button primary" disabled={saving || !dirty} onClick={() => void save()} type="button">
-              {saving ? 'Saving…' : selected ? 'Enable Prebid for this site' : 'Use AdX-only mode'}
+            <button className="button primary" disabled={saving || !dirty || !validAge} onClick={() => void save()} type="button">
+              {saving ? 'Saving…' : 'Save Prebid settings'}
             </button>
           </div>
         </>
