@@ -4,9 +4,9 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/prepare-builtin-runtime.mjs",
+    "predev": "node scripts/prepare-builtin-runtime.mjs && node --experimental-strip-types scripts/prepare-site-ab-baseline.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/prepare-builtin-runtime.mjs",
+    "prebuild": "node scripts/prepare-builtin-runtime.mjs && node --experimental-strip-types scripts/prepare-site-ab-baseline.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "test:builtin": "node scripts/prepare-builtin-runtime.mjs && node --experimental-strip-types --test tests/runtime/builtin-preview.test.mjs",

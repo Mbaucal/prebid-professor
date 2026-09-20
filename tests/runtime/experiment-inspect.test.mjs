@@ -108,3 +108,12 @@ test('static slot report is bounded and does not expose arbitrary targeting',()=
  assert.equal(report.staticDelivery.slots.length,100);assert.equal(report.staticDelivery.slots[0].Variant,null);
  assert.equal(report.staticDelivery.scriptSha256,null);assert(!copied.includes('DO_NOT_EXPORT'));
 });
+test('configured refresh diagnostics expose bounded settings without confusing baseline with zero',()=>{
+ const source={mode:'auction-with-cache',variant:'B',trafficBPercent:10,refreshSeconds:10,maxBidAgeSeconds:60};
+ const read=()=>run({AdVariant:{snapshot:()=>source}}).report.staticDelivery;
+ assert.equal(read().configuredRefreshSeconds,10);assert.equal(read().refreshSetting,'fixed-standard-interval');
+ assert.equal(read().configuredMaxBidAgeSeconds,60);assert.equal(read().trafficBPercent,10);
+ source.refreshSeconds=null;assert.equal(read().refreshSetting,'baseline-position-rules');
+ source.refreshSeconds=0;source.maxBidAgeSeconds=1000;source.trafficBPercent=101;
+ assert.equal(read().refreshSetting,'unavailable');assert.equal(read().configuredMaxBidAgeSeconds,null);assert.equal(read().trafficBPercent,null);
+});
