@@ -28,6 +28,7 @@ try:
     page=browser.new_page(viewport={'width':1280,'height':1000});page.route('**/*',route);page.on('pageerror',lambda e:errors.append(str(e)))
     page.goto('https://tessera.fixture.invalid/')
     page.get_by_role('button',name='Generate and save A/B package',exact=True).wait_for()
+    page.screenshot(path=str(out/'initial.png'),full_page=True)
     check('Opening the editor is read-only',all(r['method']=='GET' for r in requests))
     check('Baseline and publication scope are visible',page.get_by_text('Starting point: Tanjug',exact=False).is_visible() and page.get_by_text('The active Pages deployment is not tracked here.',exact=False).is_visible())
     page.get_by_label('Traffic to variant B (%)',exact=False).fill('10')
