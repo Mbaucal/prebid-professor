@@ -9,7 +9,7 @@ permissions:
 jobs:
   ab-editor:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     env:
       TZ: UTC
     steps:
@@ -29,6 +29,8 @@ jobs:
           npm run build
           node --test tests/runtime/configurable-ab.test.mjs tests/runtime/ab-editor.test.mjs tests/runtime/full-cache-policy.test.mjs tests/runtime/full-cache-lifecycle.test.mjs tests/runtime/experiment-inspect.test.mjs
           node scripts/verify-ab-editor-workerd.mjs
+          node --test tests/runtime/saved-scripts.test.mjs tests/runtime/script-library.test.mjs
+          node scripts/verify-script-library-workerd.mjs
       - name: Install pinned browser tools
         run: |
           python -m pip install playwright==1.55.0
@@ -37,6 +39,11 @@ jobs:
         run: |
           python scripts/verify-ab-editor-ui.py
           TANJUG_PACKAGE_DIR=.generated/ab-editor-delivered/deploy python scripts/verify-tanjug-cache.py
+          python scripts/verify-script-library-ui.py
+          TANJUG_PACKAGE_DIR=.generated/script-library-delivered/ab/deploy python scripts/verify-tanjug-cache.py
+          TANJUG_PACKAGE_DIR=.generated/script-library-delivered/cache/deploy python scripts/verify-tanjug-cache.py
+          TANJUG_PACKAGE_DIR=.generated/script-library-delivered/fresh/deploy python scripts/verify-tanjug-cache.py
+          SCRIPT_LIBRARY_SMOKE=1 TANJUG_PACKAGE_DIR=.generated/script-library-delivered/aa/deploy python scripts/verify-tanjug-cache.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -45,5 +52,8 @@ jobs:
             .generated/ab-editor-delivered/*.json
             .generated/ab-editor-ui/*.json
             .generated/ab-editor-ui/*.png
+            .generated/script-library-delivered/**/*.json
+            .generated/script-library-ui/*.json
+            .generated/script-library-ui/*.png
           if-no-files-found: error
           retention-days: 30

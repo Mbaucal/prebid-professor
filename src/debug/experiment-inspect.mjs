@@ -51,6 +51,8 @@ export function inspectExperiments() {
   try {
     const s=deliverySnapshot=readSnapshot(window.AdVariant);
     if(s)staticDelivery={release:clean(s.release),variant:['A','B'].includes(s.variant)?s.variant:null,status:clean(s.status),
+      deliveryMode:['single','ab'].includes(s.deliveryMode)?s.deliveryMode:null,
+      scriptRelease:clean(s.scriptRelease),scriptName:clean(s.scriptName),testName:clean(s.testName),
       script:url(s.script),scriptSha256:/^[a-f0-9]{64}$/.test(s.scriptSha256)?s.scriptSha256:null,
       mode:['fresh-only','auction-with-cache'].includes(s.mode)?s.mode:null,
       trafficBPercent:Number.isInteger(s.trafficBPercent)&&s.trafficBPercent>=0&&s.trafficBPercent<=100?s.trafficBPercent:null,

@@ -1,0 +1,41 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {scriptLibraryResponse} from '../../worker/site-runtime/script-library.mjs';
+import {sha256} from '../../scripts/static-aa-package.mjs';
+function fixture(){const row={id:'tanjug',name:'Tanjug',domain:'tanjug.rs',gam_path:'/22852026051/Tanjug.rs-Display/'},objects=new Map();let writes=0;
+ const env={DB:{withSession:()=>({prepare:()=>({bind:id=>({first:async()=>id===row.id?{...row}:null})})})},BUILDS:{
+  get:async k=>objects.get(k)||null,list:async({prefix})=>({objects:[...objects].filter(([k])=>k.startsWith(prefix)).map(([key,o])=>({key,customMetadata:o.customMetadata})),truncated:false}),
+  put:async(k,b,o)=>{assert.equal(o.onlyIf.get('if-none-match'),'*');if(objects.has(k))return null;const bytes=Buffer.from(b);objects.set(k,{size:bytes.length,customMetadata:o.customMetadata,arrayBuffer:async()=>Uint8Array.from(bytes).buffer});writes++;return {};}}};
+ const call=(kind=null,body,id=null,options={},site='tanjug')=>scriptLibraryResponse(new Request('https://app.invalid/api/library',{method:body?'POST':'GET',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined}),env,site,kind,id,'fixture@example.invalid',options);
+ return {row,objects,call,writes:()=>writes};}
+const settings={mode:'auction-with-cache',refreshSeconds:10,maxBidAgeSeconds:60};
+test('named standalone versions and tests persist original bytes and references',async()=>{
+ const f=fixture(),state=await(await f.call()).json(),body={revision:state.revision,name:'Cache 60s',settings};
+ const create=await f.call('scripts',body);assert.equal(create.status,201,await create.clone().text());const script=(await create.json()).item;
+ const zip=Buffer.from(await(await f.call('scripts',null,script.id)).arrayBuffer());assert.equal(sha256(zip),script.sha256);
+ const again=await f.call('scripts',body);assert.equal(again.status,200);assert.equal(f.writes(),2);
+ const t=await f.call('tests',{revision:state.revision,name:'Cache A/A',scriptA:script.id,scriptB:script.id,trafficBPercent:50});assert.equal(t.status,201,await t.clone().text());const saved=(await t.json()).item;
+ assert.equal(saved.scripts.A.name,'Cache 60s');assert.equal(saved.scripts.B.id,script.id);
+ const list=await(await f.call()).json();assert.equal(list.scripts.length,1);assert.equal(list.tests.length,1);assert.equal(list.tests[0].name,'Cache A/A');
+ const response=await f.call('tests',null,saved.id);assert.equal(sha256(Buffer.from(await response.arrayBuffer())),saved.sha256);assert.equal(f.writes(),4);
+ f.row.id='other';assert.equal((await f.call('scripts',null,script.id,{},'other')).status,404);
+});
+test('invalid fields, stale site revisions and incompatible sites cannot write',async()=>{
+ const f=fixture(),state=await(await f.call()).json(),body={revision:state.revision,name:'Cache',settings};
+ for(const patch of [{name:''},{settings:{...settings,refreshSeconds:0}},{extra:true}])assert.equal((await f.call('scripts',{...body,...patch})).status,422);
+ assert.equal((await f.call('scripts',{...body,revision:'stale'})).status,409);
+ assert.equal((await f.call('scripts',{...body,name:'x'.repeat(5000)})).status,413);
+ assert.equal((await f.call('tests',{revision:state.revision,name:'Bad',scriptA:'missing',scriptB:'missing',trafficBPercent:50})).status,422);
+ f.row.gam_path='/other/';assert.equal((await(await f.call()).json()).supported,false);assert.equal((await f.call('scripts',body)).status,409);assert.equal(f.writes(),0);
+});
+test('corrupt saved script is neither downloadable nor usable by a new test',async()=>{
+ const f=fixture(),state=await(await f.call()).json(),body={revision:state.revision,name:'Cache',settings};
+ const script=(await(await f.call('scripts',body)).json()).item;
+ const zip=[...f.objects].find(([k])=>k.endsWith('.zip'))[1];zip.arrayBuffer=async()=>new Uint8Array(zip.size).buffer;
+ assert.equal((await f.call('scripts',null,script.id)).status,409);assert.equal((await f.call('scripts',body)).status,409);
+ assert.equal((await f.call('tests',{revision:state.revision,name:'Bad',scriptA:script.id,scriptB:script.id,trafficBPercent:50})).status,409);assert.equal(f.writes(),2);
+});
+test('identity changes during compilation cannot register a named script',async()=>{
+ const f=fixture(),state=await(await f.call()).json();
+ const response=await f.call('scripts',{revision:state.revision,name:'Cache',settings},null,{scriptBuilder:async()=>{f.row.domain='changed.invalid';const archive=Buffer.from('fixture');return {id:'tanjug-script-1.0.0-'+'a'.repeat(64),archive,archiveSha256:sha256(archive)};}});
+ assert.equal(response.status,409);assert.equal(f.writes(),0);
+});
