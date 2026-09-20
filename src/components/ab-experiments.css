@@ -17,7 +17,7 @@
 .ab-saved h4 { display:flex; flex-wrap:wrap; gap:12px; margin:0; overflow-wrap:anywhere; }
 .ab-saved h4 span { color:#64748b; font-weight:400; }
 .ab-saved dl div { margin:10px 0; }
-.ab-saved dt { font-weight:700; }
+.ab-saved dt { font-weight:700; overflow-wrap:anywhere; }
 .ab-saved dd { margin:4px 0 0; }
 .ab-saved details { margin-top:16px; }
 .ab-editor code { overflow-wrap:anywhere; white-space:normal; }

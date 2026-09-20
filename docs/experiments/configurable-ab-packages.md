@@ -1,5 +1,9 @@
 # Configurable A/B packages
 
+The original paired editor is now retained for earlier package compatibility.
+New user-facing generation uses [named scripts and optional A/B tests](named-script-library.md):
+save standalone versions first, then select their exact files in a test.
+
 The `tanjug-configurable-ab-v1` compiler builds a new, complete nine-file package
 from the accepted Tanjug CMP package and its hash-pinned readable source. It does
 not read or change hosted settings, publish a package, or modify a frozen runtime.

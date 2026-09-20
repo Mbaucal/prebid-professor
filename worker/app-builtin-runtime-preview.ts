@@ -9,6 +9,7 @@ import type { ReleaseEnv } from './releases';
 import { siteRuntimeResponse } from './site-runtime/service.mjs';
 import { packageResponse, packageAssetResponse, builtInCdn } from './site-runtime/releases.mjs';
 import { abEditorResponse } from './site-runtime/ab-editor.mjs';
+import { scriptLibraryResponse } from './site-runtime/script-library.mjs';
 interface Env extends AuthEnv, ReleaseEnv { ASSETS: Fetcher }
 const downstream = baseApp as {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
@@ -21,6 +22,14 @@ export default {
     const draftBlock = blockStoredDraftCdn(request);
     if (draftBlock) return draftBlock;
     const url = new URL(request.url);
+    const libraryMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/script-library(?:\/(scripts|tests)(?:\/(tanjug-(?:script|test)-1\.0\.0-[a-f0-9]{64})\.zip)?)?$/);
+    if(libraryMatch){
+      const actor=await getAuthenticatedUser(request,env);
+      const fail=(error:string,status:number)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'private, no-store'}});
+      if(!actor)return fail('Authentication required.',401);
+      if(!isSameOriginMutation(request)||(request.method==='POST'&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
+      return scriptLibraryResponse(request,env,libraryMatch[1],libraryMatch[2]??null,libraryMatch[3]??null,actor.email);
+    }
     const abEditorMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/ab-experiments(?:\/(baseline|tanjug-ab-2\.0\.0-[a-f0-9]{64})\.zip)?$/);
     if(abEditorMatch){
       const actor=await getAuthenticatedUser(request,env);

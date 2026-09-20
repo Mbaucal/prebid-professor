@@ -11,7 +11,7 @@ const armForm=(a:Arm):ArmForm=>({mode:a.mode,refreshMode:a.refreshSeconds===null
 const modeLabel=(a:Arm)=>a.mode==='fresh-only'?'Fresh auction':`Auction + cached bids (up to ${a.maxBidAgeSeconds} s)`;
 const refreshLabel=(a:Arm)=>a.refreshSeconds===null?'Baseline position rules':`${a.refreshSeconds} s standard refresh`;
 
-export default function AbExperimentPanel({publisherId}:{publisherId:string}) {
+export default function AbExperimentPanel({publisherId,archiveOnly=false}:{publisherId:string;archiveOnly?:boolean}) {
   const base=`/api/publishers/${encodeURIComponent(publisherId)}/ab-experiments`;
   const [state,setState]=useState<State|null>(null),[arms,setArms]=useState({A:armForm(DEFAULT_PACKAGE_SETTINGS.arms.A as Arm),B:armForm(DEFAULT_PACKAGE_SETTINGS.arms.B as Arm)});
   const [traffic,setTraffic]=useState('50'),[notes,setNotes]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
@@ -55,6 +55,16 @@ export default function AbExperimentPanel({publisherId}:{publisherId:string}) {
     setMessage('Complete ZIP downloaded. Upload it to the Tanjug Cloudflare Pages project when you are ready.');
   }
   if(state?.supported===false)return null;
+  if(archiveOnly){
+    if(!state&&!error)return null;
+    return <details className="ab-editor"><summary>Earlier A/B packages</summary>
+      {error?<p role="alert" className="runtime-error">{error}</p>:null}{message?<p role="status" className="runtime-message">{message}</p>:null}
+      <p>Packages created before the script library keep their original files. Create new named versions in Scripts and A/B tests above.</p>
+      {state?<button disabled={busy} onClick={()=>void run(()=>download('baseline',state.baseline.release,state.baseline))}>Download accepted A/A baseline</button>:null}
+      {state?.packages.map(p=><article key={p.release} className="ab-saved"><h4>{p.notes||'Earlier A/B package'} · {p.release.slice(-8)}</h4><p>A {100-p.settings.trafficBPercent}% / B {p.settings.trafficBPercent}%</p><button disabled={busy} onClick={()=>void run(()=>download(p.release,p.release,p))}>Download earlier ZIP</button></article>)}
+      {state?.nextCursor?<button disabled={busy} onClick={()=>void run(()=>load(true))}>Load more packages</button>:null}
+    </details>;
+  }
   return <section className="ab-editor" aria-label="A/B testing">
     <div className="ab-heading"><div><span className="panel-kicker">Experiments</span><h2>A/B testing</h2></div><button className="button secondary" disabled={busy} onClick={()=>void run(()=>load())}>Reload packages</button></div>
     {error?<p role="alert" className="runtime-error">{error}</p>:null}

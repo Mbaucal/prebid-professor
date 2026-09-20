@@ -2,6 +2,22 @@
 
 _Last updated: 2026-07-29_
 
+## Update — 2026-09-20: Named scripts before A/B tests
+
+Marko clarified that cache is a script setting and A/B is optional. The new
+**Scripts and A/B tests** panel implements that model on the reviewed Tanjug
+baseline: give each script a name, save a standalone version, then choose exact
+saved versions A and B in a separately named test. The same version can be reused
+in multiple tests or used alone. Standalone delivery has no Variant key; A/B keeps
+Variant=A/B. Debug includes script name/version and delivery mode.
+
+Names and settings identify immutable script versions. Changing either creates a
+new version; existing tests keep their original references and runtime bytes.
+Download filenames use the chosen name and a short version suffix. Earlier A/B
+packages remain available without modification. Activation still uses a manual
+whole-ZIP Pages upload. Adaptive refresh, other site baselines and current Config
+integration remain follow-up work. Details: docs/experiments/named-script-library.md.
+
 ## Update — 2026-09-20: Configurable Tanjug A/B packages
 
 **Tanjug → Releases → A/B testing** now connects the editor to authenticated

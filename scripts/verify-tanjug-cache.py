@@ -9,7 +9,7 @@ manifest_path=root/'release.json' if (root/'release.json').is_file() else root.p
 manifest=json.loads(manifest_path.read_text())
 readiness=manifest.get('kind')=='static-aa-readiness-observer'
 cmp_fix=True
-config=manifest['config']; checks=[]; page_errors=[]; blocked=set()
+config=manifest['config']; single=config.get('deliveryMode')=='single'; saved_profile=manifest.get('kind') in ['saved-script-v1','saved-test-v1']; arms=config.get('scripts',config.get('arms',{})); checks=[]; page_errors=[]; blocked=set()
 mock=pathlib.Path('tests/runtime/mock-ad-libraries.js').read_text()
 # Keep synthetic GPT and TCF. Prebid always comes from the actual shipped file.
 a=mock.index('  window.pbjs = {');b=mock.index('  window.__tcfapi =',a)
@@ -86,7 +86,13 @@ try:
   try:
    cases=[('A',1280,'normal'),('B',1280,'normal'),('B',390,'normal'),('A',1280,'delayed'),('B',1280,'auto'),('A',1280,'duplicate'),('A',1280,'wrong'),('A',1280,'failed'),('A',1280,'tampered')]
    if cmp_fix:cases += [('A',1280,'cmp-late'),('B',1280,'cmp-late'),('B',390,'cmp-string'),('A',1280,'cmp-absent'),('B',1280,'cmp-absent')]
+   if single:cases=[('S',1280,'normal'),('S',390,'normal'),('S',1280,'duplicate')]
+   if os.environ.get('SCRIPT_LIBRARY_SMOKE')=='1' and not single:cases=[('A',1280,'normal'),('B',1280,'normal')]
    for arm,width,case in cases:
+    chosen=config['script'] if single else arms[arm]
+    expected_variant=None if single else arm
+    variant_expression='null' if single else json.dumps(arm)
+    cached=chosen.get('settings',{}).get('mode')=='auction-with-cache' if saved_profile else arm=='B'
     context=browser.new_context(viewport={'width':width,'height':900},service_workers='block')
     # Force the loader's one-word allocation draw only. Native Prebid UUID/bid-ID
     # entropy must remain intact or different ad units can acquire the same ID.
@@ -105,7 +111,7 @@ try:
        r.fulfill(status=200,headers={'content-type':'application/json','access-control-allow-origin':origin,'access-control-allow-credentials':'true'},body=json.dumps(body))
       else:r.abort()
       return
-     if case=='tampered' and r.request.url.endswith('/A.js'):
+     if case=='tampered' and urllib.parse.urlsplit(r.request.url).path=='/'+chosen['path']:
       r.fulfill(status=200,headers={'content-type':'application/javascript','access-control-allow-origin':'*'},body='window.BAD_ARM_RAN=true;');return
      r.continue_()
     context.route('**/*',route);page=context.new_page();errors=[];requested=[]
@@ -126,16 +132,19 @@ try:
      wait(page,"window.AdVariant?.snapshot().status==='loaded' && window.AdVariant.snapshot().appliedSlots===19",timeout=35000)
      state=page.evaluate('AdVariant.snapshot()')
      label=arm+' '+str(width)+' '+case
-     check(label+': exact packaged runtime once with native Prebid',state['runtimeEntries']==1 and state['variant']==arm and state['prebidVersion']=='11.34.0')
-     check(label+': all 19 positions labeled before requests',len(state['slots'])==19 and all(s['Variant']==arm for s in state['slots']))
-     arm_paths=[x for x in requested if x.endswith('/A.js') or x.endswith('/B.js')]
-     check(label+': only selected arm fetched',arm_paths==['/'+config['arms'][arm]['path']])
+     check(label+': exact packaged runtime once with native Prebid',state['runtimeEntries']==1 and state['variant']==expected_variant and state['prebidVersion']=='11.34.0')
+     check(label+': all 19 positions labeled before requests',len(state['slots'])==19 and all(s['Variant']==expected_variant for s in state['slots']))
+     arm_paths=[x for x in requested if x.endswith(('/A.js','/B.js','/runtime.js'))]
+     check(label+': only selected arm fetched',arm_paths==['/'+chosen['path']])
      check(label+': one Prebid fetch',len([x for x in requested if x.endswith('/prebid.js')])==1)
      check(label+': fluid and 1x1 retained',page.evaluate("adSlots.InText_1.sizes.some(s=>s==='fluid') && adSlots.InText_1.sizes.some(s=>Array.isArray(s)&&s[0]===1&&s[1]===1)"))
      wait(page,'__testAds.observations.requests.length>0',timeout=15000)
-     check(label+': every first request carries Variant',page.evaluate('__testAds.observations.requests.every(r=>r.Variant==='+json.dumps(arm)+')'))
-     if manifest.get('kind')=='tanjug-configurable-ab-v1':
-      arm_settings=manifest['settings']['arms'][arm]
+     check(label+': every first request carries Variant',page.evaluate('__testAds.observations.requests.every(r=>r.Variant=='+variant_expression+')'))
+     if saved_profile:
+      check(label+': exact saved script identity and name',state['scriptRelease']==chosen['id'] and state['scriptName']==chosen['name'] and state['scriptSha256']==chosen['sha256'])
+      check(label+': explicit standalone/test mode',state['deliveryMode']==config['deliveryMode'])
+     if saved_profile or manifest.get('kind')=='tanjug-configurable-ab-v1':
+      arm_settings=chosen['settings'] if saved_profile else manifest['settings']['arms'][arm]
       check(label+': diagnostic matches saved arm settings',state['mode']==arm_settings['mode'] and state['refreshSeconds']==arm_settings['refreshSeconds'])
       if width==1280 and case=='normal' and arm_settings['refreshSeconds']==10:
        page.locator('#Billboard').scroll_into_view_if_needed()
@@ -157,24 +166,24 @@ try:
       check(label+': actual native losing bid passes screening and targeted winner is excluded',page.evaluate("(() => {const r=AdBidReadiness.snapshot().rows.find(r=>r.position==='Billboard');return r.candidates===1 && r.counters.submitted===1 && r.rejected['already-used']===1;})()"))
       check(label+': inspection leaves native bids/config and GAM requests unchanged',page.evaluate("(() => {const read=()=>JSON.stringify([pbjs.getBidResponsesForAdUnitCode('Billboard'),pbjs.getConfig(),__testAds.observations.requests]);const before=read();AdBidReadiness.inspect();AdVariant.inspect();return before===read();})()"))
       check(label+': cache and refresh remain unchanged',page.evaluate("AdBidReadiness.snapshot().cacheEnabled===false && AdBidReadiness.snapshot().mode==='observe-only' && AdVariant.snapshot().bidReadiness.nativeSelectionVerified===false"))
-     if arm=='B' and case in ['normal','auto','cmp-string']:
+     if cached and case in ['normal','auto','cmp-string']:
       wait(page,"AdBidCache.snapshot().policy?.selections.fresh>0",timeout=15000)
       check(label+': cache policy is active with native fresh targeting',page.evaluate("pbjs.getConfig('useBidCache')===true && AdBidCache.snapshot().policy.selections.errors===0"))
      page.locator('#InText_1').scroll_into_view_if_needed()
      wait(page,"__testAds.observations.requests.some(r=>r.id==='InText_1')",timeout=15000)
-     check(label+': lazy request carries Variant',page.evaluate("__testAds.observations.requests.filter(r=>r.id==='InText_1').every(r=>r.Variant==="+json.dumps(arm)+')'))
-     if arm=='B' and width==1280 and case=='normal':
+     check(label+': lazy request carries Variant',page.evaluate("__testAds.observations.requests.filter(r=>r.id==='InText_1').every(r=>r.Variant=="+variant_expression+')'))
+     if cached and width==1280 and case=='normal':
       page.locator('#Billboard').scroll_into_view_if_needed()
       page.evaluate("__testAds.emit('slotVisibilityChanged',{slot:adSlots.Billboard,inViewPercentage:100})")
       wait(page,"AdBidCache.snapshot().policy.selections.cache>0",timeout=45000)
       check('B native refresh selects unused cached bid',page.evaluate("AdBidCache.snapshot().policy.selections.cache>0 && AdBidCache.snapshot().policy.selections.errors===0"))
       check('B actually starts new auctions while allowing cached competition',page.evaluate("AdBidCache.snapshot().totals.auctions>1"))
      page.evaluate('__testAds.service.refresh(Object.values(adSlots))')
-     check(label+': refresh keeps labels on all slots',page.evaluate('__testAds.observations.requests.every(r=>r.Variant==='+json.dumps(arm)+')'))
+     check(label+': refresh keeps labels on all slots',page.evaluate('__testAds.observations.requests.every(r=>r.Variant=='+variant_expression+')'))
      if case=='duplicate':check('duplicate HTML loader blocked',state['blockedDuplicateLoaders']==1)
      page.evaluate("() => {const s=document.createElement('script');s.src='/ads.js';s.nonce='fixture';document.head.append(s);}")
      wait(page,'AdVariant.snapshot().blockedDuplicateLoaders>='+str(2 if case=='duplicate' else 1))
-     check(label+': reinsertion does not switch or launch another arm',page.evaluate('AdVariant.snapshot().runtimeEntries===1 && AdVariant.snapshot().variant==='+json.dumps(arm)))
+     check(label+': reinsertion does not switch or launch another arm',page.evaluate('AdVariant.snapshot().runtimeEntries===1 && AdVariant.snapshot().variant==='+variant_expression))
      page.evaluate("() => {const s=document.createElement('script');s.src=AdVariant.snapshot().script;s.nonce='fixture';document.head.append(s);}")
      wait(page,'AdVariant.snapshot().blockedRuntimeEntries===1')
      check(label+': direct duplicate arm execution blocked',page.evaluate('AdVariant.snapshot().runtimeEntries===1'))
