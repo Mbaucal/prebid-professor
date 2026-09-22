@@ -17,6 +17,7 @@ createServer(async (req, res) => {
     const url = new URL(req.url, address);
     let response;
     if (req.method !== 'GET') response = Response.json({ error: 'Read-only fixture' }, { status: 405 });
+    else if (url.pathname === '/api/organization') response = Response.json({agencies:[],memberships:[]});
     else if (url.pathname === '/api/publisher-accounts') response = Response.json({ publishers });
     else if (url.pathname === '/api/auth/me') response = Response.json({ ok: true, user: { email: 'example-admin@example.com' } });
     else if (url.pathname === '/api/health') response = Response.json({ ok: true, database: 'connected', service: 'Tessera layout fixture', details: Array.from({ length: 25 }, (_, i) => `Synthetic diagnostic ${i + 1}`) });

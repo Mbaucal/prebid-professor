@@ -1,3 +1,4 @@
+import {validOrganizationObjects} from '../organization/schema.mjs';
 import { statements, schemaSha256 } from '../../.generated/test-workspace-schema.mjs';
 import { WorkspaceError, TEST_DATABASE, TEST_BUCKET, TEST_SITE } from './boundary.mjs';
 export { schemaSha256 };
@@ -22,7 +23,9 @@ export async function inspectTestSchema(db) {
   const result = await current.prepare("SELECT name,type,sql FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' ORDER BY name").all();
   if (result.success === false || !Array.isArray(result.results)) throw new WorkspaceError(503,'Test schema could not be checked.');
   if (!result.results.length) return { ready:false, empty:true };
-  const actual = result.results.map((row) => ({name:row.name,type:row.type,sql:normalizedDdl(row.sql)}));
+  const extension = result.results.filter(row => row.name.startsWith('organization_'));
+  if (extension.length && !validOrganizationObjects(extension)) throw new WorkspaceError(409,'Agency schema extension does not match the reviewed version. No repairs were applied.');
+  const actual = result.results.filter(row => !row.name.startsWith('organization_')).map((row) => ({name:row.name,type:row.type,sql:normalizedDdl(row.sql)}));
   if (JSON.stringify(actual) !== JSON.stringify(expectedObjects)) {
     throw new WorkspaceError(409,'The current test schema, indexes or safety guards do not match the reviewed version. Nothing was initialized.');
   }
