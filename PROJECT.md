@@ -1,6 +1,16 @@
 # Tessera — Product and Project Source of Truth
 
-_Last updated: 2026-07-29_
+_Last updated: 2026-09-22_
+
+## Current checkpoint — API integrations (MBA-85)
+
+The user's confirmed entry point is a separate global **API integracije** tab. Its first module connects Google Ad Manager and creates ad units from editable presets or pasted names. Prebid line items come later.
+
+Development is based on `feature/isolated-runtime-workspace-v1` and targets the isolated `prebid-professor-test` Worker at `https://prebid-professor-test.mbaucal.workers.dev/api-integrations`. Production promotion still requires the owner's approval. The older environment/milestone sections below are historical context.
+
+Implemented: eight source-script presets (26 positions), custom templates, encrypted service-account connection, parent browsing/creation, read-only review, explicit batch creation and immutable GAM ID/path history. Existing site runtime/configuration records are not rewritten. See `docs/gam-api-integrations.md` for the exact scope, credential setup and remaining live-GAM acceptance check.
+
+Automated API and TEST-boundary tests pass, as do the client/Worker build, preserved-runtime history gate and synthetic desktop/mobile browser flow. No real Google inventory has been created during development.
 
 This document is the durable source of truth for the Tessera product. It should be updated whenever a feature is completed, a product decision changes, or a new requirement is recovered from earlier planning.
 
