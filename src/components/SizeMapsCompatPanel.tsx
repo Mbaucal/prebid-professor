@@ -1,3 +1,4 @@
+import SectionCsvImport from './SectionCsvImport';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AdUnit, SizeMap } from '../shared/types';
@@ -276,6 +277,8 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
           </div>
           <button className="button primary" onClick={openCreate} type="button">＋ New size map</button>
         </div>
+
+        <SectionCsvImport publisherId={publisherId} kinds={['size-maps']} onChanged={async () => { await load(); await onChanged?.(); }} />
 
         <div className="size-map-compat-note">
           <strong>Special values:</strong>

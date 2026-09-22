@@ -2,6 +2,29 @@
   padding: 24px 32px 40px;
 }
 
+.section-csv-import {
+  margin: 0 0 20px;
+  border: 1px solid #d3dbe6;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.section-csv-import > summary {
+  padding: 14px 18px;
+  color: #9b4216;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.section-csv-import[open] > summary { border-bottom: 1px solid #e0e5ec; }
+.section-csv-import .bulk-import-page { padding: 20px; }
+.section-csv-import .import-kind-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+@media (max-width: 700px) {
+  .section-csv-import .bulk-import-page { padding: 12px; }
+  .section-csv-import .import-kind-grid { grid-template-columns: 1fr; }
+}
+
 .safe-import-badge {
   display: inline-flex;
   align-items: center;

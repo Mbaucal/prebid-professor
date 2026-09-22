@@ -3,7 +3,6 @@ import AdUnitsPanel from './AdUnitsPanel';
 import AdvancedRefreshPanel from './AdvancedRefreshPanel';
 import BidderBuildSelectionPanel from './BidderBuildSelectionPanel';
 import BiddersPanel from './BiddersPanel';
-import BulkImportPanel from './BulkImportPanel';
 import GeneratorProfilesPanel from './GeneratorProfilesPanel';
 import PrebidModePanel from './PrebidModePanel';
 import RuntimeControlsPanel from './RuntimeControlsPanel';
@@ -29,8 +28,7 @@ type ConfigSection =
   | 'runtime-controls'
   | 'supply-consent'
   | 'user-id'
-  | 'generator-profiles'
-  | 'imports';
+  | 'generator-profiles';
 
 const CONFIG_GROUPS: Array<{
   label: string;
@@ -53,7 +51,6 @@ const CONFIG_GROUPS: Array<{
   ] },
   { label: 'Advanced', sections: [
     { id: 'unit-rules', label: 'Unit rules' },
-    { id: 'imports', label: 'CSV import' },
   ] },
 ];
 
@@ -96,15 +93,6 @@ export default function ConfigPanel({ publisherId, onChanged, onOpenPrebid, init
       {section === 'supply-consent' ? <SupplyChainConsentPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'user-id' ? <UserIdModulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} onOpenPrebid={onOpenPrebid} /> : null}
-      {section === 'imports' ? (
-        <>
-          <div className="size-map-import-compat-note">
-            <strong>Size-map CSV:</strong>
-            <span>Use <code>fluid</code> as a size. Leave the <code>sizes</code> cell empty to store <code>[]</code> and disable the slot at that breakpoint.</span>
-          </div>
-          <BulkImportPanel onChanged={onChanged} publisherId={publisherId} />
-        </>
-      ) : null}
     </div>
   );
 }

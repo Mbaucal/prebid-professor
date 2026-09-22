@@ -632,7 +632,7 @@ export default function App() {
                     name: event.target.value,
                     id: current.id || slugify(event.target.value),
                   }))}
-                  placeholder="Minacord"
+                  placeholder="Example Publisher"
                   value={publisherForm.name}
                 />
               </label>
@@ -640,7 +640,7 @@ export default function App() {
                 <span>Publisher ID</span>
                 <input
                   onChange={(event) => setPublisherForm((current) => ({ ...current, id: slugify(event.target.value) }))}
-                  placeholder="minacord"
+                  placeholder="example-publisher"
                   value={publisherForm.id}
                 />
               </label>
@@ -662,7 +662,7 @@ export default function App() {
                 <span>Notes</span>
                 <input
                   onChange={(event) => setPublisherForm((current) => ({ ...current, notes: event.target.value }))}
-                  placeholder="K1info.rs, Tanjug.rs..."
+                  placeholder="example.com, news.example.com..."
                   value={publisherForm.notes}
                 />
               </label>
@@ -704,7 +704,7 @@ export default function App() {
                     name: event.target.value,
                     id: modal === 'edit-site' ? current.id : current.id || slugify(event.target.value),
                   }))}
-                  placeholder="K1info.rs"
+                  placeholder="example.com"
                   value={siteForm.name}
                 />
               </label>
@@ -713,7 +713,7 @@ export default function App() {
                 <input
                   disabled={modal === 'edit-site'}
                   onChange={(event) => setSiteForm((current) => ({ ...current, id: slugify(event.target.value) }))}
-                  placeholder="k1info"
+                  placeholder="example-site"
                   value={siteForm.id}
                 />
                 {modal === 'edit-site' ? <small>Site ID is immutable because configs and releases reference it.</small> : null}
@@ -722,7 +722,7 @@ export default function App() {
                 <span>Domain</span>
                 <input
                   onChange={(event) => setSiteForm((current) => ({ ...current, domain: event.target.value }))}
-                  placeholder="k1info.rs"
+                  placeholder="example.com"
                   value={siteForm.domain}
                 />
               </label>
@@ -730,7 +730,7 @@ export default function App() {
                 <span>GAM path</span>
                 <input
                   onChange={(event) => setSiteForm((current) => ({ ...current, gamPath: event.target.value }))}
-                  placeholder="/23339552141/K1info.rs/"
+                  placeholder="/123456789/ExampleSite/"
                   value={siteForm.gamPath}
                 />
               </label>
@@ -750,7 +750,7 @@ export default function App() {
                 <span>Ads.txt URL</span>
                 <input
                   onChange={(event) => setSiteForm((current) => ({ ...current, adsTxtUrl: event.target.value }))}
-                  placeholder="https://k1info.rs/ads.txt"
+                  placeholder="https://example.com/ads.txt"
                   value={siteForm.adsTxtUrl}
                 />
               </label>

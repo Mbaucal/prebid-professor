@@ -53,7 +53,7 @@ async function copyText(value: string): Promise<void> {
 }
 
 export default function AdminHelpers({ open, onClose, adminEmail }: Props) {
-  const [label, setLabel] = useState('Politika');
+  const [label, setLabel] = useState('');
   const [randomSecret, setRandomSecret] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
@@ -137,7 +137,7 @@ export default function AdminHelpers({ open, onClose, adminEmail }: Props) {
 
             <label className="admin-helper-field">
               <span>Cloudflare account / publisher label</span>
-              <input onChange={(event) => setLabel(event.target.value)} placeholder="Politika" value={label} />
+              <input onChange={(event) => setLabel(event.target.value)} placeholder="Example Publisher" value={label} />
               <small>Use the account or publisher name only to produce a consistent GitHub secret name.</small>
             </label>
 
