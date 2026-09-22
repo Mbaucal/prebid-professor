@@ -1,0 +1,25 @@
+name: Creative templates checks
+on:
+  pull_request:
+    branches: [main, feature/isolated-runtime-workspace-v1]
+    paths: [src/**, worker/**, scripts/**, tests/**, .github/workflows/creative-templates.yml]
+  push:
+    branches: [feature/isolated-runtime-workspace-v1]
+permissions:
+  contents: read
+jobs:
+  creative-templates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: node scripts/prepare-builtin-runtime.mjs && node scripts/prepare-test-workspace.mjs
+      - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/creative-templates/*.test.mjs
+      - run: node scripts/check-runtime-release-history.mjs ${{ github.event.pull_request.base.sha || github.event.before }}

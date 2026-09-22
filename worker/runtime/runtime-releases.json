@@ -1,5 +1,32 @@
 [
   {
+    "id": "tessera-creatives-preview-1",
+    "version": "3.11.0-tessera.preview.1",
+    "codeSha256": "4de3c04c7492f317c8abf78f63baa66bc08ebb8261262bc825c0948760e33064",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "creative-bridge-v1"
+    ],
+    "date": "2026-09-22",
+    "title": "InCorner and branding creative templates",
+    "sourceManifest": "scripts/prepare-creative-runtime.mjs",
+    "sourceCommit": "0000000000000000000000000000000000000000",
+    "changes": [
+      "Friendly-frame creative templates share a validated display lifecycle with the wrapper.",
+      "InCorner owns one close control, suppresses the sticky strip and pauses refresh until dismissal or a new request.",
+      "Branding uses available side space and cleans up when the source frame is replaced.",
+      "Earlier runtime versions remain selectable and unchanged."
+    ]
+  },
+  {
     "id": "tessera-positions-preview-1",
     "version": "3.10.0-tessera.preview.1",
     "codeSha256": "ae98640d4c373547f1a2b9c6ac867010f5760c14ed71b49fb8907fcfeb3fc5cc",
