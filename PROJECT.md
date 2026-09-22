@@ -1,3 +1,11 @@
+## 2026-09-22 — Agency overview appearance (MBA-90)
+
+The Agency label and name now stack vertically beside a padded logo surface.
+The filter has its own label and space; narrow layouts stack it below the
+identity. Dashboard and TEST use the same AgencyOverview component so their
+reviewed presentation matches. This is a visual follow-up to MBA-65, with no
+storage, assignment or runtime changes. TEST review precedes production.
+
 ## 2026-09-22 — Agency hierarchy (MBA-65)
 
 Agency → Publisher → Site is implemented in PR #80 (production candidate) and
