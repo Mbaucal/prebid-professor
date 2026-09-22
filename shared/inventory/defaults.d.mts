@@ -1,0 +1,9 @@
+export type MapSize=[number,number]|'fluid';
+export type MapRule={minViewPort:[number,number];sizes:MapSize[]};
+export const sizeMapDefaults:Record<string,MapRule[]>;
+export const presetMapKeys:Record<string,string>;
+export function sizeLabel(size:MapSize):string;
+export function mapSizes(name:string):string;
+export function inferMapKey(code:string):string|null;
+export const sizeMapsTemplateCsv:string;
+export const adUnitsTemplateCsv:string;

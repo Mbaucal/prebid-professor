@@ -6,13 +6,13 @@ The main navigation now has an independent **API integracije** tab. The same Rea
 
 GAM povezivanje is the first tab and opens by default. The JSON file picker works before server setup; it only selects a local file. The connect action stays disabled until the encryption Secret is configured. Proveri podešavanje rechecks server readiness without losing the selected file.
 
-- Eight editable presets reproduce the supplied Colab definitions (26 child positions in the full selection), including 470×1080 branding.
+- Eight editable presets retain 26 child positions. MBA-91 updates their sizes from the supplied 7 responsive maps, including the shared Branding_Map; stored custom templates keep their own sizes.
 - Group count, starting index, `{n}` patterns, pasted names, sizes, Fluid and descriptions can be edited. Custom templates are saved independently.
 - Connect a service account to a selected GAM network. Connection verification calls `getCurrentNetwork`; it creates no inventory.
 - Browse an existing parent, or prepare a new parent under the effective root. Explicit preview reads live inventory and returns new, existing and conflicting rows.
 - A reviewed, actor/origin-bound plan expires after 15 minutes. Explicit create rechecks the connection and live inventory before any mutation.
 - Each review permits one execution attempt; a repeated successful request returns the same saved result. An uncertain attempt needs a fresh read-only preview. Google creates run in batches of at most 20, up to 100 units per plan. Partial results identify unconfirmed rows.
-- Immutable result records retain GAM IDs and full paths plus the user-entered site label. They do **not yet attach automatically to the existing Tessera site's local ad-unit records**. That is a follow-up within MBA-85; existing site configurations and runtime packages remain unchanged.
+- Immutable result records retain GAM IDs, sizes and full paths. MBA-91 adds an explicitly selected Tessera site, automatic additive local sync after confirmed GAM creation, and reviewed local recovery/history attachment. Existing configuration and published runtime packages remain unchanged. See `gam-site-inventory.md`.
 - History shows up to 100 saved results. The connection list and custom-template library are also limited to 100 in this first release.
 
 ## Credential setup
@@ -27,7 +27,7 @@ GAM API operations target the **selected real GAM network**, even when the UI is
 
 ## Storage and API
 
-All new records use private R2 keys under `api-integrations/gam/v1/`. No D1 schema change, seed import, runtime selection, release regeneration or publisher deployment is performed. The TEST route remains behind the existing exact-host, isolated-session and same-origin guards; the main route uses the existing application login and an explicit same-origin mutation check.
+GAM jobs and immutable results use private R2 keys under `api-integrations/gam/v1/`. MBA-91 additionally writes new local ad units/maps and an atomic ID/path receipt to existing D1 inventory/audit tables. No D1 schema change, seed import, runtime selection, release regeneration or publisher deployment is performed. The TEST route remains behind the existing exact-host, isolated-session and same-origin guards; the main route uses the existing application login and an explicit same-origin mutation check.
 
 SOAP v202608 is used to preserve the supplied InventoryService workflow. Authentication uses a one-hour RS256 service-account assertion and the documented Ad Manager OAuth scope. Network/token endpoints are fixed in code; uploaded token URLs are ignored. Raw Google error bodies, keys and access tokens are never sent to the browser or logged.
 

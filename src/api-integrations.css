@@ -9,3 +9,5 @@
 .gam-li-order-names{margin:0 0 16px;padding:12px;background:#f0f5f6;border-radius:8px}.gam-li-order-names code{display:block;margin-top:5px}.gam-li-naming{margin-top:20px}
 
 .gam-li-settings>summary{padding:18px 22px;border:1px solid var(--gam-border,#d9e3e5);border-radius:12px;background:#fff;font-weight:700;cursor:pointer}.gam-li-settings[open]>summary{margin-bottom:20px}.gam-li-preset-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.gam-li-preset-summary div{min-width:0}.gam-li-preset-summary dt{font-size:12px;font-weight:700;color:#60747c;margin-bottom:5px}.gam-li-preset-summary dd{margin:0;overflow-wrap:anywhere}@media(max-width:700px){.gam-li-preset-summary{grid-template-columns:1fr}}
+
+.gam-site-sync{display:grid;gap:12px;padding:18px;margin:16px 0;border:1px solid #d9e2ef;border-radius:12px;background:#f5f8fc}.gam-site-sync>label{max-width:480px}.gam-site-sync>button{justify-self:start}.gam-site-sync p{margin:0}.gam-site-sync small{display:block;color:#526174}.inventory-csv{margin:16px 0;padding:16px;border:1px solid #dce3ee;border-radius:12px;background:#fff}.inventory-csv>summary{font-weight:700;cursor:pointer}
