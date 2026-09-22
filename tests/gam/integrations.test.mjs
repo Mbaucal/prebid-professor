@@ -85,7 +85,7 @@ test('OAuth uses a signed short-lived assertion and a fixed token endpoint',asyn
  const pair=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
  const pem='-----BEGIN PRIVATE KEY-----\n'+Buffer.from(await crypto.subtle.exportKey('pkcs8',pair.privateKey)).toString('base64')+'\n-----END PRIVATE KEY-----';
  const token=await accessToken({...account,private_key:pem,token_uri:'https://evil.invalid'},async(url,options)=>{
-  assert.equal(url,'https://oauth2.googleapis.com/token');assert.equal(options.redirect,'error');const assertion=options.body.get('assertion');const [head,body,sig]=assertion.split('.');
+  assert.equal(url,'https://oauth2.googleapis.com/token');assert.equal(options.redirect,'manual');const assertion=options.body.get('assertion');const [head,body,sig]=assertion.split('.');
   assert(await crypto.subtle.verify('RSASSA-PKCS1-v1_5',pair.publicKey,Buffer.from(sig,'base64url'),new TextEncoder().encode(`${head}.${body}`)));
   const claims=JSON.parse(Buffer.from(body,'base64url'));assert.equal(claims.exp-claims.iat,3600);assert.equal(claims.scope,'https://www.googleapis.com/auth/admanager');
   return Response.json({access_token:'synthetic-token'});
