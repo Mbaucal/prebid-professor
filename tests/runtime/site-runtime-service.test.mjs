@@ -48,6 +48,17 @@ test('concurrent position save prevents ad-unit mutation and its audit atomicall
 test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function setup(options){const f=workspaceStore(options);fixtures.push(f);const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);const cookie=login.headers.get('set-cookie').split(';')[0];const r=await worker.fetch(new Request(ORIGIN+'/test-api/setup',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({confirm:'prepare-empty-test-database'})}),f.env);assert.equal(r.status,200);return {f,cookie};}
 async function select(f,siteId='test-site'){const s=await siteRuntimeSettings(f.env,siteId);await changeSiteRuntime(f.env,siteId,TEST_EMAIL,{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});return siteRuntimeSettings(f.env,siteId);}
+test('loading summary reads saved display overrides and never writes configuration',async()=>{
+ const {f}=await setup();let s=await select(f);
+ assert.equal(s.loadingSummary.units.find(u=>u.code==='Billboard').label,'Automatic · ATF');
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:s.revision,position:{code:'Billboard',display:'standard',overlay:null,lazy:{enabled:true,fetchMarginPx:500,renderMarginPx:100}}});
+ const before=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ const audits=f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n;
+ s=await siteRuntimeSettings(f.env,'test-site');const row=s.loadingSummary.units.find(u=>u.code==='Billboard');
+ assert.equal(row.label,'Lazy load');assert.equal(row.source,'Ad unit override');assert.match(row.detail,/100px/);
+ assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,audits);
+});
 test('one explicit setup saves GAM-only mode and a built-in version without a template or Prebid file',async()=>{
  const {f}=await setup();
  const original=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
