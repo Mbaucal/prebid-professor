@@ -1,3 +1,6 @@
+import AgenciesPanel from './components/AgenciesPanel';
+import { AgencyLogo, AgencyFilter } from './components/AgencyHierarchy';
+import { useOrganization, agencyFor, inAgency } from './organization';
 import AppFrame, { WorkspaceContent } from './components/AppFrame';
 import AuthAccount from './components/AuthAccount';
 import ApiIntegrationsPanel from './components/ApiIntegrationsPanel';
@@ -24,9 +27,10 @@ import type {
   Site,
 } from './shared/types';
 
-const navItems = ['Publishers', 'Releases', 'Prebid builds', 'API integracije', 'Audit log', 'Settings'] as const;
+const navItems = ['Publishers', 'Agencies', 'Releases', 'Prebid builds', 'API integracije', 'Audit log', 'Settings'] as const;
 type GlobalSection = (typeof navItems)[number];
 const globalDescriptions: Record<GlobalSection, string> = {
+  Agencies: 'Organize agencies, publishers and sites, with an optional agency logo.',
   'API integracije': 'Povežite GAM mreže i kreirajte ad unite iz šablona.',
   Publishers: 'Manage publisher accounts, sites and every site-level configuration workflow.',
   Releases: 'Review immutable releases across all publishers and sites.',
@@ -109,6 +113,8 @@ function nextCopyId(value: string): string {
 }
 
 export default function App() {
+  const organization = useOrganization();
+  const [agencyFilter, setAgencyFilter] = useState('all');
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [publishers, setPublishers] = useState<PublisherAccount[]>([]);
@@ -177,14 +183,28 @@ export default function App() {
   }, []);
 
   const publisher = useMemo(
-    () => publishers.find((item) => item.id === activePublisherId) ?? publishers[0] ?? null,
-    [activePublisherId, publishers],
+    () => publishers.find((item) => item.id === activePublisherId) ?? publishers.filter(p => inAgency(organization.data,p.id,agencyFilter))[0] ?? null,
+    [activePublisherId, publishers, organization.data, agencyFilter],
   );
 
   const site = useMemo(() => {
     if (!publisher) return null;
     return publisher.sites.find((item) => item.id === activeSiteId) ?? publisher.sites[0] ?? null;
   }, [activeSiteId, publisher]);
+
+  const agency = agencyFor(organization.data, publisher?.id);
+  function filterAgency(value: string) {
+    setAgencyFilter(value);
+    if (!publisher || !inAgency(organization.data, publisher.id, value)) {
+      const next = publishers.find(p => inAgency(organization.data, p.id, value));
+      setActivePublisherId(next?.id ?? null); setActiveSiteId(next?.sites[0]?.id ?? null); setActiveTab('Overview');
+    }
+  }
+  function openAgency(value: string) { filterAgency(value); setActiveSection('Publishers'); setActiveTab('Overview'); }
+  function openAgencyPublisher(id: string) { const account=publishers.find(p=>p.id===id); if(account){setAgencyFilter('all'); if(account.id===publisher?.id)setActiveSection('Publishers'); else selectPublisher(account);} }
+  useEffect(() => {
+    if (activePublisherId && !inAgency(organization.data, activePublisherId, agencyFilter)) setAgencyFilter('all');
+  }, [organization.data]);
 
   const totalSites = useMemo(
     () => publishers.reduce((sum, item) => sum + item.sitesCount, 0),
@@ -214,6 +234,7 @@ export default function App() {
     siteId: string,
     tab: 'Overview' | 'Releases' | 'Prebid.js',
   ) {
+    setAgencyFilter('all');
     setActivePublisherId(publisherAccountId);
     setActiveSiteId(siteId);
     setActiveTab(tab);
@@ -387,9 +408,10 @@ export default function App() {
             </span>
           </div>
           <p>
-            A publisher is the business/account. Each site keeps its own GAM path, bidders, ad units,
+            Agencies group publisher accounts. Each site keeps its own GAM path, bidders, ad units,
             releases and ads.txt configuration. Drag any site in the sidebar onto another publisher to move it.
           </p>
+          <div className="agency-overview"><div className="agency-overview-identity"><AgencyLogo agency={agency}/><div><span className="panel-kicker">Agency</span><strong>{agency?.name ?? 'Without agency'}</strong></div></div><AgencyFilter data={organization.data} value={agencyFilter} onChange={filterAgency}/></div>
           {hierarchyError ? <p className="inline-warning">Hierarchy API: {hierarchyError}</p> : null}
 
           {publisher ? (
@@ -421,7 +443,7 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <button className="empty-site-cta" onClick={openCreateSite} type="button">
+            <button className="empty-site-cta" disabled={!publisher} onClick={openCreateSite} type="button">
               ＋ Add the first site to {publisher?.name ?? 'this publisher'}
             </button>
           )}
@@ -429,9 +451,9 @@ export default function App() {
 
         <article className="panel api-panel">
           <div className="panel-heading">
-            <div><span className="panel-kicker">Current selection</span><h2>Publisher → Site</h2></div>
+            <div><span className="panel-kicker">Current selection</span><h2>Agency → Publisher → Site</h2></div>
           </div>
-          <pre>{JSON.stringify({ publisher: publisher?.id, site: site?.id, health }, null, 2)}</pre>
+          <pre>{JSON.stringify({ agency: agency?.name ?? null, publisher: publisher?.id, site: site?.id, health }, null, 2)}</pre>
         </article>
 
         <article className="panel stats-panel">
@@ -482,8 +504,13 @@ export default function App() {
           ))}
         </nav>
       }
-      sidebarContent={publisherWorkspace ? (
+      sidebarContent={publisherWorkspace || activeSection === 'Agencies' ? (
           <HierarchySidebar
+            organization={organization.data}
+            organizationError={organization.error}
+            agencyFilter={agencyFilter}
+            onAgencyFilter={filterAgency}
+            onManageAgencies={() => selectGlobalSection('Agencies')}
             activePublisherId={publisher?.id ?? null}
             activeSiteId={site?.id ?? null}
             error={hierarchyError}
@@ -510,7 +537,7 @@ export default function App() {
           <>
         <header className="topbar">
           <div>
-            <span className="eyebrow">Publishers / {publisher?.name ?? 'No publisher'} / {site?.name ?? 'No site'}</span>
+            <span className="eyebrow agency-selection-breadcrumb">{agency?.name ?? 'Without agency'} / {publisher?.name ?? 'No publisher'} / {site?.name ?? 'No site'}</span>
             <h1>{site?.name ?? publisher?.name ?? 'Prebid Professor'}</h1>
             {site ? (
               <div className="publisher-meta">
@@ -596,6 +623,7 @@ export default function App() {
               <button className="button secondary" onClick={() => selectGlobalSection('Publishers')} type="button">Open publishers</button>
             </header>
             <WorkspaceContent pageKey={activeSection}>
+            {activeSection === 'Agencies' ? <AgenciesPanel controller={organization} publishers={publishers} onOpenPublisher={openAgencyPublisher} onOpenAgency={openAgency} /> : null}
             {activeSection === 'Releases' ? (
               <GlobalReleasesPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
             ) : null}
