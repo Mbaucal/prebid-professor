@@ -1,3 +1,4 @@
+import { gamResponse } from './integrations/gam-service.mjs';
 import { blockStoredDraftCdn } from './runtime/stored-draft-safety.mjs';
 import baseApp from './app-ads-txt-managed-file';
 import { getAuthenticatedUser, isSameOriginMutation, type AuthEnv } from './auth';
@@ -8,7 +9,7 @@ import { handleArtifactBundle } from './runtime/artifact-bundle-service.mjs';
 import type { ReleaseEnv } from './releases';
 import { siteRuntimeResponse } from './site-runtime/service.mjs';
 import { packageResponse, packageAssetResponse, builtInCdn } from './site-runtime/releases.mjs';
-interface Env extends AuthEnv, ReleaseEnv { ASSETS: Fetcher }
+interface Env extends AuthEnv, ReleaseEnv { ASSETS: Fetcher; GAM_CREDENTIALS_KEY?: string }
 const downstream = baseApp as {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
   scheduled?(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> | void;
@@ -20,6 +21,12 @@ export default {
     const draftBlock = blockStoredDraftCdn(request);
     if (draftBlock) return draftBlock;
     const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/integrations/gam/')) {
+      const actor = await getAuthenticatedUser(request, env);
+      if (!actor) return new Response(JSON.stringify({error:'Authentication required.'}), {status:401,headers:{'content-type':'application/json','cache-control':'no-store'}});
+      return gamResponse(request,env,actor.email);
+    }
+
     const packageMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-releases(?:\/(builtin-release-[a-f0-9]{64})\/(index|files\/([a-zA-Z][a-zA-Z0-9.-]*)))?$/);
     if(packageMatch){
       const actor=await getAuthenticatedUser(request,env);
