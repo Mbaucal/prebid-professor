@@ -1,0 +1,40 @@
+name: GAM API integration checks
+on:
+  pull_request:
+    branches: [main, feature/isolated-runtime-workspace-v1]
+    paths: [shared/gam/**, worker/integrations/**, worker/test-workspace/**, src/components/ApiIntegrationsPanel.tsx, src/api-integrations/**, src/api-integrations.css, src/App.tsx, scripts/**, tests/gam/**, vendor/gam-xml-parser/**, .github/workflows/gam-integrations.yml]
+permissions:
+  contents: read
+jobs:
+  gam:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: node scripts/check-runtime-release-history.mjs HEAD^
+      - run: node scripts/prepare-builtin-runtime.mjs && node scripts/prepare-test-workspace.mjs
+      - run: node --experimental-strip-types --test tests/gam/*.test.mjs
+      - name: Compile and exercise real Worker OAuth and SOAP fetches with local Google responses
+        run: |
+          npx --no-install wrangler deploy --config ops/runtime-test/wrangler.active.jsonc --dry-run --outdir "$GITHUB_WORKSPACE/.generated/gam-worker-dry-run"
+          node scripts/verify-gam-workerd.mjs
+      - run: npm run build
+      - name: Exercise the production Worker authentication and GAM routes locally
+        run: node scripts/verify-gam-workerd.mjs dist/prebid_professor production
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
+      - run: python scripts/verify-gam-ui.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gam-ui-evidence
+          path: .generated/gam-ui-evidence/
+          retention-days: 14

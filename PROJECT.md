@@ -16,7 +16,17 @@ Added named Yes/No deletion dialogs across saved scripts/tests, old A/B packages
 
 # Tessera — Product and Project Source of Truth
 
-_Last updated: 2026-07-29_
+_Last updated: 2026-09-22_
+
+## Current checkpoint — API integrations (MBA-85)
+
+The user's confirmed entry point is a separate global **API integracije** tab. Its first module connects Google Ad Manager and creates ad units from editable presets or pasted names. Prebid line items come later.
+
+The owner confirmed successful real GAM creation on TEST on 2026-09-22 and explicitly approved promotion to `main`. The acceptance screenshot shows active `Billboard1` under `test` in network `22038436483` (`direktno.rs`), including Fluid. Production promotion takes only the approved GAM commits onto current `main`.
+
+Implemented: eight source-script presets (26 positions), custom templates, encrypted service-account connection, parent browsing/creation, read-only review, explicit batch creation and immutable GAM ID/path history. Existing site runtime/configuration records are not rewritten. See `docs/gam-api-integrations.md` for scope and setup.
+
+Production uses `prebid-professor` and requires its own `GAM_CREDENTIALS_KEY` Secret and a fresh connection through the UI. TEST secrets, connections and history are not migrated. Tests include the actual compiled production Worker with synthetic Google responses. Automatic attachment of GAM results to local site ad-unit records remains a follow-up.
 
 ## Update — 2026-09-20: Named scripts before A/B tests
 

@@ -1,3 +1,4 @@
+import ApiIntegrationsPanel from './components/ApiIntegrationsPanel';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from './api';
 import AdsTxtPanel from './components/AdsTxtPanel';
@@ -21,9 +22,10 @@ import type {
   Site,
 } from './shared/types';
 
-const navItems = ['Publishers', 'Releases', 'Prebid builds', 'Audit log', 'Settings'] as const;
+const navItems = ['Publishers', 'Releases', 'Prebid builds', 'API integracije', 'Audit log', 'Settings'] as const;
 type GlobalSection = (typeof navItems)[number];
 const globalDescriptions: Record<GlobalSection, string> = {
+  'API integracije': 'Povežite GAM mreže i kreirajte ad unite iz šablona.',
   Publishers: 'Manage publisher accounts, sites and every site-level configuration workflow.',
   Releases: 'Review immutable releases across all publishers and sites.',
   'Prebid builds': 'Inspect every uploaded Prebid.js build and module manifest.',
@@ -607,6 +609,7 @@ export default function App() {
             {activeSection === 'Audit log' ? (
               <AuditLogPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
             ) : null}
+            {activeSection === 'API integracije' ? <ApiIntegrationsPanel sites={publishers.flatMap(p => p.sites)} /> : null}
             {activeSection === 'Settings' ? <SettingsPanel publishers={publishers} /> : null}
           </>
         )}
