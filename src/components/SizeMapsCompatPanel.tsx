@@ -1,3 +1,4 @@
+import BulkImportPanel from './BulkImportPanel';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AdUnit, SizeMap } from '../shared/types';
@@ -135,6 +136,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
   const [rows, setRows] = useState<BreakpointForm[]>([emptyBreakpoint()]);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [defaultsBusy,setDefaultsBusy]=useState(false),[defaultsNote,setDefaultsNote]=useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -163,6 +165,15 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
     return result;
   }, [adUnits]);
 
+  async function addDefaults(){
+    setDefaultsBusy(true);setError(null);setDefaultsNote('');
+    try{
+      const base='/api/integrations/gam';
+      const r=await fetch(base+'/site-inventory?siteId='+encodeURIComponent(publisherId));const saved=await r.json() as {revision:string;error?:string};if(!r.ok)throw Error(saved.error);
+      const response=await fetch(base+'/defaults',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({siteId:publisherId,revision:saved.revision})});const result=await response.json() as {addedMaps:number;error?:string};if(!response.ok)throw Error(result.error);
+      await load();await onChanged?.();setDefaultsNote(result.addedMaps?`${result.addedMaps} default maps added. Existing maps kept.`:'All 7 default maps are already present. Existing maps kept.');
+    }catch(e){setError((e as Error).message);}finally{setDefaultsBusy(false);}
+  }
   function openCreate() {
     setMode('create');
     setSource(null);
@@ -274,9 +285,13 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
             <h2>Size maps</h2>
             <p>Fixed sizes, GPT fluid inventory and viewport ranges where the slot must not request an ad.</p>
           </div>
+          <button className="button" type="button" disabled={loading||defaultsBusy} onClick={()=>void addDefaults()}>{defaultsBusy?'Adding…':'Add 7 default maps'}</button>
           <button className="button primary" onClick={openCreate} type="button">＋ New size map</button>
         </div>
 
+        <p>Complete starter: 7 maps / 25 breakpoints. Add missing maps, then edit or delete what you do not need. Existing maps are kept.</p>
+        {defaultsNote&&<p role="status">{defaultsNote}</p>}
+        <details className="inventory-csv"><summary>Import size maps / Download CSV template</summary><BulkImportPanel publisherId={publisherId} kinds={['size-maps']} onChanged={async()=>{await load();await onChanged?.();}}/></details>
         <div className="size-map-compat-note">
           <strong>Special values:</strong>
           <span><code>fluid</code> is valid for GPT/native inventory. Leave Sizes empty to create <code>[]</code> and disable the slot at that viewport.</span>

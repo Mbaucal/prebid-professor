@@ -1,3 +1,12 @@
+## 2026-09-22 — Complete size maps and GAM → Site sync (MBA-91)
+
+The supplied 7 maps / 25 breakpoints are the single source for CSV templates,
+manual Add 7 default maps and GAM preset size unions. Confirmed GAM inventory
+can now populate a selected Tessera site, preserving existing units/maps and
+configuration. GAM-only history can be attached after review; failed local saves
+can recover without replaying Google creates. TEST first; main candidate awaits
+owner acceptance. Details: `docs/gam-site-inventory.md`.
+
 ## 2026-09-22 — Agency overview appearance (MBA-90)
 
 The Agency label and name now stack vertically beside a padded logo surface.

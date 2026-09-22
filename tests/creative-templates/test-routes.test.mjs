@@ -23,13 +23,13 @@ test('CSV preview performs no writes and full generic draft saves through revisi
   const maps=await (await call(f,'/test-api/inventory-preview',cookie,{kind:'size-maps',csv:sizeMapsTemplateCsv})).json();
   const units=await (await call(f,'/test-api/inventory-preview',cookie,{kind:'ad-units',csv:adUnitsTemplateCsv})).json();
   assert.equal(maps.preview.errorCount,0);assert.equal(units.preview.errorCount,0);
-  assert.equal(maps.preview.rows.length,11);assert.equal(units.preview.rows.length,36);
+  assert.equal(maps.preview.rows.length,7);assert.equal(units.preview.rows.length,26);
   assert.equal((await (await call(f,'/test-api/site-settings',cookie)).json()).revision,before.revision);
   const draft=structuredClone(before.draft);
   for(const {data:d} of maps.preview.rows){const m={name:d.name,breakpoints:d.map.map(r=>({minWidth:r.minViewPort[0],sizes:r.sizes}))};const i=draft.maps.findIndex(x=>x.name===m.name);if(i<0)draft.maps.push(m);else draft.maps[i]=m;}
   for(const {data:d} of units.preview.rows){const i=draft.units.findIndex(x=>x.code===d.code),u={...(i<0?{}:draft.units[i]),code:d.code,type:d.type,sizeMap:d.sizeMapKey,enabled:d.enabled};if(i<0)draft.units.push(u);else draft.units[i]=u;}
   const save=await call(f,'/test-api/site-settings',cookie,{expectedRevision:before.revision,acknowledge:true,draft});assert.equal(save.status,200,await save.text());
-  const after=await (await call(f,'/test-api/site-settings',cookie)).json();assert.equal(after.draft.units.find(u=>u.code==='TakeOver').type,'DRAFT');assert(after.draft.maps.some(m=>m.name==='Native'));assert(after.draft.units.some(u=>u.code==='InText_10'));
+  const after=await (await call(f,'/test-api/site-settings',cookie)).json();assert.deepEqual(after.draft.maps.find(m=>m.name==='Branding_Map').breakpoints[0].sizes,[]);assert(after.draft.maps.find(m=>m.name==='InText').breakpoints[0].sizes.includes('fluid'));assert(after.draft.units.some(u=>u.code==='InText_10'));
   assert.equal((await call(f,'/test-api/site-settings',cookie,{expectedRevision:before.revision,acknowledge:true,draft})).status,409);
  }finally{f.close();}
 });
