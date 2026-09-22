@@ -58,7 +58,8 @@
     };
     slots.push(slot); return slot;
   }
-  window.googletag = {
+  // GPT fills the existing command-queue object; wrappers may retain its reference.
+  window.googletag = Object.assign(window.googletag || {}, {
     cmd: { push(callback) { callback(); } }, enums: { OutOfPageFormat: { INTERSTITIAL: 1 } },
     pubads: () => service, enableServices() {}, setConfig() {},
     sizeMapping() { const list = []; return { addSize(viewport, sizes) { list.push({ viewport, sizes }); return this; }, build() { return list; } }; },
@@ -66,7 +67,7 @@
     defineOutOfPageSlot(path) { if (slots.some((s) => s.id === 'interstitial-guard')) return null; return makeSlot(path, [1, 1], 'interstitial-guard'); },
     display(slot) { observations.displays.push(typeof slot === 'string' ? slot : slot.id); },
     destroySlots(list) { for (const slot of list) { const i = slots.indexOf(slot); if (i >= 0) slots.splice(i, 1); observations.destroys.push(slot.id); } return true; },
-  };
+  });
   window.pbjs = {
     version: 'LOCAL-MOCK', installedModules: [], que: { push(callback) { callback(); } }, bidderSettings: {},
     onEvent() {}, getEvents() { return []; }, removeAdUnit() {}, getUserIdsAsync() { return Promise.resolve({}); },
