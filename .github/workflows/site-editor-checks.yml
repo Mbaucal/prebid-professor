@@ -2,7 +2,7 @@ name: TEST site editor checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [worker/**, src/**, tests/**, scripts/**, .github/workflows/site-editor-checks.yml]
+    paths: [worker/**, src/**, shared/inventory/**, tests/**, scripts/**, .github/workflows/site-editor-checks.yml]
   push:
     branches: [main, feature/isolated-runtime-workspace-v1]
 permissions:
@@ -24,7 +24,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/check-test-activation.mjs && node scripts/prepare-builtin-runtime.mjs && node scripts/prepare-test-workspace.mjs
       - run: node --experimental-strip-types scripts/prepare-site-ab-baseline.mjs
-      - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/site-draft.test.mjs tests/runtime/test-site-editor-http.test.mjs tests/runtime/ad-position-runtime.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/site-package-flow.test.mjs tests/runtime/browser-package-download.test.mjs
+      - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/site-draft.test.mjs tests/runtime/test-site-editor-http.test.mjs tests/runtime/ad-position-runtime.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/site-package-flow.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/size-map-csv-template.test.mjs
       - run: npm run build
       - name: Compile TEST only; no deployment
         working-directory: ops/runtime-test
