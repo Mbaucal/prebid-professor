@@ -6,7 +6,8 @@ publisher assignments, search, collapsible groups, filtering and breadcrumbs.
 Existing publishers remain unassigned until explicitly linked; settings and
 saved releases are unchanged. TEST `/agencies` uses generic example publishers
 with real saved agency metadata. Backend/schema, compiled Worker/D1 and shared
-React desktop/mobile checks pass. Production promotion awaits TEST acceptance.
+React desktop/mobile checks pass. Marko accepted TEST on 2026-09-22
+("Odlicno! Moze na main") and authorized production promotion through PR #80.
 Details: `docs/AGENCY_HIERARCHY.md`.
 
 ## 2026-09-22 — Bounded dashboard layout (MBA-89)

@@ -62,5 +62,6 @@ scroll regions. All browser test traffic is local and uses synthetic data.
 
 Owner acceptance: create an agency, add a logo, assign and move an example
 publisher, open its site through the hierarchy, and reload to confirm saved
-changes. Production promotion requires acceptance of this TEST implementation.
+changes. Marko accepted this TEST implementation on 2026-09-22
+("Odlicno! Moze na main") and authorized PR #80 for production.
 Agency-specific permissions, billing and agency deletion are outside this change.
