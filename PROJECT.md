@@ -1,3 +1,15 @@
+## 2026-09-22 — Bounded dashboard layout (MBA-89)
+
+The dashboard now shares an AppFrame with the authenticated TEST `/layout-preview`.
+The viewport stays fixed; site header/tabs, navigation and account keep their own
+space. Workspace content and the publisher list scroll independently. Narrow
+screens have a collapsible menu; short windows can scroll the header/navigation
+in their bounded regions. This changes no runtime, site configuration or storage.
+Marko accepted the TEST layout on 2026-09-22 ("e tako! :)"). PR #77 promotes
+that reviewed layout to production; TEST PR #78 remains the shared review surface.
+All ten production PR checks passed before promotion, including layout checks
+on the real dashboard and TEST preview at eight viewport sizes.
+
 ## 2026-09-20 — Bid caching belongs to Demand → Prebid
 
 Moved cache on/off and maximum bid age from the named release form into the site’s
