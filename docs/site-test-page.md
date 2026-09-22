@@ -18,6 +18,25 @@ the observed JSON report. Restart after changing desktop/mobile viewport.
 Console URL options `?googfc`, `?google_console=1` and
 `?google_force_console=1` are accepted; scripts still require Start.
 
+**Sticky inspection** shows live computed position, offsets, visibility, size,
+`ad-loaded` state and the actual GAM response. Real Sticky DIVs are direct body
+children, outside diagnostic cards, with no placeholder paint overriding their
+saved CSS. Empty/closed Sticky remains controlled by the archived runtime.
+**Show Sticky CSS preview** displays a labelled, size-map-aware box using the
+archive's original `sticky.css` in a separate shadow tree. It neither registers a
+GPT slot nor changes the real container, request count, response or loaded class.
+Preview closes on viewport change, when the real Sticky becomes visible, or
+before a page console button opens Google's UI. The latter captures a timestamped
+snapshot of real Sticky state for comparison with live state and JSON export.
+**Inspect [slot] in GAM** opens the console focused on that real slot. Direct
+DevTools/bookmark/URL console opening has no before-click snapshot; use the page
+buttons without console URL parameters for a fresh comparison. Older archives
+without `sticky.css` retain live inspection but cannot show this CSS preview.
+
+Google documents its separate ad overlays and console slot inspection at
+https://developers.google.com/publisher-tag/guides/publisher-console.
+Tessera does not alter those overlays or force the actual ad visible.
+
 Opening the page is an authenticated, read-only operation. It changes no site
 settings, package bytes, channels, schema, production content or Google inventory.
 The page has no admin API client. CSP gives its ad scripts an opaque origin
@@ -41,3 +60,7 @@ build time and embedded as immutable text. Serializing a Worker function with
 before rows or click handlers existed. Bundling/minification regression tests
 check unchanged browser bytes, and the Chromium fixture now obtains its HTML
 from the real Wrangler bundle through authenticated local workerd/D1/R2.
+Sticky browser coverage includes empty and filled responses, close behavior,
+fixed placement while scrolling on desktop/mobile, preview isolation, responsive
+preview size, and a before/live comparison after a synthetic external style
+change. This checks observation, not the externally hosted Google console UI.

@@ -16,7 +16,7 @@ function input(prebid=false) {
     {id:'Sticky',type:'ATF',sizeMapName:'Sticky'},
     {id:'TakeOver',type:'ATF',sizeMapName:'Overlay'},
   ],sizeMapsRaw:{Billboard:[{viewport:[0,0],sizes:[]},{viewport:[1300,0],sizes:[[970,250]]}],Text:[{viewport:[0,0],sizes:['fluid',[300,250]]}],Sticky:[{viewport:[0,0],sizes:[[320,50]]}]}},options:{sticky:{bottomAdUnitId:'Sticky'}},adPosition:{code:'TakeOver'},prebidBuild:prebid?{version:'11.34.0'}:null})),
-  'ads.min.js':text.encode('window.example="</script>";/* exact bytes */'),'min-height.css':text.encode('#Billboard_1{min-height:250px}'),...(prebid?{'prebid.js':text.encode('/* Original Prebid */ window.fixturePrebid=true;')}:{}),};
+  'ads.min.js':text.encode('window.example="</script>";/* exact bytes */'),'min-height.css':text.encode('#Billboard_1{min-height:250px}'),'sticky.css':text.encode('#Sticky{position:fixed;bottom:0}'),...(prebid?{'prebid.js':text.encode('/* Original Prebid */ window.fixturePrebid=true;')}:{}),};
 }
 test('saved configuration supplies all standard/sticky DIVs and excludes the runtime-created modal',() => {
   const model=packageTestModel(input(),'site-a','saved-one');
@@ -25,6 +25,10 @@ test('saved configuration supplies all standard/sticky DIVs and excludes the run
   assert.deepEqual(model.maps.Billboard[0].sizes,[]);assert.equal(model.units[1].sizes[0],'fluid');
   const html=renderPackageTestPage(model);assert.match(html,/id="InText_1" class="wrapperAd lazyAd"/);assert.match(html,/id="Sticky" class="wrapperAd"/);
   assert.doesNotMatch(html,/id="TakeOver"/);assert.equal(Buffer.from(model.assets.ads,'base64').toString(),new TextDecoder().decode(input()['ads.min.js']));
+  assert.deepEqual(Buffer.from(model.assets.stickyCss,'base64'),Buffer.from(input()['sticky.css']));
+  assert(html.indexOf('id="Sticky"') > html.indexOf('</main>'),'Real Sticky lives outside diagnostic cards.');
+  assert.match(html,/\[data-slot-card\] \.wrapperAd\{outline/);
+  const legacy=input();delete legacy['sticky.css'];assert.equal(packageTestModel(legacy,'site-a','old').assets.stickyCss,null);
 });
 test('original Prebid bytes are included only when the archived package requires them',() => {
   const files=input(true),model=packageTestModel(files,'site-a','saved-one');
@@ -81,6 +85,7 @@ test('authenticated TEST page reads exact archived bytes without modifying setti
   assert.equal(response.headers.get('content-security-policy'),testPageHeaders['content-security-policy']);
   const html=await response.text(),data=JSON.parse(html.match(/data-test-model>(.*?)<\/script>/s)[1]);
   assert.deepEqual(Buffer.from(data.assets.ads,'base64'),Buffer.from(original['ads.min.js']));
+  assert.deepEqual(Buffer.from(data.assets.stickyCss,'base64'),Buffer.from(original['sticky.css']));
   assert.equal(data.units[0].id,JSON.parse(new TextDecoder().decode(original['config.json'])).core.explicitUnits[0].id);
   assert.equal(f.log.puts.length,puts);assert.equal(f.log.batches,batches);assert.equal(f.sqlite.prepare('SELECT status FROM releases').get().status,'draft');
   assert.equal((await worker.fetch(req(path),f.env)).status,401);

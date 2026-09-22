@@ -9,9 +9,11 @@ import { saveDraftRelease } from '../worker/runtime/draft-release-store.mjs';
 import { testPageScript } from '../.generated/test-page-client.mjs';
 const out=new URL('../.generated/test-page-evidence/',import.meta.url);await mkdir(out,{recursive:true});
 const snapshot=positionFixture(false),config=JSON.parse(snapshot.config.config_json);
-delete config.runtimeControls.adPositions;snapshot.config.config_json=JSON.stringify(config);
+delete config.runtimeControls.adPositions;config.runtimeControls.sticky.bottomAdUnitId='Sticky';snapshot.config.config_json=JSON.stringify(config);
 snapshot.units[2].code='Branding';
 snapshot.maps[1].map_json=JSON.stringify([{viewport:[0,0],sizes:[]},{viewport:[1300,0],sizes:[[160,600]]}]);
+snapshot.units.push({code:'Sticky',type:'ATF',media_type:'banner',size_map_key:'sticky',enabled:1,sort_order:3});
+snapshot.maps.push({name:'sticky',map_json:JSON.stringify([{viewport:[0,0],sizes:[[320,50]]},{viewport:[1200,0],sizes:[[970,90]]}])});
 const candidate=await buildArtifactCandidate({snapshot,pin:pinRuntime(runtimeCatalog[0],{allowPreview:true}),buildTimestamp:'20260922_220000'});
 // The HTML must come from the actual Wrangler bundle, not an imported source
 // renderer: source-only tests missed Function#toString dropping __name helpers.

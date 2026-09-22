@@ -1,3 +1,17 @@
+## 2026-09-22 — Sticky inspection on the Test page (MBA-94)
+
+Owner confirmed Test startup works and requested visible Sticky placement and
+real state while inspecting GAM. The test now keeps real Sticky directly under
+body with its original runtime CSS, reports computed placement/visibility and
+GAM response, and captures real state before a page console button opens.
+An optional labelled preview uses archived sticky.css in an isolated shadow
+tree and a current size-map size; it never changes the real slot or fakes fill.
+It closes before console opening, on resize or when real Sticky becomes visible.
+The report includes the snapshot and separately identifies active CSS previews.
+Compiled-Worker CI covers desktop/mobile empty/fill/close/scroll/preview and
+before/live comparison. Hosted Google console UI remains an owner check.
+Existing packages need reopening only. TEST first; main is not authorized here.
+
 ## 2026-09-22 — Test page Worker bootstrap correction (MBA-94)
 
 The first hosted test page failed before initialization because Function#toString
