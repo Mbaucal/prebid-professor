@@ -96,6 +96,7 @@ export function testPageClient() {
       const host = document.createElement('div'); host.dataset.stickyCssPreview = unit.id;
       const root = host.attachShadow({mode:'open'}), css = document.createElement('link');
       css.rel = 'stylesheet'; css.href = 'data:text/css;base64,' + model.assets.stickyCss;
+      css.onload = render;
       css.onerror = () => { closePreview(view); record('Saved Sticky CSS could not load.'); render(); };
       const box = document.createElement('div'); box.id = unit.id; box.className = 'ad-loaded';
       box.style.minHeight = size[1] + 'px'; box.style.paddingBottom = '5px';
@@ -136,6 +137,13 @@ export function testPageClient() {
         view.note.textContent = !model.assets.stickyCss ? 'This older package has no separate sticky.css for preview.' : unit.visible ? 'The real Sticky is visible. CSS preview is off.' : !size ? 'No fixed preview size fits this viewport.' : view.preview ? 'CSS preview is visible. The real slot and its GAM response are unchanged.' : 'CSS preview uses a saved size at this width and the original sticky.css.';
       }
     }
+    // Keep test controls clear of the actual fixed ad and its close button.
+    // Only the test toolbar moves; saved Sticky placement stays untouched.
+    let controlsBottom = 12;
+    const reserve = rect => { if (rect && rect.bottom >= innerHeight - 1 && rect.top > 0) controlsBottom = Math.max(controlsBottom,innerHeight - rect.top + 20); };
+    for (const unit of s.units) if (unit.sticky && unit.visible && unit.layout?.position === 'fixed') reserve(unit.layout.rect);
+    for (const [id,view] of stickyViews) if (view.preview) reserve(view.preview.shadowRoot.getElementById(id)?.getBoundingClientRect());
+    one('.float').style.bottom = controlsBottom + 'px';
     const extras = one('[data-extras]'); extras.textContent = s.additionalSlots.length ? 'Runtime-created / additional GPT slots: ' + s.additionalSlots.map(slot => slot.id + ' · ' + slot.path + ' · requests: ' + slot.requests).join('; ') : '';
     one('[data-summary]').textContent = Object.values(assets).includes('failed') ? 'A required script failed to load. Check the errors and your ad blocker, then restart.'
       : !started ? 'Ready. Click Start test to load this saved package.' : !s.gptReady ? 'Loading the saved scripts and Google GPT…'
