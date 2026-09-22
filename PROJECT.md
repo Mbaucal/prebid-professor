@@ -1,3 +1,12 @@
+## 2026-09-22 — Bounded dashboard layout (MBA-89)
+
+The dashboard now shares an AppFrame with the authenticated TEST `/layout-preview`.
+The viewport stays fixed; site header/tabs, navigation and account keep their own
+space. Workspace content and the publisher list scroll independently. Narrow
+screens have a collapsible menu; short windows can scroll the header/navigation
+in their bounded regions. This changes no runtime, site configuration or storage.
+TEST review uses generic examples. Production promotion awaits owner acceptance.
+
 # Tessera — Product and Project Source of Truth
 
 _Last updated: 2026-09-22_
