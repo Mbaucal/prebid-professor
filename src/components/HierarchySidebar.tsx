@@ -295,7 +295,7 @@ export default function HierarchySidebar({
                   onChange={(event) =>
                     setEditForm((current) => ({ ...current, name: event.target.value }))
                   }
-                  placeholder="Minacord"
+                  placeholder="Example Publisher"
                   value={editForm.name}
                 />
               </label>
@@ -332,7 +332,7 @@ export default function HierarchySidebar({
                   onChange={(event) =>
                     setEditForm((current) => ({ ...current, notes: event.target.value }))
                   }
-                  placeholder="K1info.rs, Tanjug.rs..."
+                  placeholder="example.com, news.example.com..."
                   value={editForm.notes}
                 />
               </label>

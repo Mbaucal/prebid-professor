@@ -1,3 +1,4 @@
+import CreativeTemplatesPanel from './components/CreativeTemplatesPanel';
 import ApiIntegrationsPanel from './components/ApiIntegrationsPanel';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from './api';
@@ -22,9 +23,10 @@ import type {
   Site,
 } from './shared/types';
 
-const navItems = ['Publishers', 'Releases', 'Prebid builds', 'API integracije', 'Audit log', 'Settings'] as const;
+const navItems = ['Publishers', 'Releases', 'Prebid builds', 'API integracije', 'Creative templates', 'Audit log', 'Settings'] as const;
 type GlobalSection = (typeof navItems)[number];
 const globalDescriptions: Record<GlobalSection, string> = {
+  'Creative templates': 'GAM šabloni za direktne kampanje, spremni za preuzimanje.',
   'API integracije': 'Povežite GAM mreže i kreirajte ad unite iz šablona.',
   Publishers: 'Manage publisher accounts, sites and every site-level configuration workflow.',
   Releases: 'Review immutable releases across all publishers and sites.',
@@ -609,6 +611,7 @@ export default function App() {
             {activeSection === 'Audit log' ? (
               <AuditLogPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
             ) : null}
+            {activeSection === 'Creative templates' ? <CreativeTemplatesPanel /> : null}
             {activeSection === 'API integracije' ? <ApiIntegrationsPanel sites={publishers.flatMap(p => p.sites)} /> : null}
             {activeSection === 'Settings' ? <SettingsPanel publishers={publishers} /> : null}
           </>
@@ -632,7 +635,7 @@ export default function App() {
                     name: event.target.value,
                     id: current.id || slugify(event.target.value),
                   }))}
-                  placeholder="Minacord"
+                  placeholder="Example Publisher"
                   value={publisherForm.name}
                 />
               </label>
@@ -640,7 +643,7 @@ export default function App() {
                 <span>Publisher ID</span>
                 <input
                   onChange={(event) => setPublisherForm((current) => ({ ...current, id: slugify(event.target.value) }))}
-                  placeholder="minacord"
+                  placeholder="example-publisher"
                   value={publisherForm.id}
                 />
               </label>
@@ -662,7 +665,7 @@ export default function App() {
                 <span>Notes</span>
                 <input
                   onChange={(event) => setPublisherForm((current) => ({ ...current, notes: event.target.value }))}
-                  placeholder="K1info.rs, Tanjug.rs..."
+                  placeholder="example.com, news.example.com..."
                   value={publisherForm.notes}
                 />
               </label>
@@ -704,7 +707,7 @@ export default function App() {
                     name: event.target.value,
                     id: modal === 'edit-site' ? current.id : current.id || slugify(event.target.value),
                   }))}
-                  placeholder="K1info.rs"
+                  placeholder="example.com"
                   value={siteForm.name}
                 />
               </label>
@@ -713,7 +716,7 @@ export default function App() {
                 <input
                   disabled={modal === 'edit-site'}
                   onChange={(event) => setSiteForm((current) => ({ ...current, id: slugify(event.target.value) }))}
-                  placeholder="k1info"
+                  placeholder="example-site"
                   value={siteForm.id}
                 />
                 {modal === 'edit-site' ? <small>Site ID is immutable because configs and releases reference it.</small> : null}
@@ -722,7 +725,7 @@ export default function App() {
                 <span>Domain</span>
                 <input
                   onChange={(event) => setSiteForm((current) => ({ ...current, domain: event.target.value }))}
-                  placeholder="k1info.rs"
+                  placeholder="example.com"
                   value={siteForm.domain}
                 />
               </label>
@@ -730,7 +733,7 @@ export default function App() {
                 <span>GAM path</span>
                 <input
                   onChange={(event) => setSiteForm((current) => ({ ...current, gamPath: event.target.value }))}
-                  placeholder="/23339552141/K1info.rs/"
+                  placeholder="/123456789/ExampleSite/"
                   value={siteForm.gamPath}
                 />
               </label>
@@ -750,7 +753,7 @@ export default function App() {
                 <span>Ads.txt URL</span>
                 <input
                   onChange={(event) => setSiteForm((current) => ({ ...current, adsTxtUrl: event.target.value }))}
-                  placeholder="https://k1info.rs/ads.txt"
+                  placeholder="https://example.com/ads.txt"
                   value={siteForm.adsTxtUrl}
                 />
               </label>

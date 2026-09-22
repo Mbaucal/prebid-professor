@@ -1,3 +1,4 @@
+import SectionCsvImport from './SectionCsvImport';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AdUnit, AdUnitType } from '../shared/types';
@@ -216,6 +217,8 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
             ＋ New ad unit
           </button>
         </div>
+
+        <SectionCsvImport publisherId={publisherId} kinds={['ad-units']} onChanged={async () => { await load(); await onChanged?.(); }} />
 
         {error ? <div className="form-error config-error">{error}</div> : null}
         {loading ? <div className="config-loading">Loading ad units from D1…</div> : null}

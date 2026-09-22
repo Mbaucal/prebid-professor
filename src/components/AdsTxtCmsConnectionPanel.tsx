@@ -447,7 +447,7 @@ export default function AdsTxtCmsConnectionPanel() {
             <span>Endpoint URL</span>
             <input
               onChange={(event) => setEndpointUrl(event.target.value)}
-              placeholder="https://cms.publisher.com/api/ads-txt"
+              placeholder="https://cms.example.com/api/ads-txt"
               type="url"
               value={endpointUrl}
             />

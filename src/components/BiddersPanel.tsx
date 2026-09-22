@@ -1,3 +1,4 @@
+import SectionCsvImport from './SectionCsvImport';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type {
@@ -420,6 +421,8 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
             ＋ New bidder
           </button>
         </div>
+
+        <SectionCsvImport publisherId={publisherId} kinds={['bidders', 'bidder-overrides']} onChanged={async () => { await load(); await onChanged?.(); }} />
 
         <div className="bidder-summary">
           <div><strong>{summary.total}</strong><span>Total bidders</span></div>

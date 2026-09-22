@@ -1,0 +1,26 @@
+name: Inventory CSV checks
+on:
+  pull_request:
+    branches: [main, feature/isolated-runtime-workspace-v1]
+    paths:
+      - src/App.tsx
+      - src/components/*Panel.tsx
+      - src/components/SectionCsvImport.tsx
+      - src/shared/inventory-csv-templates.ts
+      - src/imports.css
+      - scripts/verify-inventory-imports.mjs
+      - .github/workflows/inventory-imports.yml
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: node --experimental-strip-types scripts/verify-inventory-imports.mjs
