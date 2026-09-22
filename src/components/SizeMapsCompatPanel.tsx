@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from '../api';
+import BulkImportPanel from './BulkImportPanel';
 import type { AdUnit, SizeMap } from '../shared/types';
 
 type Props = {
@@ -281,6 +282,15 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
           <strong>Special values:</strong>
           <span><code>fluid</code> is valid for GPT/native inventory. Leave Sizes empty to create <code>[]</code> and disable the slot at that viewport.</span>
         </div>
+
+        <details className="size-map-csv">
+          <summary>Import size maps / Download CSV template</summary>
+          <BulkImportPanel
+            publisherId={publisherId}
+            onlyKind="size-maps"
+            onChanged={async () => { await load(); await onChanged?.(); }}
+          />
+        </details>
 
         {error ? <div className="form-error config-error">{error}</div> : null}
         {loading ? <div className="config-loading">Loading size maps from D1…</div> : null}
