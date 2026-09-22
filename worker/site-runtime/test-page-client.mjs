@@ -35,7 +35,7 @@ export function testPageClient() {
       units:model.units.map(unit => {
         const nodes = dom.get(unit.id) || [], found = slots.get(unit.id) || [], path = found[0]?.getAdUnitPath() || null;
         const node = nodes[0], rect = node?.getBoundingClientRect(), style = node && getComputedStyle(node), sizes = sizesFor(unit);
-        return {id:unit.id, type:unit.type, sticky:unit.sticky, domCount:nodes.length, wrapper:!!node?.classList.contains('wrapperAd'),
+        return {id:unit.id, type:unit.type, sticky:unit.sticky, lazy:unit.lazy, domCount:nodes.length, wrapper:!!node?.classList.contains('wrapperAd'),
           slotCount:found.length, path, pathOk:path === model.adUnitPath + unit.id, active:sizes.length > 0, sizes,
           requests:requests[unit.id] || 0, response:replies[unit.id] || null, width:Math.round(rect?.width || 0),height:Math.round(rect?.height || 0),
           visible:!!(rect?.width && rect?.height && style.display !== 'none' && style.visibility !== 'hidden')};
@@ -49,7 +49,7 @@ export function testPageClient() {
   model.units.forEach(unit => {
     const row = document.createElement('tr'); for (let n = 0; n < 6; n++) row.appendChild(document.createElement('td'));
     const jump = document.createElement('button'); jump.textContent = unit.id; jump.addEventListener('click',() => cards.get(unit.id).scrollIntoView({block:'start',behavior:'smooth'}));
-    row.children[0].append(jump,document.createElement('br'),document.createTextNode(unit.type + (unit.sticky ? ' · Sticky' : unit.type === 'BTF' ? ' · lazy' : '')));
+    row.children[0].append(jump,document.createElement('br'),document.createTextNode(unit.type + (unit.sticky ? ' · Sticky' : unit.lazy.enabled ? ' · lazy' : ' · immediate')));
     row.children[3].className = 'sizes'; one('[data-rows]').appendChild(row); rows.set(unit.id,row);
   });
   function render() {

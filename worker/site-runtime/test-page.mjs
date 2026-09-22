@@ -39,9 +39,11 @@ export function packageTestModel(files, siteId, releaseId) {
   const overlay = config.adPosition?.code || (config.options?.takeOver?.enabled ? config.options.takeOver.adUnitCode : null);
   const normal = units.filter(u => u.id !== overlay);
   const sticky = [config.options?.sticky?.bottomAdUnitId, config.options?.sticky?.topAdUnitId].filter(Boolean);
+  const lazyRules = config.lazyRules || {};
+  const lazyFor = unit => ({enabled:unit.type === 'BTF', ...lazyRules.__DEFAULT__, ...lazyRules[unit.type === 'ATF' ? '__ATF__' : '__BTF__'], ...lazyRules[unit.id]});
   return {
     siteId, releaseId, runtimeVersion: config.runtime?.runtimeVersion || 'Unknown',
-    adUnitPath, units: normal.map(u => ({id:u.id, type:u.type, sizes:u.sizes || [], sizeMapName:u.sizeMapName, sticky:sticky.includes(u.id)})),
+    adUnitPath, units: normal.map(u => ({id:u.id, type:u.type, sizes:u.sizes || [], sizeMapName:u.sizeMapName, sticky:sticky.includes(u.id), lazy:lazyFor(u)})),
     maps: config.core.sizeMapsRaw, overlay, prebidVersion: config.prebidBuild?.version || null,
     assets: {ads:base64(files['ads.min.js']), css:base64(files['min-height.css']), prebid:files['prebid.js'] ? base64(files['prebid.js']) : null},
   };

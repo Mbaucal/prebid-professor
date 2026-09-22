@@ -31,6 +31,14 @@ test('original Prebid bytes are included only when the archived package requires
   delete files['prebid.js'];assert.throws(()=>packageTestModel(files,'site-a','saved-one'),/dependency/);
   assert.throws(()=>packageTestModel(input(),'another-site','saved-one'),/match this site/);
 });
+test('lazy labels honor saved ATF/BTF and per-position overrides',() => {
+  const files=input(),config=JSON.parse(new TextDecoder().decode(files['config.json']));
+  config.lazyRules={__DEFAULT__:{enabled:true,fetchMarginPx:500,renderMarginPx:0},InText_1:{enabled:false}};
+  files['config.json']=text.encode(JSON.stringify(config));
+  const model=packageTestModel(files,'site-a','saved-one');
+  assert.equal(model.units[0].lazy.enabled,true);assert.equal(model.units[1].lazy.enabled,false);
+  assert.equal(model.units[1].lazy.fetchMarginPx,500);
+});
 test('archive text cannot close HTML data/scripts and the page has no admin API client',() => {
   const model=packageTestModel(input(),'site-a','saved-one');model.runtimeVersion='</script><script>alert(1)</script>';model.adUnitPath='/123/</p><script>alert(2)</script>/';
   const html=renderPackageTestPage(model);
