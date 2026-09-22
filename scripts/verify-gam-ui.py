@@ -2,7 +2,7 @@
 import json, os, subprocess, time
 from pathlib import Path
 from urllib.request import urlopen
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/gam-ui-evidence';out.mkdir(parents=True,exist_ok=True)
@@ -71,13 +71,23 @@ try:
         page.get_by_label('Do 1',exact=True).fill('0.03')
         page.get_by_label('Broj kopija kreativa',exact=True).fill('2')
         page.get_by_label('Veličine line itema',exact=True).fill('300x250;728x90')
+        expect(page.locator('.gam-li-naming tbody tr').last).to_contain_text('HB €0.03, #1')
+        assert page.locator('.gam-li-naming').get_by_text('hb_pb = 0.03',exact=True).count()==1
+        assert page.locator('.gam-li-order-names').get_by_text('Example Prebid order #1 (0.01-0.03 EUR)',exact=True).count()==1
+        page.locator('.gam-li-naming').scroll_into_view_if_needed()
+        page.screenshot(path=str(out/'line-items-naming.png'),full_page=False)
+        page.set_viewport_size({'width':390,'height':844})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+        page.locator('.gam-li-naming').scroll_into_view_if_needed()
+        page.screenshot(path=str(out/'line-items-naming-mobile.png'),full_page=False)
+        page.set_viewport_size({'width':1440,'height':1080})
         page.get_by_role('button',name='Proveri postavku u GAM-u',exact=True).click()
         page.get_by_role('heading',name='Spremno za potvrdu',exact=True).wait_for()
         assert not page.get_by_role('button',name='Kreiraj potvrđenu postavku',exact=True).is_enabled()
         page.get_by_role('checkbox',name='Potvrđujem ovu postavku',exact=False).check()
         page.get_by_role('button',name='Kreiraj potvrđenu postavku',exact=True).click()
         page.get_by_role('heading',name='Završeno',exact=True).wait_for()
-        assert page.locator('.gam-li-review').get_by_text('HB EUR 0.03',exact=True).count()==1
+        assert page.locator('.gam-li-review').get_by_text('HB €0.03',exact=True).count()==1
         assert page.locator('.gam-li-review').get_by_role('link',name='Preuzmi kompletnu').count()==1
         page.locator('.gam-li-review').scroll_into_view_if_needed()
         page.screenshot(path=str(out/'line-items-prebid-result.png'),full_page=False)
@@ -133,6 +143,6 @@ try:
         assert not external,external
         browser.close()
         (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'externalRequests':external,'requests':requests},indent=2))
-        print('PASS Prebid and ordinary line items, shared creatives, saved jobs, desktop/mobile, presets, saved templates, explicit review/create, paths/history, connection-first navigation, local JSON selection and setup recheck')
+        print('PASS Prebid and ordinary line items, per-price creative names and CPM preview, saved jobs, desktop/mobile, presets, saved templates, explicit review/create, paths/history, connection-first navigation, local JSON selection and setup recheck')
 finally:
     if process:process.terminate();process.wait(timeout=10)

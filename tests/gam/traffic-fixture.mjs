@@ -32,18 +32,20 @@ export function trafficFixture() {
       return { ...f.network, currency: "EUR", timeZone: "Europe/Belgrade" };
     },
     async byIds(kind, ids) {
+      const wanted = new Set(ids);
       return structuredClone(
         db[kind].filter((r) =>
-          ids.includes(String(r[kind === "association" ? "lineItemId" : "id"])),
+          wanted.has(String(r[kind === "association" ? "lineItemId" : "id"])),
         ),
       );
     },
     async byNames(kind, names, where, bindings) {
-      const field = where?.split(" ")[0];
+      const field = where?.split(" ")[0],
+        wanted = new Set(names);
       return structuredClone(
         db[kind].filter(
           (r) =>
-            names.includes(r.name) &&
+            wanted.has(r.name) &&
             (!field || String(r[field]) === String(bindings.parent)),
         ),
       );
@@ -102,6 +104,7 @@ export const prebidPlan = () => ({
   namePrefix: "HB",
   creative: {
     mode: "new",
+    layout: "shared",
     name: "Prebid Universal",
     copies: 2,
     size: "1x1",

@@ -1,5 +1,12 @@
 import { GamError, parseSizes } from "../../shared/gam/plan.mjs";
-import { list, flag, dateTime } from "../../shared/gam/line-items.mjs";
+import {
+  list,
+  flag,
+  dateTime,
+  creativesPerLine,
+  creativeIndexFor,
+  creativeNameAt,
+} from "../../shared/gam/line-items.mjs";
 
 export const PHASES = [
   "advertiser",
@@ -91,7 +98,7 @@ export function entities(plan, refs, phase, offset, limit) {
           ? {
               _type: "ThirdPartyCreative",
               advertiserId,
-              name: `${c.name} #${i + 1}`,
+              name: creativeNameAt(plan, i),
               size: { ...c.size, isAspectRatio: false },
               snippet: c.snippet,
               isSafeFrameCompatible: c.safeFrame,
@@ -163,9 +170,9 @@ export function entities(plan, refs, phase, offset, limit) {
         },
       };
     } else {
-      const count = creativeCount(plan),
+      const count = creativesPerLine(plan),
         lineIndex = Math.floor(i / count),
-        creativeIndex = i % count;
+        creativeIndex = creativeIndexFor(plan, lineIndex, i % count);
       key = `association:${lineIndex}:${creativeIndex}`;
       depends = [`lineItem:${lineIndex}`, `creative:${creativeIndex}`];
       payload = {
@@ -463,7 +470,13 @@ export function recordResult(job, batch, states, created = false) {
       job.associationCounts ||= { existing: 0, created: 0 };
       job.associationCounts[s.state] =
         (job.associationCounts[s.state] || 0) + 1;
-    } else job.refs[e.key] = { ...s, ...(created ? { state: "created" } : {}) };
+    } else if (e.kind === "creative")
+      job.refs[e.key] = {
+        state: created ? "created" : s.state,
+        ...(s.id ? { id: s.id } : {}),
+        ...(s.message ? { message: s.message } : {}),
+      };
+    else job.refs[e.key] = { ...s, ...(created ? { state: "created" } : {}) };
   }
 }
 export function advance(job, count) {
@@ -552,6 +565,8 @@ export function jobView(job, attempt) {
       creativeSafeFrame: job.plan.creative.safeFrame === true,
       creativeSnippet:
         job.status === "ready" ? job.plan.creative.snippet || "" : "",
+      creativeLayout: job.plan.creative.layout || "shared",
+      creativesPerLine: creativesPerLine(job.plan),
       creativeMode: job.plan.creative.mode,
       overrideSizes: job.plan.creative.overrideSizes,
     },
@@ -560,10 +575,23 @@ export function jobView(job, attempt) {
       price: r.price,
       id: job.refs[`lineItem:${i}`]?.id,
       state: job.refs[`lineItem:${i}`]?.state,
+      hbPb: job.plan.mode === "prebid" ? r.price : null,
+      orderName:
+        job.labels[r.orderRef] ||
+        job.plan.orders.find((o) => o.ref === r.orderRef)?.name,
+      creativeFirst: creativesPerLine(job.plan)
+        ? creativeNameAt(job.plan, creativeIndexFor(job.plan, i, 0))
+        : null,
+      creativeLast: creativesPerLine(job.plan)
+        ? creativeNameAt(
+            job.plan,
+            creativeIndexFor(job.plan, i, creativesPerLine(job.plan) - 1),
+          )
+        : null,
     })),
     advertiserId: job.refs["advertiser:0"]?.id,
     creativeIds: Array.from(
-      { length: creativeCount(job.plan) },
+      { length: Math.min(50, creativeCount(job.plan)) },
       (_, i) => job.refs[`creative:${i}`]?.id,
     ).filter(Boolean),
   };

@@ -11,7 +11,7 @@ export const LINE_ITEM_TYPES = [
   "HOUSE",
 ];
 export const DEFAULT_LINE_SIZES =
-  "300x250; 300x600; 468x60; 728x90; 320x50; 320x100; 160x600; 120x600; 970x250; 336x280; 970x90; 300x100; 300x50";
+  "1x1; 300x250; 300x600; 468x60; 728x90; 320x50; 320x100; 160x600; 120x600; 970x250; 336x280; 970x90; 300x100; 300x50";
 // Explicit version: existing creatives never change when a new PUC is published.
 export const PREBID_CREATIVE = `<script src="https://cdn.jsdelivr.net/npm/prebid-universal-creative@1.18.0/dist/banner.js"></script>
 <script>
@@ -67,6 +67,72 @@ export function priceRows(ranges) {
     last = to;
   }
   return result;
+}
+export const MAX_CREATIVES = 50000;
+export const prebidLineName = (prefix, currency, price) =>
+  `${prefix} ${currency === "EUR" ? "€" : currency + " "}${price}`;
+export const prebidOrderName = (prefix, index, first, last, currency) =>
+  `${prefix} #${index + 1} (${first}-${last} ${currency})`;
+export const creativesPerLine = (plan) =>
+  plan.creative.layout === "per-price"
+    ? plan.creative.copies
+    : plan.counts.creatives;
+export const creativeIndexFor = (plan, lineIndex, copyIndex) =>
+  plan.creative.layout === "per-price"
+    ? lineIndex * plan.creative.copies + copyIndex
+    : copyIndex;
+export function creativeNameAt(plan, index) {
+  if (plan.creative.mode !== "new")
+    return "Postojeći kreativ " + plan.creative.ids[index];
+  if (plan.creative.layout === "per-price")
+    return `${plan.rows[Math.floor(index / plan.creative.copies)].name}, #${(index % plan.creative.copies) + 1}`;
+  return `${plan.creative.name} #${index + 1}`;
+}
+// Used by the form before any network request and by the persisted review.
+export function prebidNamingPreview(input) {
+  const rows = priceRows(input.ranges),
+    currency = input.currency || "EUR",
+    prefix = input.namePrefix?.trim() || "HB",
+    orderPrefix = input.order?.name?.trim() || "Prebid";
+  const existing = input.order?.mode === "existing",
+    orders = Array.from(
+      { length: existing ? 1 : Math.ceil(rows.length / ORDER_BATCH) },
+      (_, i) => {
+        const chunk = existing
+          ? rows
+          : rows.slice(i * ORDER_BATCH, (i + 1) * ORDER_BATCH);
+        return existing
+          ? orderPrefix
+          : prebidOrderName(
+              orderPrefix,
+              i,
+              chunk[0].price,
+              chunk.at(-1).price,
+              currency,
+            );
+      },
+    );
+  const copies = integer(input.creative?.copies || 1, "Broj kopija", 1, 50),
+    perPrice =
+      input.creative?.mode === "new" && input.creative?.layout !== "shared";
+  const indices = [
+    ...new Set([0, 1, 2, rows.length - 1].filter((i) => i < rows.length)),
+  ];
+  return {
+    orders,
+    examples: indices.map((i) => {
+      const r = rows[i],
+        name = prebidLineName(prefix, currency, r.price);
+      return {
+        name,
+        price: r.price,
+        hbPb: r.price,
+        order: orders[existing ? 0 : Math.floor(i / ORDER_BATCH)],
+        creativeFirst: perPrice ? `${name}, #1` : "Postojeći / zajednički set",
+        creativeLast: perPrice ? `${name}, #${copies}` : "",
+      };
+    }),
+  };
 }
 const selection = (v, label) =>
   v?.mode === "existing"
@@ -221,7 +287,7 @@ export function normalizeLinePlan(input, now = Date.now()) {
   if (mode === "prebid")
     rows = rows.map((r) => ({
       ...r,
-      name: `${namePrefix} ${currency} ${r.price}`,
+      name: prebidLineName(namePrefix, currency, r.price),
     }));
   const c = input.creative;
   if (!c || !["new", "existing", "none"].includes(c.mode))
@@ -252,7 +318,12 @@ export function normalizeLinePlan(input, now = Date.now()) {
       fail("Kreativ mora imati jednu početnu veličinu.");
     creative = {
       ...creative,
-      name: text(c.name, "Naziv seta kreativa", 180),
+      layout:
+        mode === "prebid" && c.layout !== "shared" ? "per-price" : "shared",
+      name:
+        mode === "prebid" && c.layout !== "shared"
+          ? namePrefix
+          : text(c.name, "Naziv seta kreativa", 180),
       copies: integer(c.copies, "Broj kopija kreativa", 1, 50),
       snippet: snippet.trim(),
       size: parsed.sizes[0],
@@ -265,6 +336,12 @@ export function normalizeLinePlan(input, now = Date.now()) {
       : creative.mode === "existing"
         ? creative.ids.length
         : 0;
+  const totalCreatives =
+    creative.layout === "per-price" ? rows.length * count : count;
+  if (totalCreatives > MAX_CREATIVES)
+    fail(
+      `Najviše ${MAX_CREATIVES.toLocaleString("sr-Latn")} kreativa po poslu. Smanjite raspon ili broj kopija po ceni.`,
+    );
   if (
     !creative.overrideSizes &&
     creative.mode === "new" &&
@@ -287,15 +364,22 @@ export function normalizeLinePlan(input, now = Date.now()) {
     ref: `order:${i}`,
     name:
       order.mode === "new"
-        ? chunks.length === 1
-          ? order.name
-          : `${order.name} #${i + 1} (${chunk[0].price}–${chunk.at(-1).price} ${currency})`
+        ? mode === "prebid"
+          ? prebidOrderName(
+              order.name,
+              i,
+              chunk[0].price,
+              chunk.at(-1).price,
+              currency,
+            )
+          : order.name
         : undefined,
   }));
   rows = chunks.flatMap((chunk, i) =>
     chunk.map((r) => ({ ...r, orderRef: `order:${i}` })),
   );
   return {
+    schemaVersion: 2,
     mode,
     networkCode: numericId(input.networkCode),
     advertiser,
@@ -316,7 +400,7 @@ export function normalizeLinePlan(input, now = Date.now()) {
     counts: {
       lineItems: rows.length,
       orders: orders.length,
-      creatives: count,
+      creatives: totalCreatives,
       associations: rows.length * count,
     },
   };

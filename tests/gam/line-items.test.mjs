@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { gamResponse } from "../../worker/integrations/gam-service.mjs";
-import { normalizeLinePlan, priceRows } from "../../shared/gam/line-items.mjs";
+import {
+  normalizeLinePlan,
+  priceRows,
+  prebidNamingPreview,
+} from "../../shared/gam/line-items.mjs";
 import { trafficFixture, prebidPlan } from "./traffic-fixture.mjs";
 const origin = "https://fixture.invalid",
   base = "/api/integrations/gam";
@@ -53,7 +57,7 @@ async function review(f, plan = prebidPlan()) {
   let r = await req(f, "/line-items/preview", plan);
   assert.equal(r.status, 201, JSON.stringify(r.data));
   let j = r.data;
-  for (let i = 0; j.status === "reviewing" && i < 100; i++)
+  for (let i = 0; j.status === "reviewing" && i < 2000; i++)
     j = await act(f, j, "review");
   assert.equal(j.status, "ready");
   return j;
@@ -103,6 +107,47 @@ test("exact price granularity, order split and validation", () => {
     }),
   );
 });
+test("visible naming preview matches all script orders and server prices, with bounded creative volume", () => {
+  const input = {
+    ...prebidPlan(),
+    order: {
+      mode: "new",
+      name: "SMN - Programmatic HB - Prebid",
+      traffickerId: "30",
+    },
+    ranges: [{ from: "0.01", to: "20.00", step: "0.01" }],
+    creative: { ...prebidPlan().creative, layout: "per-price", copies: 20 },
+  };
+  const preview = prebidNamingPreview(input),
+    plan = normalizeLinePlan(input);
+  assert.deepEqual(preview.orders, [
+    "SMN - Programmatic HB - Prebid #1 (0.01-4.00 EUR)",
+    "SMN - Programmatic HB - Prebid #2 (4.01-8.00 EUR)",
+    "SMN - Programmatic HB - Prebid #3 (8.01-12.00 EUR)",
+    "SMN - Programmatic HB - Prebid #4 (12.01-16.00 EUR)",
+    "SMN - Programmatic HB - Prebid #5 (16.01-20.00 EUR)",
+  ]);
+  assert.deepEqual(
+    preview.orders,
+    plan.orders.map((o) => o.name),
+  );
+  assert.equal(preview.examples.at(-1).name, plan.rows.at(-1).name);
+  assert.equal(preview.examples.at(-1).hbPb, plan.rows.at(-1).price);
+  assert.equal(preview.examples.at(-1).creativeLast, "HB €20.00, #20");
+  assert.throws(
+    () =>
+      normalizeLinePlan({
+        ...input,
+        creative: { ...input.creative, copies: 50 },
+      }),
+    /50.000/,
+  );
+  assert.equal(
+    normalizeLinePlan({ ...input, currency: "USD" }).rows[0].name,
+    "HB USD 0.01",
+  );
+});
+
 test("review is read only; Prebid creates values, shared creative pool, targeting, sizes and links; replay reuses", async () => {
   const f = await setup(),
     j = await review(f);
@@ -308,17 +353,30 @@ test("wrong currency and inactive inventory fail before preview; existing creati
   assert.equal(f.db.association.length, 3);
 });
 
-test("full source-script range creates 2000 prices in 5 orders, 20 creatives and 40000 links", async () => {
+test("full source-script range creates 2000 prices in 5 orders, 40000 CPM-named creatives and 40000 links", async () => {
   const f = await setup(),
     p = {
       ...prebidPlan(),
       order: { mode: "new", name: "Full Prebid", traffickerId: "30" },
       ranges: [{ from: "0.01", to: "20.00", step: "0.01" }],
-      creative: { ...prebidPlan().creative, copies: 20 },
+      creative: { ...prebidPlan().creative, layout: "per-price", copies: 20 },
     };
   const done = await finish(f, await start(f, await review(f, p)));
   assert.equal(f.db.lineItem.length, 2000);
-  assert.equal(f.db.creative.length, 20);
+  assert.equal(f.db.creative.length, 40000);
+  assert.equal(f.db.creative[0].name, "HB €0.01, #1");
+  assert.equal(f.db.creative.at(-1).name, "HB €20.00, #20");
+  assert.equal(f.db.order[1].name, "Full Prebid #1 (0.01-4.00 EUR)");
+  assert.equal(f.db.order.at(-1).name, "Full Prebid #5 (16.01-20.00 EUR)");
+  const creativeById = new Map(f.db.creative.map((c) => [c.id, c])),
+    lineById = new Map(f.db.lineItem.map((l) => [l.id, l]));
+  for (const link of f.db.association)
+    assert(
+      creativeById
+        .get(link.creativeId)
+        .name.startsWith(lineById.get(link.lineItemId).name + ", #"),
+    );
+  assert.equal(new Set(f.db.association.map((a) => a.creativeId)).size, 40000);
   assert.equal(f.db.association.length, 40000);
   assert.equal(done.counts.association.created, 40000);
   const sizes = f.db.order
@@ -334,7 +392,7 @@ test("full source-script range creates 2000 prices in 5 orders, 20 creatives and
     )
   ).json();
   assert(
-    Object.keys(stored.refs).length < 5000,
+    Object.keys(stored.refs).length < 45000,
     "Link progress is compact, not one stored object per association",
   );
 });
@@ -369,4 +427,76 @@ test("cancellation racing a pre-write lookup wins without a later Google mutatio
     (await req(f, `/line-items/jobs/${j.id}`)).data.status,
     "cancelled",
   );
+});
+
+test("default new Prebid plan matches script names, CPM and hb_pb, including a single order", async () => {
+  const f = await setup(),
+    creative = { ...prebidPlan().creative };
+  delete creative.layout;
+  const p = {
+    ...prebidPlan(),
+    creative,
+    ranges: [{ from: "18.01", to: "18.03", step: "0.01" }],
+    order: { mode: "new", name: "Example Prebid", traffickerId: "30" },
+  };
+  let j = await review(f, p);
+  assert.equal(j.counts.creative.total, 6);
+  assert.equal(j.examples[2].name, "HB €18.03");
+  assert.equal(j.examples[2].price, "18.03");
+  assert.equal(j.examples[2].hbPb, "18.03");
+  assert.equal(j.examples[2].creativeFirst, "HB €18.03, #1");
+  assert.equal(
+    j.configuration.orders[0].name,
+    "Example Prebid #1 (18.01-18.03 EUR)",
+  );
+  assert.equal(f.calls.length, 0);
+  j = await start(f, j);
+  while (j.phase !== "Kreativi") j = await act(f, j, "step");
+  f.failNext("creative");
+  j = await act(f, j, "step");
+  assert(j.awaitingCheck);
+  j = await act(f, j, "check");
+  assert(!j.awaitingCheck);
+  j = await finish(f, j);
+  assert.equal(f.db.creative.length, 6);
+  assert.equal(f.db.lineItem[2].costPerUnit.microAmount, 18030000);
+  assert.equal(
+    f.db.value.find(
+      (v) =>
+        v.id ===
+        f.db.lineItem[2].targeting.customTargeting.children[0].valueIds[0],
+    ).name,
+    "18.03",
+  );
+  const csv = (await req(f, `/line-items/jobs/${j.id}/export`)).data;
+  assert(csv.includes("HB €18.03, #2"));
+  assert(csv.includes("hb_pb"));
+  const n = f.calls.length;
+  await finish(f, await start(f, await review(f, p)));
+  assert.equal(f.calls.length, n);
+});
+test("saved v1 shared-creative job and uncertain five-creative batch retain their mapping", async () => {
+  const f = await setup(),
+    p = { ...prebidPlan(), creative: { ...prebidPlan().creative, copies: 6 } };
+  let j = await review(f, p);
+  const key = "api-integrations/gam/line-items/v1/jobs/" + j.id + ".json",
+    stored = await (await f.env.BUILDS.get(key)).json();
+  delete stored.plan.schemaVersion;
+  delete stored.plan.creative.layout;
+  stored.plan.rows.forEach((r) => {
+    r.name = "HB EUR " + r.price;
+  });
+  await f.env.BUILDS.put(key, JSON.stringify(stored));
+  j = await start(f, j);
+  while (j.phase !== "Kreativi") j = await act(f, j, "step");
+  f.failNext("creative");
+  j = await act(f, j, "step");
+  assert.equal(f.db.creative.length, 5);
+  j = await act(f, j, "check");
+  assert(!j.awaitingCheck);
+  await finish(f, j);
+  assert.equal(f.db.creative.length, 6);
+  assert.equal(f.db.association.length, 18);
+  assert.equal(f.db.lineItem[0].name, "HB EUR 0.01");
+  assert.equal(f.db.creative[0].name, "Prebid Universal #1");
 });
