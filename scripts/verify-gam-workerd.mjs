@@ -7,6 +7,9 @@ import {mkdir, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Miniflare} from 'miniflare';
+import {soapTrafficFixture} from '../tests/gam/soap-traffic-fixture.mjs';
+import {prebidPlan} from '../tests/gam/traffic-fixture.mjs';
+const traffic=soapTrafficFixture();let trafficMode=false;
 
 const compiled = process.argv[2] || '.generated/gam-worker-dry-run';
 const production = process.argv[3] === 'production';
@@ -59,8 +62,9 @@ async function outbound(request) {
     if (mode === 'soap-rejected') return new Response(`<Envelope><Body><Fault><detail><ApiExceptionFault><errors><reason>PERMISSION_DENIED</reason><trigger>${safeMarker}</trigger></errors></ApiExceptionFault></detail></Fault></Body></Envelope>`, {status:500});
     if (url.pathname.endsWith('/NetworkService')) {
       assert(body.includes('<getCurrentNetwork '));
-      return soap('getCurrentNetwork', '<networkCode>123456</networkCode><displayName>Synthetic GAM</displayName><effectiveRootAdUnitId>1</effectiveRootAdUnitId>');
+      return soap('getCurrentNetwork', '<networkCode>123456</networkCode><displayName>Synthetic GAM</displayName><effectiveRootAdUnitId>1</effectiveRootAdUnitId><currencyCode>EUR</currencyCode><timeZone>Europe/Belgrade</timeZone>');
     }
+    if(trafficMode)return await traffic.respond(body,url.pathname);
     assert(url.pathname.endsWith('/InventoryService'));
     assert(body.includes('<getAdUnitsByStatement '));
     assert(!body.includes('createAdUnits'));
@@ -108,6 +112,30 @@ try {
   const parents = await call('/parents?network=123456');
   assert.equal(parents.status, 200, parents.data.error);
   checked('Stored credential decrypts and native class-backed SOAP fetch reads inventory', parents.data.parent.id === '1' && parents.data.units.length === 0);
+
+  trafficMode=true;
+  const users=await call('/line-items/lookups?network=123456&kind=user');
+  assert.equal(users.status,200,JSON.stringify(users.data));
+  checked('Trafficker lookup uses supported status PQL and excludes inactive users',users.data.items.length===1&&users.data.items[0].id==='30');
+  const defaults=await call('/line-items/defaults?network=123456');
+  assert.equal(defaults.status,200,JSON.stringify(defaults.data));
+  checked('Native SOAP resolves script placement and trafficker by exact name/email without writes', defaults.data.issues.length===0&&defaults.data.draft.order.traffickerId==='30'&&defaults.data.draft.inventory.ids[0]==='40'&&traffic.calls.length===0);
+  async function trafficJob(plan){
+    let r=await call('/line-items/preview',plan);assert.equal(r.status,201,JSON.stringify(r.data));let j=r.data;
+    while(j.status==='reviewing'){r=await call(`/line-items/jobs/${j.id}/review`,{cursor:j.cursor});assert.equal(r.status,200,JSON.stringify(r.data));j=r.data;}
+    assert.equal(j.conflictCount,0,JSON.stringify(j.conflicts));
+    r=await call(`/line-items/jobs/${j.id}/start`,{confirm:true,confirmNetwork:'123456'});assert.equal(r.status,200,JSON.stringify(r.data));j=r.data;
+    for(let i=0;j.status==='creating'&&i<100;i++){r=await call(`/line-items/jobs/${j.id}/step`,{cursor:j.cursor});assert.equal(r.status,200,JSON.stringify(r.data));j=r.data;assert.equal(j.error,'',JSON.stringify(j));}
+    assert.equal(j.status,'completed');return j;
+  }
+  const prebid=await trafficJob({...defaults.data.draft,ranges:[{from:'0.01',to:'0.03',step:'0.01'}],creative:{...defaults.data.draft.creative,copies:2}});
+  checked('Native SOAP creates advertiser, order, hb_pb values, CPM-named creatives, priced line items and size-override links',prebid.counts.lineItem.created===3&&prebid.counts.creative.created===6&&prebid.counts.association.created===6);
+  const count=traffic.calls.length;
+  await trafficJob({...defaults.data.draft,ranges:[{from:'0.01',to:'0.03',step:'0.01'}],creative:{...defaults.data.draft.creative,copies:2}});
+  checked('Native SOAP replay reuses matching entities without new writes',traffic.calls.length===count);
+  const single=await trafficJob({...prebidPlan(),mode:'single',name:'Native Standard',lineItemType:'STANDARD',rate:'2.50',costType:'CPM',goal:100000,end:'2099-01-01T12:00',creative:{mode:'none'}});
+  checked('Native SOAP ordinary Standard line item preserves goal and end date',single.counts.lineItem.created===1&&single.counts.creative.total===0);
+  trafficMode=false;
 
   for (const nextMode of ['oauth-redirect', 'soap-redirect', 'oauth-rejected', 'soap-rejected']) {
     mode = nextMode;
