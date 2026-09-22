@@ -73,6 +73,7 @@ export async function planSiteInventory(store,siteId,{rows=[],parentPath=null,re
  const maps=Object.entries(sizeMapDefaults).filter(([name])=>!snapshot.maps.some(m=>m.name===name)).map(([name,map])=>({id:crypto.randomUUID(),name,map_json:JSON.stringify(map)}));
  const units=[],bindings=[],warnings=[];let order=Math.max(0,...snapshot.units.map(u=>u.sort_order));
  for(const row of rows){
+  const actualSizes=row.existing?[...row.existing.sizes.map(s=>`${s.width}x${s.height}`),...(row.existing.fluid?['fluid']:[])].join('; '):row.sizes;
   if(row.path&&row.path!==`${path(snapshot.site.gam_path)}/${row.code}`)fail(`GAM putanja za ${row.code} ne odgovara izabranom sajtu.`,409);
   const existing=snapshot.units.find(u=>u.code===row.code),collision=snapshot.units.find(u=>u.code.toLowerCase()===row.code.toLowerCase()&&u.code!==row.code);
   if(collision)fail(`Sajt već ima ${collision.code}; uskladite velika i mala slova za ${row.code}.`,409);
@@ -80,18 +81,18 @@ export async function planSiteInventory(store,siteId,{rows=[],parentPath=null,re
   const key=existing?.size_map_key||row.mapKey||inferMapKey(row.code)||`GAM_${row.code}`;
   let map=snapshot.maps.find(m=>m.name===key)||maps.find(m=>m.name===key);
   if(!map){
-   const sizes=parseSizes(row.sizes);map={id:crypto.randomUUID(),name:key,map_json:JSON.stringify([{minViewPort:[0,0],sizes:[...sizes.sizes.map(s=>[s.width,s.height]),...(sizes.fluid?['fluid']:[])]}])};maps.push(map);
+   const sizes=parseSizes(actualSizes);map={id:crypto.randomUUID(),name:key,map_json:JSON.stringify([{minViewPort:[0,0],sizes:[...sizes.sizes.map(s=>[s.width,s.height]),...(sizes.fluid?['fluid']:[])]}])};maps.push(map);
   }
   if(existing&&!existing.size_map_key)fail(`${row.code} nema mapu u sajtu. Izaberite mapu pre povezivanja.`,409);
   if(existing&&existing.size_map_key!==(row.mapKey||inferMapKey(row.code)))warnings.push(`${row.code}: zadržana postojeća mapa ${existing.size_map_key}.`);
   if(row.differences?.includes('veličine'))warnings.push(`${row.code}: GAM ima drugačije veličine; postojeći GAM podaci ostaju sačuvani.`);
-  const actual=parseSizes(row.sizes),available=new Set([...actual.sizes.map(s=>`${s.width}x${s.height}`),...(actual.fluid?['fluid']:[])]);
+  const actual=parseSizes(actualSizes),available=new Set([...actual.sizes.map(s=>`${s.width}x${s.height}`),...(actual.fluid?['fluid']:[])]);
   let rules;try{rules=JSON.parse(map.map_json);}catch{fail(`Mapa ${key} nije ispravna. Pregledajte je u sajtu.`,409);}
   const missing=[...new Set(rules.flatMap(r=>r.sizes.map(sizeLabel)))].filter(size=>!available.has(size));
   if(missing.length)warnings.push(`${row.code}: mapa ${key} uključuje veličine van ovog GAM unita (${missing.join(', ')}). Prilagodite mapu ili GAM veličine pre Generate / Publish.`);
   const unit=existing||{id:crypto.randomUUID(),code:row.code,type:['Sticky','Billboard','Branding_Map'].includes(key)?'ATF':'BTF',size_map_key:key,sort_order:++order};
   if(!existing)units.push(unit);
-  bindings.push({code:row.code,id:row.id??null,path:row.path??`${path(snapshot.site.gam_path)}/${row.code}`,sizes:row.sizes,mapKey:key,localId:unit.id,state:existing?'existing':'new'});
+  bindings.push({code:row.code,id:row.id??null,path:row.path??`${path(snapshot.site.gam_path)}/${row.code}`,sizes:actualSizes,mapKey:key,localId:unit.id,state:existing?'existing':'new'});
  }
  if(snapshot.units.length+units.length>1000||snapshot.maps.length+maps.length>1000)fail('Inventar premašuje opseg jednog unosa.');
  await store.validate?.({snapshot,maps,units});
