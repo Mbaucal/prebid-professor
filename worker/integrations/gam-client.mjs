@@ -8,13 +8,16 @@ const b64url = bytes => base64(bytes).replaceAll('+','-').replaceAll('/','_').re
 export const xml = value => String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&apos;');
 const array = value => value == null || value === '' ? [] : Array.isArray(value) ? value : [value];
 const parser = new XMLParser({removeNSPrefix:true,parseTagValue:false,ignoreAttributes:true});
+// workerd requires the native fetch receiver; do not store native fetch as a class method.
+const runtimeFetch = (url, options) => fetch(url, options);
+const redirected = response => response.status >= 300 && response.status < 400;
 
 export function validateCredential(input) {
   if (!input || input.type !== 'service_account' || typeof input.client_email !== 'string' || !/^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.iam\.gserviceaccount\.com$/.test(input.client_email)
       || typeof input.private_key !== 'string' || input.private_key.length > 12000 || !input.private_key.startsWith('-----BEGIN PRIVATE KEY-----')) throw new GamError('Izaberite Google service account JSON ključ.');
   return {type:'service_account',client_email:input.client_email,private_key:input.private_key};
 }
-export async function accessToken(input, fetcher = fetch) {
+export async function accessToken(input, fetcher = runtimeFetch) {
   const account = validateCredential(input), now = Math.floor(Date.now()/1000);
   let key;
   try {
@@ -25,8 +28,10 @@ export async function accessToken(input, fetcher = fetch) {
   const unsigned = `${b64url(encoder.encode(JSON.stringify({alg:'RS256',typ:'JWT'})))}.${b64url(encoder.encode(JSON.stringify(claims)))}`;
   const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5',key,encoder.encode(unsigned));
   let response;
-  try { response = await fetcher('https://oauth2.googleapis.com/token',{method:'POST',redirect:'error',signal:AbortSignal.timeout(20000),headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion:`${unsigned}.${b64url(signature)}`})}); }
+  // Workers reject redirect:'error' before sending; manual + status check also prevents forwarding credentials.
+  try { response = await fetcher('https://oauth2.googleapis.com/token',{method:'POST',redirect:'manual',signal:AbortSignal.timeout(20000),headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion:`${unsigned}.${b64url(signature)}`})}); }
   catch { throw new GamError('Google prijava trenutno nije dostupna. Pokušajte ponovo.',502); }
+  if (redirected(response)) throw new GamError('Google prijava je vratila neočekivano preusmerenje. Zahtev nije prosleđen.',502);
   const result = await response.json().catch(()=>({}));
   if (!response.ok || typeof result.access_token !== 'string') throw new GamError('Google nije prihvatio service account ključ. Proverite da li je ključ aktivan.',502);
   return result.access_token;
@@ -55,13 +60,14 @@ export function unitPayload(row, parentId) {
     (parsed ? parsed.sizes.map(s=>`<adUnitSizes><size><width>${s.width}</width><height>${s.height}</height><isAspectRatio>false</isAspectRatio></size><environmentType>BROWSER</environmentType></adUnitSizes>`).join('')+`<isFluid>${parsed.fluid}</isFluid>` : '')+'</adUnits>';
 }
 export class GamClient {
-  constructor(networkCode, token, fetcher = fetch) { this.networkCode=numericId(networkCode);this.token=token;this.fetcher=fetcher; }
+  constructor(networkCode, token, fetcher = runtimeFetch) { this.networkCode=numericId(networkCode);this.token=token;this.fetcher=fetcher; }
   async call(service,operation,content='') {
     const ns = `https://www.google.com/apis/ads/publisher/${API_VERSION}`;
     const body = `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Header><RequestHeader xmlns="${ns}"><networkCode>${this.networkCode}</networkCode><applicationName>Tessera API Integrations</applicationName></RequestHeader></soap:Header><soap:Body><${operation} xmlns="${ns}">${content}</${operation}></soap:Body></soap:Envelope>`;
     let response;
-    try { response = await this.fetcher(`https://ads.google.com/apis/ads/publisher/${API_VERSION}/${service}`,{method:'POST',redirect:'error',signal:AbortSignal.timeout(25000),headers:{authorization:`Bearer ${this.token}`,'content-type':'text/xml; charset=utf-8',SOAPAction:''},body}); }
+    try { response = await this.fetcher(`https://ads.google.com/apis/ads/publisher/${API_VERSION}/${service}`,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(25000),headers:{authorization:`Bearer ${this.token}`,'content-type':'text/xml; charset=utf-8',SOAPAction:''},body}); }
     catch { throw new GamError(operation==='createAdUnits'?'Ishod GAM upisa nije poznat. Ponovite proveru postojećih ad unita pre nastavka.':'GAM trenutno nije dostupan. Pokušajte ponovo.',502); }
+    if (redirected(response)) throw new GamError('GAM je vratio neočekivano preusmerenje. Zahtev nije prosleđen.',502);
     const result = parseResponse(await response.text(),operation);
     if (!response.ok) throw new GamError('GAM zahtev nije uspeo. Ponovite proveru pre nastavka.',502);
     return result;

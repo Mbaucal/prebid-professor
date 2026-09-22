@@ -41,4 +41,8 @@ Build and local tests are not evidence of access to a real GAM network. A hosted
 
 The synthetic browser test (`python scripts/verify-gam-ui.py`) checks desktop/mobile layout, editable presets, saved templates, explicit review/create, resulting paths/history and the unconfigured connection state. It only talks to a local in-memory fixture and blocks external browser requests.
 
+`node scripts/verify-gam-workerd.mjs` runs the actual Wrangler-compiled TEST Worker in local workerd with native fetch, a freshly generated synthetic RSA key and local OAuth/SOAP responses. It checks authentication, signed OAuth, network verification, encrypted R2 persistence, saved-credential inventory reads, rejected redirects and sanitized Google failures. No Google requests leave this test.
+
+The first live connection attempt exposed two runtime incompatibilities missed by injected-fetch tests: workerd rejects `redirect: 'error'` before sending, and native `fetch` stored on `GamClient` receives the wrong `this` receiver. The adapter now uses `manual` with explicit 3xx rejection and a wrapper around native fetch. Redirects never forward the assertion or bearer token to another destination. This fixes request execution; actual network authorization still needs the owner's GAM connection attempt.
+
 Sources consulted: [AdUnit v202608](https://developers.google.com/ad-manager/api/reference/v202608/InventoryService.AdUnit), [InventoryService](https://developers.google.com/ad-manager/api/reference/v202608/InventoryService), [GAM authentication](https://developers.google.com/ad-manager/api/authentication), [service-account OAuth2](https://developers.google.com/identity/protocols/oauth2/service-account).

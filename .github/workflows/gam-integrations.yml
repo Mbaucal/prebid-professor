@@ -20,6 +20,10 @@ jobs:
       - run: node scripts/check-runtime-release-history.mjs HEAD^
       - run: node scripts/prepare-builtin-runtime.mjs && node scripts/prepare-test-workspace.mjs
       - run: node --experimental-strip-types --test tests/gam/*.test.mjs
+      - name: Compile and exercise real Worker OAuth and SOAP fetches with local Google responses
+        run: |
+          npx --no-install wrangler deploy --config ops/runtime-test/wrangler.active.jsonc --dry-run --outdir "$GITHUB_WORKSPACE/.generated/gam-worker-dry-run"
+          node scripts/verify-gam-workerd.mjs
       - run: npm run build
       - uses: actions/setup-python@v5
         with:
