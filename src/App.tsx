@@ -1,5 +1,5 @@
 import AgenciesPanel from './components/AgenciesPanel';
-import { AgencyLogo, AgencyFilter } from './components/AgencyHierarchy';
+import AgencyOverview from './components/AgencyOverview';
 import { useOrganization, agencyFor, inAgency } from './organization';
 import AppFrame, { WorkspaceContent } from './components/AppFrame';
 import AuthAccount from './components/AuthAccount';
@@ -411,7 +411,7 @@ export default function App() {
             Agencies group publisher accounts. Each site keeps its own GAM path, bidders, ad units,
             releases and ads.txt configuration. Drag any site in the sidebar onto another publisher to move it.
           </p>
-          <div className="agency-overview"><div className="agency-overview-identity"><AgencyLogo agency={agency}/><div><span className="panel-kicker">Agency</span><strong>{agency?.name ?? 'Without agency'}</strong></div></div><AgencyFilter data={organization.data} value={agencyFilter} onChange={filterAgency}/></div>
+          <AgencyOverview agency={agency} data={organization.data} filter={agencyFilter} onFilter={filterAgency} />
           {hierarchyError ? <p className="inline-warning">Hierarchy API: {hierarchyError}</p> : null}
 
           {publisher ? (
