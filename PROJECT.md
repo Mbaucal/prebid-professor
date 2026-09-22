@@ -1,3 +1,14 @@
+## 2026-09-22 — Saved-package Test page (MBA-94)
+
+Sites now have a Test page tab and each saved built-in package has a direct test
+link. An authenticated, isolated HTTPS page runs the original archived scripts
+after Start and checks DIVs, GPT slots/GAM paths, responsive sizes and request
+events. It includes lazy scrolling, Publisher Console and a copied report.
+Empty ads are acceptable. No settings, package bytes or channels change.
+TEST first; main promotion requires owner acceptance. Automated browser checks
+use synthetic GPT; live Google console/demand need owner verification.
+Details: `docs/site-test-page.md`.
+
 ## 2026-09-22 — Complete size maps and GAM → Site sync (MBA-91)
 
 The supplied 7 maps / 25 breakpoints are the single source for CSV templates,

@@ -25,7 +25,7 @@
             const row = map.find((r) => innerWidth >= r.viewport[0] && innerHeight >= r.viewport[1]);
             if (row?.sizes?.length) size = row.sizes[0];
           }
-          const isEmpty = takeover && options.takeoverResult === 'empty';
+          const isEmpty = options.allEmpty === true || (takeover && options.takeoverResult === 'empty');
           if (takeover && options.takeoverResult === 'wrong-size') size = [1, 1];
           const host = document.getElementById(slot.id);
           if (host && !isEmpty) {

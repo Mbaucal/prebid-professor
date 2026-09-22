@@ -1,0 +1,15 @@
+import { mkdir,writeFile } from 'node:fs/promises';
+import { positionFixture } from '../tests/support/position-runtime-fixture.mjs';
+import { runtimeCatalog,buildArtifactCandidate } from '../worker/test-workspace/runtime-catalog.mjs';
+import { pinRuntime } from '../worker/runtime/version-pin.mjs';
+import { packageTestModel,renderPackageTestPage,testPageHeaders } from '../worker/site-runtime/test-page.mjs';
+const out=new URL('../.generated/test-page-evidence/',import.meta.url);await mkdir(out,{recursive:true});
+const snapshot=positionFixture(false),config=JSON.parse(snapshot.config.config_json);
+delete config.runtimeControls.adPositions;snapshot.config.config_json=JSON.stringify(config);
+snapshot.units[2].code='Branding';
+snapshot.maps[1].map_json=JSON.stringify([{viewport:[0,0],sizes:[]},{viewport:[1300,0],sizes:[[160,600]]}]);
+const candidate=await buildArtifactCandidate({snapshot,pin:pinRuntime(runtimeCatalog[0],{allowPreview:true}),buildTimestamp:'20260922_220000'});
+const model=packageTestModel(candidate.files,'test-site','fixture-saved-package');
+await writeFile(new URL('page.html',out),renderPackageTestPage(model));
+await writeFile(new URL('headers.json',out),JSON.stringify(testPageHeaders));
+console.log('Prepared original compiled GAM-only script and isolated test document.');

@@ -23,7 +23,7 @@ jobs:
           python-version: '3.12'
       - run: npm ci --ignore-scripts
       - run: node scripts/check-test-activation.mjs && node scripts/prepare-builtin-runtime.mjs && node scripts/prepare-test-workspace.mjs
-      - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/site-draft.test.mjs tests/runtime/test-site-editor-http.test.mjs tests/runtime/ad-position-runtime.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/site-package-flow.test.mjs tests/runtime/browser-package-download.test.mjs
+      - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/site-draft.test.mjs tests/runtime/test-site-editor-http.test.mjs tests/runtime/ad-position-runtime.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/site-package-flow.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/site-test-page.test.mjs
       - run: npm run build
       - name: Compile TEST only; no deployment
         working-directory: ops/runtime-test
@@ -37,6 +37,7 @@ jobs:
       - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
       - run: python scripts/verify-site-editor.py
       - run: python scripts/verify-site-workspace.py
+      - run: node --experimental-strip-types scripts/prepare-test-page-browser-fixture.mjs && python scripts/verify-site-test-page.py
       - run: python scripts/verify-release-setup.py
       - run: node --experimental-strip-types scripts/prepare-position-browser-fixtures.mjs && python scripts/verify-position-runtime.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -47,5 +48,6 @@ jobs:
             .generated/site-editor-evidence/
             .generated/position-evidence/
             .generated/site-workspace-evidence/
+            .generated/test-page-evidence/
           if-no-files-found: ignore
           retention-days: 14
