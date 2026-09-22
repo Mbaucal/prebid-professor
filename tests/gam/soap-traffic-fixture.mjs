@@ -60,6 +60,7 @@ const sequences = {
 };
 export function soapTrafficFixture() {
   const f = trafficFixture();
+  f.db.user.push({ id: "31", name: "Inactive user", isActive: false });
   async function respond(body, path) {
     const parsed = parser.parse(body).Envelope.Body,
       [operation] = Object.keys(parsed),
@@ -103,7 +104,14 @@ export function soapTrafficFixture() {
       const bindings = Object.fromEntries(
         list(st.values).map((v) => [v.key, v.value.value]),
       );
+      if (kind === "user")
+        assert(
+          !query.includes("isActive"),
+          "UserService filters use status, not the User.isActive response property",
+        );
       let rows = f.db[kind];
+      if (kind === "user" && query.includes("status = 'ACTIVE'"))
+        rows = rows.filter((r) => r.isActive === true || r.isActive === "true");
       const ids = query.match(
         /(?:^WHERE |AND )(id|lineItemId) IN \(([0-9,]+)\)/,
       );

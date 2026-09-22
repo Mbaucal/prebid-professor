@@ -5,6 +5,7 @@ import {
   LINE_ITEM_TYPES,
   normalizeLinePlan,
   priceRows,
+  prebidNamingPreview,
 } from "../../shared/gam/line-items.mjs";
 
 type Choice = { id: string; name: string; status?: string; size?: string };
@@ -16,6 +17,7 @@ type Selection = {
 };
 type Creative = {
   mode: "new" | "existing" | "none";
+  layout: "per-price" | "shared";
   name: string;
   copies: number;
   size: string;
@@ -83,9 +85,20 @@ type Job = {
     creativeSafeFrame: boolean;
     creativeSnippet: string;
     creativeMode: string;
+    creativeLayout: string;
+    creativesPerLine: number;
     overrideSizes: boolean;
   };
-  examples: { name: string; price: string; id?: string; state: string }[];
+  examples: {
+    name: string;
+    price: string;
+    id?: string;
+    state: string;
+    hbPb?: string;
+    orderName?: string;
+    creativeFirst?: string;
+    creativeLast?: string;
+  }[];
   creativeIds: string[];
   advertiserId?: string;
 };
@@ -115,6 +128,7 @@ const initial = (): Draft => ({
   customTargeting: "",
   creative: {
     mode: "new",
+    layout: "per-price",
     name: "Prebid Universal",
     copies: 20,
     size: "1x1",
@@ -510,9 +524,23 @@ export default function GamLineItemsPanel({
         draft.creative.mode === "new"
           ? draft.creative.copies
           : draft.creative.ids.length;
-      return `${count.toLocaleString("sr-Latn")} line itema · ${draft.order.mode === "new" ? Math.ceil(count / 400) : 1} order(a) · ${draft.creative.mode === "none" ? 0 : copies} kreativa`;
+      const total =
+        draft.creative.mode === "none"
+          ? 0
+          : draft.mode === "prebid" && draft.creative.mode === "new"
+            ? count * copies
+            : copies;
+      return `${count.toLocaleString("sr-Latn")} line itema · ${draft.order.mode === "new" ? Math.ceil(count / 400) : 1} order(a) · ${total.toLocaleString("sr-Latn")} kreativa`;
     } catch {
       return "Proverite raspon i korak cena.";
+    }
+  }, [draft]);
+  const naming = useMemo(() => {
+    if (draft.mode !== "prebid") return null;
+    try {
+      return prebidNamingPreview(draft);
+    } catch {
+      return null;
     }
   }, [draft]);
   const percent = ["SPONSORSHIP", "NETWORK", "HOUSE"].includes(
@@ -543,7 +571,7 @@ export default function GamLineItemsPanel({
               onClick={() => mode("prebid")}
             >
               <strong>Prebid postavka</strong>
-              <small>Cene, hb_pb, zajednički kreativi i size override</small>
+              <small>Cene, hb_pb, kreativi po CPM-u i size override</small>
             </button>
             <button
               type="button"
@@ -664,8 +692,11 @@ export default function GamLineItemsPanel({
               {draft.order.mode === "new" ? (
                 <>
                   <label>
-                    Naziv novog order-a
+                    {draft.mode === "prebid"
+                      ? "Prefiks naziva ordera"
+                      : "Naziv novog order-a"}
                     <input
+                      aria-label="Naziv novog order-a"
                       value={draft.order.name}
                       placeholder="npr. Example Prebid"
                       onChange={(e) =>
@@ -675,6 +706,14 @@ export default function GamLineItemsPanel({
                       }
                     />
                   </label>
+                  {naming && (
+                    <div className="gam-li-order-names">
+                      <small>Broj grupe i raspon dodaju se automatski:</small>
+                      {naming.orders.map((name) => (
+                        <code key={name}>{name}</code>
+                      ))}
+                    </div>
+                  )}
                   <Picker
                     label="Trafficker"
                     kind="user"
@@ -1050,16 +1089,21 @@ export default function GamLineItemsPanel({
             </label>
             {draft.creative.mode === "new" && (
               <>
+                {draft.mode === "single" && (
+                  <label>
+                    Naziv seta kreativa
+                    <input
+                      value={draft.creative.name}
+                      onChange={(e) => creative({ name: e.target.value })}
+                    />
+                  </label>
+                )}
                 <label>
-                  Naziv seta kreativa
+                  {draft.mode === "prebid"
+                    ? "Broj kopija po CPM-u"
+                    : "Broj kopija kreativa"}
                   <input
-                    value={draft.creative.name}
-                    onChange={(e) => creative({ name: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Broj kopija kreativa
-                  <input
+                    aria-label="Broj kopija kreativa"
                     type="number"
                     min="1"
                     max="50"
@@ -1076,7 +1120,7 @@ export default function GamLineItemsPanel({
             <>
               <p className="gam-help">
                 {draft.mode === "prebid"
-                  ? "Isti set kopija povezuje se sa svim cenama. Broj kopija prilagodite broju pozicija koje mogu istovremeno dobiti istu cenu."
+                  ? "Svaka cena dobija sopstvene kreative sa CPM-om i brojem kopije u nazivu. Naziv se preuzima iz line itema, a kopije se povezuju samo sa tom cenom. Broj kopija prilagodite broju pozicija na stranici."
                   : "Kopije dobijaju numerisane nazive i povezuju se sa line itemom."}
               </p>
               <details open={draft.mode === "single"}>
@@ -1121,6 +1165,11 @@ export default function GamLineItemsPanel({
           )}
           {draft.creative.mode === "existing" && (
             <>
+              <p className="gam-help">
+                Izabrani postojeći kreativi zadržavaju svoje nazive i dele se
+                između cena. Za CPM u nazivu svake kopije izaberite kreiranje
+                novih kreativa.
+              </p>
               <Picker
                 label="Dodaj postojeći kreativ"
                 kind="creative"
@@ -1161,6 +1210,48 @@ export default function GamLineItemsPanel({
             </label>
           )}
         </article>
+        {naming && (
+          <article className="gam-card gam-li-naming">
+            <span className="gam-step">AUTOMATSKI NAZIVI I CENE</span>
+            <h3>Ovako će izgledati u GAM-u</h3>
+            <p>
+              Jedna cena određuje naziv, CPM rate i hb_pb. Ispod su primeri iz
+              izabranog raspona.
+            </p>
+            <div className="gam-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Line item</th>
+                    <th>CPM rate</th>
+                    <th>Key-value</th>
+                    <th>Kreativi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {naming.examples.map((r) => (
+                    <tr key={r.price}>
+                      <td>{r.order}</td>
+                      <td>{r.name}</td>
+                      <td>
+                        {r.price} {draft.currency}
+                      </td>
+                      <td>hb_pb = {r.hbPb}</td>
+                      <td>
+                        {r.creativeFirst}
+                        {r.creativeLast &&
+                          r.creativeLast !== r.creativeFirst && (
+                            <small>… {r.creativeLast}</small>
+                          )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </article>
+        )}
         <div className="gam-li-actions">
           <button
             type="button"
@@ -1317,7 +1408,10 @@ export default function GamLineItemsPanel({
               </p>
             ))}
             {job.creativeIds.length > 0 && (
-              <p>Kreativi: {job.creativeIds.join(", ")}</p>
+              <p>
+                GAM ID-jevi kreativa (prvih 50): {job.creativeIds.join(", ")}.
+                Kompletno mapiranje je u CSV-u.
+              </p>
             )}
           </details>
           <details open={job.status === "completed"}>
@@ -1327,7 +1421,13 @@ export default function GamLineItemsPanel({
                 <thead>
                   <tr>
                     <th>Naziv</th>
-                    <th>Cena</th>
+                    <th>{job.mode === "prebid" ? "CPM rate" : "Cena"}</th>
+                    {job.mode === "prebid" && (
+                      <>
+                        <th>Key-value</th>
+                        <th>Kreativi</th>
+                      </>
+                    )}
                     <th>GAM ID</th>
                     <th>Status</th>
                   </tr>
@@ -1339,6 +1439,17 @@ export default function GamLineItemsPanel({
                       <td>
                         {r.price} {job.configuration.currency}
                       </td>
+                      {job.mode === "prebid" && (
+                        <>
+                          <td>hb_pb = {r.hbPb}</td>
+                          <td>
+                            {r.creativeFirst}
+                            {r.creativeLast !== r.creativeFirst && (
+                              <small>… {r.creativeLast}</small>
+                            )}
+                          </td>
+                        </>
+                      )}
                       <td>{r.id || "—"}</td>
                       <td>{stateNames[r.state] || "Čeka proveru"}</td>
                     </tr>
@@ -1347,6 +1458,13 @@ export default function GamLineItemsPanel({
               </table>
             </div>
           </details>
+          {job.mode === "prebid" && (
+            <p className="gam-help">
+              {job.configuration.creativeLayout === "per-price"
+                ? `${job.configuration.creativesPerLine} sopstvenih kreativa po ceni, sa CPM-om u nazivu.`
+                : "Ovaj posao koristi zajedničke / postojeće kreative bez pojedinačnog CPM-a u nazivu."}
+            </p>
+          )}
           <p>
             <a href={`${endpoint}/line-items/jobs/${job.id}/export`} download>
               Preuzmi kompletnu listu i GAM ID-jeve (CSV)

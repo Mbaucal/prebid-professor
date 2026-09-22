@@ -13,9 +13,9 @@ _Last updated: 2026-09-22_
 
 ## Current checkpoint — GAM line items (MBA-86)
 
-The owner authorized adding both a single ordinary line item and the full Prebid generator to **API integracije → Line itemi**, with existing/new advertiser and order selection, inventory, sizes, key-values and shared creative copies with size overrides. The ad-unit module (MBA-85) was accepted in real GAM and promoted through PR #73.
+The owner authorized adding both a single ordinary line item and the full Prebid generator to **API integracije → Line itemi**, with existing/new advertiser and order selection, inventory, sizes, key-values and creative copies with size overrides. The ad-unit module (MBA-85) was accepted in real GAM and promoted through PR #73.
 
-MBA-86 is implemented on `feature/gam-line-items`, based on the TEST branch. It adds read-only review, explicit creation, resumable batches, uncertain-write reconciliation, history and CSV export. The default 2,000-price script produces five orders, 20 shared creatives and 40,000 associations. Details and acceptance scope: `docs/gam-line-items.md`.
+MBA-86 was merged to TEST in PR #76. The follow-up on `fix/prebid-price-naming` matches the source-script naming: numbered orders with CPM ranges, `HB €18.03` line items and distinct `HB €18.03, #1`… creatives. The default 2,000-price script now produces five orders, 40,000 creatives and 40,000 associations. It retains read-only review, explicit creation, resumable batches, uncertain-write reconciliation, history and CSV export, and adds a live naming/CPM/key-value preview. The trafficker query uses the supported `status = 'ACTIVE'` filter. Previously saved jobs keep their original shared layout and recovery semantics. Details and acceptance scope: `docs/gam-line-items.md`.
 
 Automated API, full-range, native Worker SOAP and desktop/mobile checks pass using synthetic Google data. Publish to the existing TEST Worker for the owner's live GAM acceptance; promotion of this new module to main requires approval. Existing site/runtime/settings artifacts and D1 records are unchanged.
 

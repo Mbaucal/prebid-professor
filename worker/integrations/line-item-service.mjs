@@ -1,5 +1,11 @@
 import { GamError, numericId } from "../../shared/gam/plan.mjs";
-import { normalizeLinePlan, flag } from "../../shared/gam/line-items.mjs";
+import {
+  normalizeLinePlan,
+  flag,
+  creativesPerLine,
+  creativeIndexFor,
+  creativeNameAt,
+} from "../../shared/gam/line-items.mjs";
 import { GamTrafficClient } from "./gam-traffic-client.mjs";
 import {
   entities,
@@ -116,7 +122,16 @@ async function claim(bucket, job) {
   )
     fail("Drugi posao je upravo pokrenut. Osvežite istoriju.");
 }
-function limitFor(phase, review) {
+function limitFor(phase, review, plan) {
+  if (
+    plan?.schemaVersion === 2 &&
+    ["creative", "association"].includes(phase)
+  ) {
+    const bytes = new TextEncoder().encode(
+      plan?.creative?.snippet || "",
+    ).length;
+    return Math.max(1, Math.min(100, Math.floor(1500000 / (bytes * 6 + 3000))));
+  }
   return review
     ? 100
     : phase === "creative"
@@ -174,7 +189,7 @@ async function capacity(client, orderId, pending) {
 function rememberLabels(job, batch, states) {
   for (const e of batch) {
     const r = states.get(e.key);
-    if (r.name)
+    if (r.name && ["advertiser", "order"].includes(e.kind))
       job.labels[e.kind === "advertiser" ? "advertiser" : e.key] = r.name;
   }
 }
@@ -328,7 +343,7 @@ export async function lineItemResponse(
       bindings.advertiser = numericId(url.searchParams.get("advertiser"));
       clauses.push("advertiserId = :advertiser");
     }
-    if (kind === "user") clauses.push("isActive = true");
+    if (kind === "user") clauses.push("status = 'ACTIVE'");
     if (kind === "placement") clauses.push("status = 'ACTIVE'");
     if (search) {
       clauses.push("name LIKE :search");
@@ -425,6 +440,10 @@ export async function lineItemResponse(
         "Price",
         "Currency",
         "State",
+        "hb_pb",
+        "Creative first",
+        "Creative last",
+        "Creative IDs",
       ],
       ...job.plan.rows.map((r, i) => [
         job.plan.networkCode,
@@ -434,6 +453,24 @@ export async function lineItemResponse(
         r.price,
         job.plan.currency,
         job.refs[`lineItem:${i}`]?.state,
+        job.plan.mode === "prebid" ? r.price : "",
+        creativesPerLine(job.plan)
+          ? creativeNameAt(job.plan, creativeIndexFor(job.plan, i, 0))
+          : "",
+        creativesPerLine(job.plan)
+          ? creativeNameAt(
+              job.plan,
+              creativeIndexFor(job.plan, i, creativesPerLine(job.plan) - 1),
+            )
+          : "",
+        Array.from(
+          { length: creativesPerLine(job.plan) },
+          (_, copy) =>
+            job.refs[`creative:${creativeIndexFor(job.plan, i, copy)}`]?.id ||
+            "",
+        )
+          .filter(Boolean)
+          .join(";"),
       ]),
     ];
     // Prefix spreadsheet formulas in user-entered fields without changing GAM names.
@@ -512,7 +549,7 @@ export async function lineItemResponse(
         job.refs,
         job.phase,
         job.offset,
-        limitFor(job.phase, true),
+        limitFor(job.phase, true, job.plan),
       ),
       states = await inspectEntities(client, batch, job.plan);
     recordResult(job, batch, states);
@@ -553,7 +590,7 @@ export async function lineItemResponse(
     job.refs,
     job.phase,
     job.offset,
-    limitFor(job.phase, false),
+    limitFor(job.phase, false, job.plan),
   );
   if (action === "check") {
     if (!attempt) return json(jobView(job));
