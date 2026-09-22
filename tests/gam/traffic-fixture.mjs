@@ -1,3 +1,4 @@
+import { PREBID_DEFAULTS } from "../../shared/gam/line-items.mjs";
 import { fixture } from "./fixture.mjs";
 import { SERVICES } from "../../worker/integrations/gam-traffic-client.mjs";
 export function trafficFixture() {
@@ -20,10 +21,14 @@ export function trafficFixture() {
     id: "30",
     name: "Example trafficker",
     isActive: true,
-    email: "fixture@example.invalid",
+    email: PREBID_DEFAULTS.traffickerEmail,
   });
   db.adUnit.push({ id: "1", name: "Root", status: "ACTIVE" });
-  db.placement.push({ id: "40", name: "Example placement", status: "ACTIVE" });
+  db.placement.push({
+    id: "40",
+    name: PREBID_DEFAULTS.placementName,
+    status: "ACTIVE",
+  });
   let nextId = 100,
     failKind = "",
     persistFailure = true;
@@ -53,6 +58,8 @@ export function trafficFixture() {
     async query(kind, where, bindings = {}, options = {}) {
       const rows = db[kind].filter(
         (r) =>
+          (!bindings.name || r.name === bindings.name) &&
+          (!bindings.email || r.email === bindings.email) &&
           (!bindings.advertiser || r.advertiserId === bindings.advertiser) &&
           (!bindings.order || r.orderId === bindings.order) &&
           (!bindings.search ||

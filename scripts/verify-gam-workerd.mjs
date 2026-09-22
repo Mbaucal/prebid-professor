@@ -107,6 +107,9 @@ try {
   const users=await call('/line-items/lookups?network=123456&kind=user');
   assert.equal(users.status,200,JSON.stringify(users.data));
   checked('Trafficker lookup uses supported status PQL and excludes inactive users',users.data.items.length===1&&users.data.items[0].id==='30');
+  const defaults=await call('/line-items/defaults?network=123456');
+  assert.equal(defaults.status,200,JSON.stringify(defaults.data));
+  checked('Native SOAP resolves script placement and trafficker by exact name/email without writes', defaults.data.issues.length===0&&defaults.data.draft.order.traffickerId==='30'&&defaults.data.draft.inventory.ids[0]==='40'&&traffic.calls.length===0);
   async function trafficJob(plan){
     let r=await call('/line-items/preview',plan);assert.equal(r.status,201,JSON.stringify(r.data));let j=r.data;
     while(j.status==='reviewing'){r=await call(`/line-items/jobs/${j.id}/review`,{cursor:j.cursor});assert.equal(r.status,200,JSON.stringify(r.data));j=r.data;}
@@ -115,10 +118,10 @@ try {
     for(let i=0;j.status==='creating'&&i<100;i++){r=await call(`/line-items/jobs/${j.id}/step`,{cursor:j.cursor});assert.equal(r.status,200,JSON.stringify(r.data));j=r.data;assert.equal(j.error,'',JSON.stringify(j));}
     assert.equal(j.status,'completed');return j;
   }
-  const prebid=await trafficJob({...prebidPlan(),creative:{...prebidPlan().creative,layout:'per-price'},advertiser:{mode:'new',name:'Native Prebid'},order:{mode:'new',name:'Native Prebid order',traffickerId:'30'}});
+  const prebid=await trafficJob({...defaults.data.draft,ranges:[{from:'0.01',to:'0.03',step:'0.01'}],creative:{...defaults.data.draft.creative,copies:2}});
   checked('Native SOAP creates advertiser, order, hb_pb values, CPM-named creatives, priced line items and size-override links',prebid.counts.lineItem.created===3&&prebid.counts.creative.created===6&&prebid.counts.association.created===6);
   const count=traffic.calls.length;
-  await trafficJob({...prebidPlan(),creative:{...prebidPlan().creative,layout:'per-price'},advertiser:{mode:'new',name:'Native Prebid'},order:{mode:'new',name:'Native Prebid order',traffickerId:'30'}});
+  await trafficJob({...defaults.data.draft,ranges:[{from:'0.01',to:'0.03',step:'0.01'}],creative:{...defaults.data.draft.creative,copies:2}});
   checked('Native SOAP replay reuses matching entities without new writes',traffic.calls.length===count);
   const single=await trafficJob({...prebidPlan(),mode:'single',name:'Native Standard',lineItemType:'STANDARD',rate:'2.50',costType:'CPM',goal:100000,end:'2099-01-01T12:00',creative:{mode:'none'}});
   checked('Native SOAP ordinary Standard line item preserves goal and end date',single.counts.lineItem.created===1&&single.counts.creative.total===0);

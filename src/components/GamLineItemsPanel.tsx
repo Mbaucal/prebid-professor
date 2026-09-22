@@ -1,19 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_LINE_SIZES,
   PREBID_CREATIVE,
+  PREBID_DEFAULTS,
+  prebidDraft,
   LINE_ITEM_TYPES,
   normalizeLinePlan,
   priceRows,
   prebidNamingPreview,
 } from "../../shared/gam/line-items.mjs";
 
-type Choice = { id: string; name: string; status?: string; size?: string };
+type Choice = {
+  id: string;
+  name: string;
+  status?: string;
+  size?: string;
+  email?: string;
+};
 type Selection = {
   mode: "new" | "existing";
   id: string;
   name: string;
   traffickerId?: string;
+  traffickerEmail?: string;
 };
 type Creative = {
   mode: "new" | "existing" | "none";
@@ -43,6 +51,7 @@ type Draft = {
   start: string;
   end: string;
   customTargeting: string;
+  allowOverbook: boolean;
   creative: Creative;
 };
 type Count = {
@@ -109,35 +118,13 @@ type History = {
   count: number;
   createdAt: string;
 };
-const initial = (): Draft => ({
-  mode: "prebid",
-  advertiser: { mode: "existing", id: "", name: "" },
-  order: { mode: "new", id: "", name: "Prebid", traffickerId: "" },
-  inventory: { kind: "adUnits", ids: [] },
-  currency: "EUR",
-  sizes: DEFAULT_LINE_SIZES,
-  ranges: [{ from: "0.01", to: "20.00", step: "0.01" }],
-  namePrefix: "HB",
-  name: "",
-  lineItemType: "PRICE_PRIORITY",
-  rate: "1.00",
-  costType: "CPM",
-  goal: 100000,
-  start: "",
-  end: "",
-  customTargeting: "",
-  creative: {
-    mode: "new",
-    layout: "per-price",
-    name: "Prebid Universal",
-    copies: 20,
-    size: "1x1",
-    snippet: PREBID_CREATIVE,
-    safeFrame: false,
-    overrideSizes: true,
-    ids: [],
-  },
-});
+const initial = (): Draft => prebidDraft();
+type Defaults = {
+  draft: Draft;
+  inventory: Choice[];
+  network: { currency: string };
+  issues: string[];
+};
 const labels: Record<string, string> = {
   advertiser: "Advertiser",
   order: "Orderi",
@@ -319,6 +306,9 @@ export default function GamLineItemsPanel({
     [confirmed, setConfirmed] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [defaults, setDefaults] = useState<Defaults | null>(null),
+    [loadingDefaults, setLoadingDefaults] = useState(false),
+    [defaultsError, setDefaultsError] = useState(""),
     [inventory, setInventory] = useState<Choice[]>([]),
     [parent, setParent] = useState<(Choice & { parentId?: string }) | null>(
       null,
@@ -374,18 +364,28 @@ export default function GamLineItemsPanel({
     setParent(null);
     setUnits([]);
     setDraft(initial());
+    setDefaults(null);
+    setDefaultsError("");
+    setLoadingDefaults(Boolean(network));
     setError("");
     setConfirmed(false);
     if (network) {
       void loadHistory().catch((e) => {
         if (active) setError(e.message);
       });
-      void api<{ currency: string }>("/line-items/network?network=" + network)
+      void api<Defaults>("/line-items/defaults?network=" + network)
         .then((d) => {
-          if (active) setDraft((p) => ({ ...p, currency: d.currency }));
+          if (active) {
+            setDefaults(d);
+            setDraft(d.draft);
+            setInventory(d.inventory);
+          }
         })
         .catch((e) => {
-          if (active) setError(e.message);
+          if (active) setDefaultsError(e.message);
+        })
+        .finally(() => {
+          if (active) setLoadingDefaults(false);
         });
     }
     return () => {
@@ -438,6 +438,48 @@ export default function GamLineItemsPanel({
       });
       setConfirmed(false);
       await walk(j);
+    });
+  }
+  async function quickStart() {
+    // This explicit click authorizes this displayed draft. Pause/unmount stops
+    // before start; reopening a review never resumes creation automatically.
+    await run(async () => {
+      normalizeLinePlan({ ...draft, networkCode: network });
+      setConfirmed(false);
+      let j = await walk(
+        await api<Job>("/line-items/preview", {
+          ...draft,
+          networkCode: network,
+        }),
+      );
+      if (
+        !alive.current ||
+        stop.current ||
+        j.status !== "ready" ||
+        j.conflictCount ||
+        j.error
+      )
+        return;
+      j = await api<Job>(`/line-items/jobs/${j.id}/start`, {
+        confirm: true,
+        confirmNetwork: network,
+      });
+      await walk(j);
+    });
+  }
+  async function restoreDefaults() {
+    await run(async () => {
+      const d = await api<Defaults>("/line-items/defaults?network=" + network);
+      if (alive.current) {
+        setDefaults(d);
+        setDefaultsError("");
+        setDraft(d.draft);
+        setInventory(d.inventory);
+        setParent(null);
+        setUnits([]);
+        setJob(null);
+        setConfirmed(false);
+      }
     });
   }
   async function open(id: string) {
@@ -503,18 +545,25 @@ export default function GamLineItemsPanel({
     patch({ inventory: { ...draft.inventory, ids: next.map((i) => i.id) } });
   }
   function mode(value: Draft["mode"]) {
-    const single = value === "single";
-    patch({
-      mode: value,
-      order: { ...draft.order, name: single ? "" : "Prebid" },
-      creative: {
-        ...initial().creative,
-        copies: single ? 1 : 20,
-        name: single ? "" : "Prebid Universal",
-        snippet: single ? "" : PREBID_CREATIVE,
-        mode: single ? "none" : "new",
-      },
-    });
+    if (value === "prebid") {
+      patch(defaults?.draft || initial());
+      setInventory(defaults?.inventory || []);
+      setParent(null);
+      setUnits([]);
+    } else
+      patch({
+        mode: "single",
+        currency: defaults?.network.currency || draft.currency,
+        order: { ...draft.order, name: "" },
+        allowOverbook: false,
+        creative: {
+          ...initial().creative,
+          copies: 1,
+          name: "",
+          snippet: "",
+          mode: "none",
+        },
+      });
   }
   const estimate = useMemo(() => {
     try {
@@ -559,7 +608,10 @@ export default function GamLineItemsPanel({
           {error}
         </div>
       )}
-      <fieldset className="gam-fields" disabled={busy || running}>
+      <fieldset
+        className="gam-fields"
+        disabled={busy || running || loadingDefaults}
+      >
         <article className="gam-card">
           <span className="gam-step">LINE ITEMI</span>
           <h3>Šta kreiramo?</h3>
@@ -600,671 +652,796 @@ export default function GamLineItemsPanel({
             </select>
           </label>
         </article>
-        <article className="gam-card">
-          <span className="gam-step">01 / ADVERTISER I ORDER</span>
-          <h3>Za koga kreiramo?</h3>
-          <div className="gam-li-columns">
-            <div>
-              <label>
-                Advertiser
-                <select
-                  aria-label="Advertiser"
-                  value={draft.advertiser.mode}
-                  onChange={(e) =>
-                    patch({
-                      advertiser: {
-                        mode: e.target.value as Selection["mode"],
-                        id: "",
-                        name: "",
-                      },
-                      order: { ...draft.order, mode: "new", id: "" },
-                      creative: {
-                        ...draft.creative,
-                        ...(draft.creative.mode === "existing"
-                          ? { mode: "new", ids: [] }
-                          : {}),
-                      },
-                    })
-                  }
-                >
-                  <option value="existing">Postojeći advertiser</option>
-                  <option value="new">Kreiraj novi advertiser</option>
-                </select>
-              </label>
-              {draft.advertiser.mode === "new" ? (
+        {draft.mode === "prebid" && (
+          <article className="gam-card gam-li-preset">
+            <span className="gam-step">SPREMNA PREBID POSTAVKA</span>
+            <h3>Pokreni sa podešavanjima iz skripte</h3>
+            <p>
+              Podrazumevane vrednosti su već popunjene. Ako ih izmeniš ispod,
+              pokretanje koristi tvoje izmene.
+            </p>
+            <dl className="gam-li-preset-summary">
+              <div>
+                <dt>Advertiser</dt>
+                <dd>
+                  {draft.advertiser.name || "Izabrani advertiser"}
+                  {draft.advertiser.mode === "new"
+                    ? " · koristi postojeći ili kreira novi"
+                    : " · pronađen u GAM-u"}
+                </dd>
+              </div>
+              <div>
+                <dt>Order prefiks</dt>
+                <dd>{draft.order.name}</dd>
+              </div>
+              <div>
+                <dt>Inventory</dt>
+                <dd>
+                  {inventory.map((i) => i.name).join(", ") ||
+                    PREBID_DEFAULTS.placementName}
+                </dd>
+              </div>
+              <div>
+                <dt>Cene / key-value</dt>
+                <dd>
+                  {draft.ranges
+                    .map(
+                      (r) =>
+                        `${r.from}–${r.to} ${draft.currency}, korak ${r.step}`,
+                    )
+                    .join("; ")}{" "}
+                  · hb_pb
+                </dd>
+              </div>
+              <div>
+                <dt>Kreativi</dt>
+                <dd>
+                  {draft.creative.mode === "new"
+                    ? `${draft.creative.copies} po ceni`
+                    : "Postojeći kreativi"}{" "}
+                  · size override{" "}
+                  {draft.creative.overrideSizes ? "uključen" : "isključen"}
+                </dd>
+              </div>
+            </dl>
+            {loadingDefaults && (
+              <p role="status">
+                Pronalazim advertiser, placement i trafficker u povezanoj mreži…
+              </p>
+            )}
+            {(defaultsError || Boolean(defaults?.issues.length)) && (
+              <div className="gam-message info">
+                {defaultsError ||
+                  defaults?.issues.map((issue) => <p key={issue}>{issue}</p>)}
+              </div>
+            )}
+            <p className="gam-help">
+              Trafficker:{" "}
+              {draft.order.traffickerEmail || PREBID_DEFAULTS.traffickerEmail}.
+              Klik proverava postavku i zatim kreira {estimate}. Novi orderi
+              ostaju DRAFT.
+            </p>
+            <div className="gam-li-actions">
+              <button
+                type="button"
+                className="gam-primary"
+                disabled={!network || loadingDefaults}
+                onClick={() => void quickStart()}
+              >
+                Pokreni i napravi
+              </button>
+              <button
+                type="button"
+                disabled={!network}
+                onClick={() => void restoreDefaults()}
+              >
+                Vrati podešavanja iz skripte
+              </button>
+            </div>
+          </article>
+        )}
+        <details
+          className="gam-li-settings"
+          key={draft.mode}
+          open={draft.mode === "single" ? true : undefined}
+        >
+          <summary>Podešavanja — izmeni po potrebi</summary>
+          <article className="gam-card">
+            <span className="gam-step">01 / ADVERTISER I ORDER</span>
+            <h3>Za koga kreiramo?</h3>
+            <div className="gam-li-columns">
+              <div>
                 <label>
-                  Naziv novog advertiser-a
-                  <input
-                    value={draft.advertiser.name}
-                    placeholder="npr. Example advertiser"
+                  Advertiser
+                  <select
+                    aria-label="Advertiser"
+                    value={draft.advertiser.mode}
                     onChange={(e) =>
                       patch({
                         advertiser: {
-                          ...draft.advertiser,
-                          name: e.target.value,
+                          mode: e.target.value as Selection["mode"],
+                          id: "",
+                          name: "",
+                        },
+                        order: { ...draft.order, mode: "new", id: "" },
+                        creative: {
+                          ...draft.creative,
+                          ...(draft.creative.mode === "existing"
+                            ? { mode: "new", ids: [] }
+                            : {}),
                         },
                       })
                     }
-                  />
-                </label>
-              ) : (
-                <Picker
-                  label="Izaberite advertiser"
-                  kind="advertiser"
-                  endpoint={endpoint}
-                  network={network}
-                  value={draft.advertiser.id}
-                  onChange={(i) =>
-                    patch({
-                      advertiser: { ...draft.advertiser, ...i },
-                      order: { ...draft.order, id: "" },
-                      creative: { ...draft.creative, ids: [] },
-                    })
-                  }
-                />
-              )}
-            </div>
-            <div>
-              <label>
-                Order
-                <select
-                  aria-label="Order"
-                  value={draft.order.mode}
-                  onChange={(e) =>
-                    patch({
-                      order: {
-                        ...draft.order,
-                        mode: e.target.value as Selection["mode"],
-                        id: "",
-                      },
-                    })
-                  }
-                >
-                  <option value="new">Kreiraj novi order</option>
-                  <option
-                    value="existing"
-                    disabled={draft.advertiser.mode === "new"}
                   >
-                    Postojeći order
-                  </option>
-                </select>
-              </label>
-              {draft.order.mode === "new" ? (
-                <>
+                    <option value="existing">Postojeći advertiser</option>
+                    <option value="new">Kreiraj novi advertiser</option>
+                  </select>
+                </label>
+                {draft.advertiser.mode === "new" ? (
                   <label>
-                    {draft.mode === "prebid"
-                      ? "Prefiks naziva ordera"
-                      : "Naziv novog order-a"}
+                    Naziv novog advertiser-a
                     <input
-                      aria-label="Naziv novog order-a"
-                      value={draft.order.name}
-                      placeholder="npr. Example Prebid"
+                      value={draft.advertiser.name}
+                      placeholder="npr. Example advertiser"
                       onChange={(e) =>
                         patch({
-                          order: { ...draft.order, name: e.target.value },
+                          advertiser: {
+                            ...draft.advertiser,
+                            name: e.target.value,
+                          },
                         })
                       }
                     />
                   </label>
-                  {naming && (
-                    <div className="gam-li-order-names">
-                      <small>Broj grupe i raspon dodaju se automatski:</small>
-                      {naming.orders.map((name) => (
-                        <code key={name}>{name}</code>
-                      ))}
-                    </div>
-                  )}
+                ) : (
                   <Picker
-                    label="Trafficker"
-                    kind="user"
+                    label="Izaberite advertiser"
+                    kind="advertiser"
                     endpoint={endpoint}
                     network={network}
-                    value={draft.order.traffickerId || ""}
+                    value={draft.advertiser.id}
                     onChange={(i) =>
-                      patch({ order: { ...draft.order, traffickerId: i.id } })
+                      patch({
+                        advertiser: { ...draft.advertiser, ...i },
+                        order: { ...draft.order, id: "" },
+                        creative: { ...draft.creative, ids: [] },
+                      })
                     }
                   />
-                  <small>
-                    Prebid sa više od 400 line itema automatski dobija više
-                    ordera.
-                  </small>
-                </>
-              ) : (
-                <Picker
-                  label="Izaberite order"
-                  kind="order"
-                  endpoint={endpoint}
-                  network={network}
-                  advertiser={draft.advertiser.id}
-                  value={draft.order.id}
-                  onChange={(i) => patch({ order: { ...draft.order, ...i } })}
-                />
-              )}
-            </div>
-          </div>
-        </article>
-        <article className="gam-card">
-          <span className="gam-step">02 / INVENTORY I VELIČINE</span>
-          <h3>Gde će se prikazivati?</h3>
-          <div className="gam-li-columns">
-            <div>
-              <label>
-                Targetiranje inventory-ja
-                <select
-                  aria-label="Targetiranje inventory-ja"
-                  value={draft.inventory.kind}
-                  onChange={(e) => {
-                    setInventory([]);
-                    setParent(null);
-                    setUnits([]);
-                    patch({
-                      inventory: {
-                        kind: e.target.value as "adUnits" | "placements",
-                        ids: [],
-                      },
-                    });
-                  }}
-                >
-                  <option value="adUnits">
-                    Ad uniti / parent sa svim potomcima
-                  </option>
-                  <option value="placements">Postojeći placement</option>
-                </select>
-              </label>
-              {draft.inventory.kind === "placements" ? (
-                <Picker
-                  label="Dodaj placement"
-                  kind="placement"
-                  endpoint={endpoint}
-                  network={network}
-                  value=""
-                  onChange={addInventory}
-                />
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    disabled={!network}
-                    onClick={() => void browse()}
+                )}
+              </div>
+              <div>
+                <label>
+                  Order
+                  <select
+                    aria-label="Order"
+                    value={draft.order.mode}
+                    onChange={(e) =>
+                      patch({
+                        order: {
+                          ...draft.order,
+                          mode: e.target.value as Selection["mode"],
+                          id: "",
+                        },
+                      })
+                    }
                   >
-                    Učitaj ad unite
-                  </button>
-                  {parent && (
-                    <div className="gam-parent-tree">
-                      <div>
-                        <strong>{parent.name}</strong>
-                        <button
-                          type="button"
-                          onClick={() => addInventory(parent)}
-                        >
-                          Dodaj ovaj parent
-                        </button>
-                        {parent.parentId && (
-                          <button
-                            type="button"
-                            onClick={() => void browse(parent.parentId)}
-                          >
-                            ↑ Gore
-                          </button>
-                        )}
+                    <option value="new">Kreiraj novi order</option>
+                    <option
+                      value="existing"
+                      disabled={draft.advertiser.mode === "new"}
+                    >
+                      Postojeći order
+                    </option>
+                  </select>
+                </label>
+                {draft.order.mode === "new" ? (
+                  <>
+                    <label>
+                      {draft.mode === "prebid"
+                        ? "Prefiks naziva ordera"
+                        : "Naziv novog order-a"}
+                      <input
+                        aria-label="Naziv novog order-a"
+                        value={draft.order.name}
+                        placeholder="npr. Example Prebid"
+                        onChange={(e) =>
+                          patch({
+                            order: { ...draft.order, name: e.target.value },
+                          })
+                        }
+                      />
+                    </label>
+                    {naming && (
+                      <div className="gam-li-order-names">
+                        <small>Broj grupe i raspon dodaju se automatski:</small>
+                        {naming.orders.map((name) => (
+                          <code key={name}>{name}</code>
+                        ))}
                       </div>
-                      {units.map((u) => (
-                        <div key={u.id}>
-                          <span>{u.name}</span>
-                          <button type="button" onClick={() => addInventory(u)}>
-                            Dodaj
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={"Otvori ad unit " + u.name}
-                            onClick={() => void browse(u.id)}
-                          >
-                            Otvori →
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-              <div className="gam-li-chips">
-                {inventory.map((i) => (
-                  <button
-                    type="button"
-                    key={i.id}
-                    aria-label={"Ukloni " + i.name}
-                    onClick={() => {
-                      const next = inventory.filter((x) => x.id !== i.id);
-                      setInventory(next);
+                    )}
+                    <Picker
+                      label="Trafficker"
+                      kind="user"
+                      endpoint={endpoint}
+                      network={network}
+                      value={draft.order.traffickerId || ""}
+                      onChange={(i) =>
+                        patch({
+                          order: {
+                            ...draft.order,
+                            traffickerId: i.id,
+                            traffickerEmail: i.email,
+                          },
+                        })
+                      }
+                    />
+                    <small>
+                      Prebid sa više od 400 line itema automatski dobija više
+                      ordera.
+                    </small>
+                  </>
+                ) : (
+                  <Picker
+                    label="Izaberite order"
+                    kind="order"
+                    endpoint={endpoint}
+                    network={network}
+                    advertiser={draft.advertiser.id}
+                    value={draft.order.id}
+                    onChange={(i) => patch({ order: { ...draft.order, ...i } })}
+                  />
+                )}
+              </div>
+            </div>
+          </article>
+          <article className="gam-card">
+            <span className="gam-step">02 / INVENTORY I VELIČINE</span>
+            <h3>Gde će se prikazivati?</h3>
+            <div className="gam-li-columns">
+              <div>
+                <label>
+                  Targetiranje inventory-ja
+                  <select
+                    aria-label="Targetiranje inventory-ja"
+                    value={draft.inventory.kind}
+                    onChange={(e) => {
+                      setInventory([]);
+                      setParent(null);
+                      setUnits([]);
                       patch({
                         inventory: {
-                          ...draft.inventory,
-                          ids: next.map((x) => x.id),
+                          kind: e.target.value as "adUnits" | "placements",
+                          ids: [],
                         },
                       });
                     }}
                   >
-                    {i.name} · {i.id} ×
-                  </button>
-                ))}
+                    <option value="adUnits">
+                      Ad uniti / parent sa svim potomcima
+                    </option>
+                    <option value="placements">Postojeći placement</option>
+                  </select>
+                </label>
+                {draft.inventory.kind === "placements" ? (
+                  <Picker
+                    label="Dodaj placement"
+                    kind="placement"
+                    endpoint={endpoint}
+                    network={network}
+                    value=""
+                    onChange={addInventory}
+                  />
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled={!network}
+                      onClick={() => void browse()}
+                    >
+                      Učitaj ad unite
+                    </button>
+                    {parent && (
+                      <div className="gam-parent-tree">
+                        <div>
+                          <strong>{parent.name}</strong>
+                          <button
+                            type="button"
+                            onClick={() => addInventory(parent)}
+                          >
+                            Dodaj ovaj parent
+                          </button>
+                          {parent.parentId && (
+                            <button
+                              type="button"
+                              onClick={() => void browse(parent.parentId)}
+                            >
+                              ↑ Gore
+                            </button>
+                          )}
+                        </div>
+                        {units.map((u) => (
+                          <div key={u.id}>
+                            <span>{u.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => addInventory(u)}
+                            >
+                              Dodaj
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={"Otvori ad unit " + u.name}
+                              onClick={() => void browse(u.id)}
+                            >
+                              Otvori →
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                <div className="gam-li-chips">
+                  {inventory.map((i) => (
+                    <button
+                      type="button"
+                      key={i.id}
+                      aria-label={"Ukloni " + i.name}
+                      onClick={() => {
+                        const next = inventory.filter((x) => x.id !== i.id);
+                        setInventory(next);
+                        patch({
+                          inventory: {
+                            ...draft.inventory,
+                            ids: next.map((x) => x.id),
+                          },
+                        });
+                      }}
+                    >
+                      {i.name} · {i.id} ×
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label>
+                  Veličine line itema
+                  <textarea
+                    aria-label="Veličine line itema"
+                    rows={4}
+                    value={draft.sizes}
+                    onChange={(e) => patch({ sizes: e.target.value })}
+                  />
+                  <small>
+                    Display dimenzije u pikselima, odvojene tačkom-zarezom. Iste
+                    veličine koriste se za override na kreativima.
+                  </small>
+                </label>
               </div>
             </div>
-            <div>
+          </article>
+          <article className="gam-card">
+            <span className="gam-step">03 / LINE ITEMI</span>
+            <h3>
+              {draft.mode === "prebid"
+                ? "Raspon cena i granularnost"
+                : "Podešavanje kampanje"}
+            </h3>
+            <div className="gam-form-grid">
               <label>
-                Veličine line itema
-                <textarea
-                  aria-label="Veličine line itema"
-                  rows={4}
-                  value={draft.sizes}
-                  onChange={(e) => patch({ sizes: e.target.value })}
+                {draft.mode === "prebid"
+                  ? "Prefiks naziva"
+                  : "Naziv line itema"}
+                <input
+                  value={
+                    draft.mode === "prebid" ? draft.namePrefix : draft.name
+                  }
+                  onChange={(e) =>
+                    patch(
+                      draft.mode === "prebid"
+                        ? { namePrefix: e.target.value }
+                        : { name: e.target.value },
+                    )
+                  }
+                  placeholder="npr. Example kampanja"
                 />
+              </label>
+              <label>
+                Valuta GAM mreže
+                <input value={draft.currency} readOnly />
                 <small>
-                  Display dimenzije u pikselima, odvojene tačkom-zarezom. Iste
-                  veličine koriste se za override na kreativima.
+                  Cene i Prebid bidCurrency treba da koriste ovu valutu.
                 </small>
               </label>
+              {draft.mode === "single" && (
+                <label>
+                  Tip line itema
+                  <select
+                    aria-label="Tip line itema"
+                    value={draft.lineItemType}
+                    onChange={(e) =>
+                      patch({
+                        lineItemType: e.target.value,
+                        goal: ["SPONSORSHIP", "NETWORK", "HOUSE"].includes(
+                          e.target.value,
+                        )
+                          ? 100
+                          : 100000,
+                        rate: e.target.value === "HOUSE" ? "0" : draft.rate,
+                      })
+                    }
+                  >
+                    {LINE_ITEM_TYPES.map((t) => (
+                      <option key={t}>{t}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
-          </div>
-        </article>
-        <article className="gam-card">
-          <span className="gam-step">03 / LINE ITEMI</span>
-          <h3>
-            {draft.mode === "prebid"
-              ? "Raspon cena i granularnost"
-              : "Podešavanje kampanje"}
-          </h3>
-          <div className="gam-form-grid">
-            <label>
-              {draft.mode === "prebid" ? "Prefiks naziva" : "Naziv line itema"}
-              <input
-                value={draft.mode === "prebid" ? draft.namePrefix : draft.name}
-                onChange={(e) =>
-                  patch(
-                    draft.mode === "prebid"
-                      ? { namePrefix: e.target.value }
-                      : { name: e.target.value },
-                  )
-                }
-                placeholder="npr. Example kampanja"
-              />
-            </label>
-            <label>
-              Valuta GAM mreže
-              <input value={draft.currency} readOnly />
-              <small>
-                Cene i Prebid bidCurrency treba da koriste ovu valutu.
-              </small>
-            </label>
-            {draft.mode === "single" && (
-              <label>
-                Tip line itema
-                <select
-                  aria-label="Tip line itema"
-                  value={draft.lineItemType}
-                  onChange={(e) =>
+            {draft.mode === "prebid" ? (
+              <>
+                <div className="gam-li-ranges">
+                  {draft.ranges.map((r, i) => (
+                    <div className="gam-li-range" key={i}>
+                      {(["from", "to", "step"] as const).map((key, k) => (
+                        <label key={key}>
+                          {["Od", "Do", "Korak"][k]} {i + 1}
+                          <input
+                            inputMode="decimal"
+                            value={r[key]}
+                            onChange={(e) =>
+                              patch({
+                                ranges: draft.ranges.map((v, j) =>
+                                  j === i ? { ...v, [key]: e.target.value } : v,
+                                ),
+                              })
+                            }
+                          />
+                        </label>
+                      ))}
+                      <button
+                        type="button"
+                        disabled={draft.ranges.length === 1}
+                        onClick={() =>
+                          patch({
+                            ranges: draft.ranges.filter((_, j) => j !== i),
+                          })
+                        }
+                      >
+                        Ukloni raspon
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  disabled={draft.ranges.length >= 10}
+                  onClick={() =>
                     patch({
-                      lineItemType: e.target.value,
-                      goal: ["SPONSORSHIP", "NETWORK", "HOUSE"].includes(
-                        e.target.value,
-                      )
-                        ? 100
-                        : 100000,
-                      rate: e.target.value === "HOUSE" ? "0" : draft.rate,
+                      ranges: [
+                        ...draft.ranges,
+                        { from: draft.ranges.at(-1)!.to, to: "", step: "0.10" },
+                      ],
                     })
                   }
                 >
-                  {LINE_ITEM_TYPES.map((t) => (
-                    <option key={t}>{t}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-          {draft.mode === "prebid" ? (
-            <>
-              <div className="gam-li-ranges">
-                {draft.ranges.map((r, i) => (
-                  <div className="gam-li-range" key={i}>
-                    {(["from", "to", "step"] as const).map((key, k) => (
-                      <label key={key}>
-                        {["Od", "Do", "Korak"][k]} {i + 1}
-                        <input
-                          inputMode="decimal"
-                          value={r[key]}
-                          onChange={(e) =>
-                            patch({
-                              ranges: draft.ranges.map((v, j) =>
-                                j === i ? { ...v, [key]: e.target.value } : v,
-                              ),
-                            })
-                          }
-                        />
-                      </label>
-                    ))}
-                    <button
-                      type="button"
-                      disabled={draft.ranges.length === 1}
-                      onClick={() =>
-                        patch({
-                          ranges: draft.ranges.filter((_, j) => j !== i),
-                        })
-                      }
-                    >
-                      Ukloni raspon
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                disabled={draft.ranges.length >= 10}
-                onClick={() =>
-                  patch({
-                    ranges: [
-                      ...draft.ranges,
-                      { from: draft.ranges.at(-1)!.to, to: "", step: "0.10" },
-                    ],
-                  })
-                }
-              >
-                ＋ Dodaj raspon
-              </button>
-              <p className="gam-help">
-                Svaka cena dobija PRICE_PRIORITY / CPM line item i odgovarajuću
-                hb_pb vrednost. Rasponi moraju odgovarati price granularity
-                podešavanju Prebid-a na sajtu. Početak odmah, bez krajnjeg
-                datuma.
-              </p>
-            </>
-          ) : (
-            <div className="gam-form-grid">
-              <label>
-                Cena
-                <input
-                  inputMode="decimal"
-                  value={draft.rate}
-                  onChange={(e) => patch({ rate: e.target.value })}
-                />
-              </label>
-              <label>
-                Obračun
-                <select
-                  aria-label="Obračun"
-                  value={draft.costType}
-                  onChange={(e) => patch({ costType: e.target.value })}
-                >
-                  <option>CPM</option>
-                  <option>CPC</option>
-                </select>
-              </label>
-              {(percent || dated) && (
+                  ＋ Dodaj raspon
+                </button>
+                <p className="gam-help">
+                  Svaka cena dobija PRICE_PRIORITY / CPM line item i
+                  odgovarajuću hb_pb vrednost. Rasponi moraju odgovarati price
+                  granularity podešavanju Prebid-a na sajtu. Početak odmah, bez
+                  krajnjeg datuma.
+                </p>
+              </>
+            ) : (
+              <div className="gam-form-grid">
                 <label>
-                  {percent
-                    ? "Udeo prikaza (%)"
-                    : draft.costType === "CPC"
-                      ? "Cilj klikova"
-                      : "Cilj impresija"}
+                  Cena
                   <input
-                    type="number"
-                    min="1"
-                    max={percent ? 100 : 1000000000}
-                    value={draft.goal}
-                    onChange={(e) => patch({ goal: Number(e.target.value) })}
+                    inputMode="decimal"
+                    value={draft.rate}
+                    onChange={(e) => patch({ rate: e.target.value })}
                   />
                 </label>
-              )}
-              <label>
-                Početak (UTC)
-                <input
-                  aria-label="Početak (UTC)"
-                  type="datetime-local"
-                  value={draft.start}
-                  onChange={(e) => patch({ start: e.target.value })}
-                />
-                <small>Prazno = odmah.</small>
-              </label>
-              <label>
-                Završetak (UTC){dated ? " — obavezno" : ""}
-                <input
-                  aria-label={
-                    dated ? "Završetak (UTC) — obavezno" : "Završetak (UTC)"
-                  }
-                  type="datetime-local"
-                  value={draft.end}
-                  onChange={(e) => patch({ end: e.target.value })}
-                />
-                <small>
-                  {dated
-                    ? "Standard i Bulk zahtevaju kraj."
-                    : "Prazno = bez krajnjeg datuma."}
-                </small>
-              </label>
-            </div>
-          )}
-          <details>
-            <summary>Dodatni key-value targeting</summary>
-            <label>
-              Uslovi targetiranja
-              <textarea
-                rows={3}
-                value={draft.customTargeting}
-                placeholder={"section=sport|news\nformat=display"}
-                onChange={(e) => patch({ customTargeting: e.target.value })}
-              />
-              <small>
-                Jedan ključ po redu. Redovi se povezuju sa AND, vrednosti unutar
-                reda sa OR. Nedostajući ključevi i vrednosti se kreiraju.
-              </small>
-            </label>
-          </details>
-        </article>
-        <article className="gam-card">
-          <span className="gam-step">04 / KREATIVI</span>
-          <h3>
-            {draft.mode === "prebid"
-              ? "Prebid kreativi"
-              : "Kreativi za kampanju"}
-          </h3>
-          <div className="gam-form-grid">
-            <label>
-              Dodavanje kreativa
-              <select
-                aria-label="Dodavanje kreativa"
-                value={draft.creative.mode}
-                onChange={(e) =>
-                  creative({ mode: e.target.value as Creative["mode"] })
-                }
-              >
-                <option value="new">Kreiraj nove iz HTML/JS taga</option>
-                <option
-                  value="existing"
-                  disabled={draft.advertiser.mode === "new"}
-                >
-                  Izaberi postojeće
-                </option>
-                {draft.mode === "single" && (
-                  <option value="none">Bez kreativa — dodaću kasnije</option>
-                )}
-              </select>
-            </label>
-            {draft.creative.mode === "new" && (
-              <>
-                {draft.mode === "single" && (
+                <label>
+                  Obračun
+                  <select
+                    aria-label="Obračun"
+                    value={draft.costType}
+                    onChange={(e) => patch({ costType: e.target.value })}
+                  >
+                    <option>CPM</option>
+                    <option>CPC</option>
+                  </select>
+                </label>
+                {(percent || dated) && (
                   <label>
-                    Naziv seta kreativa
+                    {percent
+                      ? "Udeo prikaza (%)"
+                      : draft.costType === "CPC"
+                        ? "Cilj klikova"
+                        : "Cilj impresija"}
                     <input
-                      value={draft.creative.name}
-                      onChange={(e) => creative({ name: e.target.value })}
+                      type="number"
+                      min="1"
+                      max={percent ? 100 : 1000000000}
+                      value={draft.goal}
+                      onChange={(e) => patch({ goal: Number(e.target.value) })}
                     />
                   </label>
                 )}
                 <label>
-                  {draft.mode === "prebid"
-                    ? "Broj kopija po CPM-u"
-                    : "Broj kopija kreativa"}
+                  Početak (UTC)
                   <input
-                    aria-label="Broj kopija kreativa"
-                    type="number"
-                    min="1"
-                    max="50"
-                    value={draft.creative.copies}
-                    onChange={(e) =>
-                      creative({ copies: Number(e.target.value) })
-                    }
+                    aria-label="Početak (UTC)"
+                    type="datetime-local"
+                    value={draft.start}
+                    onChange={(e) => patch({ start: e.target.value })}
                   />
+                  <small>Prazno = odmah.</small>
                 </label>
+                <label>
+                  Završetak (UTC){dated ? " — obavezno" : ""}
+                  <input
+                    aria-label={
+                      dated ? "Završetak (UTC) — obavezno" : "Završetak (UTC)"
+                    }
+                    type="datetime-local"
+                    value={draft.end}
+                    onChange={(e) => patch({ end: e.target.value })}
+                  />
+                  <small>
+                    {dated
+                      ? "Standard i Bulk zahtevaju kraj."
+                      : "Prazno = bez krajnjeg datuma."}
+                  </small>
+                </label>
+              </div>
+            )}
+            <details>
+              <summary>Dodatni key-value targeting</summary>
+              <label>
+                Uslovi targetiranja
+                <textarea
+                  rows={3}
+                  value={draft.customTargeting}
+                  placeholder={"section=sport|news\nformat=display"}
+                  onChange={(e) => patch({ customTargeting: e.target.value })}
+                />
+                <small>
+                  Jedan ključ po redu. Redovi se povezuju sa AND, vrednosti
+                  unutar reda sa OR. Nedostajući ključevi i vrednosti se
+                  kreiraju.
+                </small>
+              </label>
+            </details>
+          </article>
+          <article className="gam-card">
+            <span className="gam-step">04 / KREATIVI</span>
+            <h3>
+              {draft.mode === "prebid"
+                ? "Prebid kreativi"
+                : "Kreativi za kampanju"}
+            </h3>
+            <div className="gam-form-grid">
+              <label>
+                Dodavanje kreativa
+                <select
+                  aria-label="Dodavanje kreativa"
+                  value={draft.creative.mode}
+                  onChange={(e) =>
+                    creative({ mode: e.target.value as Creative["mode"] })
+                  }
+                >
+                  <option value="new">Kreiraj nove iz HTML/JS taga</option>
+                  <option
+                    value="existing"
+                    disabled={draft.advertiser.mode === "new"}
+                  >
+                    Izaberi postojeće
+                  </option>
+                  {draft.mode === "single" && (
+                    <option value="none">Bez kreativa — dodaću kasnije</option>
+                  )}
+                </select>
+              </label>
+              {draft.creative.mode === "new" && (
+                <>
+                  {draft.mode === "single" && (
+                    <label>
+                      Naziv seta kreativa
+                      <input
+                        value={draft.creative.name}
+                        onChange={(e) => creative({ name: e.target.value })}
+                      />
+                    </label>
+                  )}
+                  <label>
+                    {draft.mode === "prebid"
+                      ? "Broj kopija po CPM-u"
+                      : "Broj kopija kreativa"}
+                    <input
+                      aria-label="Broj kopija kreativa"
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={draft.creative.copies}
+                      onChange={(e) =>
+                        creative({ copies: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+            {draft.creative.mode === "new" && (
+              <>
+                <p className="gam-help">
+                  {draft.mode === "prebid"
+                    ? "Svaka cena dobija sopstvene kreative sa CPM-om i brojem kopije u nazivu. Naziv se preuzima iz line itema, a kopije se povezuju samo sa tom cenom. Broj kopija prilagodite broju pozicija na stranici."
+                    : "Kopije dobijaju numerisane nazive i povezuju se sa line itemom."}
+                </p>
+                <details open={draft.mode === "single"}>
+                  <summary>HTML / JavaScript kreativa</summary>
+                  <label>
+                    Kod kreativa
+                    <textarea
+                      className="gam-li-code"
+                      rows={11}
+                      spellCheck={false}
+                      value={draft.creative.snippet}
+                      onChange={(e) => creative({ snippet: e.target.value })}
+                    />
+                  </label>
+                  {draft.mode === "prebid" && (
+                    <button
+                      type="button"
+                      onClick={() => creative({ snippet: PREBID_CREATIVE })}
+                    >
+                      Vrati Prebid Universal Creative
+                    </button>
+                  )}
+                </details>
+                <div className="gam-form-grid">
+                  <label>
+                    Početna veličina kreativa
+                    <input
+                      value={draft.creative.size}
+                      onChange={(e) => creative({ size: e.target.value })}
+                    />
+                  </label>
+                  <label className="gam-confirm">
+                    <input
+                      type="checkbox"
+                      checked={draft.creative.safeFrame}
+                      onChange={(e) =>
+                        creative({ safeFrame: e.target.checked })
+                      }
+                    />
+                    SafeFrame kompatibilan
+                  </label>
+                </div>
               </>
             )}
-          </div>
-          {draft.creative.mode === "new" && (
-            <>
-              <p className="gam-help">
-                {draft.mode === "prebid"
-                  ? "Svaka cena dobija sopstvene kreative sa CPM-om i brojem kopije u nazivu. Naziv se preuzima iz line itema, a kopije se povezuju samo sa tom cenom. Broj kopija prilagodite broju pozicija na stranici."
-                  : "Kopije dobijaju numerisane nazive i povezuju se sa line itemom."}
-              </p>
-              <details open={draft.mode === "single"}>
-                <summary>HTML / JavaScript kreativa</summary>
-                <label>
-                  Kod kreativa
-                  <textarea
-                    className="gam-li-code"
-                    rows={11}
-                    spellCheck={false}
-                    value={draft.creative.snippet}
-                    onChange={(e) => creative({ snippet: e.target.value })}
-                  />
-                </label>
-                {draft.mode === "prebid" && (
-                  <button
-                    type="button"
-                    onClick={() => creative({ snippet: PREBID_CREATIVE })}
-                  >
-                    Vrati Prebid Universal Creative
-                  </button>
-                )}
-              </details>
-              <div className="gam-form-grid">
-                <label>
-                  Početna veličina kreativa
-                  <input
-                    value={draft.creative.size}
-                    onChange={(e) => creative({ size: e.target.value })}
-                  />
-                </label>
-                <label className="gam-confirm">
-                  <input
-                    type="checkbox"
-                    checked={draft.creative.safeFrame}
-                    onChange={(e) => creative({ safeFrame: e.target.checked })}
-                  />
-                  SafeFrame kompatibilan
-                </label>
-              </div>
-            </>
-          )}
-          {draft.creative.mode === "existing" && (
-            <>
-              <p className="gam-help">
-                Izabrani postojeći kreativi zadržavaju svoje nazive i dele se
-                između cena. Za CPM u nazivu svake kopije izaberite kreiranje
-                novih kreativa.
-              </p>
-              <Picker
-                label="Dodaj postojeći kreativ"
-                kind="creative"
-                endpoint={endpoint}
-                network={network}
-                advertiser={draft.advertiser.id}
-                value=""
-                onChange={(i) =>
-                  creative({ ids: [...new Set([...draft.creative.ids, i.id])] })
-                }
-              />
-              <div className="gam-li-chips">
-                {draft.creative.ids.map((id) => (
-                  <button
-                    type="button"
-                    key={id}
-                    onClick={() =>
-                      creative({
-                        ids: draft.creative.ids.filter((x) => x !== id),
-                      })
-                    }
-                  >
-                    Kreativ {id} ×
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-          {draft.creative.mode !== "none" && (
-            <label className="gam-confirm">
-              <input
-                type="checkbox"
-                checked={draft.creative.overrideSizes}
-                onChange={(e) => creative({ overrideSizes: e.target.checked })}
-              />
-              Override sizes — koristi sve veličine line itema na svakom
-              povezanom kreativu
-            </label>
-          )}
-        </article>
-        {naming && (
-          <article className="gam-card gam-li-naming">
-            <span className="gam-step">AUTOMATSKI NAZIVI I CENE</span>
-            <h3>Ovako će izgledati u GAM-u</h3>
-            <p>
-              Jedna cena određuje naziv, CPM rate i hb_pb. Ispod su primeri iz
-              izabranog raspona.
-            </p>
-            <div className="gam-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Order</th>
-                    <th>Line item</th>
-                    <th>CPM rate</th>
-                    <th>Key-value</th>
-                    <th>Kreativi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {naming.examples.map((r) => (
-                    <tr key={r.price}>
-                      <td>{r.order}</td>
-                      <td>{r.name}</td>
-                      <td>
-                        {r.price} {draft.currency}
-                      </td>
-                      <td>hb_pb = {r.hbPb}</td>
-                      <td>
-                        {r.creativeFirst}
-                        {r.creativeLast &&
-                          r.creativeLast !== r.creativeFirst && (
-                            <small>… {r.creativeLast}</small>
-                          )}
-                      </td>
-                    </tr>
+            {draft.creative.mode === "existing" && (
+              <>
+                <p className="gam-help">
+                  Izabrani postojeći kreativi zadržavaju svoje nazive i dele se
+                  između cena. Za CPM u nazivu svake kopije izaberite kreiranje
+                  novih kreativa.
+                </p>
+                <Picker
+                  label="Dodaj postojeći kreativ"
+                  kind="creative"
+                  endpoint={endpoint}
+                  network={network}
+                  advertiser={draft.advertiser.id}
+                  value=""
+                  onChange={(i) =>
+                    creative({
+                      ids: [...new Set([...draft.creative.ids, i.id])],
+                    })
+                  }
+                />
+                <div className="gam-li-chips">
+                  {draft.creative.ids.map((id) => (
+                    <button
+                      type="button"
+                      key={id}
+                      onClick={() =>
+                        creative({
+                          ids: draft.creative.ids.filter((x) => x !== id),
+                        })
+                      }
+                    >
+                      Kreativ {id} ×
+                    </button>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              </>
+            )}
+            {draft.mode === "prebid" && (
+              <label className="gam-confirm">
+                <input
+                  type="checkbox"
+                  checked={draft.allowOverbook}
+                  onChange={(e) => patch({ allowOverbook: e.target.checked })}
+                />
+                Allow overbook — kao u originalnoj skripti
+              </label>
+            )}
+            {draft.creative.mode !== "none" && (
+              <label className="gam-confirm">
+                <input
+                  type="checkbox"
+                  checked={draft.creative.overrideSizes}
+                  onChange={(e) =>
+                    creative({ overrideSizes: e.target.checked })
+                  }
+                />
+                Override sizes — koristi sve veličine line itema na svakom
+                povezanom kreativu
+              </label>
+            )}
           </article>
-        )}
-        <div className="gam-li-actions">
-          <button
-            type="button"
-            className="gam-primary"
-            disabled={!network}
-            onClick={() => void preview()}
-          >
-            Proveri postavku u GAM-u
-          </button>
-          <span className="gam-help">
-            Provera još ne kreira entitete u GAM-u.
-          </span>
-        </div>
+          {naming && (
+            <article className="gam-card gam-li-naming">
+              <span className="gam-step">AUTOMATSKI NAZIVI I CENE</span>
+              <h3>Ovako će izgledati u GAM-u</h3>
+              <p>
+                Jedna cena određuje naziv, CPM rate i hb_pb. Ispod su primeri iz
+                izabranog raspona.
+              </p>
+              <div className="gam-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Order</th>
+                      <th>Line item</th>
+                      <th>CPM rate</th>
+                      <th>Key-value</th>
+                      <th>Kreativi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {naming.examples.map((r) => (
+                      <tr key={r.price}>
+                        <td>{r.order}</td>
+                        <td>{r.name}</td>
+                        <td>
+                          {r.price} {draft.currency}
+                        </td>
+                        <td>hb_pb = {r.hbPb}</td>
+                        <td>
+                          {r.creativeFirst}
+                          {r.creativeLast &&
+                            r.creativeLast !== r.creativeFirst && (
+                              <small>… {r.creativeLast}</small>
+                            )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          )}
+          <div className="gam-li-actions">
+            <button
+              type="button"
+              className="gam-primary"
+              disabled={!network}
+              onClick={() => void preview()}
+            >
+              Proveri postavku u GAM-u
+            </button>
+            <span className="gam-help">
+              Provera još ne kreira entitete u GAM-u.
+            </span>
+          </div>
+        </details>
       </fieldset>
       {busy && (
         <div className="gam-message info gam-inline" role="status">

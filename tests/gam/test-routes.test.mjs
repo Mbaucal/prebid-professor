@@ -16,6 +16,10 @@ test('TEST integration page and API require isolated host/session; read-only set
    const result=await worker.fetch(new Request(ORIGIN+path,{headers:{cookie}}),env);assert.equal(result.status,200);assert.match(result.headers.get('cache-control'),/no-store/);
    assert.equal((await worker.fetch(new Request('https://production.invalid'+path,{headers:{cookie}}),env)).status,404);
   }
+  const defaultsPath='/test-api/integrations/gam/line-items/defaults?network=123456';
+  assert.equal((await worker.fetch(new Request(ORIGIN+defaultsPath),env)).status,401);
+  assert.equal((await worker.fetch(new Request('https://production.invalid'+defaultsPath,{headers:{cookie}}),env)).status,404);
+  assert.equal((await worker.fetch(new Request(ORIGIN+defaultsPath,{headers:{cookie}}),env)).status,503);
   const body=JSON.stringify({networkCode:'123456',credentials:{private_key:'NOT-A-KEY'}});
   for(const origin of ['https://other.invalid',''])assert.equal((await worker.fetch(new Request(ORIGIN+'/test-api/integrations/gam/connect',{method:'POST',headers:{cookie,origin,'content-type':'application/json'},body}),env)).status,403);
   const connect=await worker.fetch(new Request(ORIGIN+'/test-api/integrations/gam/connect',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body}),env);
