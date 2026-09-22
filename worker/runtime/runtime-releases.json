@@ -18,7 +18,7 @@
     "date": "2026-09-22",
     "title": "InCorner and branding creative templates",
     "sourceManifest": "scripts/prepare-creative-runtime.mjs",
-    "sourceCommit": "0000000000000000000000000000000000000000",
+    "sourceCommit": "d04374a5f40ee5dc51db6189c2fd2488ad1f8b36",
     "changes": [
       "Friendly-frame creative templates share a validated display lifecycle with the wrapper.",
       "InCorner owns one close control, suppresses the sticky strip and pauses refresh until dismissal or a new request.",
