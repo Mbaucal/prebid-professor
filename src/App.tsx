@@ -1,3 +1,5 @@
+import AppFrame, { WorkspaceContent } from './components/AppFrame';
+import AuthAccount from './components/AuthAccount';
 import ApiIntegrationsPanel from './components/ApiIntegrationsPanel';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from './api';
@@ -464,13 +466,9 @@ export default function App() {
         : 'Create site';
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">PP</div>
-          <div><strong>Prebid Professor</strong><span>Ad-tech control plane</span></div>
-        </div>
-
+    <AppFrame
+      account={<AuthAccount />}
+      navigation={
         <nav className="main-nav" aria-label="Main navigation">
           {navItems.map((item) => (
             <button
@@ -483,8 +481,8 @@ export default function App() {
             </button>
           ))}
         </nav>
-
-        {publisherWorkspace ? (
+      }
+      sidebarContent={publisherWorkspace ? (
           <HierarchySidebar
             activePublisherId={publisher?.id ?? null}
             activeSiteId={site?.id ?? null}
@@ -506,12 +504,7 @@ export default function App() {
           </div>
         )}
 
-        <div className="account-card">
-          <div className="avatar">S</div>
-          <div><strong>srdjan</strong><span>admin · signed session</span></div>
-        </div>
-      </aside>
-
+    >
       <main className="workspace">
         {publisherWorkspace ? (
           <>
@@ -559,6 +552,7 @@ export default function App() {
           ))}
         </section>
 
+        <WorkspaceContent pageKey={`${activeSection}:${site?.id ?? publisher?.id}:${activeTab}`}>
         {activeTab === 'Overview' ? renderOverview() : null}
         {activeTab === 'Config' && site ? (
           <ConfigPanel onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
@@ -589,6 +583,7 @@ export default function App() {
         {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Monitoring' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
           ? renderPlaceholder(activeTab)
           : null}
+        </WorkspaceContent>
           </>
         ) : (
           <>
@@ -600,6 +595,7 @@ export default function App() {
               </div>
               <button className="button secondary" onClick={() => selectGlobalSection('Publishers')} type="button">Open publishers</button>
             </header>
+            <WorkspaceContent pageKey={activeSection}>
             {activeSection === 'Releases' ? (
               <GlobalReleasesPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
             ) : null}
@@ -611,6 +607,7 @@ export default function App() {
             ) : null}
             {activeSection === 'API integracije' ? <ApiIntegrationsPanel sites={publishers.flatMap(p => p.sites)} /> : null}
             {activeSection === 'Settings' ? <SettingsPanel publishers={publishers} /> : null}
+            </WorkspaceContent>
           </>
         )}
       </main>
@@ -797,6 +794,6 @@ export default function App() {
           </section>
         </div>
       ) : null}
-    </div>
+    </AppFrame>
   );
 }

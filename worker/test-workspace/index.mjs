@@ -1,3 +1,4 @@
+import { layoutPreviewResponse } from './layout-preview.mjs';
 import {testIntegrationsResponse} from './api-integrations.mjs';
 import { prebidPage, prebidScript } from './prebid-page.mjs';
 import { getPrebidSettings, savePrebidSettings, prebidSnapshot, prebidStore, previewBuildPlan, saveBuildPlan } from './prebid-settings.mjs';
@@ -83,6 +84,8 @@ async function route(request,env) {
   if (!actor) return path.startsWith('/test-api/')||path.startsWith('/api/') ? json({error:'Test sign-in required.'},401)
     : new Response(null,{status:303,headers:{...headers,location:'/login'}});
   if (path==='/api/auth/logout' && request.method==='POST') return handleLogout(request);
+  const layoutPreview = layoutPreviewResponse(request, headers);
+  if (layoutPreview) return layoutPreview;
   const integrations=await testIntegrationsResponse(request,env,actor,headers);
   if(integrations)return integrations;
   const siteWorkspace=await siteWorkspaceResponse(request,env,actor,headers);
