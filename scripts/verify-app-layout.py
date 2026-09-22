@@ -55,7 +55,7 @@ try:
                     expect(page.locator('.auth-account-card')).to_be_in_viewport()
                     page.locator('.sidebar-content').evaluate('(e) => { e.scrollTop = e.scrollHeight; }')
                     expect(page.locator('.publisher-tree-group').last).to_be_in_viewport()
-                    page.locator('.publisher-tree-group').last.locator('.site-link').click()
+                    page.locator('.publisher-tree-group').last.locator('.site-link:not(.add-site-link)').click()
                     expect(page.locator('.workspace h1')).to_have_text('site12.example.com')
                     expect(page.get_by_role('button', name='Menu', exact=True)).to_have_attribute('aria-expanded', 'false')
                     assert content.evaluate('(e) => e.scrollTop == 0'), 'new site keeps old scroll'
