@@ -1,6 +1,6 @@
 import {siteInventoryStore,planSiteInventory,sitePlanSummary} from './site-inventory.mjs';
 import { lineItemResponse } from './line-item-service.mjs';
-import { GamError, numericId, normalizePlan, compareRows, expandGroup, text } from '../../shared/gam/plan.mjs';
+import { GamError, parseSizes, numericId, normalizePlan, compareRows, expandGroup, text } from '../../shared/gam/plan.mjs';
 import { GamClient, accessToken, validateCredential, gamPath, API_VERSION } from './gam-client.mjs';
 
 const prefix='api-integrations/gam/v1/';
@@ -75,15 +75,15 @@ export async function gamResponse(request,env,actor,{base='/api/integrations/gam
       const result=stored.value,known=await sites.receipt(input.siteId,resultId);if(known)return json({saved:known});
       const original=await read(bucket,jobKey(resultId));
       const connection=await connected(result.networkCode),client=await makeClient(connection),network=await client.network();
-      const rows=[];
+      const rows=[],current=await client.children(numericId(result.parentId));
       for(const row of result.rows.filter(r=>r.id&&r.path&&['created','existing'].includes(r.state))){
-        const actual=await client.get(row.id);
-        if(actual.status!=='ACTIVE'||actual.code!==row.code||gamPath(network.networkCode,network.rootId,actual)!==row.path)fail(`${row.code}: GAM stanje je promenjeno. Ponovite GAM pregled.`,409);
+        const actual=current.find(unit=>unit.id===row.id);
+        if(!actual||actual.status!=='ACTIVE'||actual.code!==row.code||gamPath(network.networkCode,network.rootId,actual)!==row.path)fail(`${row.code}: GAM stanje je promenjeno. Ponovite GAM pregled.`,409);
         rows.push({...row,sizes:[...actual.sizes.map(s=>`${s.width}x${s.height}`),...(actual.fluid?['fluid']:[])].join('; '),mapKey:row.mapKey||original?.value.plan.rows.find(r=>r.code===row.code)?.mapKey});
       }
       if(!rows.length)fail('Nema potvrđenih GAM ad unita za upis. Ponovite proveru u GAM-u.',409);
       const plan=await planSiteInventory(sites,input.siteId,{rows}),id=crypto.randomUUID();
-      const review={id,resultId,actor,origin:url.origin,siteId:input.siteId,rows,revision:plan.revision,expiresAt:Date.now()+15*60*1000};
+      const review={id,resultId,actor,origin:url.origin,siteId:input.siteId,networkCode:result.networkCode,parentId:result.parentId,connectionRevision:connection.revision,rows,revision:plan.revision,expiresAt:Date.now()+15*60*1000};
       await write(bucket,`${prefix}site-reviews/${id}.json`,review,{onlyIf:{etagDoesNotMatch:'*'}});
       return json({id,resultId,...sitePlanSummary(plan)});
     }
@@ -93,6 +93,11 @@ export async function gamResponse(request,env,actor,{base='/api/integrations/gam
       if(input.confirmSite!==r.siteId)fail('Potvrdite prikazani sajt.');
       const known=await sites.receipt(r.siteId,r.resultId);if(known)return json(known);
       if(r.expiresAt<Date.now())fail('Pregled je istekao. Ponovo proverite upis u sajt.',409);
+      const connection=await connected(r.networkCode);if(connection.revision!==r.connectionRevision)fail('GAM konekcija je promenjena. Ponovo proverite upis u sajt.',409);
+      const client=await makeClient(connection),network=await client.network(),current=await client.children(numericId(r.parentId));
+      for(const row of r.rows){const actual=current.find(u=>u.id===row.id),expected=parseSizes(row.sizes);
+        if(!actual||actual.status!=='ACTIVE'||actual.code!==row.code||gamPath(network.networkCode,network.rootId,actual)!==row.path||actual.fluid!==expected.fluid||actual.sizes.map(s=>`${s.width}x${s.height}`).sort().join(';')!==expected.sizes.map(s=>`${s.width}x${s.height}`).sort().join(';'))fail(`${row.code}: GAM stanje je promenjeno. Ponovo proverite upis u sajt.`,409);
+      }
       const plan=await planSiteInventory(sites,r.siteId,{rows:r.rows,revision:r.revision});
       return json(await sites.commit(plan,actor,r.resultId));
     }
