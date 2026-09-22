@@ -1,0 +1,4 @@
+import {createRoot} from 'react-dom/client';
+import CreativeTemplatesPanel from '../components/CreativeTemplatesPanel';
+import '../api-integrations/test-shell.css';
+createRoot(document.getElementById('root')!).render(<div className="gam-test-shell"><aside className="gam-test-sidebar"><a className="gam-test-brand" href="/">Tessera<span>TEST</span></a><nav aria-label="Glavna navigacija"><a href="/site-workspace">Publisher / sajt</a><a href="/prebid-settings">Prebid builds</a><a href="/api-integrations">API integracije</a><a href="/creative-templates" aria-current="page">Creative templates</a></nav><p>Radno okruženje za proveru novih funkcija.</p></aside><main><header className="gam-test-heading"><span>Tessera / Creative templates</span><h1>Creative templates</h1><p>Biblioteka šablona za direktne kampanje.</p></header><CreativeTemplatesPanel/></main></div>);

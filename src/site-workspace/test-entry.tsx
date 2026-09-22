@@ -7,7 +7,7 @@ function Workspace() {
   return <main style={{maxWidth:1000,margin:'24px auto',padding:16}}>
     <h1>Tessera · TEST site workspace</h1><p>This workspace uses your saved TEST copy. Production sites are unchanged.</p>
     <nav className="runtime-actions">
-      <a href="/api-integrations">API integracije</a>
+      <a href="/api-integrations">API integracije</a><a href="/creative-templates">Creative templates</a>
       <button onClick={()=>setView('versions')}>Script versions</button><button onClick={()=>setView('positions')}>Ad positions</button>
       <a href="/site-settings">Units and size maps</a><a href="/prebid-settings">Prebid and bidders</a><button onClick={()=>setView('packages')}>Generate and releases</button>
     </nav>
