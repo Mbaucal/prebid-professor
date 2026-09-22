@@ -19,3 +19,18 @@ export function prebidNamingPreview(input: unknown): {
     creativeLast: string;
   }[];
 };
+
+export const PREBID_DEFAULTS: Readonly<{
+  advertiserName: string;
+  placementName: string;
+  traffickerEmail: string;
+  orderPrefix: string;
+  currency: string;
+  from: string;
+  to: string;
+  step: string;
+  copies: number;
+  namePrefix: string;
+  key: string;
+}>;
+export function prebidDraft(networkCode?: string): any;

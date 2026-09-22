@@ -12,16 +12,68 @@ export const LINE_ITEM_TYPES = [
 ];
 export const DEFAULT_LINE_SIZES =
   "1x1; 300x250; 300x600; 468x60; 728x90; 320x50; 320x100; 160x600; 120x600; 970x250; 336x280; 970x90; 300x100; 300x50";
-// Explicit version: existing creatives never change when a new PUC is published.
-export const PREBID_CREATIVE = `<script src="https://cdn.jsdelivr.net/npm/prebid-universal-creative@1.18.0/dist/banner.js"></script>
+// Match the owner's original script. Saved plans retain their own snippet.
+export const PREBID_CREATIVE = `<script src="https://cdn.jsdelivr.net/npm/prebid-universal-creative@latest/dist/creative.js"></script>
 <script>
-var ucTagData = {};
-ucTagData.adServerDomain = "";
-ucTagData.pubUrl = "%%PATTERN:url%%";
-ucTagData.targetingMap = %%PATTERN:TARGETINGMAP%%;
-ucTagData.hbPb = "%%PATTERN:hb_pb%%";
-try { ucTag.renderAd(document, ucTagData); } catch (e) { console.log(e); }
+    var ucTagData = {};
+    ucTagData.adServerDomain = "";
+    ucTagData.pubUrl = "%%PATTERN:url%%";
+    ucTagData.targetingMap = %%PATTERN:TARGETINGMAP%%;
+    ucTagData.hbPb = "%%PATTERN:hb_pb%%";
+
+    try {
+        ucTag.renderAd(document, ucTagData);
+    } catch (e) {
+        console.log(e);
+    }
 </script>`;
+export const PREBID_DEFAULTS = Object.freeze({
+  advertiserName: "Prebid",
+  placementName: "Prebid placement",
+  traffickerEmail: "marko.baucal@smn.rs",
+  orderPrefix: "SMN - Programmatic HB - Prebid",
+  currency: "EUR",
+  from: "0.01",
+  to: "20.00",
+  step: "0.01",
+  copies: 20,
+  namePrefix: "HB",
+  key: "hb_pb",
+});
+export function prebidDraft(networkCode = "") {
+  const d = PREBID_DEFAULTS;
+  return {
+    networkCode,
+    mode: "prebid",
+    advertiser: { mode: "new", id: "", name: d.advertiserName },
+    order: { mode: "new", id: "", name: d.orderPrefix, traffickerId: "" },
+    inventory: { kind: "placements", ids: [] },
+    currency: d.currency,
+    sizes: DEFAULT_LINE_SIZES,
+    ranges: [{ from: d.from, to: d.to, step: d.step }],
+    namePrefix: d.namePrefix,
+    name: "",
+    lineItemType: "PRICE_PRIORITY",
+    rate: "1.00",
+    costType: "CPM",
+    goal: 100000,
+    start: "",
+    end: "",
+    customTargeting: "",
+    allowOverbook: true,
+    creative: {
+      mode: "new",
+      layout: "per-price",
+      name: "Prebid Universal",
+      copies: d.copies,
+      size: "1x1",
+      snippet: PREBID_CREATIVE,
+      safeFrame: false,
+      overrideSizes: true,
+      ids: [],
+    },
+  };
+}
 const fail = (message) => {
   throw new GamError(message);
 };
@@ -380,6 +432,7 @@ export function normalizeLinePlan(input, now = Date.now()) {
   );
   return {
     schemaVersion: 2,
+    allowOverbook: mode === "prebid" && input.allowOverbook === true,
     mode,
     networkCode: numericId(input.networkCode),
     advertiser,

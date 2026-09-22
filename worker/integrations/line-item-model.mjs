@@ -155,6 +155,7 @@ export function entities(plan, refs, phase, offset, limit) {
         costType: plan.costType,
         creativePlaceholders: sizePayload(plan).map((size) => ({ size })),
         environmentType: "BROWSER",
+        ...(plan.allowOverbook ? { allowOverbook: true } : {}),
         primaryGoal: plan.goal,
         targeting: {
           inventoryTargeting: inventory,

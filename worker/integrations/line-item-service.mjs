@@ -1,3 +1,4 @@
+import { discoverPrebidDefaults } from "./prebid-defaults.mjs";
 import { GamError, numericId } from "../../shared/gam/plan.mjs";
 import {
   normalizeLinePlan,
@@ -321,6 +322,11 @@ export async function lineItemResponse(
       numericId(url.searchParams.get("network")),
     );
     return json(await client.network());
+  }
+  if (path === "/line-items/defaults" && request.method === "GET") {
+    const networkCode = numericId(url.searchParams.get("network"));
+    const { client } = await clientFor(networkCode);
+    return json(await discoverPrebidDefaults(client, networkCode));
   }
   if (path === "/line-items/lookups" && request.method === "GET") {
     const { client } = await clientFor(

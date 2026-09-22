@@ -353,21 +353,53 @@ test("wrong currency and inactive inventory fail before preview; existing creati
   assert.equal(f.db.association.length, 3);
 });
 
-test("full source-script range creates 2000 prices in 5 orders, 40000 CPM-named creatives and 40000 links", async () => {
+test("full untouched script defaults create 2000 prices, 5 orders, 40000 creatives and 40000 links", async () => {
   const f = await setup(),
-    p = {
-      ...prebidPlan(),
-      order: { mode: "new", name: "Full Prebid", traffickerId: "30" },
-      ranges: [{ from: "0.01", to: "20.00", step: "0.01" }],
-      creative: { ...prebidPlan().creative, layout: "per-price", copies: 20 },
-    };
+    before = f.env.BUILDS.data.size;
+  const defaults = await req(f, "/line-items/defaults?network=123456");
+  assert.equal(defaults.status, 200);
+  assert.deepEqual(defaults.data.issues, []);
+  assert.equal(
+    f.env.BUILDS.data.size,
+    before,
+    "Default discovery writes nothing",
+  );
+  assert.equal(f.calls.length, 0);
+  const p = defaults.data.draft;
+  assert.equal(
+    p.networkCode,
+    "123456",
+    "Use the connected network, never the script's original network code",
+  );
+  assert.equal(p.advertiser.name, "Prebid");
+  assert.equal(p.order.traffickerId, "30");
+  assert.deepEqual(p.inventory, { kind: "placements", ids: ["40"] });
+  assert.match(
+    p.creative.snippet,
+    /prebid-universal-creative@latest\/dist\/creative.js/,
+  );
   const done = await finish(f, await start(f, await review(f, p)));
   assert.equal(f.db.lineItem.length, 2000);
+  assert.equal(f.db.lineItem[0].allowOverbook, true);
+  assert.equal(f.db.lineItem[0].creativePlaceholders.length, 14);
+  assert.deepEqual(f.db.lineItem[0].targeting.inventoryTargeting, {
+    targetedPlacementIds: ["40"],
+  });
+  assert.equal(f.db.association[0].sizes.length, 14);
+  assert.equal(f.db.creative[0].isSafeFrameCompatible, false);
+  assert.equal(f.db.creative[0].snippet, p.creative.snippet);
+  assert.equal(f.db.advertiser.at(-1).name, "Prebid");
   assert.equal(f.db.creative.length, 40000);
   assert.equal(f.db.creative[0].name, "HB €0.01, #1");
   assert.equal(f.db.creative.at(-1).name, "HB €20.00, #20");
-  assert.equal(f.db.order[1].name, "Full Prebid #1 (0.01-4.00 EUR)");
-  assert.equal(f.db.order.at(-1).name, "Full Prebid #5 (16.01-20.00 EUR)");
+  assert.equal(
+    f.db.order[1].name,
+    "SMN - Programmatic HB - Prebid #1 (0.01-4.00 EUR)",
+  );
+  assert.equal(
+    f.db.order.at(-1).name,
+    "SMN - Programmatic HB - Prebid #5 (16.01-20.00 EUR)",
+  );
   const creativeById = new Map(f.db.creative.map((c) => [c.id, c])),
     lineById = new Map(f.db.lineItem.map((l) => [l.id, l]));
   for (const link of f.db.association)
@@ -499,4 +531,29 @@ test("saved v1 shared-creative job and uncertain five-creative batch retain thei
   assert.equal(f.db.association.length, 18);
   assert.equal(f.db.lineItem[0].name, "HB EUR 0.01");
   assert.equal(f.db.creative[0].name, "Prebid Universal #1");
+});
+
+test("script discovery resolves exact advertiser, placement and email; missing or ambiguous choices never fall back", async () => {
+  const f = await setup();
+  f.db.advertiser.push({ id: "50", name: "Prebid", type: "ADVERTISER" });
+  let d = (await req(f, "/line-items/defaults?network=123456")).data;
+  assert.equal(d.draft.advertiser.mode, "existing");
+  assert.equal(d.draft.advertiser.id, "50");
+  assert.equal(d.draft.order.name, "SMN - Programmatic HB - Prebid");
+  f.db.placement[0].name = "Unrelated inventory";
+  f.db.user[0].isActive = false;
+  d = (await req(f, "/line-items/defaults?network=123456")).data;
+  assert.deepEqual(d.draft.inventory.ids, []);
+  assert.equal(d.draft.order.traffickerId, "");
+  assert(d.issues.some((x) => x.includes("Prebid placement")));
+  assert(d.issues.some((x) => x.includes("marko.baucal@smn.rs")));
+  assert.throws(() => normalizeLinePlan(d.draft));
+  f.db.advertiser.push({ id: "51", name: "Prebid", type: "ADVERTISER" });
+  d = (await req(f, "/line-items/defaults?network=123456")).data;
+  assert(d.issues.some((x) => x.includes("Advertiser")));
+  assert.equal(f.calls.length, 0);
+  assert.equal(
+    (await req(f, "/line-items/defaults?network=654321")).status,
+    409,
+  );
 });

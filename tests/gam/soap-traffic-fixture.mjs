@@ -54,6 +54,7 @@ const sequences = {
     "costType",
     "creativePlaceholders",
     "environmentType",
+    "allowOverbook",
     "primaryGoal",
     "targeting",
   ],
