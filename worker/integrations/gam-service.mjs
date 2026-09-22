@@ -1,3 +1,4 @@
+import { lineItemResponse } from './line-item-service.mjs';
 import { GamError, numericId, normalizePlan, compareRows, expandGroup, text } from '../../shared/gam/plan.mjs';
 import { GamClient, accessToken, validateCredential, gamPath, API_VERSION } from './gam-client.mjs';
 
@@ -44,7 +45,7 @@ export async function buildPreview(client,network,plan){
 }
 
 // Called only after the host's authentication guard. Recheck Origin here as well.
-export async function gamResponse(request,env,actor,{base='/api/integrations/gam',clientFactory,tokenFactory=accessToken}={}){
+export async function gamResponse(request,env,actor,{base='/api/integrations/gam',clientFactory,tokenFactory=accessToken,trafficFactory}={}){
   try{
     const url=new URL(request.url),path=url.pathname.slice(base.length);
     if(!url.pathname.startsWith(base+'/')&&url.pathname!==base)return null;
@@ -56,6 +57,7 @@ export async function gamResponse(request,env,actor,{base='/api/integrations/gam
       if(!bucket)fail('Skladište integracija nije povezano.',503);
       secret(env);const found=await read(bucket,connectionKey(network));if(!found)fail('Prvo povežite ovu GAM mrežu.',409);return found.value;
     };
+    if(path.startsWith('/line-items/'))return await lineItemResponse(request,path,{bucket,actor,body,connected,makeClient,trafficFactory});
     if(path==='/status'&&request.method==='GET'){
       const connections=[];
       if(bucket){const list=await bucket.list({prefix:prefix+'connections/',limit:100});for(const object of list.objects){const item=await read(bucket,object.key);if(item){const {sealed,...safe}=item.value;connections.push(safe);}}}

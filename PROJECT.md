@@ -42,9 +42,29 @@ Added named Yes/No deletion dialogs across saved scripts/tests, old A/B packages
 
 _Last updated: 2026-09-22_
 
-## Current checkpoint — API integrations (MBA-85)
+## Current checkpoint — GAM line items and Prebid preset (MBA-86)
 
-The user's confirmed entry point is a separate global **API integracije** tab. Its first module connects Google Ad Manager and creates ad units from editable presets or pasted names. Prebid line items come later.
+Marko accepted ordinary line-item creation in live GAM, approved the editable
+original-script Prebid defaults, and explicitly requested **"Spoji u main!"** on
+2026-09-22. This promotion brings only the tested GAM module from TEST PRs #76,
+#79 and #82 onto current main, preserving the accepted agency hierarchy/layout.
+API integracije → Line itemi supports one ordinary line item or the ready-to-run
+Prebid preset: Prebid advertiser, exact placement and trafficker discovery,
+hb_pb, EUR 0.01–20.00/0.01, five numbered orders, 2,000 line items and 40,000
+CPM-named creatives with all 14 size overrides. Advanced settings remain editable.
+
+One explicit **Pokreni i napravi** click runs review and creation with durable
+pause/resume and uncertain-write reconciliation. Existing production GAM
+connections are reused; TEST credentials/jobs are not copied. No new secrets,
+D1 migrations or site/runtime/settings rewrites are introduced. The production
+Worker authentication and GAM routes are exercised locally with synthetic
+Google responses, alongside the TEST and full-range regression checks.
+No full live Prebid run is claimed; the owner approved promotion after the
+ordinary live test and preset review. See `docs/gam-line-items.md`.
+
+## Previous checkpoint — API integrations (MBA-85)
+
+The user's confirmed entry point is a separate global **API integracije** tab. Its first module connects Google Ad Manager and creates ad units from editable presets or pasted names. The line-item module is covered by MBA-86 above.
 
 The owner confirmed successful real GAM creation on TEST on 2026-09-22 and explicitly approved promotion to `main`. The acceptance screenshot shows active `Billboard1` under `test` in network `22038436483` (`direktno.rs`), including Fluid. Production promotion takes only the approved GAM commits onto current `main`.
 

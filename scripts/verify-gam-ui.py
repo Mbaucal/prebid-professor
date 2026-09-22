@@ -2,7 +2,7 @@
 import json, os, subprocess, time
 from pathlib import Path
 from urllib.request import urlopen
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/gam-ui-evidence';out.mkdir(parents=True,exist_ok=True)
@@ -58,6 +58,119 @@ try:
         page.set_viewport_size({'width':390,'height':844})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
         page.screenshot(path=str(out/'mobile.png'),full_page=True)
+        page.set_viewport_size({'width':1440,'height':1080})
+        page.get_by_role('button',name='Line itemi',exact=True).click()
+        page.get_by_role('heading',name='Šta kreiramo?',exact=True).wait_for()
+        expect(page.get_by_role('button',name='Pokreni i napravi',exact=True)).to_be_enabled()
+        assert page.get_by_label('Naziv novog advertiser-a',exact=True).input_value()=='Prebid'
+        assert page.get_by_label('Naziv novog order-a',exact=True).input_value()=='SMN - Programmatic HB - Prebid'
+        assert not page.locator('.gam-li-settings').get_attribute('open')
+        page.locator('.gam-li-preset').scroll_into_view_if_needed()
+        page.screenshot(path=str(out/'prebid-defaults-desktop.png'),full_page=False)
+        page.set_viewport_size({'width':390,'height':844})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+        page.locator('.gam-li-preset').screenshot(path=str(out/'prebid-defaults-mobile.png'))
+        page.set_viewport_size({'width':1440,'height':1080})
+        # Verify the untouched submitted preset. Bound only the synthetic browser
+        # fixture's volume; the API suite exercises all 2,000 prices unchanged.
+        submitted=[]
+        def small_preset(r):
+            data=json.loads(r.request.post_data)
+            submitted.append(data)
+            assert data['advertiser']['name']=='Prebid'
+            assert data['order']['name']=='SMN - Programmatic HB - Prebid'
+            assert data['order']['traffickerId']=='30'
+            assert data['inventory']=={'kind':'placements','ids':['40']}
+            assert data['ranges']==[{'from':'0.01','to':'20.00','step':'0.01'}]
+            assert data['creative']['copies']==20
+            assert '@latest/dist/creative.js' in data['creative']['snippet']
+            assert data['customTargeting']=='' and data['allowOverbook'] is True
+            data={**data,'ranges':[{'from':'0.01','to':'0.03','step':'0.01'}],'creative':{**data['creative'],'copies':2}}
+            r.continue_(post_data=json.dumps(data))
+        page.route('**/line-items/preview',small_preset)
+        paused=[]
+        def pause_review(r):
+            response=r.fetch()
+            if response.json().get('status')=='ready':
+                page.get_by_role('button',name='Pauziraj posle tekućeg koraka',exact=True).click()
+                paused.append(True)
+            r.fulfill(response=response)
+        page.route('**/line-items/jobs/*/review',pause_review)
+        start_count=sum(r['url'].endswith('/start') for r in requests)
+        page.get_by_role('button',name='Pokreni i napravi',exact=True).click()
+        page.get_by_role('heading',name='Spremno za potvrdu',exact=True).wait_for()
+        expect(page.get_by_role('button',name='Pokreni i napravi',exact=True)).to_be_enabled()
+        assert paused and sum(r['url'].endswith('/start') for r in requests)==start_count
+        page.unroute('**/line-items/jobs/*/review',pause_review)
+        page.reload()
+        page.get_by_role('button',name='Line itemi',exact=True).click()
+        expect(page.get_by_role('button',name='Pokreni i napravi',exact=True)).to_be_enabled()
+        assert sum(r['url'].endswith('/start') for r in requests)==start_count
+        page.get_by_role('button',name='Pokreni i napravi',exact=True).click()
+        page.get_by_role('heading',name='Završeno',exact=True).wait_for(timeout=60000)
+        assert len(submitted)==2
+        assert sum(r['url'].endswith('/start') for r in requests)==start_count+1
+        page.unroute('**/line-items/preview',small_preset)
+        page.get_by_role('button',name='Pripremi sledeću postavku',exact=True).click()
+        page.locator('.gam-li-settings>summary').click()
+        page.get_by_label('Advertiser',exact=True).select_option('new')
+        page.get_by_label('Naziv novog advertiser-a',exact=True).fill('Example Prebid advertiser')
+        page.get_by_label('Naziv novog order-a',exact=True).fill('Example Prebid order')
+        page.get_by_label('Trafficker',exact=True).locator('option[value="30"]').wait_for(state='attached')
+        page.get_by_label('Trafficker',exact=True).select_option('30')
+        page.get_by_label('Targetiranje inventory-ja',exact=True).select_option('adUnits')
+        page.get_by_role('button',name='Učitaj ad unite',exact=True).click()
+        page.get_by_role('button',name='Dodaj ovaj parent',exact=True).click()
+        page.get_by_label('Do 1',exact=True).fill('0.03')
+        page.get_by_label('Broj kopija kreativa',exact=True).fill('2')
+        page.get_by_label('Veličine line itema',exact=True).fill('300x250;728x90')
+        expect(page.locator('.gam-li-naming tbody tr').last).to_contain_text('HB €0.03, #1')
+        assert page.locator('.gam-li-naming').get_by_text('hb_pb = 0.03',exact=True).count()==1
+        assert page.locator('.gam-li-order-names').get_by_text('Example Prebid order #1 (0.01-0.03 EUR)',exact=True).count()==1
+        page.locator('.gam-li-naming').scroll_into_view_if_needed()
+        page.screenshot(path=str(out/'line-items-naming.png'),full_page=False)
+        page.set_viewport_size({'width':390,'height':844})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+        page.locator('.gam-li-naming').scroll_into_view_if_needed()
+        page.screenshot(path=str(out/'line-items-naming-mobile.png'),full_page=False)
+        page.set_viewport_size({'width':1440,'height':1080})
+        page.get_by_role('button',name='Proveri postavku u GAM-u',exact=True).click()
+        page.get_by_role('heading',name='Spremno za potvrdu',exact=True).wait_for()
+        assert not page.get_by_role('button',name='Kreiraj potvrđenu postavku',exact=True).is_enabled()
+        page.get_by_role('checkbox',name='Potvrđujem ovu postavku',exact=False).check()
+        page.get_by_role('button',name='Kreiraj potvrđenu postavku',exact=True).click()
+        page.get_by_role('heading',name='Završeno',exact=True).wait_for()
+        assert page.locator('.gam-li-review').get_by_text('HB €0.03',exact=True).count()==1
+        assert page.locator('.gam-li-review').get_by_role('link',name='Preuzmi kompletnu').count()==1
+        page.locator('.gam-li-review').scroll_into_view_if_needed()
+        page.screenshot(path=str(out/'line-items-prebid-result.png'),full_page=False)
+        page.get_by_role('button',name='Pripremi sledeću postavku',exact=True).click()
+        page.get_by_role('button',name='Jedan line item',exact=False).click()
+        page.get_by_label('Advertiser',exact=True).select_option('existing')
+        page.get_by_label('Izaberite advertiser',exact=True).locator('option[value="10"]').wait_for(state='attached')
+        page.get_by_label('Izaberite advertiser',exact=True).select_option('10')
+        page.get_by_label('Order',exact=True).select_option('existing')
+        page.get_by_label('Izaberite order',exact=True).locator('option[value="20"]').wait_for(state='attached')
+        page.get_by_label('Izaberite order',exact=True).select_option('20')
+        page.get_by_label('Naziv line itema',exact=True).fill('Example direct campaign')
+        page.get_by_label('Tip line itema',exact=True).select_option('STANDARD')
+        page.get_by_label('Završetak (UTC) — obavezno',exact=True).fill('2099-01-01T12:00')
+        page.get_by_role('button',name='Proveri postavku u GAM-u',exact=True).click()
+        page.get_by_role('heading',name='Spremno za potvrdu',exact=True).wait_for()
+        page.get_by_role('checkbox',name='Potvrđujem ovu postavku',exact=False).check()
+        page.get_by_role('button',name='Kreiraj potvrđenu postavku',exact=True).click()
+        page.get_by_role('heading',name='Završeno',exact=True).wait_for()
+        assert page.locator('.gam-li-review').get_by_text('Example direct campaign',exact=True).count()==1
+        page.reload()
+        page.get_by_role('button',name='Line itemi',exact=True).click()
+        page.get_by_role('button',name='Otvori posao',exact=True).first.wait_for()
+        assert page.get_by_role('button',name='Otvori posao',exact=True).count()==4
+        page.set_viewport_size({'width':390,'height':844})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+        page.screenshot(path=str(out/'line-items-mobile.png'),full_page=True)
+        page.set_viewport_size({'width':1440,'height':1080})
+        page.locator('.gam-li').scroll_into_view_if_needed()
+        page.screenshot(path=str(out/'line-items-desktop.png'),full_page=False)
         page.get_by_role('button',name='GAM povezivanje',exact=True).click()
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
         page.screenshot(path=str(out/'connection.png'),full_page=True)
@@ -83,6 +196,6 @@ try:
         assert not external,external
         browser.close()
         (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'externalRequests':external,'requests':requests},indent=2))
-        print('PASS desktop/mobile, presets, saved templates, explicit review/create, paths/history, connection-first navigation, local JSON selection and setup recheck')
+        print('PASS untouched script preset, one-click creation, pause before automatic start, Prebid and ordinary line items, per-price creative names and CPM preview, saved jobs, desktop/mobile, presets, saved templates, explicit review/create, paths/history, connection-first navigation, local JSON selection and setup recheck')
 finally:
     if process:process.terminate();process.wait(timeout=10)
