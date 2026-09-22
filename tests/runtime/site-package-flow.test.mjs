@@ -130,7 +130,15 @@ test('main browser ZIP uses scoped artifact reads, preserves stored bytes and re
  const base=`https://tessera.invalid/api/publishers/first/builtin-releases/${release.id}`;
  assert.equal((await mainWorker.fetch(new Request(base+'/index'),f.env,{})).status,401);
  assert.equal((await mainWorker.fetch(new Request(base+'/files/README.txt'),f.env,{})).status,401);
+ assert.equal((await mainWorker.fetch(new Request(base+'/test-page'),f.env,{})).status,401);
  assert.equal(reads.length,0);
+ const page=await mainWorker.fetch(new Request(base+'/test-page?googfc',{headers:{cookie}}),f.env,{});
+ assert.equal(page.status,200);assert.match(page.headers.get('content-security-policy'),/^sandbox allow-scripts allow-popups;/);
+ const pageModel=JSON.parse((await page.text()).match(/data-test-model>(.*?)<\/script>/s)[1]);
+ assert.deepEqual(Buffer.from(pageModel.assets.ads,'base64'),Buffer.from(original.files['ads.min.js']));
+ assert.equal((await mainWorker.fetch(new Request(base.replace('/first/','/second/')+'/test-page',{headers:{cookie}}),f.env,{})).status,404);
+ assert.equal((await mainWorker.fetch(new Request(base+'/test-page',{method:'POST',headers:{cookie,origin:'null'}}),f.env,{})).status,403);
+ reads.length=0;
  const index=await mainWorker.fetch(new Request(base+'/index',{headers:{cookie}}),f.env,{});
  assert.equal(index.status,200);assert.equal(reads.length,1);
  const readme=await mainWorker.fetch(new Request(`https://tessera.invalid/cdn/first/releases/${release.id}/README.txt`),f.env,{});

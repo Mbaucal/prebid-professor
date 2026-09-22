@@ -1,0 +1,36 @@
+# Saved-package Test page (MBA-94)
+
+Each site has a **Test page** tab. Choose a saved built-in package and open its
+separate HTTPS diagnostic page. Releases also link directly to that exact test.
+TEST exposes the same controls at `/site-workspace#test-page` for its saved copy.
+
+The server verifies the archived package and embeds its original `ads.min.js`,
+`min-height.css` and, when required, original `prebid.js`. It creates standard
+and sticky DIVs from that archive's normalized configuration, with responsive
+maps. TakeOver containers remain runtime-created and appear separately.
+Changes currently in the editor never alter an existing test package.
+
+**Start test** loads the saved scripts and official GPT. The table compares
+actual registered slot IDs/GAM paths, requests and render events with expected
+positions. Empty ads are acceptable; inactive breakpoints and lazy slots are
+distinguished. Scroll through positions, open Google Publisher Console, or copy
+the observed JSON report. Restart after changing desktop/mobile viewport.
+Console URL options `?googfc`, `?google_console=1` and
+`?google_force_console=1` are accepted; scripts still require Start.
+
+Opening the page is an authenticated, read-only operation. It changes no site
+settings, package bytes, channels, schema, production content or Google inventory.
+The page has no admin API client. CSP gives its ad scripts an opaque origin
+(no `allow-same-origin`), and COOP/noopener separates it from the admin tab.
+Original scripts may make real ad requests after Start. Publisher CMP/storage,
+real demand and the publisher layout require a publisher-site check. The report
+uses selected text when clipboard access is unavailable in the isolated page.
+
+Validation covers archived-byte integrity, authentication, wrong-site IDs,
+corrupt files, invalid queries, unchanged storage/channels and HTML escaping.
+CI uses the real compiler with synthetic GPT in Chromium for desktop/mobile,
+slot/path matching, empty responses, lazy scrolling, console-button invocation,
+report export and opaque-origin cookie/storage isolation. It sends no live ads
+and does not validate Google's externally hosted console UI or live delivery.
+
+Release to the existing TEST branch first. Main promotion requires owner acceptance.

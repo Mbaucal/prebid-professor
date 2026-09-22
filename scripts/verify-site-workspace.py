@@ -74,6 +74,14 @@ try:
     assert all(r['method']=='GET' for r in requests[before:])
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
     page.screenshot(path=str(out/'mobile-generator-bookmark.png'),full_page=True)
+    page.get_by_role('button',name='Test page',exact=True).click()
+    page.get_by_label('Saved package',exact=True).wait_for()
+    link=page.get_by_role('link',name='Open test page',exact=True)
+    assert link.get_attribute('href').startswith('/test-api/site-test-page/builtin-draft-')
+    assert link.get_attribute('target')=='_blank'
+    assert all(r['method']=='GET' for r in requests[before:])
+    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+    page.screenshot(path=str(out/'mobile-test-page-section.png'),full_page=True)
     assert not errors,errors
     browser.close()
     (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'requests':requests,'externalRequests':0},indent=2))
