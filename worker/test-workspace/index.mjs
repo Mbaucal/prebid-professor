@@ -1,3 +1,5 @@
+import {inventoryImportResponse} from './inventory-imports.mjs';
+import {creativeTemplatesResponse} from './creative-templates.mjs';
 import {testIntegrationsResponse} from './api-integrations.mjs';
 import { prebidPage, prebidScript } from './prebid-page.mjs';
 import { getPrebidSettings, savePrebidSettings, prebidSnapshot, prebidStore, previewBuildPlan, saveBuildPlan } from './prebid-settings.mjs';
@@ -30,7 +32,7 @@ import { siteWorkspaceResponse } from './site-workspace.mjs';
 // HTML form navigation under no-referrer sends Origin:null. same-origin keeps
 // legitimate form Origin while still suppressing cross-origin referrers.
 // The mutation guard continues to reject missing/null/foreign Origin values.
-const headers = { 'cache-control':'private, no-store', 'referrer-policy':'same-origin',
+const headers = { 'x-tessera-test-feature':'creative-templates-v1', 'cache-control':'private, no-store', 'referrer-policy':'same-origin',
   'x-content-type-options':'nosniff', 'x-robots-tag':'noindex, nofollow, noarchive',
   'content-security-policy':"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" };
 const json = (value,status=200) => new Response(JSON.stringify(value),{status,headers:{...headers,'content-type':'application/json; charset=utf-8'}});
@@ -83,6 +85,10 @@ async function route(request,env) {
   if (!actor) return path.startsWith('/test-api/')||path.startsWith('/api/') ? json({error:'Test sign-in required.'},401)
     : new Response(null,{status:303,headers:{...headers,location:'/login'}});
   if (path==='/api/auth/logout' && request.method==='POST') return handleLogout(request);
+  const inventoryImport=await inventoryImportResponse(request,env,headers);
+  if(inventoryImport)return inventoryImport;
+  const creativeTemplates=await creativeTemplatesResponse(request,env,actor,headers);
+  if(creativeTemplates)return creativeTemplates;
   const integrations=await testIntegrationsResponse(request,env,actor,headers);
   if(integrations)return integrations;
   const siteWorkspace=await siteWorkspaceResponse(request,env,actor,headers);
