@@ -5,8 +5,8 @@ export function AgencyLogo({agency}:{agency:Pick<Agency,'name'|'logo'>|null}){
   const [failed,setFailed]=useState<string|null>(null);
   return <span className="agency-logo" aria-hidden="true">{agency?.logo&&failed!==agency.logo?<img src={agency.logo} alt="" onError={()=>setFailed(agency.logo)}/>:<span>{agency?.name.split(/\s+/).slice(0,2).map(s=>Array.from(s)[0]).join('').toUpperCase()||'—'}</span>}</span>;
 }
-export function AgencyFilter({data,value,onChange}:{data:Organization;value:string;onChange:(value:string)=>void}){
-  return <label className="agency-filter"><span>Agency</span><select value={value} onChange={e=>onChange(e.target.value)}><option value="all">All agencies</option><option value="none">Without agency</option>{data.agencies.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>;
+export function AgencyFilter({data,value,onChange,label="Agency"}:{data:Organization;value:string;onChange:(value:string)=>void;label?:string}){
+  return <label className="agency-filter"><span>{label}</span><select value={value} onChange={e=>onChange(e.target.value)}><option value="all">All agencies</option><option value="none">Without agency</option>{data.agencies.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>;
 }
 export default function AgencyHierarchy({data,publishers,filter,onFilter,onManage,renderPublisher}:{data:Organization;publishers:PublisherAccount[];filter:string;onFilter:(value:string)=>void;onManage:()=>void;renderPublisher:(publisher:PublisherAccount,searching:boolean)=>ReactNode}){
   const [query,setQuery]=useState(''),[closed,setClosed]=useState<Record<string,boolean>>({});

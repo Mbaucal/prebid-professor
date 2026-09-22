@@ -38,6 +38,7 @@ try:
             row.get_by_role('button',name='Example Publisher',exact=True).click()
             page.locator('.site-link').filter(has_text='site12.example.com').click()
             expect(page.locator('.agency-selection-breadcrumb')).to_contain_text('Example Agency / Example Publisher / site12.example.com')
+            page.locator('.agency-overview').screenshot(path=str(out/f'{"main" if path=="/" else "test"}-agency-overview.png'))
             # Expanding/collapsing groups does not select a different site.
             group=page.locator('.agency-tree-heading').filter(has_text='Example Agency')
             group.click();expect(page.locator('.workspace h1')).to_have_text('site12.example.com')
