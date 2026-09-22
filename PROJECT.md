@@ -2,9 +2,17 @@
 
 _Last updated: 2026-09-22_
 
-## Current checkpoint — API integrations (MBA-85)
+## Current checkpoint — GAM line items (MBA-86)
 
-The user's confirmed entry point is a separate global **API integracije** tab. Its first module connects Google Ad Manager and creates ad units from editable presets or pasted names. Prebid line items come later.
+The owner authorized adding both a single ordinary line item and the full Prebid generator to **API integracije → Line itemi**, with existing/new advertiser and order selection, inventory, sizes, key-values and shared creative copies with size overrides. The ad-unit module (MBA-85) was accepted in real GAM and promoted through PR #73.
+
+MBA-86 is implemented on `feature/gam-line-items`, based on the TEST branch. It adds read-only review, explicit creation, resumable batches, uncertain-write reconciliation, history and CSV export. The default 2,000-price script produces five orders, 20 shared creatives and 40,000 associations. Details and acceptance scope: `docs/gam-line-items.md`.
+
+Automated API, full-range, native Worker SOAP and desktop/mobile checks pass using synthetic Google data. Publish to the existing TEST Worker for the owner's live GAM acceptance; promotion of this new module to main requires approval. Existing site/runtime/settings artifacts and D1 records are unchanged.
+
+## Previous checkpoint — API integrations (MBA-85)
+
+The user's confirmed entry point is a separate global **API integracije** tab. Its first module connects Google Ad Manager and creates ad units from editable presets or pasted names. Prebid line items are now covered by MBA-86 above.
 
 Development is based on `feature/isolated-runtime-workspace-v1` and targets the isolated `prebid-professor-test` Worker at `https://prebid-professor-test.mbaucal.workers.dev/api-integrations`. Production promotion still requires the owner's approval. The older environment/milestone sections below are historical context.
 

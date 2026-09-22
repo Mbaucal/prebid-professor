@@ -2,7 +2,7 @@ name: GAM API integration checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [shared/gam/**, worker/integrations/**, worker/test-workspace/**, src/components/ApiIntegrationsPanel.tsx, src/api-integrations/**, src/api-integrations.css, src/App.tsx, scripts/**, tests/gam/**, vendor/gam-xml-parser/**, .github/workflows/gam-integrations.yml]
+    paths: [shared/gam/**, worker/integrations/**, worker/test-workspace/**, src/components/ApiIntegrationsPanel.tsx, src/components/GamLineItemsPanel.tsx, src/api-integrations/**, src/api-integrations.css, src/App.tsx, scripts/**, tests/gam/**, vendor/gam-xml-parser/**, .github/workflows/gam-integrations.yml]
 permissions:
   contents: read
 jobs:

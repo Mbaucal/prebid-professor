@@ -1,3 +1,4 @@
+import GamLineItemsPanel from './GamLineItemsPanel';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import builtins from '../../shared/gam/presets.json';
 import { expandGroup, type GamRow } from '../../shared/gam/plan.mjs';
@@ -13,7 +14,8 @@ type SiteOption={id:string;name:string;gamPath:string};
 const stateName:Record<string,string>={new:'Novo',existing:'Već postoji',conflict:'Konflikt',created:'Kreirano',unconfirmed:'Nije potvrđeno'};
 
 export default function ApiIntegrationsPanel({endpoint='/api/integrations/gam',sites=[]}:{endpoint?:string;sites?:SiteOption[]}){
-  const [tab,setTab]=useState<'units'|'connection'|'templates'|'history'>('connection');
+  const [tab,setTab]=useState<'units'|'connection'|'templates'|'history'|'line-items'>('connection');
+  const [lineBusy,setLineBusy]=useState(false);
   const [connections,setConnections]=useState<Connection[]>([]),[configured,setConfigured]=useState(false);
   const [network,setNetwork]=useState(''),[connectNetwork,setConnectNetwork]=useState('');
   const [credential,setCredential]=useState<File|null>(null),fileRef=useRef<HTMLInputElement>(null);
@@ -47,8 +49,8 @@ export default function ApiIntegrationsPanel({endpoint='/api/integrations/gam',s
   const noWrite=!active||!configured||!draft.rows.length||Boolean(draft.error)||(parentMode==='existing'?!parentId:!parentName.trim()||!parentCode.trim());
 
   return <section className="gam-api" aria-label="API integracije">
-    <div className="gam-hero"><div className="gam-provider-icon" aria-hidden="true">G</div><div className="gam-hero-copy"><span className="gam-eyebrow">API INTEGRACIJE</span><h2>Google Ad Manager</h2><p>Povežite mrežu i kreirajte ad unite iz svojih šablona.</p></div><span className={'gam-badge '+(active?'connected':'')}>{active?'Povezano · '+active.networkCode:'Nije povezano'}</span></div>
-    <nav className="gam-tabs" aria-label="GAM alati">{([['connection','GAM povezivanje'],['units','Ad uniti'],['templates','Šabloni'],['history','Istorija']] as const).map(([id,label])=><button type="button" key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} disabled={Boolean(busy)} onClick={()=>{setTab(id);setError('');if(id==='history')void run('Učitavanje istorije',async()=>{const data=await call<{results:Result[]}>('/history');if(mounted.current)setHistory(data.results);});}}>{label}</button>)}</nav>
+    <div className="gam-hero"><div className="gam-provider-icon" aria-hidden="true">G</div><div className="gam-hero-copy"><span className="gam-eyebrow">API INTEGRACIJE</span><h2>Google Ad Manager</h2><p>Povežite mrežu i kreirajte ad unite, kampanje i Prebid postavke.</p></div><span className={'gam-badge '+(active?'connected':'')}>{active?'Povezano · '+active.networkCode:'Nije povezano'}</span></div>
+    <nav className="gam-tabs" aria-label="GAM alati">{([['connection','GAM povezivanje'],['units','Ad uniti'],['line-items','Line itemi'],['templates','Šabloni'],['history','Istorija']] as const).map(([id,label])=><button type="button" key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} disabled={Boolean(busy)||lineBusy} onClick={()=>{setTab(id);setError('');if(id==='history')void run('Učitavanje istorije',async()=>{const data=await call<{results:Result[]}>('/history');if(mounted.current)setHistory(data.results);});}}>{label}</button>)}</nav>
     {error&&<div className="gam-message error" role="alert">{error}</div>}
     {notice&&<div className="gam-message success" role="status">{notice}</div>}
     {busy&&<div className="gam-progress" role="status">{busy}…</div>}
@@ -58,7 +60,7 @@ export default function ApiIntegrationsPanel({endpoint='/api/integrations/gam',s
       <label>Network code<input inputMode="numeric" placeholder="npr. 23339552141" value={connectNetwork} onChange={e=>setConnectNetwork(e.target.value.trim())}/></label>
       <label>Service account JSON<input ref={fileRef} type="file" accept=".json,application/json" onChange={e=>setCredential(e.target.files?.[0]||null)}/></label>
       <p className="gam-help">Fajl se šalje tek klikom na „Proveri i poveži GAM“. Konekcija se proverava pre čuvanja, a privatni ključ se čuva šifrovano.</p><button className="gam-primary" type="button" disabled={!configured||!credential||!/^\d+$/.test(connectNetwork)} onClick={()=>void connect()}>Proveri i poveži GAM</button>
-      <details><summary>Šta treba da bude podešeno u GAM-u?</summary><p>Uključite API access i dodajte service account email kao korisnika sa pravom pregleda i kreiranja ad unita. Domain-wide delegacija nije deo ove prve verzije.</p></details>
+      <details><summary>Šta treba da bude podešeno u GAM-u?</summary><p>Uključite API access i dodajte service account email kao korisnika sa pravima za inventory, advertisere, ordere, line iteme, key-values i kreative koje želite da kreirate. Domain-wide delegacija nije deo ove prve verzije.</p></details>
     </article><article className="gam-card"><span className="gam-step">POVEZANE MREŽE</span><h3>Vaše GAM konekcije</h3>{connections.length?connections.map(c=><div className="gam-network" key={c.networkCode}><strong>{c.name}</strong><code>{c.networkCode}</code><small>{c.email}</small><button type="button" onClick={()=>{setNetwork(c.networkCode);setTab('units');}}>Koristi ovu mrežu</button></div>):<p>Još nema sačuvanih konekcija.</p>}</article></div>}
     {tab==='units'&&<>
       {!active&&<div className="gam-message info gam-inline"><span>Pripremite listu sada, a za proveru i kreiranje povežite GAM mrežu.</span><button type="button" onClick={()=>setTab('connection')}>Poveži GAM →</button></div>}
@@ -84,6 +86,7 @@ export default function ApiIntegrationsPanel({endpoint='/api/integrations/gam',s
         {result&&<div className="gam-result" role="status"><h3>{result.completed?'Rezultat je sačuvan':'Proverite nepotvrđene pozicije'}</h3>{result.error&&<p>{result.error}</p>}<div className="gam-table-wrap"><table><thead><tr><th>Ad unit</th><th>GAM ID / putanja</th><th>Rezultat</th></tr></thead><tbody>{result.rows.map(r=><tr key={r.code}><td>{r.name}</td><td><code>{r.id||'—'}</code><code>{r.path||'—'}</code></td><td>{stateName[r.state]}</td></tr>)}</tbody></table></div></div>}
       </article>
     </>}
+    {tab==='line-items'&&<GamLineItemsPanel endpoint={endpoint} connections={connections} network={network} onNetworkChange={setNetwork} onRunning={setLineBusy}/>}
     {tab==='templates'&&<article className="gam-card"><span className="gam-step">BIBLIOTEKA</span><h3>Šabloni ad unita</h3><p>Početni šabloni potiču iz tvoje skripte. Svoje varijante sačuvaj iz editora pozicija.</p><div className="gam-template-grid">{allTemplates.map(t=><article key={t.id}><h4>{t.label}</h4><code>{t.pattern}</code><p>{t.sizes}</p><button type="button" onClick={()=>{useTemplate(t);setTab('units');}}>Primeni na izabranu grupu</button></article>)}</div></article>}
     {tab==='history'&&<article className="gam-card"><span className="gam-step">REZULTATI</span><h3>Istorija kreiranja</h3>{!history.length?<p>Sačuvani GAM ID-jevi i putanje pojaviće se ovde nakon prve obrade.</p>:history.map(item=><details key={item.id}><summary>{item.siteLabel||'GAM mreža '+item.networkCode} · {new Date(item.createdAt).toLocaleString('sr-Latn')} · {item.rows.length} pozicija</summary><div className="gam-table-wrap"><table><thead><tr><th>Naziv</th><th>GAM putanja</th><th>Status</th></tr></thead><tbody>{item.rows.map(r=><tr key={r.code}><td>{r.name}</td><td><code>{r.path||'—'}</code></td><td>{stateName[r.state]}</td></tr>)}</tbody></table></div></details>)}</article>}
     </fieldset>
