@@ -33,7 +33,7 @@ export default function AppFrame({ navigation, sidebarContent, account, children
         </div>
         <div id="sidebar-menu" className="sidebar-menu" onClick={event => {
           // Close the compact navigation after choosing a destination, not editing a publisher.
-          if (menuOpen && (event.target as HTMLElement).closest('.nav-item, .publisher-account-link, .site-link:not(.add-site-link)')) closeMenu();
+          if (menuOpen && (event.target as HTMLElement).closest('.nav-item, .publisher-account-link, .site-link:not(.add-site-link), .global-sidebar-context button')) closeMenu();
         }}>
           <div className="sidebar-navigation">{navigation}</div>
           <div className="sidebar-content" role="region" aria-label="Publisher navigation" tabIndex={0}>{sidebarContent}</div>
