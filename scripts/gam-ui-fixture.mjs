@@ -1,8 +1,10 @@
+import {workspaceStore} from '../tests/support/test-workspace-store.mjs';
+import {initializeTestSchema} from '../worker/test-workspace/schema.mjs';
 import {createServer} from 'node:http';
 import {integrationsJs,integrationsCss} from '../.generated/api-integrations.mjs';
 import {gamResponse} from '../worker/integrations/gam-service.mjs';
 import {trafficFixture} from '../tests/gam/traffic-fixture.mjs';
-const f=trafficFixture();
+const f=trafficFixture(),siteDb=workspaceStore();await initializeTestSchema(siteDb.env.DB,'fixture@example.invalid');siteDb.sqlite.prepare("UPDATE publishers SET name='example.invalid',gam_path='/123456/Example/' WHERE id='test-site'").run();f.env.DB=siteDb.env.DB;
 const account={type:'service_account',client_email:'fixture@fixture.iam.gserviceaccount.com',private_key:'-----BEGIN PRIVATE KEY-----\nsynthetic-not-a-real-key\n-----END PRIVATE KEY-----'};
 const address='http://127.0.0.1:4178',base='/test-api/integrations/gam';
 await gamResponse(new Request(address+base+'/connect',{method:'POST',headers:{origin:address,'content-type':'application/json'},body:JSON.stringify({networkCode:'123456',credentials:account})}),f.env,'fixture@example.invalid',{base,clientFactory:()=>f.client,trafficFactory:()=>f.traffic});

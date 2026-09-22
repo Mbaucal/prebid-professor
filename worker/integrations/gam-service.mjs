@@ -1,3 +1,4 @@
+import {siteInventoryStore,planSiteInventory,sitePlanSummary} from './site-inventory.mjs';
 import { lineItemResponse } from './line-item-service.mjs';
 import { GamError, numericId, normalizePlan, compareRows, expandGroup, text } from '../../shared/gam/plan.mjs';
 import { GamClient, accessToken, validateCredential, gamPath, API_VERSION } from './gam-client.mjs';
@@ -45,18 +46,56 @@ export async function buildPreview(client,network,plan){
 }
 
 // Called only after the host's authentication guard. Recheck Origin here as well.
-export async function gamResponse(request,env,actor,{base='/api/integrations/gam',clientFactory,tokenFactory=accessToken,trafficFactory}={}){
+export async function gamResponse(request,env,actor,{base='/api/integrations/gam',clientFactory,tokenFactory=accessToken,trafficFactory,siteScope=null,inventoryGuard,inventoryValidator}={}){
   try{
     const url=new URL(request.url),path=url.pathname.slice(base.length);
     if(!url.pathname.startsWith(base+'/')&&url.pathname!==base)return null;
     if(!['GET','POST'].includes(request.method))return json({error:'Method not allowed.'},405);
     if(request.method==='POST'&&(request.headers.get('origin')!==url.origin||!['same-origin','none',null].includes(request.headers.get('sec-fetch-site'))))return json({error:'Same-origin request required.'},403);
-    const bucket=env.BUILDS;
+    const bucket=env.BUILDS,sites=siteInventoryStore(env,{siteScope,inventoryGuard,inventoryValidator});
+    const withSite=async result=>{if(!result.siteId){if(!env.DB)return result;try{const links=await sites.links(result.id);return links.length?{...result,siteId:links[0].siteId,siteSync:links[0]}:result;}catch{return result;}}try{return {...result,siteSync:await sites.receipt(result.siteId,result.id)||{state:'pending',siteId:result.siteId}};}catch{return {...result,siteSync:{state:'pending',siteId:result.siteId,error:'Upis u sajt nije potvrđen. Proverite ponovo.'}};}};
     const makeClient=async connection=>clientFactory?clientFactory(connection):new GamClient(connection.networkCode,await tokenFactory(await decryptCredential(secret(env),connection.sealed,connection.networkCode)));
     const connected=async network=>{
       if(!bucket)fail('Skladište integracija nije povezano.',503);
       secret(env);const found=await read(bucket,connectionKey(network));if(!found)fail('Prvo povežite ovu GAM mrežu.',409);return found.value;
     };
+    if(path==='/sites'&&request.method==='GET')return json({sites:env.DB?await sites.list():[]});
+    if(path==='/site-inventory'&&request.method==='GET'){
+      const siteId=url.searchParams.get('siteId'),saved=await sites.read(siteId);
+      return json({revision:saved.revision,siteId,mapNames:saved.snapshot.maps.map(m=>m.name)});
+    }
+    if(path==='/defaults'&&request.method==='POST'){
+      const input=await body(request);if(typeof input.revision!=='string'||!input.revision)fail('Prvo učitajte mape sajta.',409);
+      const plan=await planSiteInventory(sites,input.siteId,{revision:input.revision});
+      return json(await sites.commit(plan,actor,crypto.randomUUID()));
+    }
+    if(path==='/site-sync/preview'&&request.method==='POST'){
+      const input=await body(request),resultId=uuid(input.id),stored=await read(bucket,`${prefix}results/${resultId}.json`);
+      if(!stored)fail('GAM rezultat nije pronađen.',404);
+      const result=stored.value,known=await sites.receipt(input.siteId,resultId);if(known)return json({saved:known});
+      const original=await read(bucket,jobKey(resultId));
+      const connection=await connected(result.networkCode),client=await makeClient(connection),network=await client.network();
+      const rows=[];
+      for(const row of result.rows.filter(r=>r.id&&r.path&&['created','existing'].includes(r.state))){
+        const actual=await client.get(row.id);
+        if(actual.status!=='ACTIVE'||actual.code!==row.code||gamPath(network.networkCode,network.rootId,actual)!==row.path)fail(`${row.code}: GAM stanje je promenjeno. Ponovite GAM pregled.`,409);
+        rows.push({...row,sizes:[...actual.sizes.map(s=>`${s.width}x${s.height}`),...(actual.fluid?['fluid']:[])].join('; '),mapKey:row.mapKey||original?.value.plan.rows.find(r=>r.code===row.code)?.mapKey});
+      }
+      if(!rows.length)fail('Nema potvrđenih GAM ad unita za upis. Ponovite proveru u GAM-u.',409);
+      const plan=await planSiteInventory(sites,input.siteId,{rows}),id=crypto.randomUUID();
+      const review={id,resultId,actor,origin:url.origin,siteId:input.siteId,rows,revision:plan.revision,expiresAt:Date.now()+15*60*1000};
+      await write(bucket,`${prefix}site-reviews/${id}.json`,review,{onlyIf:{etagDoesNotMatch:'*'}});
+      return json({id,resultId,...sitePlanSummary(plan)});
+    }
+    if(path==='/site-sync/apply'&&request.method==='POST'){
+      const input=await body(request),id=uuid(input.id),stored=await read(bucket,`${prefix}site-reviews/${id}.json`),r=stored?.value;
+      if(!r||r.actor!==actor||r.origin!==url.origin)fail('Pregled upisa nije pronađen.',404);
+      if(input.confirmSite!==r.siteId)fail('Potvrdite prikazani sajt.');
+      const known=await sites.receipt(r.siteId,r.resultId);if(known)return json(known);
+      if(r.expiresAt<Date.now())fail('Pregled je istekao. Ponovo proverite upis u sajt.',409);
+      const plan=await planSiteInventory(sites,r.siteId,{rows:r.rows,revision:r.revision});
+      return json(await sites.commit(plan,actor,r.resultId));
+    }
     if(path.startsWith('/line-items/'))return await lineItemResponse(request,path,{bucket,actor,body,connected,makeClient,trafficFactory});
     if(path==='/status'&&request.method==='GET'){
       const connections=[];
@@ -90,7 +129,7 @@ export async function gamResponse(request,env,actor,{base='/api/integrations/gam
       if(!bucket)fail('Skladište integracija nije povezano.',503);
       const input=await body(request),group={...input.group};
       const label=text(input.label,'Naziv šablona',80);expandGroup(group);
-      const item={id:crypto.randomUUID(),label,pattern:text(group.pattern,'Naziv'),count:Number(group.count),start:Number(group.start),sizes:group.sizes,description:String(group.description||'').slice(0,6000),createdBy:actor};
+      const item={id:crypto.randomUUID(),label,pattern:text(group.pattern,'Naziv'),count:Number(group.count),start:Number(group.start),sizes:group.sizes,description:String(group.description||'').slice(0,6000),...(group.mapKey?{mapKey:group.mapKey}:{}),createdBy:actor};
       if((await bucket.list({prefix:prefix+'templates/',limit:100})).objects.length>=100)fail('Dostignuto je 100 sačuvanih šablona.');
       await write(bucket,`${prefix}templates/${item.id}.json`,item);return json({template:item},201);
     }
@@ -98,9 +137,11 @@ export async function gamResponse(request,env,actor,{base='/api/integrations/gam
       const plan=normalizePlan(await body(request)),connection=await connected(plan.networkCode);
       const client=await makeClient(connection),network=await client.network();
       const preview=await buildPreview(client,network,plan),id=crypto.randomUUID();
-      const value={id,actor,origin:url.origin,createdAt:new Date().toISOString(),expiresAt:Date.now()+15*60*1000,connectionRevision:connection.revision,plan,preview,network};
+      const local=plan.siteId?await planSiteInventory(sites,plan.siteId,{parentPath:preview.parent.path,rows:preview.rows}):null;
+      const siteSync=local?sitePlanSummary(local):null;
+      const value={id,actor,origin:url.origin,createdAt:new Date().toISOString(),expiresAt:Date.now()+15*60*1000,connectionRevision:connection.revision,plan,preview,network,siteSync};
       await write(bucket,jobKey(id),value,{onlyIf:{etagDoesNotMatch:'*'}});
-      return json({id,...preview,network,expiresAt:value.expiresAt});
+      return json({id,...preview,network,siteSync,expiresAt:value.expiresAt});
     }
     if(path==='/create'&&request.method==='POST'){
       if(!bucket)fail('Skladište integracija nije povezano.',503);
@@ -108,10 +149,11 @@ export async function gamResponse(request,env,actor,{base='/api/integrations/gam
       if(!job||job.value.actor!==actor||job.value.origin!==url.origin)fail('Pregled nije pronađen. Ponovite proveru.',404);
       const review=job.value;
       if(input.confirmNetwork!==review.plan.networkCode)fail('Potvrdite prikazanu GAM mrežu.');
-      const stored=await read(bucket,`${prefix}results/${id}.json`);if(stored)return json(stored.value);
+      const stored=await read(bucket,`${prefix}results/${id}.json`);if(stored)return json(await withSite(stored.value));
       if(review.expiresAt<Date.now())fail('Pregled je istekao. Ponovite proveru u GAM-u.',409);
       const connection=await connected(review.plan.networkCode);
       if(connection.revision!==review.connectionRevision)fail('GAM konekcija je promenjena. Ponovite proveru.',409);
+      if(review.plan.siteId)await planSiteInventory(sites,review.plan.siteId,{parentPath:review.preview.parent.path,rows:review.preview.rows,revision:review.siteSync.revision});
       // One attempt per review. A failed or interrupted call requires a fresh read-only preview.
       // Never automatically retry an uncertain Google mutation.
       if(!await write(bucket,`${prefix}attempts/${id}.json`,{actor,startedAt:new Date().toISOString()},{onlyIf:{etagDoesNotMatch:'*'}}))fail('Ovaj upis je već pokrenut. Ponovite proveru u GAM-u da vidite stvarno stanje.',409);
@@ -126,7 +168,7 @@ export async function gamResponse(request,env,actor,{base='/api/integrations/gam
         parent=created[0];
         if(parent.parentId!==network.rootId||parent.code!==review.plan.parent.code)fail('GAM parent odgovor ne odgovara zahtevu. Ponovite proveru.',502);
       }
-      const output=fresh.rows.filter(x=>x.state==='existing').map(x=>({name:x.name,code:x.code,id:x.existing.id,state:'existing',path:gamPath(network.networkCode,network.rootId,x.existing),differences:x.differences}));
+      const output=fresh.rows.filter(x=>x.state==='existing').map(x=>({name:x.name,code:x.code,id:x.existing.id,state:'existing',path:gamPath(network.networkCode,network.rootId,x.existing),differences:x.differences,sizes:[...x.existing.sizes.map(s=>`${s.width}x${s.height}`),...(x.existing.fluid?['fluid']:[])].join('; '),mapKey:x.mapKey}));
       const pending=fresh.rows.filter(x=>x.state==='new');let error=null;
       // Bounded batches keep the API request below Worker subrequest limits.
       for(let offset=0;offset<pending.length;offset+=20){
@@ -134,16 +176,23 @@ export async function gamResponse(request,env,actor,{base='/api/integrations/gam
         try{
           const created=await client.create(batch,parent.id);
           if(created.length!==batch.length||created.some(u=>u.parentId!==parent.id||!batch.some(b=>b.code===u.code&&b.name===u.name)))throw new GamError('GAM odgovor nije potvrdio ceo paket. Ponovite proveru.',502);
-          output.push(...created.map(u=>({name:u.name,code:u.code,id:u.id,state:'created',path:gamPath(network.networkCode,network.rootId,u)})));
+          output.push(...created.map(u=>({name:u.name,code:u.code,id:u.id,state:'created',path:gamPath(network.networkCode,network.rootId,u),sizes:[...u.sizes.map(s=>`${s.width}x${s.height}`),...(u.fluid?['fluid']:[])].join('; '),mapKey:batch.find(b=>b.code===u.code)?.mapKey})));
         }catch(e){error=e instanceof GamError?e.message:'Upis nije potvrđen. Ponovite proveru u GAM-u.';break;}
       }
-      const result={id,networkCode:network.networkCode,siteLabel:review.plan.siteLabel,parentId:parent.id,completed:!error,error,createdAt:new Date().toISOString(),rows:review.plan.rows.map(r=>output.find(x=>x.code===r.code)||{name:r.name,code:r.code,state:'unconfirmed',id:null,path:null})};
-      // This immutable result is also the GAM-ID/path mapping; no site runtime is rewritten.
+      const result={id,...(review.plan.siteId?{siteId:review.plan.siteId}:{}),networkCode:network.networkCode,siteLabel:review.plan.siteLabel,parentId:parent.id,completed:!error,error,createdAt:new Date().toISOString(),rows:review.plan.rows.map(r=>output.find(x=>x.code===r.code)||{name:r.name,code:r.code,state:'unconfirmed',id:null,path:null})};
+      // Persist the Google outcome first. A local failure never retries Google creation.
       await write(bucket,`${prefix}results/${id}.json`,result,{onlyIf:{etagDoesNotMatch:'*'}});
-      return json(result);
+      if(result.siteId){
+        const rows=result.rows.filter(r=>r.id&&r.path&&['created','existing'].includes(r.state));
+        if(rows.length)try{
+          const local=await planSiteInventory(sites,result.siteId,{rows,parentPath:fresh.parent.path,revision:review.siteSync.revision});
+          return json({...result,siteSync:await sites.commit(local,actor,id)});
+        }catch(e){return json({...result,siteSync:{state:'pending',siteId:result.siteId,error:e instanceof GamError?e.message:'GAM je sačuvan. Proverite upis u sajt za nastavak.'}});}
+      }
+      return json(await withSite(result));
     }
     if(path==='/history'&&request.method==='GET'){
-      const items=[];if(bucket){const list=await bucket.list({prefix:prefix+'results/',limit:100});for(const object of list.objects){const result=await read(bucket,object.key);if(result)items.push(result.value);}}
+      const items=[];if(bucket){const list=await bucket.list({prefix:prefix+'results/',limit:100});for(const object of list.objects){const result=await read(bucket,object.key);if(result)items.push(await withSite(result.value));}}
       return json({results:items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))});
     }
     return json({error:'GAM operacija nije pronađena.'},404);
