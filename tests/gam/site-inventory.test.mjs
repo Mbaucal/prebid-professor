@@ -93,3 +93,11 @@ test('CAS and injected transaction failure leave no partial receipt or inventory
  f.d.sqlite.prepare("UPDATE ad_units SET enabled=0 WHERE code='Sticky'").run();await assert.rejects(f.store.commit(plan,actor,'stale'),/izmenjen/);
  assert.equal(await f.store.receipt('test-site','stale'),null);
 });
+
+test('history confirmation rechecks Google changes without creating or copying stale inventory',async t=>{
+ const f=await setup();t.after(()=>f.d.close());const value=input();delete value.siteId;const r=await create(f,value);
+ const p=await f.request('/site-sync/preview',{id:r.data.id,siteId:'test-site'});assert.equal(p.status,200);
+ const creates=f.counters.creates;f.units.find(u=>u.id===r.data.rows[0].id).status='INACTIVE';
+ const result=await f.request('/site-sync/apply',{id:p.data.id,confirmSite:'test-site'});assert.equal(result.status,409);assert.equal(f.counters.creates,creates);
+ assert.equal(await f.store.receipt('test-site',r.data.id),null);assert.equal(f.d.sqlite.prepare('SELECT count(*) AS n FROM ad_units').get().n,2);
+});

@@ -633,7 +633,7 @@ export default function App() {
             {activeSection === 'Audit log' ? (
               <AuditLogPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
             ) : null}
-            {activeSection === 'API integracije' ? <ApiIntegrationsPanel sites={publishers.flatMap(p => p.sites)} /> : null}
+            {activeSection === 'API integracije' ? <ApiIntegrationsPanel sites={publishers.flatMap(p => p.sites)} onInventoryChanged={(id)=>loadHierarchy(undefined,id)} onOpenSite={(id)=>{const owner=publishers.find(p=>p.sites.some(s=>s.id===id));if(owner){setAgencyFilter('all');setActivePublisherId(owner.id);setActiveSiteId(id);setConfigEntry('ad-units');setActiveTab('Config');setActiveSection('Publishers');}}} /> : null}
             {activeSection === 'Settings' ? <SettingsPanel publishers={publishers} /> : null}
             </WorkspaceContent>
           </>
