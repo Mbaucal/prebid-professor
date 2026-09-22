@@ -1,3 +1,14 @@
+## 2026-09-22 — Agency hierarchy (MBA-65)
+
+Agency → Publisher → Site is implemented in PR #80 (production candidate) and
+PR #81 (isolated TEST). Agencies have names and optional logos, persistent
+publisher assignments, search, collapsible groups, filtering and breadcrumbs.
+Existing publishers remain unassigned until explicitly linked; settings and
+saved releases are unchanged. TEST `/agencies` uses generic example publishers
+with real saved agency metadata. Backend/schema, compiled Worker/D1 and shared
+React desktop/mobile checks pass. Production promotion awaits TEST acceptance.
+Details: `docs/AGENCY_HIERARCHY.md`.
+
 ## 2026-09-22 — Bounded dashboard layout (MBA-89)
 
 The dashboard now shares an AppFrame with the authenticated TEST `/layout-preview`.
