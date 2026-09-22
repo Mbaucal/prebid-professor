@@ -1,3 +1,4 @@
+import {sizeMapDefaults} from '../inventory/defaults.mjs';
 export class GamError extends Error {
   constructor(message, status = 422) { super(message); this.status = status; }
 }
@@ -37,9 +38,11 @@ export function expandGroup(group) {
   const parsed = parseSizes(group.sizes);
   return (names || Array.from({length:count},(_,i) => group.pattern.replaceAll('{n}', String(start+i)))).map((name,i) => ({
     name:text(name,'Naziv'), code:unitCode(name), sizes:parsed.label,
+    ...(group.mapKey?{mapKey:mapKey(group.mapKey)}:{}),
     description:String(group.description || '').replaceAll('{n}',String(start+i)).replaceAll('{pos}',name),
   }));
 }
+function mapKey(value){if(!Object.hasOwn(sizeMapDefaults,value))throw new GamError('Izaberite postojeću podrazumevanu size mapu.');return value;}
 export function normalizePlan(value) {
   if (!value || !Array.isArray(value.rows) || !value.rows.length || value.rows.length > 100) throw new GamError('Izaberite između 1 i 100 ad unita.');
   const networkCode = numericId(value.networkCode);
@@ -53,9 +56,9 @@ export function normalizePlan(value) {
     codes.add(code.toLowerCase()); names.add(name.toLowerCase());
     const description = typeof r.description === 'string' ? r.description : '';
     if (description.length > 6000 || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(description)) throw new GamError('Opis je predugačak ili sadrži nedozvoljene znakove.');
-    return {name,code,sizes,description};
+    return {name,code,sizes,description,...(r.mapKey?{mapKey:mapKey(r.mapKey)}:{})};
   });
-  return {networkCode,parent,rows,siteLabel:typeof value.siteLabel==='string'?value.siteLabel.trim().slice(0,255):''};
+  return {networkCode,parent,rows,...(value.siteId?{siteId:text(value.siteId,'Tessera site ID',98)}:{}),siteLabel:typeof value.siteLabel==='string'?value.siteLabel.trim().slice(0,255):''};
 }
 export function compareRows(rows, existing) {
   return rows.map(row => {
