@@ -7,7 +7,7 @@ export default function SiteSyncCard({result,sites,call,onSaved,onOpenSite}:Prop
  const [review,setReview]=useState<SiteSyncReview|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
  async function run(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn();}catch(e){setError((e as Error).message);setReview(null);}finally{setBusy(false);}}
  return <div className="gam-site-sync">
-  {saved?<><strong>✓ Upisano u sajt: {saved.siteName||saved.siteId}</strong><p>{saved.addedUnits} novih ad unita · {saved.addedMaps} novih mapa. GAM ID-jevi i putanje su sačuvani. Postojeća podešavanja su zadržana.</p><small>Generate / Publish primenjuje novi inventar na sajtu.</small>{onOpenSite&&<button type="button" onClick={()=>onOpenSite(saved.siteId)}>Otvori ad unite sajta →</button>}</>:<>
+  {saved?<><strong>✓ Upisano u sajt: {saved.siteName||saved.siteId}</strong><p>{saved.addedUnits} novih ad unita · {saved.addedMaps} novih mapa. GAM ID-jevi i putanje su sačuvani. Postojeća podešavanja su zadržana.</p>{saved.warnings?.map((warning,index)=><small key={index}>{warning}</small>)}<small>Generate / Publish primenjuje novi inventar na sajtu.</small>{onOpenSite&&<button type="button" onClick={()=>onOpenSite(saved.siteId)}>Otvori ad unite sajta →</button>}</>:<>
    <strong>{result.siteId?'GAM je sačuvan; upis u sajt čeka potvrdu.':'Povežite potvrđene GAM ad unite sa sajtom'}</strong>
    {result.siteSync?.error&&<p>{result.siteSync.error}</p>}
    <label>Sajt za upis<select disabled={busy} value={site} onChange={e=>{setSite(e.target.value);setReview(null);setError('');}}><option value="">Izaberite sajt</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>

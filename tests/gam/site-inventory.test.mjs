@@ -101,3 +101,12 @@ test('history confirmation rechecks Google changes without creating or copying s
  const result=await f.request('/site-sync/apply',{id:p.data.id,confirmSite:'test-site'});assert.equal(result.status,409);assert.equal(f.counters.creates,creates);
  assert.equal(await f.store.receipt('test-site',r.data.id),null);assert.equal(f.d.sqlite.prepare('SELECT count(*) AS n FROM ad_units').get().n,2);
 });
+
+test('existing GAM sizes are used for local preview warnings and remain unchanged on sync',async t=>{
+ const f=await setup();t.after(()=>f.d.close());const [parent]=await f.client.create([{name:'Example',code:'Example'}],'1');
+ const [unit]=await f.client.create([{name:'InFeed_1',code:'InFeed_1',sizes:'300x250'}],parent.id);
+ const p=await f.request('/preview',input(expandGroup({...presets[3],count:1})));assert.equal(p.status,200);
+ assert(p.data.siteSync.warnings.some(w=>w.includes('800x250')));assert.equal(p.data.siteSync.rows[0].sizes,'300x250');
+ const r=await f.request('/create',{id:p.data.id,confirmNetwork:'123456'});assert.equal(r.data.siteSync.state,'saved');assert(r.data.siteSync.warnings.some(w=>w.includes('800x250')));
+ assert.deepEqual((await f.client.get(unit.id)).sizes,[{width:300,height:250}]);
+});
