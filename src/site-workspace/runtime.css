@@ -15,3 +15,5 @@
 .script-history>summary{cursor:pointer;font-size:14px;color:#5c6b80}
 .site-runtime-panel>.script-setup{margin:20px 0;background:#fafbfd}
 @media(max-width:680px){.script-mode-options{grid-template-columns:1fr}.script-mode-options label{padding:16px}.script-version-summary{align-items:flex-start}}
+
+.runtime-loading-table-wrap{max-width:100%;overflow-x:auto}.runtime-loading-table{width:100%;border-collapse:collapse;text-align:left;font-size:14px}.runtime-loading-table th{background:#f5f7fa;color:#66758c;font-size:12px;text-transform:uppercase}.runtime-loading-table th,.runtime-loading-table td{padding:14px 12px;border-bottom:1px solid #d7dfec;vertical-align:top}.runtime-loading-table td:first-child{overflow-wrap:anywhere}.runtime-loading-table small{display:block;color:#66758c;line-height:1.5;margin-top:5px}.runtime-loading-table td:last-child{min-width:180px}.runtime-actions button[aria-current=page]{background:#fff0df;border-color:#f47725}
