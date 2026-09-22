@@ -1,5 +1,5 @@
 import { readPackage } from './releases.mjs';
-import { testPageClient } from './test-page-client.mjs';
+import { testPageScript } from '../../.generated/test-page-client.mjs';
 
 const decode = new TextDecoder('utf-8', { fatal: true });
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -62,7 +62,7 @@ export function renderPackageTestPage(model) {
 <details class="panel"><summary>Package details and errors</summary><p>Package: <code>${escape(model.releaseId)}</code></p><p>GAM path: <code>${escape(model.adUnitPath)}</code></p><p>The table uses the saved package configuration. Registration, requests and responses are actual GPT observations, not simulated results.</p><pre data-errors>No errors recorded.</pre></details>
 <h2>Test containers</h2><p class="muted">Diagnostic layout. Boxes show containers, not ad creatives. Sticky remains controlled by the saved script and may be hidden without a filled ad. Resize and restart for a fresh mobile or desktop test.</p>${cards}
 <footer>Saved release ${escape(model.releaseId)} · No release or configuration writes.</footer></main><div class="float"><button data-action="stop" hidden>Stop scrolling</button><button data-action="top">↑ Results</button></div>
-<script type="application/json" data-test-model>${json(model)}</script><script>(${testPageClient.toString()})();</script></body></html>`;
+<script type="application/json" data-test-model>${json(model)}</script><script>${testPageScript}</script></body></html>`;
 }
 
 // Caller must authenticate the actor before entering this read-only response.
