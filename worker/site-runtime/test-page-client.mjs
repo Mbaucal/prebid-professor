@@ -1,4 +1,4 @@
-// Serialized into the isolated HTTPS document. No imports or admin API calls.
+// Bundled as a complete browser program, then embedded as data in the Worker.
 export function testPageClient() {
   'use strict';
   const model = JSON.parse(document.querySelector('[data-test-model]').textContent);

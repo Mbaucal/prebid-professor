@@ -34,3 +34,10 @@ report export and opaque-origin cookie/storage isolation. It sends no live ads
 and does not validate Google's externally hosted console UI or live delivery.
 
 Release to the existing TEST branch first. Main promotion requires owner acceptance.
+
+Bootstrap correction: the browser client is now bundled as a complete IIFE at
+build time and embedded as immutable text. Serializing a Worker function with
+`toString()` dropped Wrangler's injected `__name` helper and stopped the page
+before rows or click handlers existed. Bundling/minification regression tests
+check unchanged browser bytes, and the Chromium fixture now obtains its HTML
+from the real Wrangler bundle through authenticated local workerd/D1/R2.

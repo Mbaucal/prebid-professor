@@ -5,6 +5,7 @@ import worker from '../../worker/test-workspace/index.mjs';
 import { workspaceStore, ORIGIN, TEST_EMAIL, TEST_PASSWORD } from '../support/test-workspace-store.mjs';
 import { packageTestModel, renderPackageTestPage, packageTestPageResponse, testPageHeaders } from '../../worker/site-runtime/test-page.mjs';
 import { testPageClient } from '../../worker/site-runtime/test-page-client.mjs';
+import { build } from 'esbuild';
 const fixtures = [];
 test.afterEach(() => { while(fixtures.length) fixtures.pop().close(); });
 const text = new TextEncoder();
@@ -49,6 +50,16 @@ test('archive text cannot close HTML data/scripts and the page has no admin API 
   assert.equal(testPageHeaders['cache-control'],'private, no-store');assert.equal(testPageHeaders['referrer-policy'],'no-referrer');
   assert.doesNotMatch(testPageClient.toString(),/fetch\(|\/api\/|__tcfapi\s*=/);
   new Function('return ('+testPageClient.toString()+')');
+});
+test('Worker bundling and minification preserve the complete browser program',async()=>{
+  const model=packageTestModel(input(true),'site-a','saved-one');
+  const expected=renderPackageTestPage(model);
+  for(const options of [{keepNames:true,minify:false},{keepNames:false,minify:true}]){
+    const bundled=await build({stdin:{contents:"export {renderPackageTestPage} from './worker/site-runtime/test-page.mjs';",resolveDir:process.cwd()},
+      bundle:true,write:false,format:'esm',platform:'node',target:'es2022',...options});
+    const runtime=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+    assert.equal(runtime.renderPackageTestPage(model),expected,'Bundling must not rewrite the embedded browser code or introduce missing helper references.');
+  }
 });
 function req(path,cookie,body) { return new Request(ORIGIN+path,{method:body?'POST':'GET',headers:{...(cookie?{cookie}:{}),...(body?{origin:ORIGIN,'content-type':'application/json'}:{})},body:body?JSON.stringify(body):undefined}); }
 async function stored() {

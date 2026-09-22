@@ -1,3 +1,11 @@
+## 2026-09-22 — Test page Worker bootstrap correction (MBA-94)
+
+The first hosted test page failed before initialization because Function#toString
+lost helpers added during Worker compilation. Build the complete browser client
+as a separate bundle and preserve it as text. Regression coverage now checks
+both Worker bundling/minification and the actual compiled Worker's HTML in
+Chromium. Existing packages/settings and ad scripts are unchanged; TEST first.
+
 ## 2026-09-22 — Saved-package Test page (MBA-94)
 
 Sites now have a Test page tab and each saved built-in package has a direct test
