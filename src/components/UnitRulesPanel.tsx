@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
+import { runtimeLabel } from '../site-workspace/runtime-labels';
 import type {
   AdUnit,
   SizeMap,
@@ -18,6 +19,22 @@ type Props = {
 };
 
 type FormMode = 'create' | 'edit' | 'duplicate';
+
+type LoadingSummary = {
+  runtimeVersion: string | null;
+  issue: string | null;
+  units: Array<{ code: string; label: string; detail: string; source: string }>;
+};
+
+async function loadLoadingSummary(publisherId: string): Promise<LoadingSummary> {
+  const response = await fetch(`/api/publishers/${encodeURIComponent(publisherId)}/builtin-site-settings`, {
+    credentials: 'same-origin', cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('Loading behavior is unavailable. Reload to try again.');
+  const data = await response.json();
+  if (!Array.isArray(data.loadingSummary?.units)) throw new Error('Loading behavior is unavailable. Reload to try again.');
+  return data.loadingSummary;
+}
 
 type RuleForm = {
   ruleKey: string;
@@ -241,28 +258,39 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [creatingBaseRules, setCreatingBaseRules] = useState(false);
+  const [loadingSummary, setLoadingSummary] = useState<LoadingSummary | null>(null);
+  const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
+    setLoadingSummary(null);
     try {
-      const [rules, units, maps] = await Promise.all([
+      const [rules, units, maps, summary] = await Promise.all([
         api.listUnitRules(publisherId),
         api.listAdUnits(publisherId),
         api.listSizeMaps(publisherId),
+        loadLoadingSummary(publisherId).catch(() => ({
+          runtimeVersion: null, units: [], issue: 'Loading behavior is unavailable. Reload to try again.',
+        })),
       ]);
+      if (sequence !== loadSequence.current) return;
       setUnitRules(rules);
       setAdUnits(units);
       setSizeMaps(maps);
+      setLoadingSummary(summary);
       setError(null);
     } catch (requestError) {
+      if (sequence !== loadSequence.current) return;
       setError(requestError instanceof Error ? requestError.message : 'Could not load unit rules.');
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, [publisherId]);
 
   useEffect(() => {
     void load();
+    return () => { loadSequence.current++; };
   }, [load]);
 
   const rulesByKey = useMemo(
@@ -483,6 +511,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
             </p>
           </div>
           <div className="unit-rule-toolbar-actions">
+            <button className="button secondary" disabled={loading || submitting || creatingBaseRules} onClick={() => void load()} type="button">Reload rules</button>
             {missingReserved.length ? (
               <button
                 className="button secondary"
@@ -601,8 +630,10 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
             <span className="panel-kicker">Resolved configuration</span>
             <h3>Effective behavior by ad unit</h3>
           </div>
-          <span>Includes inheritance</span>
+          <span>{loadingSummary?.runtimeVersion ? `Loading · script ${runtimeLabel(loadingSummary.runtimeVersion)}` : 'Includes inheritance'}</span>
         </div>
+        <p className="loading-summary-help">Loading follows the selected script’s ATF/BTF defaults, group rules and Display &amp; loading overrides. These are saved settings for the next generated package.</p>
+        {loadingSummary?.issue ? <p role="status" className="form-error">{loadingSummary.issue}</p> : null}
 
         <div className="effective-rule-table-wrap">
           <table className="effective-rule-table">
@@ -611,7 +642,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 <th>Ad unit</th>
                 <th>Scope</th>
                 <th>Timeout</th>
-                <th>Lazy auction</th>
+                <th>Loading</th>
                 <th>Refresh</th>
                 <th>Mappings</th>
               </tr>
@@ -622,7 +653,11 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                   <td><strong>{unit.code}</strong><small>{unit.type}</small></td>
                   <td>{exact ? 'Exact override' : `${unit.type} inherited`}</td>
                   <td>{effective.timeout} ms</td>
-                  <td>{effective.lazy?.enabled ? `${effective.lazy.fetchMarginPx}px → ${effective.lazy.renderMarginPx}px` : 'Disabled'}</td>
+                  <td className="effective-loading-cell">{(() => {
+                    const summary = loadingSummary?.units.find(item => item.code === unit.code);
+                    return summary ? <><strong>{summary.label}</strong><small>{summary.source}</small><small>{summary.detail}</small></>
+                      : <span>{loading ? 'Loading settings…' : 'Loading behavior unavailable'}</span>;
+                  })()}</td>
                   <td>
                     {effective.refresh?.enabled
                       ? `${effective.refresh.minSeconds}s · ${effective.refresh.minViewPct}%`
