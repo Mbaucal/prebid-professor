@@ -1,5 +1,4 @@
-import {previewCsvImport} from '../imports.ts';
-import {previewFlexibleSizeMapCsv} from '../size-map-compat.ts';
+import {previewCsvImport,previewFlexibleSizeMapCsv} from '../../.generated/inventory-preview.mjs';
 import {sizeMapsTemplateCsv,adUnitsTemplateCsv} from '../../src/shared/inventory-csv-templates.ts';
 import {jsonBody,TEST_SITE,WorkspaceError} from './boundary.mjs';
 // The TEST import only previews CSV. Application remains the editor's existing
