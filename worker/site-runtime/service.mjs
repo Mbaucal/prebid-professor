@@ -73,12 +73,20 @@ export async function siteRuntimeSettings(env,siteId){
 export async function changeSiteRuntime(env,siteId,actor,body){
  const saved=await read(env,siteId),config=JSON.parse(saved.config.config_json);
  if(typeof body?.revision!=='string'||body.revision!==await digest(saved))fail('Site settings changed. Reload before saving.',409);
- if(body.action==='version'){
-  keys(body,['action','revision','runtime','allowPreview']);
-  const setup=siteSetupState(saved);if(setup.nextStep==='prebid')fail(setup.setupMessage);
+ if(body.action==='version'||body.action==='setup'){
+  const setupAction=body.action==='setup';
+  keys(body,setupAction?['action','revision','runtime','allowPreview','enablePrebid']:['action','revision','runtime','allowPreview']);
+  const enablePrebid=setupAction?body.enablePrebid:config.enablePrebid;
+  if(typeof enablePrebid!=='boolean')fail('Choose GAM / AdX only or GAM + Prebid.');
+  const setup=siteSetupState({...saved,config:{...saved.config,config_json:JSON.stringify({...config,enablePrebid})}});
+  if(setup.nextStep==='prebid')fail(setup.setupMessage);
+  if(setupAction){
+   try{previewInput({...saved,config:{...saved.config,config_json:JSON.stringify({...config,enablePrebid})}},descriptorForPin(body.runtime),'20000101_000000');}
+   catch(e){fail(e.message);}
+  }
   const currentId=saved.prebidBuilds.length===1?saved.prebidBuilds[0].id:null;
   const plan=await prepareSiteRuntimeSelection({siteId,snapshot:saved,catalog:runtimeCatalog,expectedRevision:body.revision,
-   selection:{runtime:body.runtime,allowPreview:body.allowPreview,enablePrebid:config.enablePrebid,prebidBuildId:config.enablePrebid?currentId:null}},env.BUILDS);
+   selection:{runtime:body.runtime,allowPreview:body.allowPreview,enablePrebid,prebidBuildId:enablePrebid?currentId:null}},env.BUILDS);
   return commitSiteConfiguration(env,saved,plan.configJson,actor);
  }
  if(body.action!=='position')fail('Unknown settings action.');
