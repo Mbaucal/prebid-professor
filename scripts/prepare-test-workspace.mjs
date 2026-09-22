@@ -50,3 +50,5 @@ execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-download.mjs', 
 execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-api-integrations.mjs', import.meta.url))], { stdio: 'inherit' });
 
 execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-layout-preview.mjs', import.meta.url))], { stdio: 'inherit' });
+
+execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-agency-workspace.mjs', import.meta.url))], { stdio: 'inherit' });

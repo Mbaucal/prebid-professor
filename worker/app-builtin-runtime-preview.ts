@@ -1,3 +1,4 @@
+import { organizationResponse } from './organization/service.mjs';
 import { gamResponse } from './integrations/gam-service.mjs';
 import { blockStoredDraftCdn } from './runtime/stored-draft-safety.mjs';
 import baseApp from './app-ads-txt-managed-file';
@@ -24,6 +25,10 @@ export default {
     const draftBlock = blockStoredDraftCdn(request);
     if (draftBlock) return draftBlock;
     const url = new URL(request.url);
+    if (url.pathname === '/api/organization' || url.pathname.startsWith('/api/organization/')) {
+      const actor = await getAuthenticatedUser(request, env);
+      return organizationResponse(request, env, actor?.email);
+    }
     const libraryMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/script-library(?:\/(scripts|tests)(?:\/(tanjug-(?:script|test)-1\.0\.0-[a-f0-9]{64})\.zip)?)?$/);
     if(libraryMatch){
       const actor=await getAuthenticatedUser(request,env);
