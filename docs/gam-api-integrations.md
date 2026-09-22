@@ -4,6 +4,8 @@ The main navigation now has an independent **API integracije** tab. The same Rea
 
 ## First release
 
+GAM povezivanje is the first tab and opens by default. The JSON file picker works before server setup; it only selects a local file. The connect action stays disabled until the encryption Secret is configured. Proveri podešavanje rechecks server readiness without losing the selected file.
+
 - Eight editable presets reproduce the supplied Colab definitions (26 child positions in the full selection), including 470×1080 branding.
 - Group count, starting index, `{n}` patterns, pasted names, sizes, Fluid and descriptions can be edited. Custom templates are saved independently.
 - Connect a service account to a selected GAM network. Connection verification calls `getCurrentNetwork`; it creates no inventory.

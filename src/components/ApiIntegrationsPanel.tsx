@@ -13,7 +13,7 @@ type SiteOption={id:string;name:string;gamPath:string};
 const stateName:Record<string,string>={new:'Novo',existing:'Već postoji',conflict:'Konflikt',created:'Kreirano',unconfirmed:'Nije potvrđeno'};
 
 export default function ApiIntegrationsPanel({endpoint='/api/integrations/gam',sites=[]}:{endpoint?:string;sites?:SiteOption[]}){
-  const [tab,setTab]=useState<'units'|'connection'|'templates'|'history'>('units');
+  const [tab,setTab]=useState<'units'|'connection'|'templates'|'history'>('connection');
   const [connections,setConnections]=useState<Connection[]>([]),[configured,setConfigured]=useState(false);
   const [network,setNetwork]=useState(''),[connectNetwork,setConnectNetwork]=useState('');
   const [credential,setCredential]=useState<File|null>(null),fileRef=useRef<HTMLInputElement>(null);
@@ -48,16 +48,16 @@ export default function ApiIntegrationsPanel({endpoint='/api/integrations/gam',s
 
   return <section className="gam-api" aria-label="API integracije">
     <div className="gam-hero"><div className="gam-provider-icon" aria-hidden="true">G</div><div className="gam-hero-copy"><span className="gam-eyebrow">API INTEGRACIJE</span><h2>Google Ad Manager</h2><p>Povežite mrežu i kreirajte ad unite iz svojih šablona.</p></div><span className={'gam-badge '+(active?'connected':'')}>{active?'Povezano · '+active.networkCode:'Nije povezano'}</span></div>
-    <nav className="gam-tabs" aria-label="GAM alati">{([['units','Ad uniti'],['connection','GAM povezivanje'],['templates','Šabloni'],['history','Istorija']] as const).map(([id,label])=><button type="button" key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} disabled={Boolean(busy)} onClick={()=>{setTab(id);setError('');if(id==='history')void run('Učitavanje istorije',async()=>{const data=await call<{results:Result[]}>('/history');if(mounted.current)setHistory(data.results);});}}>{label}</button>)}</nav>
+    <nav className="gam-tabs" aria-label="GAM alati">{([['connection','GAM povezivanje'],['units','Ad uniti'],['templates','Šabloni'],['history','Istorija']] as const).map(([id,label])=><button type="button" key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} disabled={Boolean(busy)} onClick={()=>{setTab(id);setError('');if(id==='history')void run('Učitavanje istorije',async()=>{const data=await call<{results:Result[]}>('/history');if(mounted.current)setHistory(data.results);});}}>{label}</button>)}</nav>
     {error&&<div className="gam-message error" role="alert">{error}</div>}
     {notice&&<div className="gam-message success" role="status">{notice}</div>}
     {busy&&<div className="gam-progress" role="status">{busy}…</div>}
     <fieldset disabled={Boolean(busy)} className="gam-fields">
     {tab==='connection'&&<div className="gam-connection-grid"><article className="gam-card"><span className="gam-step">01 / POVEZIVANJE</span><h3>Dodajte GAM mrežu</h3><p>Koristite isti service account koji već koristite u svojoj skripti.</p>
-      {!configured&&<div className="gam-message info">Povezivanje još nije aktivirano na serveru. Šablone i listu ad unita možete pripremiti odmah.<details><summary>Detalji za podešavanje</summary>Na ovom Worker-u dodajte Secret <code>GAM_CREDENTIALS_KEY</code> sa najmanje 32 nasumična znaka. Ključ služi za šifrovanje sačuvanih konekcija.</details></div>}
+      {!configured&&<div className="gam-message info">Povezivanje još nije aktivirano na serveru. JSON fajl možete odabrati sada; slanje čeka serversko podešavanje.<details><summary>Detalji za podešavanje</summary>Na ovom Worker-u dodajte Secret <code>GAM_CREDENTIALS_KEY</code> sa najmanje 32 nasumična znaka. Ključ služi za šifrovanje sačuvanih konekcija.</details><button type="button" onClick={()=>void run('Provera podešavanja',loadStatus)}>Proveri podešavanje</button></div>}
       <label>Network code<input inputMode="numeric" placeholder="npr. 23339552141" value={connectNetwork} onChange={e=>setConnectNetwork(e.target.value.trim())}/></label>
-      <label>Service account JSON<input ref={fileRef} type="file" accept=".json,application/json" disabled={!configured} onChange={e=>setCredential(e.target.files?.[0]||null)}/></label>
-      <p className="gam-help">Konekcija se proverava pre čuvanja. Privatni ključ čuva se šifrovano na serveru.</p><button className="gam-primary" type="button" disabled={!configured||!credential||!/^\d+$/.test(connectNetwork)} onClick={()=>void connect()}>Proveri i poveži GAM</button>
+      <label>Service account JSON<input ref={fileRef} type="file" accept=".json,application/json" onChange={e=>setCredential(e.target.files?.[0]||null)}/></label>
+      <p className="gam-help">Fajl se šalje tek klikom na „Proveri i poveži GAM“. Konekcija se proverava pre čuvanja, a privatni ključ se čuva šifrovano.</p><button className="gam-primary" type="button" disabled={!configured||!credential||!/^\d+$/.test(connectNetwork)} onClick={()=>void connect()}>Proveri i poveži GAM</button>
       <details><summary>Šta treba da bude podešeno u GAM-u?</summary><p>Uključite API access i dodajte service account email kao korisnika sa pravom pregleda i kreiranja ad unita. Domain-wide delegacija nije deo ove prve verzije.</p></details>
     </article><article className="gam-card"><span className="gam-step">POVEZANE MREŽE</span><h3>Vaše GAM konekcije</h3>{connections.length?connections.map(c=><div className="gam-network" key={c.networkCode}><strong>{c.name}</strong><code>{c.networkCode}</code><small>{c.email}</small><button type="button" onClick={()=>{setNetwork(c.networkCode);setTab('units');}}>Koristi ovu mrežu</button></div>):<p>Još nema sačuvanih konekcija.</p>}</article></div>}
     {tab==='units'&&<>

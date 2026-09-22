@@ -24,6 +24,9 @@ try:
         page.on('request',lambda r:requests.append({'method':r.method,'url':r.url}))
         page.goto('http://127.0.0.1:4178/api-integrations')
         page.get_by_text('Povezano · 123456',exact=True).wait_for()
+        assert page.locator('.gam-tabs button').first.inner_text()=='GAM povezivanje'
+        assert page.get_by_role('button',name='GAM povezivanje',exact=True).get_attribute('aria-current')=='page'
+        page.get_by_role('button',name='Ad uniti',exact=True).click()
         assert page.locator('.gam-total').inner_text().startswith('26')
         assert all(r['method']=='GET' for r in requests)
         assert not page.get_by_role('button',name='Proveri u GAM-u',exact=True).is_enabled()
@@ -60,13 +63,26 @@ try:
         page.screenshot(path=str(out/'connection.png'),full_page=True)
         page.route('**/test-api/integrations/gam/status',lambda r:r.fulfill(json={'configured':False,'connections':[]}))
         page.reload()
-        page.get_by_role('button',name='GAM povezivanje',exact=True).click()
         page.get_by_text('Povezivanje još nije aktivirano',exact=False).wait_for()
+        assert page.get_by_role('button',name='GAM povezivanje',exact=True).get_attribute('aria-current')=='page'
+        upload=page.get_by_label('Service account JSON',exact=True)
+        assert upload.is_enabled()
+        before=len([r for r in requests if r['method']=='POST'])
+        upload.set_input_files({'name':'key.json','mimeType':'application/json','buffer':b'{"type":"service_account","client_email":"fixture@fixture.iam.gserviceaccount.com","private_key":"synthetic-key"}'})
+        page.get_by_label('Network code',exact=True).fill('123456')
+        assert upload.evaluate('(input) => input.files[0].name')=='key.json'
+        assert len([r for r in requests if r['method']=='POST'])==before
         assert not page.get_by_role('button',name='Proveri i poveži GAM',exact=True).is_enabled()
+        page.unroute('**/test-api/integrations/gam/status')
+        page.get_by_role('button',name='Proveri podešavanje',exact=True).click()
+        page.get_by_text('Povezano · 123456',exact=True).wait_for()
+        assert upload.evaluate('(input) => input.files[0].name')=='key.json'
+        assert page.get_by_role('button',name='Proveri i poveži GAM',exact=True).is_enabled()
+        assert len([r for r in requests if r['method']=='POST'])==before
         assert not errors,errors
         assert not external,external
         browser.close()
         (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'externalRequests':external,'requests':requests},indent=2))
-        print('PASS desktop/mobile, presets, saved templates, explicit review/create, paths/history and unconfigured state')
+        print('PASS desktop/mobile, presets, saved templates, explicit review/create, paths/history, connection-first navigation, local JSON selection and setup recheck')
 finally:
     if process:process.terminate();process.wait(timeout=10)
