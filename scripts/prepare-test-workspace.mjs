@@ -53,3 +53,5 @@ execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-creative-templa
 
 execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-inventory-preview.mjs', import.meta.url))], { stdio: 'inherit' });
 execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-layout-preview.mjs', import.meta.url))], { stdio: 'inherit' });
+
+execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-agency-workspace.mjs', import.meta.url))], { stdio: 'inherit' });

@@ -1,5 +1,6 @@
 import {inventoryImportResponse} from './inventory-imports.mjs';
 import {creativeTemplatesResponse} from './creative-templates.mjs';
+import {agenciesResponse} from './agencies.mjs';
 import { layoutPreviewResponse } from './layout-preview.mjs';
 import {testIntegrationsResponse} from './api-integrations.mjs';
 import { prebidPage, prebidScript } from './prebid-page.mjs';
@@ -90,6 +91,8 @@ async function route(request,env) {
   if(inventoryImport)return inventoryImport;
   const creativeTemplates=await creativeTemplatesResponse(request,env,actor,headers);
   if(creativeTemplates)return creativeTemplates;
+  const agencies = await agenciesResponse(request,env,actor,headers);
+  if (agencies) return agencies;
   const layoutPreview = layoutPreviewResponse(request, headers);
   if (layoutPreview) return layoutPreview;
   const integrations=await testIntegrationsResponse(request,env,actor,headers);

@@ -1,3 +1,4 @@
+import { organizationResponse } from './organization/service.mjs';
 import { gamResponse } from './integrations/gam-service.mjs';
 import { blockStoredDraftCdn } from './runtime/stored-draft-safety.mjs';
 import baseApp from './app-ads-txt-managed-file';
@@ -21,6 +22,10 @@ export default {
     const draftBlock = blockStoredDraftCdn(request);
     if (draftBlock) return draftBlock;
     const url = new URL(request.url);
+    if (url.pathname === '/api/organization' || url.pathname.startsWith('/api/organization/')) {
+      const actor = await getAuthenticatedUser(request, env);
+      return organizationResponse(request, env, actor?.email);
+    }
     if (url.pathname.startsWith('/api/integrations/gam/')) {
       const actor = await getAuthenticatedUser(request, env);
       if (!actor) return new Response(JSON.stringify({error:'Authentication required.'}), {status:401,headers:{'content-type':'application/json','cache-control':'no-store'}});
