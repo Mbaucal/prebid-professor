@@ -2,7 +2,7 @@ import { parseSizes } from '../../shared/gam/plan.mjs';
 export class MemoryBucket {
   data=new Map();
   async get(key){const v=this.data.get(key);return v?{etag:v.etag,json:async()=>JSON.parse(v.body)}:null;}
-  async put(key,body,options={}){if(options.onlyIf?.etagDoesNotMatch==='*'&&this.data.has(key))return null;const etag=crypto.randomUUID();this.data.set(key,{body,etag});return {etag};}
+  async put(key,body,options={}){if(options.onlyIf?.etagMatches&&this.data.get(key)?.etag!==options.onlyIf.etagMatches)return null;if(options.onlyIf?.etagDoesNotMatch==='*'&&this.data.has(key))return null;const etag=crypto.randomUUID();this.data.set(key,{body,etag});return {etag};}
   async list({prefix='',limit=1000}={}){return {objects:[...this.data.keys()].filter(k=>k.startsWith(prefix)).sort().slice(0,limit).map(key=>({key})),truncated:false};}
 }
 export function fixture(){

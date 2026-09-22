@@ -66,7 +66,7 @@ export class GamClient {
     const body = `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Header><RequestHeader xmlns="${ns}"><networkCode>${this.networkCode}</networkCode><applicationName>Tessera API Integrations</applicationName></RequestHeader></soap:Header><soap:Body><${operation} xmlns="${ns}">${content}</${operation}></soap:Body></soap:Envelope>`;
     let response;
     try { response = await this.fetcher(`https://ads.google.com/apis/ads/publisher/${API_VERSION}/${service}`,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(25000),headers:{authorization:`Bearer ${this.token}`,'content-type':'text/xml; charset=utf-8',SOAPAction:''},body}); }
-    catch { throw new GamError(operation==='createAdUnits'?'Ishod GAM upisa nije poznat. Ponovite proveru postojećih ad unita pre nastavka.':'GAM trenutno nije dostupan. Pokušajte ponovo.',502); }
+    catch { throw new GamError(operation.startsWith('create')?'Ishod GAM upisa nije poznat. Ponovite proveru postojećih entiteta pre nastavka.':'GAM trenutno nije dostupan. Pokušajte ponovo.',502); }
     if (redirected(response)) throw new GamError('GAM je vratio neočekivano preusmerenje. Zahtev nije prosleđen.',502);
     const result = parseResponse(await response.text(),operation);
     if (!response.ok) throw new GamError('GAM zahtev nije uspeo. Ponovite proveru pre nastavka.',502);
