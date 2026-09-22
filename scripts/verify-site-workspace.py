@@ -23,14 +23,15 @@ try:
     page.goto('https://tessera.fixture.invalid/')
     page.get_by_role('link',name='Generate and releases',exact=True).click()
     assert page.url=='https://tessera.fixture.invalid/site-workspace#packages'
-    page.get_by_role('button',name='Choose ads.js version',exact=True).wait_for()
+    page.get_by_role('heading',name='Script setup',exact=True).wait_for()
     assert page.get_by_role('button',name='Generate and save package',exact=True).is_disabled()
     assert all(r['method']=='GET' for r in requests)
-    page.get_by_role('button',name='Choose ads.js version',exact=True).click()
-    page.get_by_label('Script version',exact=True).select_option(label='3.10.0')
-    page.get_by_role('checkbox',name='Use this script version').check()
-    page.get_by_role('button',name='Save script version',exact=True).click()
-    page.get_by_role('status').filter(has_text='Script version saved').wait_for()
+    page.get_by_role('radio',name='GAM / AdX only',exact=False).check()
+    assert page.get_by_role('combobox',name='Script version',exact=True).count()==0
+    page.screenshot(path=str(out/'desktop-script-setup.png'),full_page=True)
+    page.get_by_role('button',name='Save script setup',exact=True).click()
+    page.get_by_role('button',name='Generate and save package',exact=True).wait_for(state='visible')
+    page.get_by_role('button',name='Change script setup',exact=True).wait_for()
     page.get_by_role('button',name='Ad positions',exact=True).click()
     page.get_by_role('button',name='Configure Billboard',exact=True).click()
     page.get_by_label('Display',exact=True).select_option('takeover')
@@ -45,12 +46,10 @@ try:
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
     page.screenshot(path=str(out/'mobile-position.png'),full_page=True)
     page.get_by_role('button',name='Cancel',exact=True).click()
-    page.get_by_role('button',name='Script versions',exact=True).click()
-    page.get_by_role('button',name='Download candidate ZIP',exact=True).wait_for()
-    with page.expect_download() as download:
-        page.get_by_role('button',name='Download candidate ZIP',exact=True).click()
-    assert download.value.suggested_filename=='test-site-candidate.zip'
-    page.get_by_role('status').filter(has_text='Candidate downloaded').wait_for()
+    page.get_by_role('button',name='Script setup',exact=True).click()
+    page.get_by_role('button',name='Continue to Generate',exact=True).wait_for()
+    page.get_by_role('button',name='Change version',exact=True).click()
+    assert page.get_by_label('Script version',exact=True).locator('option:checked').inner_text()=='3.10.0'
     page.screenshot(path=str(out/'mobile-versions.png'),full_page=True)
     page.get_by_role('button',name='Generate and releases',exact=True).click()
     page.get_by_label('What changed?',exact=True).fill('Browser package check')

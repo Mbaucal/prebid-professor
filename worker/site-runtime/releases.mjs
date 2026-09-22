@@ -30,7 +30,7 @@ export async function packageState(env,site,{testOnly=false}={}){
      (a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id))) AS was_production
    FROM releases r WHERE r.publisher_id=? AND r.id NOT LIKE 'builtin-%' AND r.version NOT LIKE 'builtin-%'
    ORDER BY CASE WHEN r.status='production' OR EXISTS(SELECT 1 FROM audit_log a WHERE a.publisher_id=r.publisher_id AND a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id) THEN 0 ELSE 1 END,was_production DESC,r.created_at DESC,r.id DESC LIMIT 50`).bind(site).all();
- return {site:saved.site,revision,ready:!error,error,nextStep:cacheBlocked?'demand':error?setup.nextStep:null,runtime:selected?.pin??null,testOnly,releases:rows.results.map(payload),earlierReleases:earlier.results.map(r=>({...payload(r),canRestore:r.status==='archived'&&Boolean(r.was_production)}))};
+ return {site:saved.site,enablePrebid:JSON.parse(saved.config.config_json).enablePrebid===true,revision,ready:!error,error,nextStep:cacheBlocked?'demand':error?setup.nextStep:null,runtime:selected?.pin??null,testOnly,releases:rows.results.map(payload),earlierReleases:earlier.results.map(r=>({...payload(r),canRestore:r.status==='archived'&&Boolean(r.was_production)}))};
 }
 async function build(env,site,revision,stamp){
  const saved=await snapshot(env,site);check(await digest(saved)===revision,'Settings changed. Reload before generating.');

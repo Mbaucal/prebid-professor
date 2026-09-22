@@ -285,14 +285,14 @@ export default function GeneratorProfilesPanel({ publisherId }: Props) {
       <section className="generator-profiles-page">
         <div className="config-toolbar generator-profile-toolbar">
           <div>
-            <span className="panel-kicker">Immutable runtime source selection</span>
-            <h2>Generator profiles</h2>
+            <span className="panel-kicker">Imported script templates</span>
+            <h2>Imported templates</h2>
             <p>
               Keep the current production ads.js logic frozen. New behavior is created as a derived profile,
               so an older release can always be reproduced with the exact same runtime source.
             </p>
           </div>
-          <button className="button primary" onClick={openUpload} type="button">＋ Import frozen profile</button>
+          <button className="button primary" onClick={openUpload} type="button">＋ Import template</button>
         </div>
 
         {error ? <div className="form-error config-error">{error}</div> : null}
@@ -301,11 +301,11 @@ export default function GeneratorProfilesPanel({ publisherId }: Props) {
         <article className="active-generator-card">
           <div>
             <span className="panel-kicker">Selected for this site</span>
-            <h3>{selectedProfile?.name ?? 'No generator profile selected'}</h3>
+            <h3>{selectedProfile?.name ?? 'No imported template selected'}</h3>
             <p>
               {selectedProfile
                 ? `${selectedProfile.id} · ${selectedProfile.engine}`
-                : 'A release cannot be generated until a frozen profile is selected.'}
+                : 'Use Script setup to generate with the built-in script. An imported template is optional.'}
             </p>
           </div>
           {selectedProfile ? (
@@ -324,7 +324,7 @@ export default function GeneratorProfilesPanel({ publisherId }: Props) {
                 <div className="generator-profile-heading">
                   <div>
                     <span className={advanced ? 'profile-engine advanced' : 'profile-engine frozen'}>
-                      {advanced ? 'Advanced engine' : 'Frozen engine'}
+                      {advanced ? 'Advanced engine' : 'Imported template'}
                     </span>
                     <h3>{profile.name}</h3>
                     <code>{profile.id}</code>
