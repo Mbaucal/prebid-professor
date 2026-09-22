@@ -1,3 +1,11 @@
+## 2026-09-22 — Agency overview appearance (MBA-90)
+
+The Agency label and name now stack vertically beside a padded logo surface.
+The filter has its own label and space; narrow layouts stack it below the
+identity. Dashboard and TEST use the same AgencyOverview component so their
+reviewed presentation matches. This is a visual follow-up to MBA-65, with no
+storage, assignment or runtime changes. TEST review precedes production.
+
 ## 2026-09-22 — Bounded dashboard layout (MBA-89)
 
 The dashboard now shares an AppFrame with the authenticated TEST `/layout-preview`.
