@@ -18,11 +18,11 @@ if(setupMode){
  harness=await build({stdin:{contents:`
   import {createRoot} from 'react-dom/client';import {useState} from 'react';
   import ReleasesPanel from './src/components/ReleasesPanel';
-  import SiteRuntimePanel from './src/components/SiteRuntimePanel';
+  import ScriptSetupPanel from './src/components/ScriptSetupPanel';
   function Fixture(){const [view,setView]=useState('packages');return <main>
-   <button onClick={()=>setView('versions')}>Script versions</button>
+   <button onClick={()=>setView('versions')}>Script setup</button>
    {view==='packages'?<ReleasesPanel publisherId="test-site" siteName="Fixture" onNavigate={setView}/>
-   :view==='versions'?<SiteRuntimePanel publisherId="test-site" view="versions" onOpenPrebid={()=>setView('prebid')}/>
+   :view==='versions'?<ScriptSetupPanel publisherId="test-site" onOpenPrebid={()=>setView('prebid')}/>
    :<h2>Prebid.js destination</h2>}</main>}
   createRoot(document.getElementById('root')).render(<Fixture/>);`,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,outdir:'.generated/release-setup',jsx:'automatic',format:'iife',minify:true,define:{'process.env.NODE_ENV':'"production"'}});
 }

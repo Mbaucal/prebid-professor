@@ -48,6 +48,35 @@ test('concurrent position save prevents ad-unit mutation and its audit atomicall
 test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function setup(options){const f=workspaceStore(options);fixtures.push(f);const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);const cookie=login.headers.get('set-cookie').split(';')[0];const r=await worker.fetch(new Request(ORIGIN+'/test-api/setup',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({confirm:'prepare-empty-test-database'})}),f.env);assert.equal(r.status,200);return {f,cookie};}
 async function select(f,siteId='test-site'){const s=await siteRuntimeSettings(f.env,siteId);await changeSiteRuntime(f.env,siteId,TEST_EMAIL,{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});return siteRuntimeSettings(f.env,siteId);}
+test('one explicit setup saves GAM-only mode and a built-in version without a template or Prebid file',async()=>{
+ const {f}=await setup();
+ const original=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ original.enablePrebid=true;original.generatorProfileId='novi';original.keepCustomSettings={value:'preserve'};
+ f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(original));
+ f.sqlite.exec("INSERT INTO bidders(id,publisher_id,bidder,params_json) VALUES('bidder','test-site','adform','{\"mid\":123}')");
+ f.sqlite.exec("INSERT INTO prebid_builds(id,publisher_id,version,file_key,status) VALUES('old','test-site','11.11.0','unavailable-prebid.js','current')");
+ const inventory=()=>JSON.stringify(['ad_units','size_maps','bidders','prebid_builds','releases'].map(table=>f.sqlite.prepare(`SELECT * FROM ${table} ORDER BY id`).all()));
+ const before=inventory();const s=await siteRuntimeSettings(f.env,'test-site');
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true,enablePrebid:false});
+ const after=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ assert.deepEqual({...after,enablePrebid:true,builtinRuntimeSelection:undefined},{...original,builtinRuntimeSelection:undefined});
+ assert.equal(after.builtinRuntimeSelection.prebid,null);assert.equal(inventory(),before);
+ const state=await siteRuntimeSettings(f.env,'test-site');assert.equal(state.releaseWorkflow,'builtin');assert.equal(state.enablePrebid,false);
+ const zip=unzipSync(new Uint8Array(await(await siteRuntimeBundle(f.env,'test-site',{action:'bundle',revision:state.revision,acknowledge:true})).arrayBuffer()));
+ assert.equal(zip['prebid.js'],undefined);assert.doesNotMatch(new TextDecoder().decode(zip['implementation.html']),/prebid\.js/);
+ assert.equal(JSON.parse(new TextDecoder().decode(zip['config.json'])).prebidBuild,null);
+ assert.equal(f.log.gets.length,0,'GAM-only setup and generation never fetch saved Prebid artifacts');
+ assert.equal(inventory(),before);
+ await assert.rejects(changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true,enablePrebid:true}),e=>e.status===409);
+});
+test('setup keeps the exact selected version and rejects enabling Prebid without a build',async()=>{
+ const {f}=await setup();let s=await siteRuntimeSettings(f.env,'test-site');
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:s.revision,runtime:s.runtimes[1].pin,allowPreview:true,enablePrebid:false});
+ s=await siteRuntimeSettings(f.env,'test-site');const before=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ await assert.rejects(changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:s.revision,runtime:s.selected,allowPreview:true,enablePrebid:true}),/No current Prebid file/);
+ assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
+ assert.equal((await siteRuntimeSettings(f.env,'test-site')).selected.runtimeSha256,s.runtimes[1].pin.runtimeSha256);
+});
 test('unconfigured site uses the built-in workflow and gives one actionable missing-Prebid step without writing',async()=>{
  const {f}=await setup();
  const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
@@ -164,4 +193,11 @@ test('Prebid demand is rejected when the site has Prebid disabled',async()=>{
  const {f}=await setup();const s=await select(f);
  await assert.rejects(changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:s.revision,position:{code:'Billboard',display:'takeover',overlay:{demand:'site',desktopMinWidth:1024,desktopSeconds:10,mobileSeconds:5,countdown:true,frequencyMinutes:15},lazy:null}}),/Enable Prebid for this site/);
  assert.equal((await siteRuntimeSettings(f.env,'test-site')).positions.find(p=>p.code==='Billboard').display,'standard');
+});
+
+test('simple setup gives an actionable missing-inventory error without saving partial choices',async()=>{
+ const {f}=await setup();f.sqlite.exec('DELETE FROM ad_units');
+ const s=await siteRuntimeSettings(f.env,'test-site');const before=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ await assert.rejects(changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true,enablePrebid:false}),/Add at least one enabled ad unit/);
+ assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
 });

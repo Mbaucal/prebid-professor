@@ -124,7 +124,7 @@ export default function App() {
   const [activePublisherId, setActivePublisherId] = useState<string | null>(null);
   const [activeSiteId, setActiveSiteId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<PublisherTab>('Overview');
-  const [configEntry, setConfigEntry] = useState<'ad-units' | 'generator-profiles'>('ad-units');
+  const [configEntry, setConfigEntry] = useState<'ad-units' | 'generator-profiles'>('generator-profiles');
   const [modal, setModal] = useState<ModalMode>(null);
   const [publisherForm, setPublisherForm] = useState<PublisherForm>(emptyPublisherForm);
   const [siteForm, setSiteForm] = useState<SiteForm>(emptySiteForm);
@@ -582,7 +582,7 @@ export default function App() {
         <WorkspaceContent pageKey={`${activeSection}:${site?.id ?? publisher?.id}:${activeTab}`}>
         {activeTab === 'Overview' ? renderOverview() : null}
         {activeTab === 'Config' && site ? (
-          <ConfigPanel onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
+          <ConfigPanel onGenerate={() => setActiveTab('Releases')} onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
         ) : null}
         {activeTab === 'Prebid.js' && site ? (
           <PrebidBuildsPanel publisherId={site.id} siteName={site.name} />
