@@ -1,5 +1,5 @@
 """Reported missing-Prebid state, actual main React components + real services."""
-import base64,json,subprocess
+import base64,json,subprocess,zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright
@@ -13,7 +13,7 @@ def route(request):
     body={'path':url.path,'method':request.request.method,'body':request.request.post_data}
     process.stdin.write(json.dumps(body)+'\n');process.stdin.flush()
     result=json.loads(process.stdout.readline());assert 'error' not in result,result
-    requests.append(body);assert result['status']==200,result
+    requests.append(body);assert result['status'] in (200,201),result
     request.fulfill(status=result['status'],headers=result['headers'],body=base64.b64decode(result['body']))
 try:
  assert json.loads(process.stdout.readline())['ready']
@@ -28,20 +28,37 @@ try:
     assert not any('/validate' in r['path'] for r in requests)
     page.get_by_role('button',name='Open Prebid.js',exact=True).click()
     page.get_by_role('heading',name='Prebid.js destination',exact=True).wait_for()
-    page.get_by_role('button',name='Script versions',exact=True).click()
-    page.get_by_label('Script version',exact=True).select_option(label='3.10.0')
-    page.get_by_role('checkbox',name='Use this script version').check()
-    assert page.get_by_role('button',name='Save script version',exact=True).is_disabled()
-    assert page.get_by_role('button',name='Download candidate ZIP',exact=True).is_disabled()
-    assert page.get_by_label('Script version',exact=True).locator('option',has_text='preview').count()==0
-    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
-    page.screenshot(path=str(out/'missing-prebid-versions.png'),full_page=True)
-    page.get_by_role('button',name='Open Prebid.js',exact=True).click()
-    page.get_by_role('heading',name='Prebid.js destination',exact=True).wait_for()
+    page.get_by_role('button',name='Script setup',exact=True).click()
+    page.get_by_role('radio',name='GAM + Prebid',exact=False).wait_for()
+    assert page.get_by_role('button',name='Save script setup',exact=True).is_disabled()
+    page.get_by_role('radio',name='GAM / AdX only',exact=False).check()
+    assert page.get_by_role('button',name='Save script setup',exact=True).is_enabled()
+    assert page.get_by_role('button',name='Open Prebid.js',exact=True).count()==0
+    assert page.get_by_role('combobox',name='Script version',exact=True).count()==0
+    assert page.get_by_text('Frozen engine',exact=True).count()==0
     assert all(r['method']=='GET' for r in requests)
+    page.get_by_role('button',name='Save script setup',exact=True).click()
+    page.get_by_role('status').filter(has_text='Script setup saved').wait_for()
+    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+    page.screenshot(path=str(out/'simple-adx-mobile.png'),full_page=True)
+    # Return to the real Releases wrapper: setup persists, no profile or Prebid required.
+    page.goto('https://tessera.fixture.invalid/setup')
+    page.get_by_role('button',name='Change script setup',exact=True).wait_for()
+    page.get_by_role('button',name='Generate and save package',exact=True).click()
+    page.get_by_role('status').filter(has_text='Package saved in Releases').wait_for()
+    with page.expect_download() as download:
+        page.get_by_role('button',name='Download saved ZIP',exact=True).click()
+    path=out/'simple-adx.zip';download.value.save_as(path)
+    with zipfile.ZipFile(path) as package:
+        assert 'prebid.js' not in package.namelist()
+        assert 'prebid.js' not in package.read('implementation.html').decode()
+        config=json.loads(package.read('config.json'))
+        assert config['prebidBuild'] is None
+    page.set_viewport_size({'width':1280,'height':900})
+    page.screenshot(path=str(out/'simple-adx-desktop-releases.png'),full_page=True)
     assert not errors,errors
     browser.close()
     (out/'release-setup-result.json').write_text(json.dumps({'passed':True,'requests':requests,'errors':errors},indent=2))
-    print('PASS main Releases setup, Prebid navigation, short version labels and no writes')
+    print('PASS main Releases missing-Prebid recovery, one-save GAM-only setup, preserved choice and downloaded ZIP without Prebid')
 finally:
  process.stdin.close();process.wait(timeout=10)

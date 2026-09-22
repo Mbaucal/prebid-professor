@@ -5,6 +5,7 @@ import BidderBuildSelectionPanel from './BidderBuildSelectionPanel';
 import BiddersPanel from './BiddersPanel';
 import BulkImportPanel from './BulkImportPanel';
 import GeneratorProfilesPanel from './GeneratorProfilesPanel';
+import LegacyGeneratorProfilesPanel from './LegacyGeneratorProfilesPanel';
 import PrebidModePanel from './PrebidModePanel';
 import RuntimeControlsPanel from './RuntimeControlsPanel';
 import SizeMapsCompatPanel from './SizeMapsCompatPanel';
@@ -15,6 +16,7 @@ import UserIdModulesPanel from './UserIdModulesPanel';
 type Props = {
   publisherId: string;
   onOpenPrebid?: () => void;
+  onGenerate?: () => void;
   onChanged?: () => void | Promise<void>;
   initialSection?: ConfigSection;
 };
@@ -30,12 +32,14 @@ type ConfigSection =
   | 'supply-consent'
   | 'user-id'
   | 'generator-profiles'
+  | 'legacy-profiles'
   | 'imports';
 
 const CONFIG_GROUPS: Array<{
   label: string;
   sections: Array<{ id: ConfigSection; label: string }>;
 }> = [
+  { label: 'Script', sections: [{ id: 'generator-profiles', label: 'Script setup' }] },
   { label: 'Inventory', sections: [
     { id: 'ad-units', label: 'Ad units' },
     { id: 'size-maps', label: 'Size maps' },
@@ -49,15 +53,15 @@ const CONFIG_GROUPS: Array<{
   { label: 'Delivery', sections: [
     { id: 'advanced-rules', label: 'Refresh' },
     { id: 'runtime-controls', label: 'Sticky & floors' },
-    { id: 'generator-profiles', label: 'ads.js versions' },
   ] },
   { label: 'Advanced', sections: [
     { id: 'unit-rules', label: 'Unit rules' },
     { id: 'imports', label: 'CSV import' },
+    { id: 'legacy-profiles', label: 'Imported templates' },
   ] },
 ];
 
-export default function ConfigPanel({ publisherId, onChanged, onOpenPrebid, initialSection = 'ad-units' }: Props) {
+export default function ConfigPanel({ publisherId, onChanged, onOpenPrebid, onGenerate, initialSection = 'generator-profiles' }: Props) {
   const [section, setSection] = useState<ConfigSection>(initialSection);
   const group = CONFIG_GROUPS.find((item) => item.sections.some((child) => child.id === section))!;
 
@@ -95,7 +99,8 @@ export default function ConfigPanel({ publisherId, onChanged, onOpenPrebid, init
       {section === 'runtime-controls' ? <RuntimeControlsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'supply-consent' ? <SupplyChainConsentPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'user-id' ? <UserIdModulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
-      {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} onOpenPrebid={onOpenPrebid} /> : null}
+      {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} onOpenPrebid={onOpenPrebid} onChanged={onChanged} onContinue={onGenerate} /> : null}
+      {section === 'legacy-profiles' ? <LegacyGeneratorProfilesPanel key={publisherId} publisherId={publisherId} /> : null}
       {section === 'imports' ? (
         <>
           <div className="size-map-import-compat-note">
