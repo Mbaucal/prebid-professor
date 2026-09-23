@@ -141,14 +141,14 @@ with sync_playwright() as p:
             r.fulfill(status=200,headers=headers,body=(out/'page.html').read_text())
         elif r.request.url=='https://securepubads.g.doubleclick.net/tag/js/gpt.js':
             if scenario=='blocked': r.abort('blockedbyclient')
-            elif scenario=='stalled': r.fulfill(status=200,headers={'content-type':'application/javascript','access-control-allow-origin':'*'},body='window.__gptFileLoaded=true;')
+            elif scenario=='stalled': r.fulfill(status=200,headers={'content-type':'application/javascript','access-control-allow-origin':'*'},body="document.documentElement.setAttribute('data-gpt-fixture-loaded','true');")
             else: r.fulfill(status=200,headers={'content-type':'application/javascript','access-control-allow-origin':'*'},body=gpt)
         else: raise AssertionError('Unexpected request: '+r.request.url)
     page.route('**/*',fault_route)
     page.goto('https://tessera.fixture.invalid/test-page')
     page.get_by_role('button',name='Start test',exact=True).click()
     if scenario=='stalled':
-        page.wait_for_function('window.__gptFileLoaded===true')
+        expect(page.locator('html')).to_have_attribute('data-gpt-fixture-loaded','true')
         page.clock.fast_forward(21000)
     if scenario in ('blocked','stalled'):
         expect(page.locator('[data-asset="gpt"]')).to_have_text('gpt: failed')
