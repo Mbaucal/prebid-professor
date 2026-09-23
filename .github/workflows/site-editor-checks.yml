@@ -26,6 +26,8 @@ jobs:
       - run: node --experimental-strip-types scripts/prepare-site-ab-baseline.mjs
       - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/site-draft.test.mjs tests/runtime/test-site-editor-http.test.mjs tests/runtime/ad-position-runtime.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/site-duplication.test.mjs tests/runtime/site-package-flow.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/size-map-csv-template.test.mjs tests/runtime/site-test-page.test.mjs
       - run: npm run build
+      - name: Verify anonymous login branding and protected asset boundary
+        run: node scripts/verify-login-logo.mjs
       - run: node scripts/verify-site-duplication-workerd.mjs
       - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/loading-summary.test.mjs
       - name: Compile TEST only; no deployment

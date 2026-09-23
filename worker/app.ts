@@ -168,6 +168,11 @@ export default {
       return handleLogout(verifiedRequest);
     }
 
+    // The sign-in page and favicon need this exact public asset before a session exists.
+    if (pathname === '/tessera-logo.png' && (request.method === 'GET' || request.method === 'HEAD')) {
+      return env.ASSETS.fetch(request);
+    }
+
     const user = await getAuthenticatedUser(request, env);
     if (!user) {
       if (pathname.startsWith('/api/')) return apiError('Authentication required.', 401);
