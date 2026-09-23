@@ -50,7 +50,7 @@ jobs:
       - name: Verify read-only ads version UI routes
         run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
       - name: Verify current-auction reporting and GAM-only omission
-        run: node --experimental-strip-types --test tests/runtime/gam-reporting.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/gam-reporting.test.mjs tests/runtime/demand-signals.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/test-prebid-plan.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:
@@ -80,6 +80,10 @@ jobs:
           python scripts/verify-gam-reporting.py
       - name: Tanjug pilot preview and exact package download with all external traffic blocked
         run: python scripts/verify-tanjug-pilot.py
+      - name: Verify Send All Bids and stable GPID with native Prebid core and synthetic adapters
+        run: |
+          node --experimental-strip-types scripts/prepare-demand-browser-fixtures.mjs
+          python scripts/verify-demand-signals.py
       - name: New TEST deployment setup and version history (synthetic jobs only)
         run: python scripts/verify-deployment-ui.py
       - name: Keep only synthetic report and screenshots, never sessions or databases
@@ -95,5 +99,6 @@ jobs:
             .generated/delivery-evidence/*.json
             .generated/delivery-evidence/*.png
             .generated/reporting-evidence/browser-results.json
+            .generated/demand-evidence/browser-results.json
           if-no-files-found: ignore
           retention-days: 14

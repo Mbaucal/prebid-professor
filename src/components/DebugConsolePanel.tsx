@@ -1,3 +1,4 @@
+import { demandInspectCommand } from '../debug/demand-inspect.mjs';
 import { experimentInspectCommand } from '../debug/experiment-inspect.mjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
@@ -834,6 +835,11 @@ function buildCommands(scope: DebugScope): DebugCommand[] {
       title: 'Winning and highest CPM bids',
       description: 'Compare winning bids with the highest CPM bids available for the selected scope.',
       code: winningBidsCommand(scope),
+    },
+    {
+      id: 'demand-signals', category: 'Prebid', title: 'GPID and bidder targeting',
+      description: 'Inspect Send All Bids and latest GPID metadata per bidder and position.',
+      code: demandInspectCommand, scope:'page',
     },
     {
       id: 'prebid-config',

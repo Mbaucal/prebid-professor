@@ -6,7 +6,9 @@
  */
 import { validateRuntimeDescriptor, pinRuntime, assertPinnedRuntime } from './version-pin.mjs';
 import { previewInput, digest } from './preview-snapshot.mjs';
-import { prebidRequirements, inspectPrebidArtifact, prebidFailureMessage } from './prebid-artifact-check.mjs';
+import { prebidRequirements } from '../runtime-demand-v1/requirements.mjs';
+import { inspectPrebidArtifact } from './prebid-artifact-check.mjs';
+import { prebidFailureMessage } from '../runtime-demand-v1/requirements.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const SITE = /^[a-z0-9][a-z0-9-]{0,97}$/;

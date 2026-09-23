@@ -3,7 +3,7 @@ import { descriptorForPin, previewInput } from './runtime-catalog.mjs';
 import { fields, params, normalizePrebidDraft } from './prebid-draft.mjs';
 import { WorkspaceError } from './boundary.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
-import { prebidRequirements, moduleReason } from '../runtime/prebid-artifact-check.mjs';
+import { prebidRequirements, moduleReason } from '../runtime-demand-v1/requirements.mjs';
 
 export const USER_IDS = Object.freeze([
   {name:'sharedId',label:'SharedID',module:'sharedIdSystem',settings:{storage:{type:'cookie',name:'_sharedid',expires:365}}},
@@ -86,6 +86,9 @@ export async function makePrebidPlan(snapshot,config,request) {
   forBuild.config.config_json=JSON.stringify(buildConfig);
   const requirements=prebidRequirements(previewInput(forBuild,descriptorForPin(config.builtinRuntimeSelection.runtime),'20000101_000000'),buildConfig);
   if(requirements.issues.length)fail('An enabled bidder or User ID has no verified module mapping. Existing settings were retained.');
+  // Include GPID support in newly requested builds, so upgrading an older
+  // script does not require changing the saved runtime before building.
+  requirements.modules=[...new Set([...requirements.modules,'gptPreAuction'])].sort();
   const configuration={version:request.version,modules:requirements.modules};
   const hash=await digest({version:request.version,options,draft:{...draft,buildId:null}});
   return {...applied,draft,version:request.version,options,configuration,hash,
