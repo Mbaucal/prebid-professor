@@ -17,11 +17,12 @@ hook=r'''
 window.__sent=[];window.__bidInput=[];
 const originalRefresh=__testAds.service.refresh;
 __testAds.service.refresh=function(slots,options){
- for(const slot of slots||[])__sent.push({id:slot.id,targeting:JSON.parse(JSON.stringify(slot.targeting))});
+ for(const slot of slots||[])__sent.push({id:slot.id,targeting:JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(slot.targeting).filter(([k,v])=>v!==null))))});
  return originalRefresh.call(this,slots,options);
 };
 googletag.apiReady=true;googletag.pubadsReady=true;
 window.pbjs={que:[function(){
+ pbjs.setConfig({debug:true});
  for(const [name,cpm] of [['pubmatic',1.5],['openx',1.1],['criteo',.7]])pbjs.registerBidAdapter(null,name,{
   code:name,supportedMediaTypes:['banner'],isBidRequestValid:()=>true,
   buildRequests(bids){
@@ -41,12 +42,15 @@ with sync_playwright() as p:
  browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox'])
  for name in ['prebid','gam']:
   for extension in ['.js','.min.js']:
-   page=browser.new_page(viewport={'width':1280,'height':900});errors=[];external=[]
+   page=browser.new_page(viewport={'width':1280,'height':900});errors=[];external=[];logs=[]
    page.on('pageerror',lambda e:errors.append(str(e)))
+   page.on('console',lambda m:logs.append(m.text))
    def route(r):
     if r.request.url.startswith('https://demand-fixture.invalid/bid'):
      bids=json.loads(parse_qs(urlsplit(r.request.url).query)['payload'][0])
      r.fulfill(status=200,headers={'Content-Type':'application/json','Access-Control-Allow-Origin':'*'},body=json.dumps({'bids':bids}))
+    elif r.request.url.startswith('https://cdn.jsdelivr.net/gh/prebid/currency-file@1/latest.json'):
+     r.fulfill(status=200,headers={'Content-Type':'application/json','Access-Control-Allow-Origin':'*'},body=json.dumps({'conversions':{'EUR':{'EUR':1,'USD':1},'USD':{'USD':1,'EUR':1}}}))
     else:external.append(r.request.url);r.abort()
    page.route('**/*',route)
    try:
@@ -54,6 +58,7 @@ with sync_playwright() as p:
     page.add_script_tag(content=mock);page.add_script_tag(content=hook)
     if name=='prebid':page.add_script_tag(content=prebid)
     page.add_script_tag(content=(out/(name+extension)).read_text())
+    if name=='prebid':page.evaluate('pbjs.setConfig({debug:true})')
     page.wait_for_function('__sent.some(r=>r.id==="Billboard")')
     page.wait_for_timeout(800)
     if page.locator('#adsx-takeover-close').is_visible():page.locator('#adsx-takeover-close').click()
@@ -93,6 +98,7 @@ with sync_playwright() as p:
     check(not errors,'Page errors: '+str(errors));check(not external,'External traffic: '+str(external))
     results.append({'case':name+extension,'passed':True});print('PASS '+name+extension,flush=True)
    except Exception as e:
+    print(json.dumps({'case':name+extension,'inputs':page.evaluate('window.__bidInput'),'sent':page.evaluate('window.__sent'),'logs':logs[-25:],'external':external}),flush=True)
     results.append({'case':name+extension,'passed':False,'error':str(e),'pageErrors':errors});print('FAIL '+name+extension+': '+str(e),flush=True)
    finally:page.close()
  browser.close()
