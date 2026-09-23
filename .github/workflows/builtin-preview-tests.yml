@@ -14,6 +14,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install locked build dependencies
+        run: npm ci --ignore-scripts
       - name: Verify bundled source and run preview tests
         run: npm run test:builtin
       - name: Verify read-only Prebid artifact inspection and integration
