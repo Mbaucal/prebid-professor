@@ -112,8 +112,9 @@ with sync_playwright() as p:
             page.clock.install(time=1790164800000);page.set_content(html)
             page.add_script_tag(content=mock);page.add_script_tag(content=hook)
             page.add_script_tag(content=compiled.read_text());page.clock.run_for(2500)
-            rows=page.evaluate('__sent');check(rows,'Compiled Worker script sent no ads')
+            page.wait_for_timeout(100)
             check(not errors and not external,'Compiled Worker errors/network: '+str(errors+external))
+            rows=page.evaluate('__sent');check(rows,'Compiled Worker script sent no ads')
             for row in rows:
                 check(row['targeting'].get('refresh_bucket')=='initial','Compiled helper failed: '+str(row))
                 check(row['targeting'].get('refresh_count')=='0','Compiled count failed')

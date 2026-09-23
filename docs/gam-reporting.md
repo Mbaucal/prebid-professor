@@ -28,6 +28,8 @@ existing visibility gate. It uses Tessera-owned slot objects only. Overlay DOM
 IDs are mapped to their actual Prebid unit codes. Existing `hb_*`, `Variant`,
 consent, eligibility, auction scheduling and refresh settings are preserved.
 Reporting errors must not block delivery. No analytics endpoint is introduced.
+Browser helper source is captured before Worker bundling, including the inherited
+position helpers, so bundler-injected function-name helpers cannot leak into ads.js.
 
 ## GAM setup
 
