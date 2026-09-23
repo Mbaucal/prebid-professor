@@ -84,6 +84,7 @@ try:
     expect(release_link).to_have_css('color','rgb(32, 42, 59)')
     release_link.hover()
     expect(release_link).to_have_css('text-decoration-line','none')
+    page.keyboard.press('Tab')
     release_link.focus()
     expect(release_link).to_have_css('outline-style','solid')
     page.set_viewport_size({'width':1280,'height':900})

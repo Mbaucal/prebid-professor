@@ -32,6 +32,7 @@ with sync_playwright() as p:
      assert page.locator('[data-metric="dom"]').inner_text()=='4 / 4'
      assert not external,'Scripts loaded without Start'
      expect(page.get_by_role('button',name='Start test',exact=True)).to_have_css('background-color','rgb(239, 114, 45)')
+     page.keyboard.press('Tab')
      page.get_by_role('button',name='Start test',exact=True).focus()
      expect(page.get_by_role('button',name='Start test',exact=True)).to_have_css('outline-style','solid')
      expect(page.get_by_role('region',name='Ad position results',exact=True)).to_have_attribute('tabindex','0')
