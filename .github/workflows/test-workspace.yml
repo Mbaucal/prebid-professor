@@ -50,7 +50,7 @@ jobs:
       - name: Verify read-only ads version UI routes
         run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
       - name: Verify current-auction reporting and GAM-only omission
-        run: node --experimental-strip-types --test tests/runtime/gam-reporting.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/gam-reporting.test.mjs tests/runtime/demand-signals.test.mjs tests/runtime/identity-inspect.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/test-prebid-plan.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:
@@ -80,6 +80,10 @@ jobs:
           python scripts/verify-gam-reporting.py
       - name: Tanjug pilot preview and exact package download with all external traffic blocked
         run: python scripts/verify-tanjug-pilot.py
+      - name: Verify Send All Bids and stable GPID with native Prebid core and synthetic adapters
+        run: |
+          node --experimental-strip-types scripts/prepare-demand-browser-fixtures.mjs
+          python scripts/verify-demand-signals.py
       - name: New TEST deployment setup and version history (synthetic jobs only)
         run: python scripts/verify-deployment-ui.py
       - name: Keep only synthetic report and screenshots, never sessions or databases
@@ -95,5 +99,54 @@ jobs:
             .generated/delivery-evidence/*.json
             .generated/delivery-evidence/*.png
             .generated/reporting-evidence/browser-results.json
+            .generated/demand-evidence/browser-results.json
+          if-no-files-found: ignore
+          retention-days: 14
+  adapter-wire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Checkout exact upstream Prebid 11.34.0 source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: prebid/Prebid.js
+          ref: 195e0c6069928ed906bde550cb4e4183d1dc8474
+          path: .generated/upstream-prebid
+          persist-credentials: false
+      - name: Build complete Prebid with GPT pre-auction, User ID and real SSP adapters
+        working-directory: .generated/upstream-prebid
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install gulp build --modules=gptPreAuction,consentManagementTcf,tcfControl,currency,userId,id5IdSystem,pubmaticBidAdapter,ixBidAdapter,rubiconBidAdapter
+      - name: Prepare actual Tessera scripts with and without synthetic identity
+        run: |
+          npm ci --ignore-scripts
+          node scripts/prepare-builtin-runtime.mjs
+          node --experimental-strip-types scripts/prepare-demand-browser-fixtures.mjs --wire
+          node --experimental-strip-types scripts/prepare-demand-browser-fixtures.mjs --wire --no-ids
+      - name: Install pinned browser tools
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Verify genuine serialized adapter requests without contacting any SSP
+        env:
+          PREBID_WIRE_BUILD: .generated/upstream-prebid/build/dist/prebid.js
+        run: python scripts/verify-demand-wire.py
+      - name: Keep only synthetic verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: demand-adapter-wire-evidence
+          path: .generated/demand-evidence/wire-results.json
           if-no-files-found: ignore
           retention-days: 14

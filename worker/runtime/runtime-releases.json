@@ -1,5 +1,35 @@
 [
   {
+    "id": "tessera-demand-v1",
+    "version": "3.15.0",
+    "codeSha256": "ef166b6da60a36e3e8817f6df4e2a961e34868382cdb0fae5e36751c545b6528",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "send-all-bids",
+      "stable-gpid"
+    ],
+    "date": "2026-09-23",
+    "title": "All bidder targeting and stable placement IDs",
+    "sourceManifest": "scripts/prepare-demand-runtime.mjs",
+    "sourceCommit": "f8a3991c4999eb4eb2f608543c16936539cdaea0",
+    "changes": [
+      "Sends all bidder offers to GAM with deal targeting, retaining standard winner keys.",
+      "Adds a stable GPID per saved position before every Prebid auction, including lazy, refresh and TakeOver.",
+      "Requires gptPreAuction in the Prebid build. New build plans include it automatically.",
+      "Shows GPID per position with an optional override and a read-only Debug command. GAM-only needs no Prebid or GPID.",
+      "Retains 3.13 reporting, previous runtime sources, saved selections and release packages."
+    ]
+  },
+  {
     "id": "tessera-reporting-v1",
     "version": "3.13.0",
     "codeSha256": "306489d96f842ef1f31cbbff6163786565799dcac2d70e976fe6c94422e4a5bd",

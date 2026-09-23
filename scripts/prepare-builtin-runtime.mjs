@@ -6,6 +6,7 @@ import { assertBuildTimestamp, sha256, REFERENCE_SHA256 } from './extract-refere
 import { runtimeReleaseHistory, assertRuntimeReleaseSource } from '../worker/runtime/runtime-release-history.mjs';
 
 import { prepareCreativeRuntime } from './prepare-creative-runtime.mjs';
+import { prepareDemandRuntime } from './prepare-demand-runtime.mjs';
 import { prepareNextRuntime } from './prepare-next-runtime.mjs';
 import { prepareReportingRuntime } from './prepare-reporting-runtime.mjs';
 import { prepareTestPageClient } from './prepare-test-page-client.mjs';
@@ -70,6 +71,7 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareNextRuntime(root);
   await prepareCreativeRuntime(root);
   await prepareReportingRuntime(root);
+  await prepareDemandRuntime(root);
   await prepareTestPageClient(root);
   return descriptor;
 }

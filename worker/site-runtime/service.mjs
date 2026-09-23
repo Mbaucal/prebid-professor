@@ -1,3 +1,4 @@
+import {normalizeGpid} from '../runtime-demand-v1/snapshot.mjs';
 /** Site-scoped built-in settings. The caller must authenticate and enforce its
  * environment/site boundary before entering. No templates, migrations or publish. */
 import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
@@ -66,6 +67,7 @@ export async function siteRuntimeSettings(env,siteId){
  const stickyId=Object.hasOwn(sticky??{},'bottomAdUnitId')?sticky.bottomAdUnitId:(saved.units.some(u=>u.code==='Sticky'&&u.enabled===1)?'Sticky':'');
  return {site:saved.site,revision:await digest(saved),selected:pin??null,validationIssue,enablePrebid:config.enablePrebid===true,...siteSetupState(saved),
   loadingSummary:loadingSummary(preview,saved.units,pin,validationIssue),
+  demandSignals:preview?.demandSignals??null,
   runtimes:runtimeCatalog.map(r=>({version:r.version,pin:pinRuntime(r,{allowPreview:true})})),history:describeRuntimeReleases(runtimeCatalog,pin),
   positions:saved.units.filter(u=>u.media_type==='banner'&&u.type!=='DRAFT').map(u=>({code:u.code,type:u.type,sizeMap:u.size_map_key,enabled:u.enabled===1,
    display:positions[u.code]?'takeover':stickyId===u.code?'sticky':'standard',overlay:positions[u.code]??null,
@@ -92,7 +94,7 @@ export async function changeSiteRuntime(env,siteId,actor,body){
   return commitSiteConfiguration(env,saved,plan.configJson,actor);
  }
  if(body.action!=='position')fail('Unknown settings action.');
- keys(body,['action','revision','position']);keys(body.position,['code','display','overlay','lazy']);
+ keys(body,['action','revision','position']);keys(body.position,['code','display','overlay','lazy',...(Object.hasOwn(body.position,'gpid')?['gpid']:[])]);
  const p=body.position,unit=saved.units.find(u=>u.code===p.code&&u.media_type==='banner'&&u.type!=='DRAFT');
  if(!unit)fail('Choose an existing banner ad unit for this site.');
  if(!['standard','sticky','takeover'].includes(p.display))fail('Choose a display format.');
@@ -109,6 +111,13 @@ export async function changeSiteRuntime(env,siteId,actor,body){
  const oldSticky=Object.hasOwn(config.runtimeControls.sticky,'bottomAdUnitId')?config.runtimeControls.sticky.bottomAdUnitId:(saved.units.some(u=>u.code==='Sticky'&&u.enabled===1)?'Sticky':'');
  if(p.display==='sticky'){if(!unit.enabled)fail('Enable this ad unit before selecting bottom Sticky.');config.runtimeControls.sticky.bottomAdUnitId=p.code;}
  else if(oldSticky===p.code)config.runtimeControls.sticky.bottomAdUnitId='';
+ if(Object.hasOwn(p,'gpid')){
+  if(!descriptor.capabilities.includes('stable-gpid')||!config.enablePrebid)fail('GPID requires Prebid and script version 3.15.0.');
+  const value=normalizeGpid(p.gpid);
+  config.runtimeControls.demandSignals??={};config.runtimeControls.demandSignals.gpidOverrides??={};
+  if(value)config.runtimeControls.demandSignals.gpidOverrides[p.code]=value;
+  else delete config.runtimeControls.demandSignals.gpidOverrides[p.code];
+ }
  config.runtimeControls.adPositions=positions;
  config.advancedUnitRules??={};config.advancedUnitRules[p.code]??={};
  config.advancedUnitRules[p.code].lazy=normalizeLazy(p.lazy);
