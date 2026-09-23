@@ -12,7 +12,7 @@ mock=(root/'tests/runtime/mock-ad-libraries.js').read_text()
 a=mock.index('  window.pbjs = {');b=mock.index('  window.__tcfapi =',a)
 mock=mock[:a]+mock[b:]
 prebid=(root/'vendor/prebid/tanjug-11.34.0/prebid.js').read_text()
-html='<!doctype html><body><div id="Billboard" class="wrapperAd" style="height:250px"></div><div style="height:2400px"></div><div id="P1" class="wrapperAd" style="height:250px"></div><div id="Overlay" class="wrapperAd"></div></body>'
+html='<!doctype html><link rel="icon" href="data:,"><body><div id="Billboard" class="wrapperAd" style="height:250px"></div><div style="height:2400px"></div><div id="P1" class="wrapperAd" style="height:250px"></div><div id="Overlay" class="wrapperAd"></div></body>'
 hook=r'''
 window.__sent=[];window.__bidInput=[];
 const originalRefresh=__testAds.service.refresh;
@@ -22,7 +22,6 @@ __testAds.service.refresh=function(slots,options){
 };
 googletag.apiReady=true;googletag.pubadsReady=true;
 window.pbjs={que:[function(){
- pbjs.setConfig({debug:true});
  for(const [name,cpm] of [['pubmatic',1.5],['openx',1.1],['criteo',.7]])pbjs.registerBidAdapter(null,name,{
   code:name,supportedMediaTypes:['banner'],isBidRequestValid:()=>true,
   buildRequests(bids){
@@ -46,7 +45,9 @@ with sync_playwright() as p:
    page.on('pageerror',lambda e:errors.append(str(e)))
    page.on('console',lambda m:logs.append(m.text))
    def route(r):
-    if r.request.url.startswith('https://demand-fixture.invalid/bid'):
+    if r.request.url=='https://demand-fixture.invalid/fixture':
+     r.fulfill(status=200,content_type='text/html',body=html)
+    elif r.request.url.startswith('https://demand-fixture.invalid/bid'):
      bids=json.loads(parse_qs(urlsplit(r.request.url).query)['payload'][0])
      r.fulfill(status=200,headers={'Content-Type':'application/json','Access-Control-Allow-Origin':'*'},body=json.dumps({'bids':bids}))
     elif r.request.url.startswith('https://cdn.jsdelivr.net/gh/prebid/currency-file@1/latest.json'):
@@ -54,11 +55,10 @@ with sync_playwright() as p:
     else:external.append(r.request.url);r.abort()
    page.route('**/*',route)
    try:
-    page.clock.install(time=1790164800000);page.set_content(html)
+    page.clock.install(time=1790164800000);page.goto('https://demand-fixture.invalid/fixture')
     page.add_script_tag(content=mock);page.add_script_tag(content=hook)
     if name=='prebid':page.add_script_tag(content=prebid)
     page.add_script_tag(content=(out/(name+extension)).read_text())
-    if name=='prebid':page.evaluate('pbjs.setConfig({debug:true})')
     page.wait_for_function('__sent.some(r=>r.id==="Billboard")')
     page.wait_for_timeout(800)
     if page.locator('#adsx-takeover-close').is_visible():page.locator('#adsx-takeover-close').click()
@@ -98,7 +98,7 @@ with sync_playwright() as p:
     check(not errors,'Page errors: '+str(errors));check(not external,'External traffic: '+str(external))
     results.append({'case':name+extension,'passed':True});print('PASS '+name+extension,flush=True)
    except Exception as e:
-    print(json.dumps({'case':name+extension,'inputs':page.evaluate('window.__bidInput'),'sent':page.evaluate('window.__sent'),'logs':logs[-25:],'external':external}),flush=True)
+    print(json.dumps({'case':name+extension,'inputs':page.evaluate('window.__bidInput'),'sent':page.evaluate('window.__sent'),'logs':[x for x in logs if 'ERROR' in x or 'WARN' in x][-15:],'pageErrors':errors,'external':external}),flush=True)
     results.append({'case':name+extension,'passed':False,'error':str(e),'pageErrors':errors});print('FAIL '+name+extension+': '+str(e),flush=True)
    finally:page.close()
  browser.close()
