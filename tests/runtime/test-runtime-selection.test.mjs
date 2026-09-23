@@ -27,7 +27,7 @@ test('unauthenticated settings API cannot read or write the database',async()=>{
 test('settings page and script require test authentication',async()=>{const f=fixture();for(const path of ['/runtime-selection','/runtime-selection.js']){const {r}=await request(f,path);assert.equal(r.status,303);assert.equal(r.headers.get('location'),'/login');}});
 test('settings screen preserves CSP and loads only its own client code',async()=>{const {f,cookie}=await ready();const {r}=await request(f,'/runtime-selection',cookie);assert.equal(r.status,200);assert.match(r.headers.get('content-security-policy'),/script-src 'self'/);const html=await r.text();assert.match(html,/Save runtime selection/);assert.match(html,/runtime-selection.js/);assert(!html.includes('gpt.js'));assert(!html.includes('<iframe'));});
 test('settings GET on an empty database does not initialize it',async()=>{const f=fixture(),cookie=await login(f);assert.equal((await settings(f,cookie)).r.status,409);assert.equal(f.sqlite.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table'").get().n,0);});
-test('settings GET exposes only the built-in catalog and public site fields',async()=>{const {f,cookie}=await ready();const c=config(f);c.internalOnly='do-not-expose-this-value';f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));const {r,data}=await settings(f,cookie);assert.equal(r.status,200);assert(!JSON.stringify(data).includes(c.internalOnly));assert.equal(data.selected,null);assert.equal(data.runtimes.length,2);assert.equal(data.runtimes[0].version,runtimeDescriptor.version);assert.equal(data.prebidEditable,false);assert.equal(f.log.puts.length,0);assert.equal(f.log.gets.length,0);});
+test('settings GET exposes only the built-in catalog and public site fields',async()=>{const {f,cookie}=await ready();const c=config(f);c.internalOnly='do-not-expose-this-value';f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));const {r,data}=await settings(f,cookie);assert.equal(r.status,200);assert(!JSON.stringify(data).includes(c.internalOnly));assert.equal(data.selected,null);assert.equal(data.runtimes.length,3);assert.equal(data.runtimes[0].version,runtimeDescriptor.version);assert.equal(data.prebidEditable,false);assert.equal(f.log.puts.length,0);assert.equal(f.log.gets.length,0);});
 test('history identifies an earlier saved build without changing its pin or enabling it',async()=>{
   const {f,cookie}=await ready();await selectCurrent(f,cookie);
   const c=config(f),old=runtimeReleaseHistory.at(-1);
@@ -37,7 +37,7 @@ test('history identifies an earlier saved build without changing its pin or enab
   assert.equal(r.status,200);assert.equal(data.selected,null);assert(data.validationIssue);
   assert.equal(data.releaseHistory[0].available,true);assert.equal(data.releaseHistory[0].saved,false);
   assert.equal(data.releaseHistory.at(-1).available,false);assert.equal(data.releaseHistory.at(-1).saved,true);
-  assert.equal(data.runtimes.length,2);assert.equal(data.runtimes[0].pin.runtimeSha256,runtimeDescriptor.codeSha256);
+  assert.equal(data.runtimes.length,3);assert.equal(data.runtimes[0].pin.runtimeSha256,runtimeDescriptor.codeSha256);
   assert.deepEqual(config(f),before);assert.equal(audits(f),auditCount);assert.equal(f.objects.size,0);
 });
 test('history reflects the exact explicitly saved build',async()=>{
@@ -53,6 +53,27 @@ test('parallel HTTP writes from the same reviewed revision produce one winner',a
 test('selection changes invalidate a previously generated review receipt',async()=>{const {f,cookie}=await ready(),g=await generate(f,cookie);assert.equal(g.r.status,200);await selectCurrent(f,cookie);assert.equal((await save(f,cookie,g.data.receipt)).r.status,409);assert.equal(f.objects.size,0);});
 test('selected runtime flows through Generate, Save, reload state and original ZIP download',async()=>{const {f,cookie}=await ready();await selectCurrent(f,cookie);const g=await generate(f,cookie);assert.equal(g.r.status,200,JSON.stringify(g.data));assert.equal(g.data.descriptor.runtime.runtimeSha256,config(f).builtinRuntimeSelection.runtime.runtimeSha256);const stored=await save(f,cookie,g.data.receipt);assert.equal(stored.r.status,200,JSON.stringify(stored.data));assert.equal((await save(f,cookie,g.data.receipt)).data.created,false);const fresh=await settings(f,cookie);assert.equal(fresh.data.selected.runtime.runtimeSha256,runtimeDescriptor.codeSha256);const downloaded=await request(f,'/test-api/releases/'+stored.data.draft.id+'/download',cookie);const zip=unzipSync(new Uint8Array(await downloaded.r.arrayBuffer()));assert.equal(new TextDecoder().decode(zip['ads.js']),g.data.adsJs);assert.deepEqual(JSON.parse(new TextDecoder().decode(zip['manifest.json'])).runtime,fresh.data.selected.runtime);});
 test('a historical package remains byte-identical after a new runtime selection',async()=>{const {f,cookie}=await ready(),g=await generate(f,cookie),stored=await save(f,cookie,g.data.receipt);const path='/test-api/releases/'+stored.data.draft.id+'/download';const original=new Uint8Array(await (await request(f,path,cookie)).r.arrayBuffer());await selectCurrent(f,cookie);const later=new Uint8Array(await (await request(f,path,cookie)).r.arrayBuffer());assert.deepEqual(later,original);});
+test('reporting version is explicit, saves a documented GAM-only ZIP, and leaves the earlier package byte-identical',async()=>{
+  const {f,cookie}=await ready();await selectCurrent(f,cookie);
+  const previous=await generate(f,cookie),oldSave=await save(f,cookie,previous.data.receipt);
+  const oldPath='/test-api/releases/'+oldSave.data.draft.id+'/download';
+  const oldBytes=new Uint8Array(await (await request(f,oldPath,cookie)).r.arrayBuffer());
+  const state=(await settings(f,cookie)).data;
+  assert(state.selected.runtime.runtimeVersion.startsWith('3.10.'));
+  const reporting=state.runtimes.find(r=>r.version==='3.13.0');assert(reporting);
+  const body=choice(state);body.selection.runtime=reporting.pin;
+  const selected=await select(f,cookie,body);assert.equal(selected.r.status,200,JSON.stringify(selected.data));
+  assert.equal(config(f).enablePrebid,false);
+  const generated=await generate(f,cookie);assert.equal(generated.r.status,200,JSON.stringify(generated.data));
+  assert.match(generated.data.adsJs,/aq_bidder_count/);
+  const stored=await save(f,cookie,generated.data.receipt);assert.equal(stored.r.status,200,JSON.stringify(stored.data));
+  const zip=unzipSync(new Uint8Array(await (await request(f,'/test-api/releases/'+stored.data.draft.id+'/download',cookie)).r.arrayBuffer()));
+  assert.equal(new TextDecoder().decode(zip['ads.js']),generated.data.adsJs);assert(!zip['prebid.js']);
+  const contract=JSON.parse(new TextDecoder().decode(zip['gam-reporting.json']));assert.equal(Object.keys(contract.keys).length,7);
+  assert.deepEqual(contract.keys.refresh_bucket.values,['initial','r1_3','r4_plus']);
+  assert.equal(JSON.parse(new TextDecoder().decode(zip['manifest.json'])).runtime.runtimeVersion,'3.13.0');
+  assert.deepEqual(new Uint8Array(await (await request(f,oldPath,cookie)).r.arrayBuffer()),oldBytes);
+});
 test('corrupt persisted pin blocks generation instead of falling back to the built-in default',async()=>{const {f,cookie}=await ready();await selectCurrent(f,cookie);const c=config(f);c.builtinRuntimeSelection.runtime.runtimeSha256='a'.repeat(64);f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));assert.equal((await generate(f,cookie)).r.status,409);const current=await settings(f,cookie);assert.equal(current.r.status,200);assert.equal(current.data.selected,null);assert(current.data.validationIssue);await selectCurrent(f,cookie);assert.equal((await generate(f,cookie)).r.status,200);});
 test('preview requires explicit opt-in and unknown versions cannot be selected',async()=>{const {f,cookie}=await ready(),s=(await settings(f,cookie)).data;let body=choice(s);body.selection.allowPreview=false;assert.equal((await select(f,cookie,body)).r.status,422);body=choice(s);body.selection.runtime.runtimeVersion='latest';assert.equal((await select(f,cookie,body)).r.status,409);assert.equal(audits(f),0);});
 test('unknown browser config, source, site and oversized input fields are rejected',async()=>{const {f,cookie}=await ready(),s=(await settings(f,cookie)).data;for(const extra of [{source:'bad'},{siteId:'politika'},{configJson:'{}'}])assert.equal((await select(f,cookie,{...choice(s),...extra})).r.status,422);assert.equal((await select(f,cookie,{...choice(s),extra:'x'.repeat(17000)})).r.status,413);assert.equal(audits(f),0);});

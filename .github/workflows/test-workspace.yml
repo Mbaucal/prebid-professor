@@ -49,6 +49,8 @@ jobs:
         run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs tests/runtime/site-runtime-selection.test.mjs tests/runtime/runtime-selection-cas.test.mjs tests/runtime/test-runtime-selection.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/tanjug-pilot.test.mjs
       - name: Verify read-only ads version UI routes
         run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
+      - name: Verify current-auction reporting and GAM-only omission
+        run: node --experimental-strip-types --test tests/runtime/gam-reporting.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:
@@ -72,6 +74,10 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Browser settings, stale-tab protection, Generate, Save, reopen and exact download
         run: python scripts/verify-test-workspace.py
+      - name: Compare generated reporting runtime against unchanged delivery behavior
+        run: |
+          node --experimental-strip-types scripts/prepare-reporting-browser-fixtures.mjs
+          python scripts/verify-gam-reporting.py
       - name: Tanjug pilot preview and exact package download with all external traffic blocked
         run: python scripts/verify-tanjug-pilot.py
       - name: New TEST deployment setup and version history (synthetic jobs only)
@@ -88,5 +94,6 @@ jobs:
             .generated/tanjug-pilot-evidence/*.png
             .generated/delivery-evidence/*.json
             .generated/delivery-evidence/*.png
+            .generated/reporting-evidence/browser-results.json
           if-no-files-found: ignore
           retention-days: 14

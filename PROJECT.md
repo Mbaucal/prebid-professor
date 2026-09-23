@@ -1,3 +1,15 @@
+## 2026-09-23 — Accepted GAM reporting promotion (MBA-103)
+
+Marko tested refresh reporting on TEST and authorized main promotion. Version
+3.13.0 adds four refresh labels in all demand modes and three auction labels only
+for completed Prebid auctions. GAM-only requests omit the auction labels.
+This promotes the accepted reporting change from PR #100, preserving newer main
+features. The explicitly selected runtime retains the tested source hash
+306489d96f842ef1f31cbbff6163786565799dcac2d70e976fe6c94422e4a5bd.
+Default 3.10, saved packages, published channels and publisher scripts remain
+unchanged. Live publisher validation will follow separately.
+Definitions and verification: [GAM reporting](docs/gam-reporting.md), MBA-103.
+
 ## 2026-09-23 — Accepted Test page promotion (MBA-94)
 
 Marko accepted the hosted TEST page and authorized main promotion. This transfers
