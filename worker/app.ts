@@ -168,8 +168,8 @@ export default {
       return handleLogout(verifiedRequest);
     }
 
-    // The sign-in page and favicon need this exact public asset before a session exists.
-    if (pathname === '/tessera-logo.png' && (request.method === 'GET' || request.method === 'HEAD')) {
+    // Sign-in branding needs these exact public assets before a session exists.
+    if ((pathname === '/tessera-logo.png' || pathname === '/favicon.ico') && (request.method === 'GET' || request.method === 'HEAD')) {
       return env.ASSETS.fetch(request);
     }
 

@@ -9,7 +9,7 @@ type Props = {
 };
 
 /** The dashboard and TEST layout preview share the same viewport and scroll regions. */
-export default function AppFrame({ navigation, sidebarContent, account, children, logoSrc = "/tessera-logo.png?v=20" }: Props) {
+export default function AppFrame({ navigation, sidebarContent, account, children, logoSrc = "/tessera-logo.png?v=21" }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const toggle = useRef<HTMLButtonElement>(null);
 
