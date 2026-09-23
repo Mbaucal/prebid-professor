@@ -25,7 +25,7 @@ const start=()=>new Miniflare({name:'local-selection-test',modules:true,script,c
   outboundService:()=>{outbound++;return new Response('No outbound requests in this test',{status:503});}});
 async function call(path,body){return mf.dispatchFetch(origin+path,{method:body===undefined?'GET':'POST',redirect:'manual',headers:{cookie,...(body===undefined?{}:{origin,'content-type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)});}
 async function json(path,body,status=200){const r=await call(path,body),data=await r.json();assert.equal(r.status,status,`${path}: unexpected status ${r.status}`);return data;}
-const selection=(state)=>({expectedRevision:state.revision,selection:{runtime:state.runtimes[0].pin,allowPreview:true,enablePrebid:false,prebidBuildId:null}});
+const selection=(state)=>({expectedRevision:state.revision,selection:{runtime:state.runtimes.find(r=>r.version==='3.13.0').pin,allowPreview:true,enablePrebid:false,prebidBuildId:null}});
 const sha=(bytes)=>createHash('sha256').update(bytes).digest('hex');
 try{
   mf=start();await mf.ready;
@@ -33,7 +33,7 @@ try{
   assert.equal(logged.status,303);cookie=logged.headers.get('set-cookie').split(';')[0];
   await json('/test-api/setup',{confirm:'prepare-empty-test-database'});
   const state=await json('/test-api/runtime-selection');
-  check('Compiled settings GET returns both real runtimes and no implicit saved selection',state.selected===null&&state.runtimes.length===2);
+  check('Compiled settings GET returns three real runtimes and no implicit saved selection',state.selected===null&&state.runtimes.length===3);
   const input=selection(state);input.selection.allowPreview=false;
   await json('/test-api/runtime-selection',input,422);
   check('Compiled settings writer requires Preview opt-in',true);
@@ -52,6 +52,9 @@ try{
   check('Transaction leaves no assertion rows behind',leftover.n===0);
   const generated=await json('/test-api/generate',{acknowledge:true,takeOverEnabled:false});
   check('Compiled Generate uses the exact saved pin',generated.descriptor.runtime.runtimeSha256===fresh.selected.runtime.runtimeSha256);
+  check('Compiled reporting package includes its contract',generated.descriptor.files.some(f=>f.name==='gam-reporting.json'));
+  await mkdir('.generated/reporting-evidence',{recursive:true});
+  await writeFile('.generated/reporting-evidence/compiled-worker-gam.js',generated.adsJs);
   const release=await json('/test-api/save',{receipt:generated.receipt,acknowledge:true,note:'Local compiled selection'});
   const path='/test-api/releases/'+release.draft.id+'/download';
   const first=await call(path);assert.equal(first.status,200);const hash=sha(new Uint8Array(await first.arrayBuffer()));
