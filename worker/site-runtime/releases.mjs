@@ -54,6 +54,7 @@ export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
  // Store the reviewed output as a complete, immutable release with exact source pins.
  const created=new Date().toISOString();
  files['README.txt']=encode.encode(`Tessera release ${id}\nRuntime ${descriptor.runtime.runtimeVersion}\nGenerated from saved site settings. Stage and review before production. Use ads.js once; Prebid is ${descriptor.prebidBuild?'included':'disabled'}.\n`);
+ if(files['gam-reporting.json'])files['README.txt']=encode.encode(decode.decode(files['README.txt'])+'\nGAM request reporting: see gam-reporting.json for all seven keys. GAM-only sends refresh labels without aq_* values. Enable custom key-value reporting in GAM before collecting results; downloading this package does not configure GAM. These labels are not impression, winner or revenue measurements.\n');
  files['ads.js']=files['ads.min.js'].slice();
  files['implementation.html']=encode.encode(decode.decode(files['implementation.html']).replace('REVIEW CANDIDATE ONLY.','STAGING REVIEW.').replace('Do not deploy to production.','Publish only after staging review.').replace('src="./ads.min.js"','src="./ads.js"'));
  const config={...JSON.parse(decode.decode(files['config.json'])),site:{id:site},version:id,enablePrebid:Boolean(descriptor.prebidBuild),demandMode:descriptor.prebidBuild?'prebid':'gam-adx-only'};
@@ -93,7 +94,7 @@ export async function readPackage(env,site,id,{testOnly=false,requestedFile=null
  check(!requestedFile||requestedFile==='manifest.json'||Object.hasOwn(m.files,requestedFile),'File not found.',404);
  const files={'manifest.json':bytes};let total=bytes.length;
  for(const [name,entry] of Object.entries(m.files)){
-  check(['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','min-height.css','sticky.css','prebid.js'].includes(name)&&name!=='manifest.json'&&entry.key===key(site,id,name)&&Number.isSafeInteger(entry.byteSize)&&entry.byteSize>0&&entry.byteSize<=8388608,'Invalid file inventory.');
+  check(['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','min-height.css','sticky.css','prebid.js','gam-reporting.json'].includes(name)&&name!=='manifest.json'&&entry.key===key(site,id,name)&&Number.isSafeInteger(entry.byteSize)&&entry.byteSize>0&&entry.byteSize<=8388608,'Invalid file inventory.');
   total+=entry.byteSize;check(total<=12582912,'Package exceeds limit.');if(requestedFile&&name!==requestedFile)continue;const object=await env.BUILDS.get(entry.key);check(object&&object.size===entry.byteSize,'Release file is missing.');const data=new Uint8Array(await object.arrayBuffer());check(data.length===entry.byteSize&&await sha256(data)===entry.sha256,'Release checksum differs.');files[name]=data;
  }
  return {files,release:row,manifest:m};

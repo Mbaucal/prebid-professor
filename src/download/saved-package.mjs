@@ -7,10 +7,10 @@ export async function downloadStoredPackage(id, progress=()=>{}, {siteId=null}={
  const indexResponse=await fetch(base+'/index',{credentials:'same-origin',cache:'no-store'});
  if(!indexResponse.ok)throw Error('Cannot read saved package. Sign in and try again.');
  const {descriptor}=await indexResponse.json(),files={};
- if(!descriptor||descriptor.releaseId!==id||descriptor.siteId!==(main?siteId:'test-site')||!Array.isArray(descriptor.files)||descriptor.files.length<9||descriptor.files.length>10)throw Error('Invalid package inventory.');
+ if(!descriptor||descriptor.releaseId!==id||descriptor.siteId!==(main?siteId:'test-site')||!Array.isArray(descriptor.files)||descriptor.files.length<9||descriptor.files.length>11)throw Error('Invalid package inventory.');
  let total=0;
  for(const entry of descriptor.files){
-  if(!['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','manifest.json','min-height.css','sticky.css','prebid.js'].includes(entry.name)||Object.hasOwn(files,entry.name)||!Number.isSafeInteger(entry.byteSize)||entry.byteSize<=0||entry.byteSize>8*1024*1024||!/^[a-f0-9]{64}$/.test(entry.sha256))throw Error('Invalid saved file.');
+  if(!['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','manifest.json','min-height.css','sticky.css','prebid.js','gam-reporting.json'].includes(entry.name)||Object.hasOwn(files,entry.name)||!Number.isSafeInteger(entry.byteSize)||entry.byteSize<=0||entry.byteSize>8*1024*1024||!/^[a-f0-9]{64}$/.test(entry.sha256))throw Error('Invalid saved file.');
   total+=entry.byteSize;if(total>12*1024*1024)throw Error('Package exceeds limit.');
   progress('Downloading '+entry.name+'…');
   const response=await fetch(base+'/files/'+encodeURIComponent(entry.name),{credentials:'same-origin',cache:'no-store'});
