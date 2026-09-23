@@ -1,6 +1,6 @@
 import {parse} from 'acorn';
 import {compilePositions} from '../runtime-next/compiler.mjs';
-import {createGamReporting} from './browser-reporting.mjs';
+import {browserSources} from '../../.generated/runtime-reporting-browser-source.mjs';
 function once(source, before, after) {
   if (source.split(before).length !== 2) throw Error('Reporting runtime insertion point changed: ' + before);
   return source.replace(before, () => after);
@@ -8,6 +8,17 @@ function once(source, before, after) {
 export function compileReporting(input) {
   const result = compilePositions(input);
   let source = result.adsJs;
+  // Worker bundlers add name helpers/rename locals inside Function#toString.
+  // Restore the inherited browser helpers from build-time source text, only in
+  // this new runtime. The old compiler and its archived output stay untouched.
+  const helpers=[];
+  function restore(node){
+    if(!node||typeof node!=='object')return;
+    if(node.type==='FunctionDeclaration'&&browserSources[node.id?.name])helpers.push(node);
+    for(const child of Object.values(node))if(Array.isArray(child))child.forEach(restore);else if(child&&typeof child==='object')restore(child);
+  }
+  restore(parse(source,{ecmaVersion:'latest'}));
+  for(const node of helpers.sort((a,b)=>b.start-a.start))source=source.slice(0,node.start)+browserSources[node.id.name]+source.slice(node.end);
   const edits = [];
   function walk(node) {
     if (!node || typeof node !== 'object') return;
@@ -28,7 +39,7 @@ export function compileReporting(input) {
   if (edits.length < 10) throw Error('Expected all owned GPT/Prebid request paths.');
   for (const edit of edits.sort((a,b) => b.start-a.start)) source = source.slice(0,edit.start)+edit.text+source.slice(edit.end);
   source = once(source, '  var _refreshCounts = {};', `  var _refreshCounts = {};
-${createGamReporting.toString()}
+${browserSources.createGamReporting}
   var _gamReporting=createGamReporting({
     code:function(slot){return slot===_takeOverSlot&&TESSERA_OVERLAY?TESSERA_OVERLAY.code:slot.getSlotElementId();},
     owns:function(slot){return !!slot&&((window.adSlots&&window.adSlots[slot.getSlotElementId()]===slot)||slot===_takeOverSlot||slot===_takeOverCodelessGuardSlot);},
