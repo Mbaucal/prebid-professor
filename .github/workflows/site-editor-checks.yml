@@ -2,7 +2,7 @@ name: TEST site editor checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [worker/**, src/**, shared/inventory/**, tests/**, scripts/**, .github/workflows/site-editor-checks.yml]
+    paths: [worker/**, src/**, public/**, index.html, shared/inventory/**, tests/**, scripts/**, .github/workflows/site-editor-checks.yml]
   push:
     branches: [main, feature/isolated-runtime-workspace-v1]
 permissions:
@@ -39,7 +39,9 @@ jobs:
         env:
           WRANGLER_SEND_METRICS: 'false'
         run: node scripts/verify-workerd-site-editor.mjs
-      - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
+      - run: python -m pip install playwright==1.55.0 Pillow==11.3.0 && python -m playwright install --with-deps chromium
+      - name: Decode branding assets and inspect the complete login logo
+        run: python scripts/verify-login-branding.py
       - run: python scripts/verify-site-editor.py
       - run: python scripts/verify-site-workspace.py
       - run: node --experimental-strip-types scripts/prepare-test-page-browser-fixture.mjs && python scripts/verify-site-test-page.py
@@ -56,5 +58,6 @@ jobs:
             .generated/site-workspace-evidence/
             .generated/test-page-evidence/
             .generated/loading-summary-evidence/
+            .generated/login-branding-evidence/
           if-no-files-found: ignore
           retention-days: 14

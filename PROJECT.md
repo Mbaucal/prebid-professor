@@ -1,3 +1,18 @@
+## 2026-09-23 — Complete logo and favicon follow-up (MBA-111)
+
+The earlier route fix exposed a second defect: the PNG itself has a broken IDAT
+checksum and cannot fully decode. Chromium can still report natural dimensions
+while displaying only its top portion; comparing served bytes missed that defect.
+Re-export the existing SVG at 192px and derive a 16/32/48px ICO favicon. All app
+and login references use v21 so browsers replace cached corrupt images. Only
+the exact PNG and ICO paths are public. CI now verifies PNG checksums and full
+PNG/ICO decoding, the bottom logo tile and the full 46px image bounds at three
+viewport sizes, with screenshots of the compiled production login page.
+
+Asset source: `public/tessera-logo.svg`. Export the PNG with Inkscape at 192×192,
+then save a Pillow ICO with `sizes=[(16,16),(32,32),(48,48)]`. No logo redesign.
+This completes the same login-logo correction already authorized for main.
+
 ## 2026-09-23 — Anonymous login logo (MBA-111)
 
 The sign-in logo and favicon requested a PNG behind the session guard, returning
