@@ -417,20 +417,32 @@ export async function deletePrebidBuild(
     return apiError('The current Prebid build cannot be deleted. Activate another build first.', 409);
   }
 
+  // Legacy duplicated sites could reference another site's original R2 object.
+  // Never let cleanup of a copied record destroy the original or another copy.
+  const prefix = `publishers/${siteId}/prebid-builds/${buildId}/`;
+  const shared = await env.DB.prepare('SELECT id FROM prebid_builds WHERE file_key=? AND id<>? LIMIT 1')
+    .bind(row.file_key, buildId).first();
+  if (!row.file_key.startsWith(prefix) || !row.file_key.slice(prefix.length) || row.file_key.slice(prefix.length).includes('/') || shared) {
+    return apiError('This legacy Prebid file is shared or belongs to another site. Its stored bytes were kept. Upload a separate file for this site before cleanup.', 409);
+  }
+
   const actor = getActor(request);
   const now = new Date().toISOString();
 
   try {
-    await env.BUILDS.delete(row.file_key);
-    await env.DB.batch([
+    // Remove the archived record atomically before touching R2. Activation
+    // checks this row too, so a concurrent Set current cannot lose its file.
+    const removed = await env.DB.batch([
       env.DB
-        .prepare('DELETE FROM prebid_builds WHERE publisher_id = ? AND id = ?')
-        .bind(siteId, buildId),
+        .prepare(`DELETE FROM prebid_builds WHERE publisher_id = ? AND id = ?
+          AND status <> 'current' AND file_key = ?
+          AND NOT EXISTS (SELECT 1 FROM prebid_builds other WHERE other.file_key = ? AND other.id <> ?)`)
+        .bind(siteId, buildId, row.file_key, row.file_key, buildId),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'prebid_build.deleted', ?, 'prebid_build', ?, ?, ?)`,
+           ) SELECT ?, ?, 'prebid_build.deleted', ?, 'prebid_build', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
@@ -441,6 +453,9 @@ export async function deletePrebidBuild(
           now,
         ),
     ]);
+    if (removed.some((result) => result.success !== true)) throw new Error('Unconfirmed database result; stored file was kept.');
+    if (removed[0]?.meta.changes !== 1) return apiError('The Prebid build changed. Reload before deleting it; its stored file was kept.', 409);
+    await env.BUILDS.delete(row.file_key);
   } catch (error) {
     return apiError(
       'Prebid build deletion failed.',
