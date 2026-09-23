@@ -31,6 +31,12 @@ with sync_playwright() as p:
      page.goto('https://tessera.fixture.invalid/test-page?googfc')
      assert page.locator('[data-metric="dom"]').inner_text()=='4 / 4'
      assert not external,'Scripts loaded without Start'
+     expect(page.get_by_role('button',name='Start test',exact=True)).to_have_css('background-color','rgb(239, 114, 45)')
+     page.keyboard.press('Tab')
+     page.get_by_role('button',name='Start test',exact=True).focus()
+     expect(page.get_by_role('button',name='Start test',exact=True)).to_have_css('outline-style','solid')
+     expect(page.get_by_role('region',name='Ad position results',exact=True)).to_have_attribute('tabindex','0')
+     page.screenshot(path=str(out/('ready-desktop.png' if width>=1300 else 'ready-mobile.png')),full_page=True)
      assert page.evaluate('''()=>{try{document.cookie;return false}catch(e){return e.name==='SecurityError'}}''')
      assert page.evaluate('''()=>{try{localStorage.getItem('admin');return false}catch(e){return e.name==='SecurityError'}}''')
      page.get_by_role('button',name='Start test',exact=True).click()
@@ -84,14 +90,20 @@ with sync_playwright() as p:
      expect(live).to_contain_text('Hidden · Ad',timeout=10000)
      page.evaluate('window.__testOptions.allEmpty=true')
      page.get_by_role('button',name='Scroll through positions',exact=True).click()
+     expect(page.locator('[data-scan-progress]')).to_be_visible()
      lazy_row=page.locator('[data-rows] tr').filter(has=page.get_by_role('button',name='P1',exact=True))
      expect(lazy_row.locator('td').nth(4)).to_have_text('1',timeout=12000)
      page.get_by_role('button',name='Stop scrolling',exact=True).click()
+     expect(page.locator('[data-scan-progress]')).to_be_hidden()
+     stopped_y=page.evaluate('scrollY')
+     page.wait_for_timeout(1400)
+     assert abs(page.evaluate('scrollY')-stopped_y)<1,'Stopped scan moved the page'
      page.get_by_role('button',name='↑ Results',exact=True).click()
      page.get_by_role('button',name='Copy report',exact=True).click()
      page.locator('[data-report]').wait_for(state='visible')
      report=json.loads(page.locator('[data-report]').input_value())
      assert len(report['units'])==4
+     assert report['startedViewport']=={'width':width,'height':900}
      assert all(u['slotCount']==1 and u['pathOk'] for u in report['units'])
      assert any(u['response']=='Empty — OK for this test' for u in report['units'])
      assert not report['cssPreviews']
@@ -103,11 +115,61 @@ with sync_playwright() as p:
      assert not errors,errors
      assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
      page.screenshot(path=str(out/('desktop.png' if width>=1300 else 'mobile.png')),full_page=True)
+     page.get_by_role('button',name='Scroll through positions',exact=True).click()
+     page.set_viewport_size({'width':width-10,'height':860})
+     expect(page.locator('[data-resize-notice]')).to_contain_text('Restart test')
+     expect(page.locator('[data-scan-progress]')).to_be_hidden()
+     expect(page.get_by_role('button',name='Stop scrolling',exact=True)).to_be_hidden()
+     page.get_by_role('button',name='Restart test',exact=True).click()
+     expect(page.get_by_role('button',name='Start test',exact=True)).to_be_enabled()
+     expect(page.locator('[data-resize-notice]')).to_be_hidden()
+     expect(page.locator('[data-metric="gpt"]')).to_have_text('0 / 4')
+     assert len(external)==1,'Restart must wait for a new Start'
      results.append({'width':width,'passed':True,'interceptedGptRequests':len(external),'liveAdRequests':0,'report':report})
     except Exception:
      page.screenshot(path=str(out/('failure-'+str(width)+'.png')),full_page=True)
      print(json.dumps({'width':width,'pageErrors':errors,'scriptErrors':page.locator('[data-errors]').inner_text(),'summary':page.locator('[data-summary]').inner_text()}))
      raise
+    context.close()
+ # Fault paths must be actionable and must never report registration success.
+ for scenario in ('blocked','stalled','wrong-path','duplicate-dom','duplicate-slot'):
+    context=browser.new_context(viewport={'width':1440,'height':900})
+    page=context.new_page()
+    if scenario=='stalled': page.clock.install()
+    def fault_route(r):
+        if r.request.url=='https://tessera.fixture.invalid/test-page':
+            r.fulfill(status=200,headers=headers,body=(out/'page.html').read_text())
+        elif r.request.url=='https://securepubads.g.doubleclick.net/tag/js/gpt.js':
+            if scenario=='blocked': r.abort('blockedbyclient')
+            elif scenario=='stalled': r.fulfill(status=200,headers={'content-type':'application/javascript','access-control-allow-origin':'*'},body="document.documentElement.setAttribute('data-gpt-fixture-loaded','true');")
+            else: r.fulfill(status=200,headers={'content-type':'application/javascript','access-control-allow-origin':'*'},body=gpt)
+        else: raise AssertionError('Unexpected request: '+r.request.url)
+    page.route('**/*',fault_route)
+    page.goto('https://tessera.fixture.invalid/test-page')
+    page.get_by_role('button',name='Start test',exact=True).click()
+    if scenario=='stalled':
+        expect(page.locator('html')).to_have_attribute('data-gpt-fixture-loaded','true')
+        page.clock.fast_forward(21000)
+    if scenario in ('blocked','stalled'):
+        expect(page.locator('[data-asset="gpt"]')).to_have_text('gpt: failed')
+        expect(page.locator('[data-summary]')).to_contain_text('failed to load or initialize')
+        expect(page.get_by_role('button',name='Google Publisher Console',exact=True)).to_be_disabled()
+        expect(page.locator('[data-error-count]')).to_have_text('1 error')
+    else:
+        expect(page.locator('[data-metric="gpt"]')).to_have_text('4 / 4',timeout=15000)
+        if scenario=='wrong-path':
+            page.evaluate("__testAds.slots[0].getAdUnitPath=()=>'/wrong/path'")
+            expect(page.locator('[data-summary]')).to_contain_text('GPT registration mismatch')
+            expect(page.locator('[data-rows]')).to_contain_text('Wrong GAM path')
+        elif scenario=='duplicate-slot':
+            page.evaluate('__testAds.slots.push(__testAds.slots[0])')
+            expect(page.locator('[data-summary]')).to_contain_text('GPT registration mismatch')
+            expect(page.locator('[data-rows]')).to_contain_text('Duplicate slot')
+        else:
+            page.evaluate("document.body.append(document.getElementById('Billboard').cloneNode())")
+            expect(page.locator('[data-summary]')).to_contain_text('Container check failed')
+            expect(page.locator('[data-rows]')).to_contain_text('Duplicate ID')
+    results.append({'scenario':scenario,'passed':True,'summary':page.locator('[data-summary]').inner_text(),'liveAdRequests':0})
     context.close()
  browser.close()
 (out/'result.json').write_text(json.dumps(results,indent=2))

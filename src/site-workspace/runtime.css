@@ -17,3 +17,10 @@
 @media(max-width:680px){.script-mode-options{grid-template-columns:1fr}.script-mode-options label{padding:16px}.script-version-summary{align-items:flex-start}}
 
 .runtime-loading-table-wrap{max-width:100%;overflow-x:auto}.runtime-loading-table{width:100%;border-collapse:collapse;text-align:left;font-size:14px}.runtime-loading-table th{background:#f5f7fa;color:#66758c;font-size:12px;text-transform:uppercase}.runtime-loading-table th,.runtime-loading-table td{padding:14px 12px;border-bottom:1px solid #d7dfec;vertical-align:top}.runtime-loading-table td:first-child{overflow-wrap:anywhere}.runtime-loading-table small{display:block;color:#66758c;line-height:1.5;margin-top:5px}.runtime-loading-table td:last-child{min-width:180px}.runtime-actions button[aria-current=page]{background:#fff0df;border-color:#f47725}
+
+/* Links that perform navigation still share Tessera's button states. */
+.site-runtime-panel a.runtime-test-link,.site-runtime-panel a.runtime-test-link:visited{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px;border:1px solid #c9d2df;border-radius:8px;background:#fff;color:#202a3b;font:inherit;font-weight:600;line-height:1.3;text-decoration:none}
+.site-runtime-panel a.runtime-test-link:hover{background:#f5f7fa;border-color:#919cae;color:#202a3b;text-decoration:none}
+.site-runtime-panel a.runtime-test-link-primary,.site-runtime-panel a.runtime-test-link-primary:visited{background:#ef722d;border-color:#d85e1a;color:#24140a}
+.site-runtime-panel a.runtime-test-link-primary:hover{background:#fa8a40;border-color:#d85e1a;color:#24140a}
+.site-runtime-panel a.runtime-test-link:focus-visible{outline:3px solid #c75410;outline-offset:3px}

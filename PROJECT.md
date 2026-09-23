@@ -1,3 +1,13 @@
+## 2026-09-23 — Test page UX and developer review (MBA-104)
+
+Follow-up to accepted MBA-94: align the diagnostic page and saved-release link
+with Tessera's charcoal/orange/neutral design. Improve keyboard/mobile use,
+script-initialization failures, registration mismatch summaries, scroll progress,
+cancellation and viewport-change guidance. GPT events batch UI updates; unchanged
+status text and badges retain their nodes. Archived package bytes, Sticky CSS,
+site settings and channels are unchanged. This is a TEST-first review candidate;
+main promotion requires owner acceptance. See docs/site-test-page.md.
+
 ## 2026-09-23 — Reliable GAM request labels (MBA-103)
 
 Version 3.13.0 adds four refresh labels for all demand modes and three current

@@ -2,7 +2,7 @@
 import base64,json,subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/site-workspace-evidence';out.mkdir(exist_ok=True)
 process=subprocess.Popen(['node','--experimental-strip-types','scripts/site-workspace-browser-fixture.mjs'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
@@ -79,6 +79,17 @@ try:
     page.get_by_role('button',name='Generate and save package',exact=True).click()
     page.get_by_role('status').filter(has_text='Package saved in Releases').wait_for()
     page.get_by_text('Browser package check',exact=True).wait_for()
+    release_link=page.get_by_role('link',name='Open test page',exact=True)
+    expect(release_link).to_have_css('text-decoration-line','none')
+    expect(release_link).to_have_css('color','rgb(32, 42, 59)')
+    release_link.hover()
+    expect(release_link).to_have_css('text-decoration-line','none')
+    page.keyboard.press('Tab')
+    release_link.focus()
+    expect(release_link).to_have_css('outline-style','solid')
+    page.set_viewport_size({'width':1280,'height':900})
+    page.screenshot(path=str(out/'desktop-packages-test-link.png'),full_page=True)
+    page.set_viewport_size({'width':390,'height':844})
     page.get_by_role('button',name='Reload releases',exact=True).click()
     page.get_by_text('Browser package check',exact=True).wait_for()
     with page.expect_download() as stored_download:
@@ -102,6 +113,8 @@ try:
     link=page.get_by_role('link',name='Open test page',exact=True)
     assert link.get_attribute('href').startswith('/test-api/site-test-page/builtin-draft-')
     assert link.get_attribute('target')=='_blank'
+    expect(link).to_have_css('text-decoration-line','none')
+    expect(link).to_have_css('background-color','rgb(239, 114, 45)')
     assert all(r['method']=='GET' for r in requests[before:])
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
     page.screenshot(path=str(out/'mobile-test-page-section.png'),full_page=True)
