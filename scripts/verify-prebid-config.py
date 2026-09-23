@@ -95,7 +95,7 @@ def exercise(page):
     with page.expect_download() as exported:
         page.locator('#download-config').click()
     configuration=json.loads(pathlib.Path(exported.value.path()).read_text())
-    check('One click saves and exports before any file, containing only version and automatic modules',set(configuration)=={'version','modules'} and configuration['modules']==['consentManagementTcf','currency','openxBidAdapter','tcfControl'])
+    check('One click saves and exports before any file, containing only version and automatic modules',set(configuration)=={'version','modules'} and configuration['modules']==['consentManagementTcf','currency','gptPreAuction','openxBidAdapter','tcfControl'])
     check('Configuration filename is distinct from final site package',exported.value.suggested_filename=='prebid-config.json')
     expect(page.locator('#message')).to_contain_text('Preparation saved and prebid-config.json downloaded')
     expect(page.locator('#saved-mode')).to_contain_text('GPT only')
