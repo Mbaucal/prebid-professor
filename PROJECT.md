@@ -1,3 +1,23 @@
+## 2026-09-23 — Executed technical and UX audit (MBA-96)
+
+The first audit execution is recorded in [the evidence matrix](docs/audits/2026-09-23-mba96/REPORT.md).
+The main baseline passed 918 Node tests and the production build, but strict
+TypeScript reports 60 diagnostics. Read the matrix for browser, native D1/R2,
+real Prebid and hosted TEST coverage; these results are not a production sign-off.
+
+MBA-97 fixes copied Prebid artifacts referencing the source site's R2 object and
+stale build ID. New copies verify the original bytes, store their own immutable
+object, synchronize the pin and guard the source revision. Deletion refuses legacy
+foreign/shared objects and checks concurrent activation before removing bytes.
+Copying without the build preserves the script version and demand, clears the
+foreign pin and sends the user to Prebid setup. Existing shared rows are not
+silently migrated; unconfirmed storage operations retain bytes for later review.
+
+This audit change is a TEST-first candidate, not a main deployment. MBA-98 through
+MBA-102 track navigation, Publish guidance, modal accessibility, type checking and
+the incomplete hosted BTF Sticky observation. MBA-96 stays open until the remaining
+high-priority findings and hosted delivery/rollback checks are resolved.
+
 ## 2026-09-22 — Agency overview appearance (MBA-90)
 
 The Agency label and name now stack vertically beside a padded logo surface.
@@ -163,10 +183,10 @@ The main product principles are:
 | --- | --- |
 | Repository | `Mbaucal/prebid-professor` |
 | Production branch | `main` |
-| Current development branch | `feature/monitoring-readonly-v1` |
-| Current pull request | `#19` |
+| Isolated TEST branch | `feature/isolated-runtime-workspace-v1` |
+| Current audit | MBA-96; see `docs/audits/2026-09-23-mba96/REPORT.md` |
 | Production Worker | `https://prebid-professor.mbaucal.workers.dev/` |
-| Current branch preview | `https://feature-monitoring-readonly-v1-prebid-professor.mbaucal.workers.dev/` |
+| Isolated TEST Worker | `https://prebid-professor-test.mbaucal.workers.dev/` |
 | Cloudflare Worker name | `prebid-professor` |
 | D1 database | `prebid-professor-db` |
 | R2 bucket | `prebid-professor-builds` |
@@ -209,23 +229,7 @@ The main product principles are:
 
 ## 4. Product model
 
-The intended hierarchy is:
-
-```text
-Publisher company/account
-└── Site/domain
-    ├── General configuration
-    ├── Ad units
-    ├── Size mappings
-    ├── Unit rules
-    ├── Bidders
-    ├── Bidder overrides
-    ├── Prebid mode/build configuration
-    ├── ads.txt requirements
-    ├── Releases and artifacts
-    ├── Monitoring settings and state
-    └── Audit history
-```
+The implemented hierarchy is **Agency → Publisher → Site**. An agency groups publisher accounts; each publisher owns its sites. Each site keeps its own configuration, inventory, size maps, rules, bidders, Prebid build selection, ads.txt requirements, releases, monitoring and audit history.
 
 Site-specific data must never leak into another site's form, build, email template, recipient list, release, or notification state.
 

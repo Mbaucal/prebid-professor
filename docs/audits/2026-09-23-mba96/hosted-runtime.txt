@@ -1,0 +1,104 @@
+- banner:
+  - text: TESSERA / test-site / TEST PAGE
+  - heading "Check your saved ad positions" [level=1]
+  - paragraph: Original saved package · script 3.9.1-tessera.preview.2 · Prebid 11.34.0
+- main:
+  - text: DIVs present
+  - strong: 3 / 3
+  - text: GPT slots registered
+  - strong: 3 / 3
+  - text: Active at this width
+  - strong: 3 / 3
+  - text: Positions requested
+  - strong: 2 / 3
+  - generic: "ads: ready"
+  - generic: "gpt: ready"
+  - generic: "prebid: ready"
+  - generic: 1363 × 936 px
+  - button "Test started" [disabled]
+  - button "Google Publisher Console"
+  - button "Scroll through positions"
+  - button "Copy report"
+  - button "Restart test"
+  - status: All 3 positions are present and registered. 3 active at this width. Empty ads are OK.
+  - paragraph: Start test loads the saved script and its original Prebid file and Google GPT. This can send real ad requests. Empty responses are OK for this check. Lazy positions wait until you scroll near them; a disabled size-map breakpoint is not a missing slot.
+  - paragraph: This isolated test has no publisher CMP or publisher storage context. It does not confirm consent, demand or the layout on the real website. Your saved settings and published channels stay unchanged.
+  - heading "All 3 in-page positions" [level=2]
+  - table:
+    - rowgroup:
+      - row "Position DIV GPT Sizes at this width Requests Last response":
+        - columnheader "Position"
+        - columnheader "DIV"
+        - columnheader "GPT"
+        - columnheader "Sizes at this width"
+        - columnheader "Requests"
+        - columnheader "Last response"
+    - rowgroup:
+      - row "Billboard ATF · immediate Present Registered 728×90, 728×100 3 Empty — OK for this test":
+        - cell "Billboard ATF · immediate":
+          - button "Billboard"
+          - text: ATF · immediate
+        - cell "Present":
+          - generic: Present
+        - cell "Registered":
+          - generic: Registered
+        - cell "728×90, 728×100"
+        - cell "3"
+        - cell "Empty — OK for this test"
+      - row "Sticky ATF · immediate Present Registered 728×90 3 Empty — OK for this test":
+        - cell "Sticky ATF · immediate":
+          - button "Sticky"
+          - text: ATF · immediate
+        - cell "Present":
+          - generic: Present
+        - cell "Registered":
+          - generic: Registered
+        - cell "728×90"
+        - cell "3"
+        - cell "Empty — OK for this test"
+      - row "NewPosition BTF · Sticky Present Registered 728×90, 728×100 0 Waiting":
+        - cell "NewPosition BTF · Sticky":
+          - button "NewPosition"
+          - text: BTF · Sticky
+        - cell "Present":
+          - generic: Present
+        - cell "Registered":
+          - generic: Registered
+        - cell "728×90, 728×100"
+        - cell "0"
+        - cell "Waiting"
+  - paragraph: "Runtime-created / additional GPT slots: gpt_unit_/123/test1/Interstitial_0 · /123/test1/Interstitial · requests: 1"
+  - paragraph: TakeOver TakeOver is created by the runtime. It has no handoff DIV and is shown separately when GPT registers it.
+  - heading "Sticky inspection" [level=2]
+  - paragraph: Live state reads the real ad container. An empty response can keep it hidden. Use CSS preview to see the saved Sticky position without an ad; it does not change the real slot or its GAM result.
+  - strong: NewPosition
+  - generic: "Live state Hidden · Waiting for response position: fixed; top: 925px; bottom: 0px; display: flex; visibility: hidden; opacity: 0; z-index: 2147483000 Box: 1348 × 11 px; viewport top: 941 px; bottom gap: -16 px; ad-loaded: false"
+  - generic: "Before console: no snapshot yet. Use a console button on this page."
+  - button "Show Sticky CSS preview"
+  - button "Inspect NewPosition in GAM"
+  - paragraph: CSS preview uses a saved size at this width and the original sticky.css.
+  - paragraph: Opening the console with a button on this page saves the real state first and closes CSS preview. Compare it with Live state after opening. Google adds its own ad overlays. For a fresh comparison, open this page without console URL parameters.
+  - generic "Package details and errors" [active]
+  - paragraph:
+    - text: "Package:"
+    - code: builtin-draft-02d6f8290a09c8c30d4ed76d9d01ddcc21dac94b03b2071362555a7bf4ea5de5
+  - paragraph:
+    - text: "GAM path:"
+    - code: /123/test1/
+  - paragraph: The table uses the saved package configuration. Registration, requests and responses are actual GPT observations, not simulated results.
+  - generic: "Failed to set the 'cookie' property on 'Document': The document is sandboxed and lacks the 'allow-same-origin' flag."
+  - heading "Test containers" [level=2]
+  - paragraph: Diagnostic layout. Boxes show containers, not ad creatives. Sticky uses its original saved CSS; inspect its live state or enable CSS preview above. Resize and restart for a fresh mobile or desktop test.
+  - article:
+    - strong: Billboard
+    - generic: Active · 1242 × 100 px
+  - article:
+    - strong: Sticky
+    - generic: Active · 1242 × 90 px
+  - article:
+    - strong: NewPosition
+    - generic: Active · 1348 × 11 px
+    - paragraph: Sticky is attached directly to the page. Its saved CSS controls its screen position.
+  - generic: Saved release builtin-draft-02d6f8290a09c8c30d4ed76d9d01ddcc21dac94b03b2071362555a7bf4ea5de5 · No release or configuration writes.
+- button "↑ Results"
+- button "Close ad": ×
