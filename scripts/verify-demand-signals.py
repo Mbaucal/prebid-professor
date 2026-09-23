@@ -67,15 +67,16 @@ with sync_playwright() as p:
     page.evaluate('scrollTo(0,0)');page.wait_for_timeout(100)
     page.evaluate("__testAds.emit('slotVisibilityChanged',{slot:adSlots.Billboard,inViewPercentage:100})")
     # Clock drives dwell timers, native XHR completion gets real event-loop time.
-    for _ in range(4):
+    for _ in range(40):
      page.evaluate("document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}))")
-     page.clock.run_for(10000);page.wait_for_timeout(200)
+     page.clock.run_for(1000);page.wait_for_timeout(100)
     rows=page.evaluate('__sent.filter(r=>r.id==="Billboard")')
     check(len(rows)>=2,'No actual dwell refresh')
     if name=='prebid':
      config=page.evaluate('({all:pbjs.getConfig("enableSendAllBids"),deals:pbjs.getConfig("targetingControls").alwaysIncludeDeals})')
      check(config=={'all':True,'deals':True},'Wrong native Prebid config: '+str(config))
      first=rows[0]['targeting']
+     check(rows[-1]['targeting'].get('hb_pb_pubmatic')=='1.50' and rows[-1]['targeting'].get('aq_timed_out')=='no','Positive refresh auction did not complete: '+str(rows[-1]))
      for bidder in ['pubmatic','openx','criteo']:check(first.get('hb_pb_'+bidder),'Missing bidder price '+bidder+': '+str(first))
      check(first.get('hb_deal_criteo')=='fixture-deal','Deal targeting missing: '+str(first))
      expected=json.loads((out/'prebid.json').read_text())['placements'];seen=page.evaluate('__bidInput')
@@ -84,12 +85,13 @@ with sync_playwright() as p:
       check(row['gpid']==expected[row['code']]['gpid'] and row['adslot']==expected[row['code']]['adslot'],'Unstable/lost GPID: '+str(row))
      page.evaluate('window.__noBid=true')
      count=len(rows)
-     for _ in range(4):
+     for _ in range(40):
       page.evaluate("document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}))")
-      page.clock.run_for(10000);page.wait_for_timeout(200)
+      page.clock.run_for(1000);page.wait_for_timeout(100)
      later=page.evaluate('__sent.filter(r=>r.id==="Billboard")')
      check(len(later)>count,'No no-bid refresh')
-     check(not any(k.startswith('hb_') and k!='hb_ver' for k in later[-1]['targeting']),'Stale bidder/deal targeting: '+str(later[-1]))
+     check(later[-1]['targeting'].get('aq_bid_count')=='0' and later[-1]['targeting'].get('aq_timed_out')=='no','Expected completed empty auction: '+str(later[-1]))
+     check(not any(k.startswith('hb_') and k not in ['hb_ver','hb_version'] for k in later[-1]['targeting']),'Stale bidder/deal targeting: '+str(later[-1]))
     else:
      check(page.evaluate('__bidInput.length')==0,'GAM-only made Prebid requests')
      for row in page.evaluate('__sent'):

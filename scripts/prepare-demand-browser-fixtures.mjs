@@ -15,7 +15,7 @@ for(const enabled of [true,false]){
   if(enabled)s.bidders=['pubmatic','openx','criteo'].map(bidder=>({bidder,params_json:'{"publisherId":"123","adSlot":"456@300x250"}',enabled:1}));
   c.timeout=500;
   s.config.config_json=JSON.stringify(c);
-  for(const row of s.rules){const r=JSON.parse(row.rule_json);r.refresh={enabled:true,minSeconds:30,minViewPct:50,maxRefreshes:10};row.rule_json=JSON.stringify(r);}
+  for(const row of s.rules){const r=JSON.parse(row.rule_json);r.timeout=2500;r.refresh={enabled:true,minSeconds:30,minViewPct:50,maxRefreshes:10};row.rule_json=JSON.stringify(r);}
   const input=previewInput(s,descriptor,'20260923_230000');
   const js=await finalizeJavaScript(compileDemand(input).adsJs,{cleanComments:true});
   const name=enabled?'prebid':'gam';
