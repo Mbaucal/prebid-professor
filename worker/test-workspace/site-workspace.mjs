@@ -1,12 +1,16 @@
 import { workspaceJs,workspaceCss } from '../../.generated/site-workspace.mjs';
 import { siteRuntimeResponse } from '../site-runtime/service.mjs';
 import { packageResponse } from '../site-runtime/releases.mjs';
+import { packageTestPageResponse } from '../site-runtime/test-page.mjs';
 import { inspectTestSchema } from './schema.mjs';
 import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { assertWorkspaceSiteScope } from './site-draft.mjs';
 // Entered only after the TEST host, authentication and same-origin guards.
 export async function siteWorkspaceResponse(request,env,actor,headers){
- const url=new URL(request.url);if(!['/site-workspace','/site-workspace.js','/test-api/site-runtime','/test-api/site-packages'].includes(url.pathname))return null;
+ const url=new URL(request.url);
+ const testPage=url.pathname.match(/^\/test-api\/site-test-page\/(builtin-draft-[a-f0-9]{64})$/);
+ if(testPage)return packageTestPageResponse(request,env,'test-site',testPage[1],{testOnly:true});
+ if(!['/site-workspace','/site-workspace.js','/test-api/site-runtime','/test-api/site-packages'].includes(url.pathname))return null;
  if(url.search)return new Response('Not found',{status:404,headers});
  if(url.pathname==='/test-api/site-runtime'||url.pathname==='/test-api/site-packages'){
   if(!(await inspectTestSchema(env.DB)).ready)return new Response(JSON.stringify({error:'Prepare TEST data first.'}),{status:409,headers:{...headers,'content-type':'application/json'}});

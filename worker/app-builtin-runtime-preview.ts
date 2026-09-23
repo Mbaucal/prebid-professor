@@ -10,6 +10,7 @@ import { handleArtifactBundle } from './runtime/artifact-bundle-service.mjs';
 import type { ReleaseEnv } from './releases';
 import { siteRuntimeResponse } from './site-runtime/service.mjs';
 import { packageResponse, packageAssetResponse, builtInCdn } from './site-runtime/releases.mjs';
+import { packageTestPageResponse } from './site-runtime/test-page.mjs';
 import { abEditorResponse } from './site-runtime/ab-editor.mjs';
 import {requireSupportedCacheGenerator} from './site-runtime/prebid-cache-settings.mjs';
 import { scriptLibraryResponse } from './site-runtime/script-library.mjs';
@@ -51,12 +52,13 @@ export default {
       return gamResponse(request,env,actor.email);
     }
 
-    const packageMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-releases(?:\/(builtin-release-[a-f0-9]{64})\/(index|files\/([a-zA-Z][a-zA-Z0-9.-]*)))?$/);
+    const packageMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-releases(?:\/(builtin-release-[a-f0-9]{64})\/(index|test-page|files\/([a-zA-Z][a-zA-Z0-9.-]*)))?$/);
     if(packageMatch){
       const actor=await getAuthenticatedUser(request,env);
       const fail=(error:string,status:number)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'private, no-store'}});
       if(!actor)return fail('Authentication required.',401);
       if(!isSameOriginMutation(request)||(request.method==='POST'&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
+      if(packageMatch[3]==='test-page')return packageTestPageResponse(request,env,packageMatch[1],packageMatch[2]);
       if(packageMatch[2])return packageAssetResponse(request,env,packageMatch[1],packageMatch[2],packageMatch[4]??null);
       return packageResponse(request,env,packageMatch[1],actor.email);
     }

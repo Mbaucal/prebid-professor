@@ -1,3 +1,19 @@
+## 2026-09-23 — Accepted Test page promotion (MBA-94)
+
+Marko accepted the hosted TEST page and authorized main promotion. This transfers
+only the reviewed saved-package Test page, its complete browser-bundle bootstrap
+fix and Sticky inspection from TEST PRs #91/#95/#96, preserving newer main work.
+Sites gain a Test page tab and exact saved-release links. Original archived
+ads.js/Prebid/CSS run after Start in an authenticated isolated HTTPS document.
+It reports actual DIVs, GPT paths, requests and responses, responsive/lazy status,
+and supports Publisher Console and report export. Sticky uses original CSS;
+a separate labelled CSS preview does not change real slots. Page console buttons
+capture real Sticky state before opening, and test controls clear its close button.
+Settings, package bytes, published channels and publisher scripts are unchanged.
+Desktop/mobile regression coverage uses the compiled Worker and synthetic GPT;
+it does not claim validation of live demand or Google's externally hosted UI.
+Details and deployment evidence: docs/site-test-page.md and Linear MBA-94.
+
 ## 2026-09-23 — Executed technical and UX audit (MBA-96)
 
 The first audit execution is recorded in [the evidence matrix](docs/audits/2026-09-23-mba96/REPORT.md).

@@ -6,6 +6,7 @@ import { assertBuildTimestamp, sha256, REFERENCE_SHA256 } from './extract-refere
 import { runtimeReleaseHistory, assertRuntimeReleaseSource } from '../worker/runtime/runtime-release-history.mjs';
 
 import { prepareNextRuntime } from './prepare-next-runtime.mjs';
+import { prepareTestPageClient } from './prepare-test-page-client.mjs';
 const currentRuntimeRelease=runtimeReleaseHistory.find(r=>r.codeSha256==='222569881b377c085f0b5d373523d092d64e2ac5dab05d421c3cc9f371078de9');
 
 export const BUILDER_SHA256 = '2f0e5c93a9c1dc2137fac63e08d0b0f493f74b91c5df4419a8403886d28b91ec';
@@ -65,6 +66,7 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await writeFile(resolve(root, '.generated/runtime-manifest.mjs'),
     `// Generated from checksum-verified source; no network or runtime eval.\nexport const descriptor = ${JSON.stringify(descriptor, null, 2)};\nexport const sourceComponents = ${JSON.stringify(components, null, 2)};\n`);
   await prepareNextRuntime(root);
+  await prepareTestPageClient(root);
   return descriptor;
 }
 
