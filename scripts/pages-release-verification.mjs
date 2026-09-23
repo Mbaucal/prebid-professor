@@ -9,7 +9,7 @@ const SOURCE_ORIGIN = 'https://prebid-professor.mbaucal.workers.dev';
 const HASH = /^[a-f0-9]{64}$/;
 const PART = /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/;
 const REQUIRED = ['ads.js','ads.min.js','prebid.js','config.json','min-height.css','div-export.csv','implementation.html'];
-const ALLOWED = [...REQUIRED, 'sticky.css', 'README.txt'];
+const ALLOWED = [...REQUIRED, 'sticky.css', 'README.txt', 'gam-reporting.json'];
 // Match the legacy Prebid uploader's 20 MiB acceptance limit. Private built-in
 // candidates retain their own smaller storage limits in describeCandidate.
 const MAX_FILE = 20 * 1024 * 1024;

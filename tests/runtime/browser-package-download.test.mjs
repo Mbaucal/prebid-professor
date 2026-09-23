@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {unzipSync} from 'fflate';
 import {downloadStoredPackage} from '../../src/download/saved-package.mjs';
 import {sha256} from '../../worker/runtime/prebid-artifact-check.mjs';
-test('browser assembles exact saved files including an 8 MiB Prebid, and rejects corruption before download',async()=>{
- const names=['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','manifest.json','min-height.css','sticky.css','prebid.js'].sort();
+for(const reporting of [false,true])test(`browser assembles exact saved files including an 8 MiB Prebid (reporting=${reporting}), and rejects corruption before download`,async()=>{
+ const names=['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','manifest.json','min-height.css','sticky.css','prebid.js',...(reporting?['gam-reporting.json']:[])].sort();
  const bytes=Object.fromEntries(names.map(n=>[n,n==='prebid.js'?new Uint8Array(8*1024*1024).fill(37):new TextEncoder().encode(n)]));
  const inventory=[];for(const name of names)inventory.push({name,byteSize:bytes[name].length,sha256:await sha256(bytes[name])});
  const siteId='test-site',id='builtin-draft-'+await sha256(new TextEncoder().encode(JSON.stringify({siteId,inventory})));
