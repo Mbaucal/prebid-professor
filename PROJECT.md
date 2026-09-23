@@ -1,3 +1,13 @@
+## 2026-09-23 — Anonymous login logo (MBA-111)
+
+The sign-in logo and favicon requested a PNG behind the session guard, returning
+a 303 login redirect instead of image bytes. Only GET/HEAD for the exact
+`/tessera-logo.png` path now reach the static asset binding without a session.
+Other assets and APIs retain their authentication checks; CSP, login handling,
+site settings and saved packages are unchanged. The regression runs against the
+compiled production Worker with its real static assets and checks both login
+states, old cache keys, invalid cookies, HEAD and protected routes.
+
 ## 2026-09-23 — Accepted GAM reporting promotion (MBA-103)
 
 Marko tested refresh reporting on TEST and authorized main promotion. Version
