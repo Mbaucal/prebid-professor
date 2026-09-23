@@ -13,13 +13,13 @@ export default function SiteTestPagePanel({ publisherId, endpoint, testOnly=fals
   const [loading,setLoading] = useState(true), [error,setError] = useState(''), [reload,setReload] = useState(0);
   const url = endpoint ?? `/api/publishers/${encodeURIComponent(publisherId)}/builtin-releases`;
   useEffect(() => {
-    const abort = new AbortController(); setLoading(true); setError(''); setReleases([]); setSelected('');
+    const abort = new AbortController(); setLoading(true); setError(''); setReleases([]);
     fetch(url,{credentials:'same-origin',cache:'no-store',signal:abort.signal}).then(async response => {
       const data = await response.json(); if(!response.ok) throw Error(data.error || 'Could not load saved packages.');
       if(abort.signal.aborted) return;
       const expected = testOnly ? /^builtin-draft-[a-f0-9]{64}$/ : /^builtin-release-[a-f0-9]{64}$/;
       const items = (data.releases || []).filter((item:Release) => expected.test(item.id));
-      setReleases(items); setSelected(items[0]?.id || '');
+      setReleases(items); setSelected(current => items.some((item:Release) => item.id === current) ? current : items[0]?.id || '');
     }).catch(e => { if(!abort.signal.aborted) setError(e.message); }).finally(() => { if(!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
   },[url,publisherId,testOnly,reload]);
@@ -29,7 +29,7 @@ export default function SiteTestPagePanel({ publisherId, endpoint, testOnly=fals
     {error ? <p role="alert" className="runtime-error">{error}</p> : null}
     {loading ? <p>Loading saved packages…</p> : releases.length ? <>
       <label>Saved package<select aria-label="Saved package" value={selected} onChange={event => setSelected(event.target.value)}>{releases.map(release => <option key={release.id} value={release.id}>{release.notes || 'Generated package'} · {new Date(release.createdAt).toLocaleString()} · {release.status} · {release.id.slice(-8)}</option>)}</select></label>
-      {chosen ? <><p className="runtime-muted">The test uses this package's positions, size maps and original scripts. Unsaved editor changes are not included.</p><div className="runtime-actions"><a className="button" href={testPageUrl(publisherId,chosen.id,testOnly)} target="_blank" rel="noopener noreferrer">Open test page</a></div><details><summary>Selected package ID</summary><code style={{overflowWrap:'anywhere'}}>{chosen.id}</code></details></> : null}
+      {chosen ? <><p className="runtime-muted">The test uses this package's positions, size maps and original scripts. Unsaved editor changes are not included.</p><div className="runtime-actions"><a className="runtime-test-link runtime-test-link-primary" href={testPageUrl(publisherId,chosen.id,testOnly)} target="_blank" rel="noopener noreferrer">Open test page</a></div><details><summary>Selected package ID</summary><code style={{overflowWrap:'anywhere'}}>{chosen.id}</code></details></> : null}
     </> : !error ? <p>No saved built-in packages yet. Open Generate and releases, save a package, then return here.</p> : null}
     <div className="runtime-actions"><button disabled={loading} onClick={() => setReload(value => value + 1)}>Reload packages</button></div>
     <h3>What you can check</h3><ul><li>DIVs, GPT registration, responsive sizes and actual ad requests.</li><li>Lazy positions while scrolling and separate runtime-created slots.</li><li>Google Publisher Console and a report you can copy.</li></ul>

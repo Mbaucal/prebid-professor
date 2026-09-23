@@ -9,11 +9,21 @@ export function testPageClient() {
   const ids = new Set(model.units.map(u => u.id));
   let started = false, scanning = false, scanToken = 0, readyAt = 0;
   let consoleSnapshot = null;
+  let startedViewport = null, scanPosition = '', renderPending = false;
   const stickyViews = new Map();
+  const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
+  const scrollBehavior = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
+  function scheduleRender() {
+    if (renderPending) return;
+    renderPending = true;
+    requestAnimationFrame(() => { renderPending = false; render(); });
+  }
   function record(message) {
     message = String(message).slice(0,600);
-    if (errors.length < 30 && !errors.includes(message)) errors.push(message);
-    one('[data-errors]').textContent = errors.join('\n') || 'No errors recorded.';
+    const added = errors.length < 30 && !errors.includes(message);
+    if (added) errors.push(message);
+    setText(one('[data-errors]'), errors.join('\n') || 'No errors recorded.');
+    if (added) scheduleRender();
   }
   window.addEventListener('error', e => { if (e.message) record(e.message); });
   window.addEventListener('unhandledrejection', e => record(e.reason?.message || e.reason));
@@ -33,7 +43,7 @@ export function testPageClient() {
     }
     return {
       testedAt:new Date().toISOString(), siteId:model.siteId, releaseId:model.releaseId, runtimeVersion:model.runtimeVersion,
-      prebidVersion:model.prebidVersion, assets:{...assets}, viewport:{width:innerWidth,height:innerHeight}, gptReady:!!window.googletag?.apiReady,
+      prebidVersion:model.prebidVersion, assets:{...assets}, viewport:{width:innerWidth,height:innerHeight}, startedViewport, gptReady:!!window.googletag?.apiReady,
       consoleSnapshot, cssPreviews:[...stickyViews].filter(([,view]) => view.preview).map(([id]) => id),
       units:model.units.map(unit => {
         const nodes = dom.get(unit.id) || [], found = slots.get(unit.id) || [], path = found[0]?.getAdUnitPath() || null;
@@ -50,12 +60,15 @@ export function testPageClient() {
       additionalSlots:[...slots].filter(([id]) => !ids.has(id)).map(([id, values]) => ({id,path:values[0].getAdUnitPath(),requests:requests[id] || 0,response:replies[id] || null})), errors:errors.slice(),
     };
   }
-  function badge(cell, text, color) { const tag = document.createElement('span'); tag.className = 'pill ' + color; tag.textContent = text; cell.replaceChildren(tag); }
+  function badge(cell, text, color) {
+    if (cell.firstChild?.textContent === text && cell.firstChild.className === 'pill ' + color) return;
+    const tag = document.createElement('span'); tag.className = 'pill ' + color; tag.textContent = text; cell.replaceChildren(tag);
+  }
   const cards = new Map([...document.querySelectorAll('[data-slot-card]')].map(node => [node.dataset.slotCard,node]));
   const labels = new Map([...document.querySelectorAll('[data-slot-state]')].map(node => [node.dataset.slotState,node]));
   model.units.forEach(unit => {
     const row = document.createElement('tr'); for (let n = 0; n < 6; n++) row.appendChild(document.createElement('td'));
-    const jump = document.createElement('button'); jump.textContent = unit.id; jump.addEventListener('click',() => cards.get(unit.id).scrollIntoView({block:'start',behavior:'smooth'}));
+    const jump = document.createElement('button'); jump.className = 'jump'; jump.textContent = unit.id; jump.addEventListener('click',() => { stop(); cards.get(unit.id).scrollIntoView({block:'start',behavior:scrollBehavior()}); });
     row.children[0].append(jump,document.createElement('br'),document.createTextNode(unit.type + (unit.sticky ? ' · Sticky' : unit.lazy.enabled ? ' · lazy' : ' · immediate')));
     row.children[3].className = 'sizes'; one('[data-rows]').appendChild(row); rows.set(unit.id,row);
   });
@@ -101,11 +114,11 @@ export function testPageClient() {
       const box = document.createElement('div'); box.id = unit.id; box.className = 'ad-loaded';
       box.style.minHeight = size[1] + 'px'; box.style.paddingBottom = '5px';
       const label = document.createElement('div'); label.dataset.previewLabel = '';
-      label.style.cssText = 'box-sizing:border-box;display:grid;place-items:center;border:2px dashed #08795f;background:#e8f5ef;color:#163e3d;text-align:center;font:12px/1.3 system-ui;';
+      label.style.cssText = 'box-sizing:border-box;display:grid;place-items:center;border:2px dashed #d85e1a;background:#fff3e9;color:#202a3b;text-align:center;font:12px/1.3 system-ui;';
       label.style.width = size[0] + 'px'; label.style.height = size[1] + 'px';
       label.textContent = unit.id + ' · CSS preview · ' + size.join('×') + ' · No ad';
       const close = document.createElement('button'); close.id = 'close_sticky_ad'; close.textContent = '×'; close.setAttribute('aria-label','Close Sticky CSS preview');
-      close.addEventListener('click',() => { closePreview(view); render(); });
+      close.addEventListener('click',() => { closePreview(view); render(); previewButton.focus({preventScroll:true}); });
       box.append(label,close); root.append(css,box); document.body.appendChild(host); view.preview = host; render();
     });
     consoleButton.addEventListener('click',() => openConsole(unit.id));
@@ -114,23 +127,30 @@ export function testPageClient() {
   function render() {
     const s = collect(), dom = s.units.filter(u => u.domCount === 1 && u.wrapper).length;
     const gpt = s.units.filter(u => u.slotCount === 1 && u.pathOk).length, active = s.units.filter(u => u.active);
-    for (const [key,value] of Object.entries({dom:dom + ' / ' + s.units.length,gpt:gpt + ' / ' + s.units.length,active:active.length + ' / ' + s.units.length,requests:active.filter(u => u.requests).length + ' / ' + active.length})) one('[data-metric="' + key + '"]').textContent = value;
-    for (const [key,value] of Object.entries(assets)) { const tag = one('[data-asset="' + key + '"]'); if(tag) { tag.textContent = key + ': ' + value; tag.className = 'pill ' + (value === 'ready' ? 'ok' : value === 'failed' ? 'bad' : 'wait'); } }
-    one('[data-viewport]').textContent = innerWidth + ' × ' + innerHeight + ' px';
+    for (const [key,value] of Object.entries({dom:dom + ' / ' + s.units.length,gpt:gpt + ' / ' + s.units.length,active:active.length + ' / ' + s.units.length,requests:active.filter(u => u.requests).length + ' / ' + active.length})) setText(one('[data-metric="' + key + '"]'), value);
+    for (const [key,value] of Object.entries(assets)) { const tag = one('[data-asset="' + key + '"]'); if(tag) { setText(tag, key + ': ' + value); tag.className = 'pill ' + (value === 'ready' ? 'ok' : value === 'failed' ? 'bad' : value === 'loading' ? 'wait' : ''); } }
+    setText(one('[data-viewport]'), innerWidth + ' × ' + innerHeight + ' px');
+    const resized = startedViewport && (startedViewport.width !== innerWidth || startedViewport.height !== innerHeight);
+    one('[data-resize-notice]').hidden = !resized;
+    if (resized) setText(one('[data-resize-notice]'), 'Viewport changed since Start (' + startedViewport.width + ' × ' + startedViewport.height + '). Sizes below use the current width; requests include the previous viewport. Restart test for a fresh check.');
+    setText(one('[data-error-count]'), errors.length + (errors.length === 1 ? ' error' : ' errors'));
+    one('[data-error-count]').className = 'pill' + (errors.length ? ' bad' : '');
+    one('[data-scan-progress]').hidden = !scanning;
+    if (scanning) setText(one('[data-scan-progress]'), scanPosition);
     action('console').disabled = !s.gptReady; action('scan').disabled = !s.gptReady || scanning;
     for (const unit of s.units) {
       const cells = rows.get(unit.id).children;
       badge(cells[1],unit.domCount === 1 && unit.wrapper ? 'Present' : unit.domCount > 1 ? 'Duplicate ID' : 'Missing / class',unit.domCount === 1 && unit.wrapper ? 'ok' : 'bad');
       badge(cells[2],unit.slotCount === 1 && unit.pathOk ? 'Registered' : unit.slotCount > 1 ? 'Duplicate slot' : unit.slotCount ? 'Wrong GAM path' : s.gptReady ? 'Waiting' : 'Waiting for GPT',unit.slotCount === 1 && unit.pathOk ? 'ok' : unit.slotCount ? 'bad' : 'wait');
-      cells[2].title = unit.path || ''; cells[3].textContent = unit.active ? unit.sizes.map(size => Array.isArray(size) ? size.join('×') : size).join(', ') : 'Disabled at this width';
-      cells[4].textContent = String(unit.requests); cells[5].textContent = unit.response || (unit.active ? 'Waiting' : 'Not required');
+      cells[2].title = unit.path || ''; setText(cells[3], unit.active ? unit.sizes.map(size => Array.isArray(size) ? size.join('×') : size).join(', ') : 'Disabled at this width');
+      setText(cells[4], String(unit.requests)); setText(cells[5], unit.response || (!unit.active ? 'Not required' : !started ? 'Not started' : !s.gptReady ? 'Waiting for GPT' : unit.lazy.enabled ? 'Waiting for scroll' : 'Waiting for request'));
       labels.get(unit.id).textContent = (unit.active ? 'Active' : 'Disabled at this width') + ' · ' + unit.width + ' × ' + unit.height + ' px';
       const view = stickyViews.get(unit.id);
       if (view) {
         const size = previewSize(unit);
         if (unit.visible || !size) closePreview(view);
-        view.live.textContent = 'Live state\n' + describeSticky(unit);
-        view.before.textContent = consoleSnapshot ? 'Before console (' + consoleSnapshot.capturedAt + ')\n' + describeSticky(consoleSnapshot.units.find(row => row.id === unit.id)) : 'Before console: no snapshot yet. Use a console button on this page.';
+        setText(view.live, 'Live state\n' + describeSticky(unit));
+        setText(view.before, consoleSnapshot ? 'Before console (' + consoleSnapshot.capturedAt + ')\n' + describeSticky(consoleSnapshot.units.find(row => row.id === unit.id)) : 'Before console: no snapshot yet. Use a console button on this page.');
         view.previewButton.disabled = !model.assets.stickyCss || !size || unit.visible;
         view.previewButton.textContent = view.preview ? 'Hide Sticky CSS preview' : 'Show Sticky CSS preview';
         view.previewButton.setAttribute('aria-pressed',String(!!view.preview)); view.consoleButton.disabled = !s.gptReady;
@@ -145,30 +165,44 @@ export function testPageClient() {
     for (const [id,view] of stickyViews) if (view.preview) reserve(view.preview.shadowRoot.getElementById(id)?.getBoundingClientRect());
     one('.float').style.bottom = controlsBottom + 'px';
     const extras = one('[data-extras]'); extras.textContent = s.additionalSlots.length ? 'Runtime-created / additional GPT slots: ' + s.additionalSlots.map(slot => slot.id + ' · ' + slot.path + ' · requests: ' + slot.requests).join('; ') : '';
-    one('[data-summary]').textContent = Object.values(assets).includes('failed') ? 'A required script failed to load. Check the errors and your ad blocker, then restart.'
+    const summary = Object.values(assets).includes('failed') ? 'A required script failed to load or initialize. Check package details and errors, then restart.'
       : !started ? 'Ready. Click Start test to load this saved package.' : !s.gptReady ? 'Loading the saved scripts and Google GPT…'
-      : dom === s.units.length && gpt === s.units.length ? 'All ' + gpt + ' positions are present and registered. ' + active.length + ' active at this width. Empty ads are OK.'
+      : dom !== s.units.length ? 'Container check failed: ' + dom + ' / ' + s.units.length + ' valid DIVs. Check missing or duplicate rows.'
+      : s.units.some(u => u.slotCount > 1 || (u.slotCount && !u.pathOk)) ? 'GPT registration mismatch. Check the highlighted slots and GAM paths.'
+      : gpt === s.units.length ? 'All ' + gpt + ' positions are present and registered. ' + active.length + ' active at this width. Empty ads are OK.'
       : 'Registered ' + gpt + ' / ' + s.units.length + ' positions. ' + (Date.now() - readyAt > 12000 ? 'Check waiting rows and recorded errors.' : 'Waiting for initialization…');
+    setText(one('[data-summary]'), summary + (errors.length ? ' ' + errors.length + ' recorded error(s); see package details below.' : ''));
   }
   window.googletag = window.googletag || {cmd:[]};
   googletag.cmd.push(() => {
     assets.gpt = 'ready'; readyAt = Date.now();
-    googletag.pubads().addEventListener('slotRequested',event => { const id = event.slot.getSlotElementId(); requests[id] = (requests[id] || 0) + 1; replies[id] = 'Waiting for response'; render(); });
-    googletag.pubads().addEventListener('slotRenderEnded',event => { replies[event.slot.getSlotElementId()] = event.isEmpty ? 'Empty — OK for this test' : 'Ad ' + (Array.isArray(event.size) ? event.size.join('×') : 'rendered'); render(); });
+    googletag.pubads().addEventListener('slotRequested',event => { const id = event.slot.getSlotElementId(); requests[id] = (requests[id] || 0) + 1; replies[id] = 'Waiting for response'; scheduleRender(); });
+    googletag.pubads().addEventListener('slotRenderEnded',event => { replies[event.slot.getSlotElementId()] = event.isEmpty ? 'Empty — OK for this test' : 'Ad ' + (Array.isArray(event.size) ? event.size.join('×') : 'rendered'); scheduleRender(); });
     render();
   });
   function script(src, name, cors = false) {
     assets[name] = 'loading'; render();
     return new Promise((resolve,reject) => {
       const tag = document.createElement('script'); tag.async = true; if(cors) tag.crossOrigin = 'anonymous'; tag.src = src;
-      const timer = setTimeout(() => { assets[name] = 'failed'; record(name + ' did not load within 20 seconds. Restart to try again.'); render(); reject(new Error(name + ' timeout')); },20000);
-      tag.onload = () => { clearTimeout(timer); if(assets[name] === 'failed') return; if(name !== 'gpt') assets[name] = 'ready'; render(); resolve(); };
-      tag.onerror = () => { clearTimeout(timer); assets[name] = 'failed'; record(name + ' could not load. Check network / ad blocker.'); render(); reject(new Error(name + ' failed')); };
+      let settled = false, poll;
+      const finish = error => {
+        if (settled) return; settled = true; clearTimeout(timer); clearInterval(poll);
+        if (error) { assets[name] = 'failed'; tag.remove(); record(error.message); reject(error); }
+        else { assets[name] = 'ready'; resolve(); }
+        render();
+      };
+      const timer = setTimeout(() => finish(new Error(name + ' did not load or initialize within 20 seconds. Check network / ad blocker, then restart.')),20000);
+      tag.onload = () => {
+        if (settled) return;
+        if (name !== 'gpt' || window.googletag?.apiReady) finish();
+        else poll = setInterval(() => { if(window.googletag?.apiReady) finish(); },100);
+      };
+      tag.onerror = () => finish(new Error(name + ' could not load. Check network / ad blocker, then restart.'));
       document.head.appendChild(tag);
     });
   }
   action('start').addEventListener('click',async () => {
-    if(started) return; started = true; action('start').disabled = true; action('start').textContent = 'Test started';
+    if(started) return; started = true; startedViewport = {width:innerWidth,height:innerHeight}; action('start').disabled = true; action('start').textContent = 'Test started';
     try {
       if(model.assets.prebid) await script('data:application/javascript;base64,' + model.assets.prebid,'prebid');
       await script('data:application/javascript;base64,' + model.assets.ads,'ads');
@@ -179,18 +213,19 @@ export function testPageClient() {
   action('console').addEventListener('click',() => openConsole());
   function stop() { scanning = false; scanToken++; action('stop').hidden = true; render(); }
   action('scan').addEventListener('click',async () => {
-    scanning = true; const token = ++scanToken; action('stop').hidden = false; render();
-    for(const unit of model.units) {
+    scanning = true; const token = ++scanToken; action('stop').hidden = false;
+    const targets = model.units.filter(unit => !unit.sticky && sizesFor(unit).length);
+    for(const [index,unit] of targets.entries()) {
       if(!scanning || token !== scanToken) break;
-      if(unit.sticky || !sizesFor(unit).length) continue;
+      scanPosition = (index + 1) + ' / ' + targets.length + ' · ' + unit.id; render();
       const node = document.getElementById(unit.id), rect = node?.getBoundingClientRect();
       if(rect) scrollTo({top:Math.max(0,scrollY + rect.top - 40),behavior:'instant'});
       await new Promise(resolve => setTimeout(resolve,1300));
     }
-    if(token === scanToken) { stop(); scrollTo({top:0,behavior:'smooth'}); }
+    if(token === scanToken) { stop(); scrollTo({top:0,behavior:scrollBehavior()}); }
   });
   action('stop').addEventListener('click',stop);
-  action('top').addEventListener('click',() => { stop(); scrollTo({top:0,behavior:'smooth'}); });
+  action('top').addEventListener('click',() => { stop(); scrollTo({top:0,behavior:scrollBehavior()}); });
   action('restart').addEventListener('click',() => location.reload());
   action('copy').addEventListener('click',async () => {
     const report = JSON.stringify(collect(),null,2);
@@ -199,5 +234,5 @@ export function testPageClient() {
   });
   const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'data:text/css;base64,' + model.assets.css;
   css.onerror = () => record('Saved placeholder CSS could not load.'); document.head.appendChild(css);
-  window.addEventListener('resize',() => { for(const view of stickyViews.values()) closePreview(view); render(); }); render(); setInterval(render,1000);
+  window.addEventListener('resize',() => { for(const view of stickyViews.values()) closePreview(view); stop(); }); render(); setInterval(render,1000);
 }

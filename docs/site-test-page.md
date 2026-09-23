@@ -64,3 +64,27 @@ Sticky browser coverage includes empty and filled responses, close behavior,
 fixed placement while scrolling on desktop/mobile, preview isolation, responsive
 preview size, and a before/live comparison after a synthetic external style
 change. This checks observation, not the externally hosted Google console UI.
+
+## 2026-09-23 follow-up review (MBA-104)
+
+Confirmed findings and changes:
+
+| Finding | Change |
+| --- | --- |
+| Release links inherited browser default / visited purple and underlines. Standalone UI used an unrelated teal palette. | Explicit normal/visited/hover/focus button styles, Tessera charcoal header, orange primary actions and neutral panels. Ad/Sticky CSS stays separate. |
+| GPT script `load` cleared the only deadline even when its API never became ready. | One 20-second load/initialization deadline, visible failure status and restart guidance; timeout/error cleanup is idempotent. |
+| Wrong GAM paths and duplicate slots only appeared in table rows beneath a generic waiting summary. | Summary distinguishes container failures and GPT registration mismatches; recorded error count remains visible. |
+| Resizing mixed fresh responsive sizes with requests from an earlier viewport. | Capture Start viewport in the report, show a restart notice after resize, close preview and stop an ongoing scan. |
+| Automatic scroll gave no progress, and jumping to a row could compete with a running scan. | Position/count progress, cancellation on jump/resize, and reduced-motion support. |
+| Each GPT event and timer rebuilt unchanged status badges. | Batch event rendering per animation frame and preserve unchanged badge/live-status nodes. |
+| Mobile results had no horizontal-scroll hint or keyboard focus target. | Focusable labelled results region, column scopes, mobile hint, visible focus rings and touch-size controls. |
+| Reload packages discarded the current package choice. | Preserve selection when it still exists. |
+
+Validation extends the compiled-Worker Chromium fixture at 1440 and 390 pixels:
+empty/filled Sticky, original fixed placement and close control, preview isolation,
+responsive maps, lazy requests, report, stop/resume, resize/restart, keyboard focus
+and styling. Fault fixtures exercise blocked GPT, loaded-without-API GPT, wrong
+GAM paths, duplicate DOM IDs and duplicate GPT slots. Synthetic GPT is used for
+these deterministic checks; it does not validate live demand or Google's hosted
+console UI. Hosted TEST visual/interaction and deployment evidence is recorded in
+MBA-104. No production promotion is included in this follow-up.
