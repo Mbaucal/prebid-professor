@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { api } from '../api';
 import type { AdUnit, AdUnitType } from '../shared/types';
 import SiteRuntimePanel from './SiteRuntimePanel';
+import PositionBidCachePanel,{fetchBidCacheSettings,type BidCachePayload} from './PositionBidCachePanel';
 
 type Props = {
   publisherId: string;
@@ -67,6 +68,8 @@ function formFromAdUnit(adUnit: AdUnit): FormState {
 
 export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
   const [runtimeUnit,setRuntimeUnit]=useState<string|null>(null);
+  const [cacheUnit,setCacheUnit]=useState<string|null>(null);
+  const [cacheSettings,setCacheSettings]=useState<BidCachePayload|null>(null);
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +94,11 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(()=>{let active=true;setCacheSettings(null);setCacheUnit(null);
+    fetchBidCacheSettings(publisherId).then(data=>{if(active)setCacheSettings(data);}).catch(()=>{});
+    return()=>{active=false;};
+  },[publisherId]);
 
   const grouped = useMemo(() => {
     const result: Record<AdUnitType, AdUnit[]> = { ATF: [], BTF: [], DRAFT: [] };
@@ -252,6 +260,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
                     {adUnit.notes ? <p>{adUnit.notes}</p> : null}
 
                     <div className="ad-unit-actions">
+                      {cacheSettings?.bidCachePositions?.includes(adUnit.code)?<button type="button" onClick={()=>setCacheUnit(adUnit.code)}>Bid cache: {!cacheSettings.prebidMode.enabled?'Inactive':(cacheSettings.prebidMode.bidCache.positionOverrides?.[adUnit.code]??cacheSettings.prebidMode.bidCache.enabled)?'On':'Off'}</button>:null}
                       {adUnit.mediaType==='banner'&&adUnit.type!=='DRAFT'?<button onClick={()=>setRuntimeUnit(adUnit.code)} type="button">Display & loading</button>:null}
                       <button onClick={() => openEdit(adUnit)} type="button">Edit</button>
                       <button onClick={() => openDuplicate(adUnit)} type="button">Duplicate</button>
@@ -274,6 +283,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
       </section>
 
       {runtimeUnit?<div className="modal-backdrop"><section className="modal-card ad-unit-modal" role="dialog" aria-modal="true" aria-label={`Display settings for ${runtimeUnit}`}><button className="icon-button" type="button" onClick={()=>setRuntimeUnit(null)} aria-label="Close display settings">×</button><SiteRuntimePanel key={publisherId+runtimeUnit} publisherId={publisherId} view="positions" unitCode={runtimeUnit} onChanged={onChanged}/></section></div>:null}
+      {cacheUnit?<PositionBidCachePanel key={publisherId+cacheUnit} publisherId={publisherId} code={cacheUnit} onClose={()=>setCacheUnit(null)} onSaved={next=>{setCacheSettings(next);void onChanged?.();}}/>:null}
       {mode ? (
         <div className="modal-backdrop" onMouseDown={closeForm} role="presentation">
           <section

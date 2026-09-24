@@ -3,12 +3,12 @@ import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {displayName} from '../../worker/experiments/saved-script-settings.mjs';
 import './ab-experiments.css';
 
-type Settings={mode:'fresh-only'|'auction-with-cache';refreshSeconds:number|null;maxBidAgeSeconds?:number};
+type Settings={mode:'fresh-only'|'auction-with-cache';refreshSeconds:number|null;maxBidAgeSeconds?:number;positionOverrides?:Record<string,boolean>};
 type ScriptRef={id:string;name:string;settings:Settings};
 type Saved=ScriptRef&{collection:'scripts'|'tests';createdAt:string;bytes:number;sha256:string;trafficBPercent?:number;scripts?:{A:ScriptRef;B:ScriptRef}};
 type Library={supported:boolean;revision:string;baseline:{release:string;positions:number;prebidVersion:string};prebid:{enabled:boolean;bidCache:{enabled:boolean;maxBidAgeSeconds:number}};scripts:Saved[];tests:Saved[];deletedScripts:Saved[];deletedTests:Saved[];nextCursors:{scripts:string|null;tests:string|null}};
 type Kind='scripts'|'tests';
-const description=(s:Settings)=>`${s.mode==='fresh-only'?'Fresh auction':`Auction + cached bids, up to ${s.maxBidAgeSeconds} s`} · ${s.refreshSeconds===null?'baseline refresh rules':`${s.refreshSeconds} s refresh`}`;
+const description=(s:Settings)=>`${s.positionOverrides?'Site default: ':''}${s.mode==='fresh-only'?'Fresh auction':`Auction + cached bids, up to ${s.maxBidAgeSeconds} s`}${s.positionOverrides?' · '+Object.entries(s.positionOverrides).map(([code,on])=>`${code}: cache ${on?'On':'Off'}`).join(' · '):''} · ${s.refreshSeconds===null?'baseline refresh rules':`${s.refreshSeconds} s refresh`}`;
 const merge=(items:Saved[],added:Saved[])=>[...new Map([...items,...added].map(p=>[p.id,p])).values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
 
 export default function ScriptLibraryPanel({publisherId,onOpenDemand}:{publisherId:string;onOpenDemand?:()=>void}) {

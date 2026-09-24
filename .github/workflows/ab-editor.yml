@@ -27,7 +27,7 @@ jobs:
       - name: Build app and verify pinned package/service contracts
         run: |
           npm run build
-          node --test tests/runtime/configurable-ab.test.mjs tests/runtime/ab-editor.test.mjs tests/runtime/full-cache-policy.test.mjs tests/runtime/full-cache-lifecycle.test.mjs tests/runtime/experiment-inspect.test.mjs
+          node --test tests/runtime/configurable-ab.test.mjs tests/runtime/ab-editor.test.mjs tests/runtime/full-cache-policy.test.mjs tests/runtime/position-cache-policy.test.mjs tests/runtime/full-cache-lifecycle.test.mjs tests/runtime/experiment-inspect.test.mjs
           node scripts/verify-ab-editor-workerd.mjs
           node --test tests/runtime/saved-scripts.test.mjs tests/runtime/script-library.test.mjs
           node scripts/verify-script-library-workerd.mjs
@@ -43,6 +43,8 @@ jobs:
           TANJUG_PACKAGE_DIR=.generated/script-library-delivered/ab/deploy python scripts/verify-tanjug-cache.py
           TANJUG_PACKAGE_DIR=.generated/script-library-delivered/cache/deploy python scripts/verify-tanjug-cache.py
           TANJUG_PACKAGE_DIR=.generated/script-library-delivered/fresh/deploy python scripts/verify-tanjug-cache.py
+          TANJUG_PACKAGE_DIR=.generated/script-library-delivered/positions/deploy python scripts/verify-tanjug-cache.py
+          TANJUG_PACKAGE_DIR=.generated/script-library-delivered/positions-default-off/deploy python scripts/verify-tanjug-cache.py
           SCRIPT_LIBRARY_SMOKE=1 TANJUG_PACKAGE_DIR=.generated/script-library-delivered/aa/deploy python scripts/verify-tanjug-cache.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

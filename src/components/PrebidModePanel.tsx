@@ -12,7 +12,7 @@ type ModePayload = {
   prebidMode: {
     enabled: boolean;
     mode: 'gam-prebid' | 'gam-adx-only';
-    bidCache: {enabled: boolean; maxBidAgeSeconds: number};
+    bidCache: {enabled: boolean; maxBidAgeSeconds: number; positionOverrides?:Record<string,boolean>};
   };
   savedState: {
     bidders: number;
@@ -96,7 +96,7 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
         {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ enabled: selected, revision: payload!.revision, bidCache: { enabled: cacheEnabled, maxBidAgeSeconds: Number(maxAge) } }),
+          body: JSON.stringify({ enabled: selected, revision: payload!.revision, bidCache: { ...payload!.prebidMode.bidCache, enabled: cacheEnabled, maxBidAgeSeconds: Number(maxAge) } }),
         },
       );
       setPayload(next);
@@ -120,6 +120,8 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
   const validAge = Number.isInteger(Number(maxAge)) && Number(maxAge) >= 1 && Number(maxAge) <= 300;
   function reset() { if (payload) { setSelected(payload.prebidMode.enabled); setCacheEnabled(payload.prebidMode.bidCache.enabled); setMaxAge(String(payload.prebidMode.bidCache.maxBidAgeSeconds)); } }
   const build = payload?.savedState.currentPrebidBuild;
+  const positionOverrides=payload?.prebidMode.bidCache.positionOverrides??{};
+  const hasCache=cacheEnabled||Object.values(positionOverrides).some(Boolean);
 
   return (
     <section className="prebid-mode-page">
@@ -193,8 +195,9 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
               <input type="checkbox" checked={cacheEnabled} disabled={!payload.bidCacheAvailable && !cacheEnabled} onChange={e => { setCacheEnabled(e.target.checked); if (!e.target.checked && !validAge) setMaxAge(String(payload.prebidMode.bidCache.maxBidAgeSeconds)); }} />
               Reuse valid, unused bids
             </label>
-            <p>{cacheEnabled ? 'Each opportunity starts a new auction. Valid, unused cached bids may also compete.' : 'Only bids from the new auction are used.'}</p>
-            {cacheEnabled ? <label className="prebid-cache-age">Maximum bid age (seconds)
+            <p>Site default: {cacheEnabled ? 'new auctions with valid, unused cached bids also allowed.' : 'current auction only.'} Each refresh starts a new auction.</p>
+            {Object.keys(positionOverrides).length?<p>Position overrides: {Object.entries(positionOverrides).map(([code,on])=>`${code}: ${on?'On':'Off'}`).join(' · ')}. Change these under Ad units → Bid cache.</p>:null}
+            {hasCache ? <label className="prebid-cache-age">Maximum bid age (seconds)
               <input aria-label="Maximum bid age (seconds)" type="number" min={1} max={300} step={1} required value={maxAge} onChange={e => setMaxAge(e.target.value)} />
               <span>A bid may expire sooner according to its original TTL.</span>
               {!validAge ? <span role="alert">Enter a whole number from 1 to 300.</span> : null}
