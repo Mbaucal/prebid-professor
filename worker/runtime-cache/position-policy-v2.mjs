@@ -1,6 +1,6 @@
 // Versioned per-position cache policy. The original full-layout policy stays frozen.
-// The future versioned compiler must supply a context epoch that changes with
-// consent/eligibility and derive sizes + slot identity from its owned live slot.
+// The versioned compiler supplies a context epoch that changes with
+// consent/eligibility and derives sizes + slot identity from its owned live slot.
 export function createPositionBidCachePolicy({pbjs,siteId,contextForCode,cacheAllowed=()=>true,auctionAllowed=()=>true,mode='fresh-only',maxAgeSeconds=30,defaultCacheEnabled=mode==='auction-with-cache',positionOverrides={},now=Date.now}) {
   if(!pbjs||!/^v?11\.34\.0$/.test(pbjs.version||''))throw Error('This candidate requires the reviewed Prebid 11.34.0 build.');
   if(typeof siteId!=='string'||!siteId||typeof contextForCode!=='function'||typeof cacheAllowed!=='function'||typeof auctionAllowed!=='function'||typeof now!=='function')throw Error('Explicit site and eligibility context are required.');

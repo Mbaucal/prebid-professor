@@ -7,13 +7,14 @@ export async function fetchBidCacheSettings(site:string,body?:unknown):Promise<B
     method:body?'PUT':'GET',credentials:'same-origin',cache:'no-store',
     ...(body?{headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{}),
   });
-  const data=await response.json();if(!response.ok)throw Error(data.error||'Could not load bid cache settings.');return data;
+  const data=await response.json() as BidCachePayload & {error?:string};if(!response.ok)throw Error(data.error||'Could not load bid cache settings.');return data;
 }
 export default function PositionBidCachePanel({publisherId,code,onClose,onSaved}:{publisherId:string;code:string;onClose:()=>void;onSaved:(data:BidCachePayload)=>void}){
   const dialog=useRef<HTMLElement>(null);
   useEffect(()=>{const previous=document.activeElement as HTMLElement|null;dialog.current?.focus();return()=>previous?.focus();},[]);
   const [data,setData]=useState<BidCachePayload|null>(null),[choice,setChoice]=useState('inherit');
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
+  useEffect(()=>{const handle=(event:KeyboardEvent)=>{if(event.key==='Escape'&&!busy){event.preventDefault();onClose();}};document.addEventListener('keydown',handle);return()=>document.removeEventListener('keydown',handle);},[busy,onClose]);
   function accept(next:BidCachePayload){setData(next);const override=next.prebidMode.bidCache.positionOverrides?.[code];setChoice(override===undefined?'inherit':override?'on':'off');}
   async function reload(){setBusy(true);setError('');setMessage('');try{accept(await fetchBidCacheSettings(publisherId));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   useEffect(()=>{let active=true;fetchBidCacheSettings(publisherId).then(next=>{if(active)accept(next);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[publisherId,code]);
@@ -29,7 +30,6 @@ export default function PositionBidCachePanel({publisherId,code,onClose,onSaved}
   const dirty=choice!==(original===undefined?'inherit':original?'on':'off');
   const supported=data?.bidCacheAvailable&&data.bidCachePositions.includes(code);
   return <div className="modal-backdrop"><section className="modal-card ad-unit-modal" ref={dialog} tabIndex={-1} onKeyDown={event=>{
-      if(event.key==='Escape'&&!busy){event.preventDefault();onClose();}
       if(event.key==='Tab'){
         const controls=Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),select:not(:disabled)')??[]);
         const first=controls[0],last=controls.at(-1);

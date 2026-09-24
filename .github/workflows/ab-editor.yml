@@ -35,16 +35,18 @@ jobs:
         run: |
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
+      - name: Verify per-position auctions and controls
+        run: |
+          TANJUG_PACKAGE_DIR=.generated/script-library-delivered/positions/deploy python scripts/verify-tanjug-cache.py
+          TANJUG_PACKAGE_DIR=.generated/script-library-delivered/positions-default-off/deploy python scripts/verify-tanjug-cache.py
+          python scripts/verify-script-library-ui.py
       - name: Exercise the editor and downloaded package
         run: |
           python scripts/verify-ab-editor-ui.py
           TANJUG_PACKAGE_DIR=.generated/ab-editor-delivered/deploy python scripts/verify-tanjug-cache.py
-          python scripts/verify-script-library-ui.py
           TANJUG_PACKAGE_DIR=.generated/script-library-delivered/ab/deploy python scripts/verify-tanjug-cache.py
           TANJUG_PACKAGE_DIR=.generated/script-library-delivered/cache/deploy python scripts/verify-tanjug-cache.py
           TANJUG_PACKAGE_DIR=.generated/script-library-delivered/fresh/deploy python scripts/verify-tanjug-cache.py
-          TANJUG_PACKAGE_DIR=.generated/script-library-delivered/positions/deploy python scripts/verify-tanjug-cache.py
-          TANJUG_PACKAGE_DIR=.generated/script-library-delivered/positions-default-off/deploy python scripts/verify-tanjug-cache.py
           SCRIPT_LIBRARY_SMOKE=1 TANJUG_PACKAGE_DIR=.generated/script-library-delivered/aa/deploy python scripts/verify-tanjug-cache.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

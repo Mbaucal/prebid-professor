@@ -69,6 +69,7 @@ function formFromAdUnit(adUnit: AdUnit): FormState {
 export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
   const [runtimeUnit,setRuntimeUnit]=useState<string|null>(null);
   const [cacheUnit,setCacheUnit]=useState<string|null>(null);
+  const [cacheError,setCacheError]=useState(''),[cacheAttempt,setCacheAttempt]=useState(0);
   const [cacheSettings,setCacheSettings]=useState<BidCachePayload|null>(null);
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,10 +96,10 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
     void load();
   }, [load]);
 
-  useEffect(()=>{let active=true;setCacheSettings(null);setCacheUnit(null);
-    fetchBidCacheSettings(publisherId).then(data=>{if(active)setCacheSettings(data);}).catch(()=>{});
+  useEffect(()=>{let active=true;setCacheSettings(null);setCacheUnit(null);setCacheError('');
+    fetchBidCacheSettings(publisherId).then(data=>{if(active)setCacheSettings(data);}).catch(e=>{if(active)setCacheError(e.message||'Could not load bid cache settings.');});
     return()=>{active=false;};
-  },[publisherId]);
+  },[publisherId,cacheAttempt]);
 
   const grouped = useMemo(() => {
     const result: Record<AdUnitType, AdUnit[]> = { ATF: [], BTF: [], DRAFT: [] };
@@ -283,6 +284,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
       </section>
 
       {runtimeUnit?<div className="modal-backdrop"><section className="modal-card ad-unit-modal" role="dialog" aria-modal="true" aria-label={`Display settings for ${runtimeUnit}`}><button className="icon-button" type="button" onClick={()=>setRuntimeUnit(null)} aria-label="Close display settings">×</button><SiteRuntimePanel key={publisherId+runtimeUnit} publisherId={publisherId} view="positions" unitCode={runtimeUnit} onChanged={onChanged}/></section></div>:null}
+      {cacheError?<p className="form-error" role="alert">{cacheError} <button type="button" onClick={()=>setCacheAttempt(n=>n+1)}>Reload bid cache settings</button></p>:null}
       {cacheUnit?<PositionBidCachePanel key={publisherId+cacheUnit} publisherId={publisherId} code={cacheUnit} onClose={()=>setCacheUnit(null)} onSaved={next=>{setCacheSettings(next);void onChanged?.();}}/>:null}
       {mode ? (
         <div className="modal-backdrop" onMouseDown={closeForm} role="presentation">
