@@ -29,3 +29,6 @@ jobs:
 
       - name: Verify read-only A/B and cache console diagnostics
         run: node --test tests/runtime/experiment-inspect.test.mjs
+
+      - name: Verify minimum-height CSS export
+        run: node --experimental-strip-types --test tests/runtime/min-height-css-export.test.mjs
