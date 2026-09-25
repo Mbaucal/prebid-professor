@@ -1,3 +1,5 @@
+import { identityInspectCommand } from '../debug/identity-inspect.mjs';
+import { demandInspectCommand } from '../debug/demand-inspect.mjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { AdUnit, Bidder } from '../shared/types';
@@ -599,34 +601,6 @@ function consentCommand(scope: DebugScope): string {
 `);
 }
 
-function userIdsCommand(scope: DebugScope): string {
-  return wrapCommand('User ID state', scope, `
-  var pbjs = window.pbjs;
-  if (!pbjs) {
-    console.error('[PP Debug] Prebid is not available.');
-    return;
-  }
-  var config = typeof pbjs.getConfig === 'function' ? pbjs.getConfig() : {};
-  var storageKeys = [];
-  try {
-    for (var index = 0; index < localStorage.length; index += 1) {
-      var key = localStorage.key(index);
-      if (key && /id5|criteo|shared|lotame|pubcid|uid2|identity|user.?id/i.test(key)) storageKeys.push(key);
-    }
-  } catch (_) {}
-  var report = {
-    ids: typeof pbjs.getUserIds === 'function' ? pbjs.getUserIds() : null,
-    eids: typeof pbjs.getUserIdsAsEids === 'function' ? pbjs.getUserIdsAsEids() : null,
-    userSyncConfig: config.userSync || null,
-    detectedStorageKeyNames: storageKeys.sort()
-  };
-  console.group('[PP Debug] User ID state');
-  console.log(report);
-  console.info('Only storage key names are listed; localStorage values are not read by this command.');
-  console.groupEnd();
-  return report;
-`);
-}
 
 function schainCommand(scope: DebugScope): string {
   return wrapCommand('SChain state', scope, `
@@ -826,6 +800,11 @@ function buildCommands(scope: DebugScope): DebugCommand[] {
       code: winningBidsCommand(scope),
     },
     {
+      id: 'demand-signals', category: 'Prebid', title: 'GPID and bidder targeting',
+      description: 'Inspect Send All Bids and latest GPID metadata per bidder and position.',
+      code: demandInspectCommand, scope:'page',
+    },
+    {
       id: 'prebid-config',
       category: 'Prebid',
       title: 'Prebid configuration',
@@ -849,9 +828,9 @@ function buildCommands(scope: DebugScope): DebugCommand[] {
     {
       id: 'user-ids',
       category: 'Privacy',
-      title: 'User ID state',
-      description: 'Print Prebid User ID and EID state plus matching localStorage key names without reading stored values.',
-      code: userIdsCommand(scope),
+      title: 'Identity / EID presence',
+      description: 'Compare identity presence in the first retained and latest bidder requests. Shows source and counts, without user ID values.',
+      code: identityInspectCommand(scope),
     },
     {
       id: 'schain',

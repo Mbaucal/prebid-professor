@@ -1,0 +1,154 @@
+[
+  {
+    "id": "tessera-demand-v1",
+    "version": "3.15.0",
+    "codeSha256": "ef166b6da60a36e3e8817f6df4e2a961e34868382cdb0fae5e36751c545b6528",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "send-all-bids",
+      "stable-gpid"
+    ],
+    "date": "2026-09-23",
+    "title": "All bidder targeting and stable placement IDs",
+    "sourceManifest": "scripts/prepare-demand-runtime.mjs",
+    "sourceCommit": "f8a3991c4999eb4eb2f608543c16936539cdaea0",
+    "changes": [
+      "Sends all bidder offers to GAM with deal targeting, retaining standard winner keys.",
+      "Adds a stable GPID per saved position before every Prebid auction, including lazy, refresh and TakeOver.",
+      "Requires gptPreAuction in the Prebid build. New build plans include it automatically.",
+      "Shows GPID per position with an optional override and a read-only Debug command. GAM-only needs no Prebid or GPID.",
+      "Retains 3.13 reporting, previous runtime sources, saved selections and release packages."
+    ]
+  },
+  {
+    "id": "tessera-reporting-v1",
+    "version": "3.13.0",
+    "codeSha256": "306489d96f842ef1f31cbbff6163786565799dcac2d70e976fe6c94422e4a5bd",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting"
+    ],
+    "date": "2026-09-23",
+    "title": "Reliable GAM refresh and Prebid auction reporting",
+    "sourceManifest": "scripts/prepare-reporting-runtime.mjs",
+    "sourceCommit": "0d96fef00144c96aa15b23be1a99f15df1bb4502",
+    "changes": [
+      "Adds refresh count, bucket, selected interval and request policy to all demand modes.",
+      "GAM-only sends no Prebid auction labels. Completed Prebid auctions report unique positive bids, distinct bidders and the actual auction timeout flag.",
+      "Keeps version 3.10 delivery, consent, lazy loading and refresh scheduling. Does not include the separate creative bridge or Tanjug cache engine.",
+      "Older versions, saved packages and existing selections remain unchanged. Key definitions and GAM reporting setup are included in the package."
+    ]
+  },
+  {
+    "id": "tessera-creatives-preview-1",
+    "version": "3.11.0-tessera.preview.1",
+    "codeSha256": "4de3c04c7492f317c8abf78f63baa66bc08ebb8261262bc825c0948760e33064",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "creative-bridge-v1"
+    ],
+    "date": "2026-09-22",
+    "title": "InCorner and branding creative templates",
+    "sourceManifest": "scripts/prepare-creative-runtime.mjs",
+    "sourceCommit": "d04374a5f40ee5dc51db6189c2fd2488ad1f8b36",
+    "changes": [
+      "Friendly-frame creative templates share a validated display lifecycle with the wrapper.",
+      "InCorner owns one close control, suppresses the sticky strip and pauses refresh until dismissal or a new request.",
+      "Branding uses available side space and cleans up when the source frame is replaced.",
+      "Earlier runtime versions remain selectable and unchanged."
+    ]
+  },
+  {
+    "id": "tessera-positions-preview-1",
+    "version": "3.10.0-tessera.preview.1",
+    "codeSha256": "ae98640d4c373547f1a2b9c6ac867010f5760c14ed71b49fb8907fcfeb3fc5cc",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy"
+    ],
+    "date": "2026-09-14",
+    "title": "TakeOver in Ad positions and saved lazy rules",
+    "sourceManifest": "scripts/prepare-next-runtime.mjs",
+    "sourceCommit": "5aa74e1400ec1d23d3eb47d4c1778eb99d9a1d7e",
+    "changes": [
+      "Configure TakeOver as an ad position with a responsive size map, closing timers and a per-tab display interval.",
+      "Choose GAM only or the site Prebid bidders; ad-unit and device bidder overrides apply to TakeOver.",
+      "Saved lazy fetch/render rules work in the built-in generator.",
+      "The previous 3.9.1 generator remains bundled and selectable for compatible settings; saved packages retain their original files."
+    ]
+  },
+  {
+    "id": "tessera-reference391-preview-2",
+    "version": "3.9.1-tessera.preview.2",
+    "codeSha256": "222569881b377c085f0b5d373523d092d64e2ac5dab05d421c3cc9f371078de9",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh"
+    ],
+    "date": "2026-09-13",
+    "title": "Prebid configuration support",
+    "sourceCommit": "03b96e1191b694b2b41e18ced84d3a5f03c93fa3",
+    "changes": [
+      "Currency conversion follows the option selected for the site.",
+      "Prebid file checks identify missing modules and the bidder or feature requiring them.",
+      "The built-in generator continues to produce ads.js, ads.min.js and CSS from the saved site settings."
+    ]
+  },
+  {
+    "id": "tessera-reference391-preview-2",
+    "version": "3.9.1-tessera.preview.2",
+    "codeSha256": "71fddef7fb9e7c3a23eca8a1098776e0b1c4c7e299e2cc5766e8a649e7e94939",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh"
+    ],
+    "date": "2026-09-11",
+    "title": "Built-in generator and complete test package",
+    "sourceCommit": "047aa1068272117aa4c3c23f327a9cfc7144bb7b",
+    "changes": [
+      "Generate the wrapper directly in Tessera without uploading an ads.js template.",
+      "Package readable and minified JavaScript, CSS, configuration, manifest and installation instructions together.",
+      "Retain the reference 3.9.1 TakeOver behavior and verify the original Prebid file when enabled."
+    ]
+  }
+]

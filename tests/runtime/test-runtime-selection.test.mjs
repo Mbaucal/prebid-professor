@@ -1,0 +1,83 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { unzipSync } from 'fflate';
+import worker from '../../worker/test-workspace/index.mjs';
+import { runtimeDescriptor } from '../../worker/test-workspace/runtime-catalog.mjs';
+import { runtimeReleaseHistory } from '../../worker/runtime/runtime-release-history.mjs';
+import { workspaceStore, ORIGIN, TEST_EMAIL, TEST_PASSWORD } from '../support/test-workspace-store.mjs';
+const fixtures=[];
+const originalFetch=globalThis.fetch;
+test.before(()=>{globalThis.fetch=()=>assert.fail('No external request is allowed in the settings test');});
+test.after(()=>{globalThis.fetch=originalFetch;});
+test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
+function fixture(){const f=workspaceStore();fixtures.push(f);return f;}
+async function login(f){const r=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);assert.equal(r.status,303);return r.headers.get('set-cookie').split(';')[0];}
+async function request(f,path,cookie,body,origin=ORIGIN){const r=await worker.fetch(new Request(ORIGIN+path,{method:body===undefined?'GET':'POST',headers:{...(cookie?{cookie}:{}),...(body===undefined?{}:{origin,'content-type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)}),f.env);return {r,data:await r.clone().json().catch(()=>null)};}
+async function ready(){const f=fixture(),cookie=await login(f);assert.equal((await request(f,'/test-api/setup',cookie,{confirm:'prepare-empty-test-database'})).r.status,200);return {f,cookie};}
+const settings=(f,cookie)=>request(f,'/test-api/runtime-selection',cookie);
+function choice(state){return {expectedRevision:state.revision,selection:{runtime:state.runtimes[0].pin,allowPreview:true,enablePrebid:false,prebidBuildId:null}};}
+const select=(f,cookie,body)=>request(f,'/test-api/runtime-selection',cookie,body);
+const generate=(f,cookie)=>request(f,'/test-api/generate',cookie,{acknowledge:true,takeOverEnabled:false});
+const save=(f,cookie,receipt)=>request(f,'/test-api/save',cookie,{receipt,acknowledge:true,note:'Settings integration'});
+const config=(f)=>JSON.parse(f.sqlite.prepare("SELECT config_json FROM publisher_configs WHERE publisher_id='test-site'").get().config_json);
+const audits=(f)=>f.sqlite.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action='test_workspace.runtime_selected'").get().n;
+async function selectCurrent(f,cookie){const s=await settings(f,cookie);assert.equal(s.r.status,200,JSON.stringify(s.data));const result=await select(f,cookie,choice(s.data));assert.equal(result.r.status,200,JSON.stringify(result.data));return result;}
+
+test('unauthenticated settings API cannot read or write the database',async()=>{const f=fixture();Object.defineProperty(f.env,'DB',{get(){assert.fail('Database must not be accessed');}});for(const body of [undefined,{selection:{}}])assert.equal((await request(f,'/test-api/runtime-selection',null,body)).r.status,401);});
+test('settings page and script require test authentication',async()=>{const f=fixture();for(const path of ['/runtime-selection','/runtime-selection.js']){const {r}=await request(f,path);assert.equal(r.status,303);assert.equal(r.headers.get('location'),'/login');}});
+test('settings screen preserves CSP and loads only its own client code',async()=>{const {f,cookie}=await ready();const {r}=await request(f,'/runtime-selection',cookie);assert.equal(r.status,200);assert.match(r.headers.get('content-security-policy'),/script-src 'self'/);const html=await r.text();assert.match(html,/Save runtime selection/);assert.match(html,/runtime-selection.js/);assert(!html.includes('gpt.js'));assert(!html.includes('<iframe'));});
+test('settings GET on an empty database does not initialize it',async()=>{const f=fixture(),cookie=await login(f);assert.equal((await settings(f,cookie)).r.status,409);assert.equal(f.sqlite.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table'").get().n,0);});
+test('settings GET exposes only the built-in catalog and public site fields',async()=>{const {f,cookie}=await ready();const c=config(f);c.internalOnly='do-not-expose-this-value';f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));const {r,data}=await settings(f,cookie);assert.equal(r.status,200);assert(!JSON.stringify(data).includes(c.internalOnly));assert.equal(data.selected,null);assert.equal(data.runtimes.length,5);assert.equal(data.runtimes[0].version,runtimeDescriptor.version);assert.equal(data.prebidEditable,false);assert.equal(f.log.puts.length,0);assert.equal(f.log.gets.length,0);});
+test('history identifies an earlier saved build without changing its pin or enabling it',async()=>{
+  const {f,cookie}=await ready();await selectCurrent(f,cookie);
+  const c=config(f),old=runtimeReleaseHistory.at(-1);
+  Object.assign(c.builtinRuntimeSelection.runtime,{runtimeId:old.id,runtimeVersion:old.version,runtimeSha256:old.codeSha256});
+  f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));
+  const before=config(f),auditCount=audits(f),{r,data}=await settings(f,cookie);
+  assert.equal(r.status,200);assert.equal(data.selected,null);assert(data.validationIssue);
+  assert.equal(data.releaseHistory[0].available,true);assert.equal(data.releaseHistory[0].saved,false);
+  assert.equal(data.releaseHistory.at(-1).available,false);assert.equal(data.releaseHistory.at(-1).saved,true);
+  assert.equal(data.runtimes.length,5);assert.equal(data.runtimes[0].pin.runtimeSha256,runtimeDescriptor.codeSha256);
+  assert.deepEqual(config(f),before);assert.equal(audits(f),auditCount);assert.equal(f.objects.size,0);
+});
+test('history reflects the exact explicitly saved build',async()=>{
+  const {f,cookie}=await ready();await selectCurrent(f,cookie);const {data}=await settings(f,cookie);
+  assert.equal(data.releaseHistory.filter(r=>r.saved).length,1);
+  assert.equal(data.releaseHistory.find(r=>r.saved).codeSha256,data.selected.runtime.runtimeSha256);
+});
+test('exact selected pin is saved without dropping unrelated existing settings',async()=>{const {f,cookie}=await ready(),before=config(f);await selectCurrent(f,cookie);const after=config(f);assert.deepEqual(after.runtimeControls,before.runtimeControls);assert.equal(after.builtinRuntimeSelection.runtime.runtimeVersion,runtimeDescriptor.version);assert.equal(after.builtinRuntimeSelection.runtime.runtimeSha256,runtimeDescriptor.codeSha256);assert.equal(after.builtinRuntimeSelection.prebid,null);assert.equal(audits(f),1);assert.equal(f.objects.size,0);});
+test('saving the same refreshed selection twice is a no-op with one audit entry',async()=>{const {f,cookie}=await ready();await selectCurrent(f,cookie);assert.equal((await selectCurrent(f,cookie)).data.changed,false);assert.equal(audits(f),1);});
+test('stale settings from another tab do not overwrite a newer configuration',async()=>{const {f,cookie}=await ready();const old=(await settings(f,cookie)).data;const c=config(f);c.newerValue='keep';f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));assert.equal((await select(f,cookie,choice(old))).r.status,409);assert.equal(config(f).newerValue,'keep');assert.equal(config(f).builtinRuntimeSelection,undefined);assert.equal(audits(f),0);});
+test('changed rule between planner and SQL transaction fails the atomic comparison',async()=>{const {f,cookie}=await ready(),s=(await settings(f,cookie)).data;const db=f.env.DB,original=db.batch;let injected=false;db.batch=async(items)=>{if(!injected&&items[0].sql.startsWith('INSERT INTO builtin_draft_assertions')){injected=true;f.sqlite.exec("UPDATE unit_rules SET rule_json='{\"timeout\":1700}' WHERE publisher_id='test-site'");}return original(items);};const result=await select(f,cookie,choice(s));assert.equal(injected,true);assert.equal(result.r.status,409,JSON.stringify(result.data));assert.equal(config(f).builtinRuntimeSelection,undefined);assert.equal(audits(f),0);});
+test('parallel HTTP writes from the same reviewed revision produce one winner',async()=>{const {f,cookie}=await ready(),s=(await settings(f,cookie)).data;const rows=await Promise.all([select(f,cookie,choice(s)),select(f,cookie,choice(s))]);assert.deepEqual(rows.map((v)=>v.r.status).sort(),[200,409]);assert.equal(audits(f),1);});
+test('selection changes invalidate a previously generated review receipt',async()=>{const {f,cookie}=await ready(),g=await generate(f,cookie);assert.equal(g.r.status,200);await selectCurrent(f,cookie);assert.equal((await save(f,cookie,g.data.receipt)).r.status,409);assert.equal(f.objects.size,0);});
+test('selected runtime flows through Generate, Save, reload state and original ZIP download',async()=>{const {f,cookie}=await ready();await selectCurrent(f,cookie);const g=await generate(f,cookie);assert.equal(g.r.status,200,JSON.stringify(g.data));assert.equal(g.data.descriptor.runtime.runtimeSha256,config(f).builtinRuntimeSelection.runtime.runtimeSha256);const stored=await save(f,cookie,g.data.receipt);assert.equal(stored.r.status,200,JSON.stringify(stored.data));assert.equal((await save(f,cookie,g.data.receipt)).data.created,false);const fresh=await settings(f,cookie);assert.equal(fresh.data.selected.runtime.runtimeSha256,runtimeDescriptor.codeSha256);const downloaded=await request(f,'/test-api/releases/'+stored.data.draft.id+'/download',cookie);const zip=unzipSync(new Uint8Array(await downloaded.r.arrayBuffer()));assert.equal(new TextDecoder().decode(zip['ads.js']),g.data.adsJs);assert.deepEqual(JSON.parse(new TextDecoder().decode(zip['manifest.json'])).runtime,fresh.data.selected.runtime);});
+test('a historical package remains byte-identical after a new runtime selection',async()=>{const {f,cookie}=await ready(),g=await generate(f,cookie),stored=await save(f,cookie,g.data.receipt);const path='/test-api/releases/'+stored.data.draft.id+'/download';const original=new Uint8Array(await (await request(f,path,cookie)).r.arrayBuffer());await selectCurrent(f,cookie);const later=new Uint8Array(await (await request(f,path,cookie)).r.arrayBuffer());assert.deepEqual(later,original);});
+test('reporting version is explicit, saves a documented GAM-only ZIP, and leaves the earlier package byte-identical',async()=>{
+  const {f,cookie}=await ready();await selectCurrent(f,cookie);
+  const previous=await generate(f,cookie),oldSave=await save(f,cookie,previous.data.receipt);
+  const oldPath='/test-api/releases/'+oldSave.data.draft.id+'/download';
+  const oldBytes=new Uint8Array(await (await request(f,oldPath,cookie)).r.arrayBuffer());
+  const state=(await settings(f,cookie)).data;
+  assert(state.selected.runtime.runtimeVersion.startsWith('3.10.'));
+  const reporting=state.runtimes.find(r=>r.version==='3.13.0');assert(reporting);
+  const body=choice(state);body.selection.runtime=reporting.pin;
+  const selected=await select(f,cookie,body);assert.equal(selected.r.status,200,JSON.stringify(selected.data));
+  assert.equal(config(f).enablePrebid,false);
+  const generated=await generate(f,cookie);assert.equal(generated.r.status,200,JSON.stringify(generated.data));
+  assert.match(generated.data.adsJs,/aq_bidder_count/);
+  const stored=await save(f,cookie,generated.data.receipt);assert.equal(stored.r.status,200,JSON.stringify(stored.data));
+  const zip=unzipSync(new Uint8Array(await (await request(f,'/test-api/releases/'+stored.data.draft.id+'/download',cookie)).r.arrayBuffer()));
+  assert.equal(new TextDecoder().decode(zip['ads.js']),generated.data.adsJs);assert(!zip['prebid.js']);
+  const contract=JSON.parse(new TextDecoder().decode(zip['gam-reporting.json']));assert.equal(Object.keys(contract.keys).length,7);
+  assert.deepEqual(contract.keys.refresh_bucket.values,['initial','r1_3','r4_plus']);
+  assert.equal(JSON.parse(new TextDecoder().decode(zip['manifest.json'])).runtime.runtimeVersion,'3.13.0');
+  assert.deepEqual(new Uint8Array(await (await request(f,oldPath,cookie)).r.arrayBuffer()),oldBytes);
+});
+test('corrupt persisted pin blocks generation instead of falling back to the built-in default',async()=>{const {f,cookie}=await ready();await selectCurrent(f,cookie);const c=config(f);c.builtinRuntimeSelection.runtime.runtimeSha256='a'.repeat(64);f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(c));assert.equal((await generate(f,cookie)).r.status,409);const current=await settings(f,cookie);assert.equal(current.r.status,200);assert.equal(current.data.selected,null);assert(current.data.validationIssue);await selectCurrent(f,cookie);assert.equal((await generate(f,cookie)).r.status,200);});
+test('preview requires explicit opt-in and unknown versions cannot be selected',async()=>{const {f,cookie}=await ready(),s=(await settings(f,cookie)).data;let body=choice(s);body.selection.allowPreview=false;assert.equal((await select(f,cookie,body)).r.status,422);body=choice(s);body.selection.runtime.runtimeVersion='latest';assert.equal((await select(f,cookie,body)).r.status,409);assert.equal(audits(f),0);});
+test('unknown browser config, source, site and oversized input fields are rejected',async()=>{const {f,cookie}=await ready(),s=(await settings(f,cookie)).data;for(const extra of [{source:'bad'},{siteId:'politika'},{configJson:'{}'}])assert.equal((await select(f,cookie,{...choice(s),...extra})).r.status,422);assert.equal((await select(f,cookie,{...choice(s),extra:'x'.repeat(17000)})).r.status,413);assert.equal(audits(f),0);});
+test('Prebid enablement and uploads remain disabled in the synthetic editor',async()=>{const {f,cookie}=await ready(),s=(await settings(f,cookie)).data,body=choice(s);body.selection.enablePrebid=true;body.selection.prebidBuildId='unapproved';assert.equal((await select(f,cookie,body)).r.status,422);assert.equal(f.objects.size,0);assert.equal(audits(f),0);});
+test('cross-origin selection cannot enter the settings writer',async()=>{const {f,cookie}=await ready(),s=(await settings(f,cookie)).data;assert.equal((await request(f,'/test-api/runtime-selection',cookie,choice(s),'https://evil.invalid')).r.status,403);assert.equal(audits(f),0);});
+test('schema and old stored releases are not reset when selecting a runtime',async()=>{const {f,cookie}=await ready();const before=f.sqlite.prepare('SELECT type,name,sql FROM sqlite_master ORDER BY name').all();await selectCurrent(f,cookie);assert.deepEqual(f.sqlite.prepare('SELECT type,name,sql FROM sqlite_master ORDER BY name').all(),before);assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM publishers').get().n,1);});
+test('a lost HTTP storage response is recoverable by rereading without duplicate audit',async()=>{const {f,cookie}=await ready(),s=(await settings(f,cookie)).data;const db=f.env.DB,original=db.batch;let once=true;db.batch=async(items)=>{const result=await original(items);if(once&&items.some((i)=>i.sql.startsWith('UPDATE publisher_configs SET config_json'))){once=false;throw Error('private transport details');}return result;};const result=await select(f,cookie,choice(s));assert.equal(result.r.status,503);assert.match(result.data.error,/could not be confirmed/);assert(!JSON.stringify(result.data).includes('private transport'));assert((await settings(f,cookie)).data.selected);assert.equal((await selectCurrent(f,cookie)).data.changed,false);assert.equal(audits(f),1);});

@@ -5,6 +5,7 @@ import BidderBuildSelectionPanel from './BidderBuildSelectionPanel';
 import BiddersPanel from './BiddersPanel';
 import BulkImportPanel from './BulkImportPanel';
 import GeneratorProfilesPanel from './GeneratorProfilesPanel';
+import LegacyGeneratorProfilesPanel from './LegacyGeneratorProfilesPanel';
 import PrebidModePanel from './PrebidModePanel';
 import RuntimeControlsPanel from './RuntimeControlsPanel';
 import SizeMapsCompatPanel from './SizeMapsCompatPanel';
@@ -14,7 +15,10 @@ import UserIdModulesPanel from './UserIdModulesPanel';
 
 type Props = {
   publisherId: string;
+  onOpenPrebid?: () => void;
+  onGenerate?: () => void;
   onChanged?: () => void | Promise<void>;
+  initialSection?: ConfigSection;
 };
 
 type ConfigSection =
@@ -28,14 +32,16 @@ type ConfigSection =
   | 'supply-consent'
   | 'user-id'
   | 'generator-profiles'
+  | 'legacy-profiles'
   | 'imports';
 
-export default function ConfigPanel({ publisherId, onChanged }: Props) {
-  const [section, setSection] = useState<ConfigSection>('ad-units');
+export default function ConfigPanel({ publisherId, onChanged, onOpenPrebid, onGenerate, initialSection = 'generator-profiles' }: Props) {
+  const [section, setSection] = useState<ConfigSection>(initialSection);
 
   return (
     <div className="config-workspace">
       <nav className="config-subnav" aria-label="Configuration sections">
+        <button className={section === 'generator-profiles' ? 'active' : ''} onClick={() => setSection('generator-profiles')} type="button">Script setup</button>
         <button className={section === 'ad-units' ? 'active' : ''} onClick={() => setSection('ad-units')} type="button">
           Ad units
         </button>
@@ -63,12 +69,10 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
         <button className={section === 'user-id' ? 'active' : ''} onClick={() => setSection('user-id')} type="button">
           User ID modules
         </button>
-        <button className={section === 'generator-profiles' ? 'active' : ''} onClick={() => setSection('generator-profiles')} type="button">
-          Generator profiles
-        </button>
         <button className={section === 'imports' ? 'active' : ''} onClick={() => setSection('imports')} type="button">
           CSV import
         </button>
+        <button className={section === 'legacy-profiles' ? 'active' : ''} onClick={() => setSection('legacy-profiles')} type="button">Imported templates</button>
       </nav>
 
       {section === 'ad-units' ? <AdUnitsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
@@ -85,7 +89,8 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
       {section === 'runtime-controls' ? <RuntimeControlsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'supply-consent' ? <SupplyChainConsentPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'user-id' ? <UserIdModulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
-      {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} /> : null}
+      {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} onOpenPrebid={onOpenPrebid} onChanged={onChanged} onContinue={onGenerate} /> : null}
+      {section === 'legacy-profiles' ? <LegacyGeneratorProfilesPanel key={publisherId} publisherId={publisherId} /> : null}
       {section === 'imports' ? (
         <>
           <div className="size-map-import-compat-note">

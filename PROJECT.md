@@ -1,6 +1,125 @@
+## 2026-09-23 — Test page UX and developer review (MBA-104)
+
+Follow-up to accepted MBA-94: align the diagnostic page and saved-release link
+with Tessera's charcoal/orange/neutral design. Improve keyboard/mobile use,
+script-initialization failures, registration mismatch summaries, scroll progress,
+cancellation and viewport-change guidance. GPT events batch UI updates; unchanged
+status text and badges retain their nodes. Archived package bytes, Sticky CSS,
+site settings and channels are unchanged. This is a TEST-first review candidate;
+main promotion requires owner acceptance. See docs/site-test-page.md.
+
+## 2026-09-23 — Reliable GAM request labels (MBA-103)
+
+Version 3.13.0 adds four refresh labels for all demand modes and three current
+auction labels only where Prebid actually supplies valid results. The new runtime
+is explicitly selectable; default 3.10 and saved packages remain unchanged.
+It preserves request/auction behavior and does not add cache logic or copy audience
+segments. TEST first; no main promotion or publisher activation is implied.
+The exact semantics, GAM reporting setup and verification are documented in
+[GAM reporting](docs/gam-reporting.md) and each new package's gam-reporting.json.
+
+## 2026-09-23 — Executed technical and UX audit (MBA-96)
+
+The first audit execution is recorded in [the evidence matrix](docs/audits/2026-09-23-mba96/REPORT.md).
+The main baseline passed 918 Node tests and the production build, but strict
+TypeScript reports 60 diagnostics. Read the matrix for browser, native D1/R2,
+real Prebid and hosted TEST coverage; these results are not a production sign-off.
+
+MBA-97 fixes copied Prebid artifacts referencing the source site's R2 object and
+stale build ID. New copies verify the original bytes, store their own immutable
+object, synchronize the pin and guard the source revision. Deletion refuses legacy
+foreign/shared objects and checks concurrent activation before removing bytes.
+Copying without the build preserves the script version and demand, clears the
+foreign pin and sends the user to Prebid setup. Existing shared rows are not
+silently migrated; unconfirmed storage operations retain bytes for later review.
+
+This audit change is a TEST-first candidate, not a main deployment. MBA-98 through
+MBA-102 track navigation, Publish guidance, modal accessibility, type checking and
+the incomplete hosted BTF Sticky observation. MBA-96 stays open until the remaining
+high-priority findings and hosted delivery/rollback checks are resolved.
+
+## 2026-09-22 — Sticky inspection on the Test page (MBA-94)
+
+Owner confirmed Test startup works and requested visible Sticky placement and
+real state while inspecting GAM. The test now keeps real Sticky directly under
+body with its original runtime CSS, reports computed placement/visibility and
+GAM response, and captures real state before a page console button opens.
+An optional labelled preview uses archived sticky.css in an isolated shadow
+tree and a current size-map size; it never changes the real slot or fakes fill.
+It closes before console opening, on resize or when real Sticky becomes visible.
+The report includes the snapshot and separately identifies active CSS previews.
+Compiled-Worker CI covers desktop/mobile empty/fill/close/scroll/preview and
+before/live comparison. Hosted Google console UI remains an owner check.
+Existing packages need reopening only. TEST first; main is not authorized here.
+
+## 2026-09-22 — Test page Worker bootstrap correction (MBA-94)
+
+The first hosted test page failed before initialization because Function#toString
+lost helpers added during Worker compilation. Build the complete browser client
+as a separate bundle and preserve it as text. Regression coverage now checks
+both Worker bundling/minification and the actual compiled Worker's HTML in
+Chromium. Existing packages/settings and ad scripts are unchanged; TEST first.
+
+## 2026-09-22 — Saved-package Test page (MBA-94)
+
+Sites now have a Test page tab and each saved built-in package has a direct test
+link. An authenticated, isolated HTTPS page runs the original archived scripts
+after Start and checks DIVs, GPT slots/GAM paths, responsive sizes and request
+events. It includes lazy scrolling, Publisher Console and a copied report.
+Empty ads are acceptable. No settings, package bytes or channels change.
+TEST first; main promotion requires owner acceptance. Automated browser checks
+use synthetic GPT; live Google console/demand need owner verification.
+Details: `docs/site-test-page.md`.
+
+## 2026-09-22 — Complete size maps and GAM → Site sync (MBA-91)
+
+The supplied 7 maps / 25 breakpoints are the single source for CSV templates,
+manual Add 7 default maps and GAM preset size unions. Confirmed GAM inventory
+can now populate a selected Tessera site, preserving existing units/maps and
+configuration. GAM-only history can be attached after review; failed local saves
+can recover without replaying Google creates. TEST first; main candidate awaits
+owner acceptance. Details: `docs/gam-site-inventory.md`.
+
+## 2026-09-22 — Agency overview appearance (MBA-90)
+
+The Agency label and name now stack vertically beside a padded logo surface.
+The filter has its own label and space; narrow layouts stack it below the
+identity. Dashboard and TEST use the same AgencyOverview component so their
+reviewed presentation matches. This is a visual follow-up to MBA-65, with no
+storage, assignment or runtime changes. TEST review precedes production.
+
+## 2026-09-22 — Bounded dashboard layout (MBA-89)
+
+The dashboard now shares an AppFrame with the authenticated TEST `/layout-preview`.
+The viewport stays fixed; site header/tabs, navigation and account keep their own
+space. Workspace content and the publisher list scroll independently. Narrow
+screens have a collapsible menu; short windows can scroll the header/navigation
+in their bounded regions. This changes no runtime, site configuration or storage.
+TEST review uses generic examples. Production promotion awaits owner acceptance.
+
 # Tessera — Product and Project Source of Truth
 
-_Last updated: 2026-07-29_
+_Last updated: 2026-09-22_
+
+## Current checkpoint — GAM line items (MBA-86)
+
+The owner has now accepted ordinary line-item creation in live GAM and requested an untouched source-script Prebid preset. `feature/prebid-script-defaults` adds **Pokreni i napravi**: advertiser `Prebid`, placement `Prebid placement`, trafficker `marko.baucal@smn.rs`, order prefix `SMN - Programmatic HB - Prebid`, EUR 0.01–20.00/0.01, hb_pb, 20 CPM-named creatives per price, original @latest creative.js tag and all 14 size overrides. Exact read-only discovery pre-fills IDs in the selected connection; no random user/inventory fallback. Advanced edits remain available, and one explicit click runs review then creation with existing recovery semantics. TEST first; main still requires owner approval.
+
+The owner authorized adding both a single ordinary line item and the full Prebid generator to **API integracije → Line itemi**, with existing/new advertiser and order selection, inventory, sizes, key-values and creative copies with size overrides. The ad-unit module (MBA-85) was accepted in real GAM and promoted through PR #73.
+
+MBA-86 was merged to TEST in PR #76. The follow-up on `fix/prebid-price-naming` matches the source-script naming: numbered orders with CPM ranges, `HB €18.03` line items and distinct `HB €18.03, #1`… creatives. The default 2,000-price script now produces five orders, 40,000 creatives and 40,000 associations. It retains read-only review, explicit creation, resumable batches, uncertain-write reconciliation, history and CSV export, and adds a live naming/CPM/key-value preview. The trafficker query uses the supported `status = 'ACTIVE'` filter. Previously saved jobs keep their original shared layout and recovery semantics. Details and acceptance scope: `docs/gam-line-items.md`.
+
+Automated API, full-range, native Worker SOAP and desktop/mobile checks pass using synthetic Google data. Publish to the existing TEST Worker for the owner's live GAM acceptance; promotion of this new module to main requires approval. Existing site/runtime/settings artifacts and D1 records are unchanged.
+
+## Previous checkpoint — API integrations (MBA-85)
+
+The user's confirmed entry point is a separate global **API integracije** tab. Its first module connects Google Ad Manager and creates ad units from editable presets or pasted names. Prebid line items are now covered by MBA-86 above.
+
+Development is based on `feature/isolated-runtime-workspace-v1` and targets the isolated `prebid-professor-test` Worker at `https://prebid-professor-test.mbaucal.workers.dev/api-integrations`. Production promotion still requires the owner's approval. The older environment/milestone sections below are historical context.
+
+Implemented: eight source-script presets (26 positions), custom templates, encrypted service-account connection, parent browsing/creation, read-only review, explicit batch creation and immutable GAM ID/path history. Existing site runtime/configuration records are not rewritten. See `docs/gam-api-integrations.md` for the exact scope, credential setup and remaining live-GAM acceptance check.
+
+Automated API and TEST-boundary tests pass, as do the client/Worker build, preserved-runtime history gate and synthetic desktop/mobile browser flow. No real Google inventory has been created during development.
 
 This document is the durable source of truth for the Tessera product. It should be updated whenever a feature is completed, a product decision changes, or a new requirement is recovered from earlier planning.
 
@@ -28,10 +147,10 @@ The main product principles are:
 | --- | --- |
 | Repository | `Mbaucal/prebid-professor` |
 | Production branch | `main` |
-| Current development branch | `feature/monitoring-readonly-v1` |
-| Current pull request | `#19` |
+| Isolated TEST branch | `feature/isolated-runtime-workspace-v1` |
+| Current audit | MBA-96; see `docs/audits/2026-09-23-mba96/REPORT.md` |
 | Production Worker | `https://prebid-professor.mbaucal.workers.dev/` |
-| Current branch preview | `https://feature-monitoring-readonly-v1-prebid-professor.mbaucal.workers.dev/` |
+| Isolated TEST Worker | `https://prebid-professor-test.mbaucal.workers.dev/` |
 | Cloudflare Worker name | `prebid-professor` |
 | D1 database | `prebid-professor-db` |
 | R2 bucket | `prebid-professor-builds` |
@@ -74,23 +193,7 @@ The main product principles are:
 
 ## 4. Product model
 
-The intended hierarchy is:
-
-```text
-Publisher company/account
-└── Site/domain
-    ├── General configuration
-    ├── Ad units
-    ├── Size mappings
-    ├── Unit rules
-    ├── Bidders
-    ├── Bidder overrides
-    ├── Prebid mode/build configuration
-    ├── ads.txt requirements
-    ├── Releases and artifacts
-    ├── Monitoring settings and state
-    └── Audit history
-```
+The implemented hierarchy is **Agency → Publisher → Site**. An agency groups publisher accounts; each publisher owns its sites. Each site keeps its own configuration, inventory, size maps, rules, bidders, Prebid build selection, ads.txt requirements, releases, monitoring and audit history.
 
 Site-specific data must never leak into another site's form, build, email template, recipient list, release, or notification state.
 

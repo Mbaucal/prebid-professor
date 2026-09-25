@@ -1,0 +1,68 @@
+[
+  {
+    "name": "site-editor",
+    "command": "scripts/verify-site-editor.py",
+    "exitCode": 1,
+    "seconds": 2.2
+  },
+  {
+    "name": "site-workspace",
+    "command": "scripts/verify-site-workspace.py",
+    "exitCode": 0,
+    "seconds": 4.1
+  },
+  {
+    "name": "agencies",
+    "command": "scripts/verify-agency-ui.py",
+    "exitCode": 0,
+    "seconds": 7.6
+  },
+  {
+    "name": "release-setup",
+    "command": "scripts/verify-release-setup.py",
+    "exitCode": 0,
+    "seconds": 3.0
+  },
+  {
+    "name": "loading-summary",
+    "command": "scripts/verify-loading-summary.py",
+    "exitCode": 0,
+    "seconds": 2.6
+  },
+  {
+    "name": "layout",
+    "command": "scripts/verify-app-layout.py",
+    "exitCode": 0,
+    "seconds": 10.8
+  },
+  {
+    "name": "prebid-editor",
+    "command": "scripts/verify-prebid-editor.py",
+    "exitCode": 1,
+    "seconds": 2.2
+  },
+  {
+    "name": "gam-ui",
+    "command": "scripts/verify-gam-ui.py",
+    "exitCode": 0,
+    "seconds": 8.0
+  },
+  {
+    "name": "ab-editor",
+    "command": "scripts/verify-ab-editor-ui.py",
+    "exitCode": 0,
+    "seconds": 7.1
+  },
+  {
+    "name": "script-library",
+    "command": "scripts/verify-script-library-ui.py",
+    "exitCode": 0,
+    "seconds": 11.7
+  },
+  {
+    "name": "positions",
+    "command": "scripts/verify-position-runtime.py",
+    "exitCode": 0,
+    "seconds": 9.3
+  }
+]

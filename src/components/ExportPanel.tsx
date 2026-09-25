@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { zipSync } from 'fflate';
 import { api } from '../api';
+import { formatMinimumHeightCss } from '../export/min-height-css';
+import MinimumHeightCssExport from './MinimumHeightCssExport';
 import type { AdUnit, Site } from '../shared/types';
 
 type Props = {
@@ -89,6 +91,12 @@ const ARTIFACT_ORDER = [
 ] as const;
 
 type ArtifactName = (typeof ARTIFACT_ORDER)[number];
+
+// Display only: keep full versions in URLs, selections and downloaded packages.
+function releaseLabel(version: string): string {
+  const builtin = /^builtin-(release|draft)-([a-f0-9]{64})$/.exec(version);
+  return builtin ? `${builtin[1] === 'draft' ? 'Draft' : 'Release'} ${builtin[2].slice(0, 8)}` : version;
+}
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
@@ -317,6 +325,7 @@ export default function ExportPanel({ publisherId, site }: Props) {
       return;
     }
     let cancelled = false;
+    setCssText('');
     setLoadingCss(true);
     fetch(url, { cache: 'no-store' })
       .then(async (response) => {
@@ -324,7 +333,7 @@ export default function ExportPanel({ publisherId, site }: Props) {
         return response.text();
       })
       .then((text) => {
-        if (!cancelled) setCssText(text);
+        if (!cancelled) setCssText(formatMinimumHeightCss(text));
       })
       .catch(() => {
         if (!cancelled) setCssText('');
@@ -454,34 +463,36 @@ export default function ExportPanel({ publisherId, site }: Props) {
       <div className="export-source-panel">
         <div>
           <span className="panel-kicker">Artifact source</span>
-          <h3>{sourceVersion}</h3>
+          <h3 title={sourceVersion}>{releaseLabel(sourceVersion)}</h3>
           <p>{prebidEnabled ? 'GAM + Prebid' : 'GAM / AdX only'} · {activeUnits.length} active ad unit(s)</p>
         </div>
         <div className="export-source-options" role="radiogroup" aria-label="Export source">
           <label className={source === 'current' ? 'selected' : ''}>
             <input checked={source === 'current'} disabled={!productionRelease} name="export-source" onChange={() => setSource('current')} type="radio" />
             <span>Production current</span>
-            <small>{productionRelease?.version ?? 'Not published'}</small>
+            <small title={productionRelease?.version}>{productionRelease ? releaseLabel(productionRelease.version) : 'Not published'}</small>
           </label>
           <label className={source === 'staging' ? 'selected' : ''}>
             <input checked={source === 'staging'} disabled={!stagingRelease} name="export-source" onChange={() => setSource('staging')} type="radio" />
             <span>Staging</span>
-            <small>{stagingRelease?.version ?? 'Not published'}</small>
+            <small title={stagingRelease?.version}>{stagingRelease ? releaseLabel(stagingRelease.version) : 'Not published'}</small>
           </label>
           <label className={source === 'release' ? 'selected' : ''}>
             <input checked={source === 'release'} disabled={!releases.length} name="export-source" onChange={() => setSource('release')} type="radio" />
             <span>Immutable release</span>
             <select
+              aria-label="Release version"
               disabled={!releases.length}
               onChange={(event) => {
                 setSelectedReleaseId(event.target.value);
                 setSource('release');
               }}
               value={selectedReleaseId}
+              title={selectedRelease?.version}
             >
               {releases.map((release) => (
-                <option key={release.id} value={release.id}>
-                  {release.version} · {release.status}
+                <option key={release.id} value={release.id} title={release.version}>
+                  {releaseLabel(release.version)} · {release.status}
                 </option>
               ))}
             </select>
@@ -519,16 +530,9 @@ export default function ExportPanel({ publisherId, site }: Props) {
           <pre className="export-code compact">{divs || 'No active ad units.'}</pre>
         </article>
 
-        <article className="export-card">
-          <div className="export-card-heading">
-            <div><span className="panel-kicker">Layout stability</span><h3>Minimum-height CSS</h3></div>
-            <div className="export-card-actions">
-              <button disabled={!cssText} onClick={() => void copyText(cssText, 'css')} type="button">{copied === 'css' ? '✓ Copied' : 'Copy'}</button>
-              <button disabled={!cssText} onClick={() => downloadText(cssText, `min-height-${safeFileName(site.id)}.css`, 'text/css')} type="button">Download</button>
-            </div>
-          </div>
-          <pre className="export-code compact">{loadingCss ? 'Loading CSS artifact…' : cssText || 'CSS artifact is not available for this source.'}</pre>
-        </article>
+        <MinimumHeightCssExport cssText={cssText} loading={loadingCss} copied={copied === 'css'}
+          onCopy={() => void copyText(cssText, 'css')}
+          onDownload={() => downloadText(cssText, `min-height-${safeFileName(site.id)}.css`, 'text/css')} />
 
         <article className="export-card">
           <div className="export-card-heading">

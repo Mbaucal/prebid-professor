@@ -1,0 +1,74 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+src/components/AbExperimentPanel.tsx(3,65): error TS7016: Could not find a declaration file for module '../../worker/experiments/package-settings-v1.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/experiments/package-settings-v1.mjs' implicitly has an 'any' type.
+src/components/AbExperimentPanel.tsx(22,76): error TS2571: Object is of type 'unknown'.
+src/components/AbExperimentPanel.tsx(29,93): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'SetStateAction<State | null>'.
+src/components/AbExperimentPanel.tsx(46,43): error TS18046: 'data' is of type 'unknown'.
+src/components/AbExperimentPanel.tsx(46,94): error TS18046: 'data' is of type 'unknown'.
+src/components/AbExperimentPanel.tsx(47,31): error TS18046: 'data' is of type 'unknown'.
+src/components/AdsTxtRequirementsCollapse.tsx(69,24): error TS2345: Argument of type 'HTMLButtonElement' is not assignable to parameter of type 'string | Response | ReadableStream<any>'.
+  Type 'HTMLButtonElement' is missing the following properties from type 'Response': headers, ok, redirected, status, and 13 more.
+src/components/BuiltinRuntimePreviewPanel.tsx(12,37): error TS18046: 'payload' is of type 'unknown'.
+src/components/DebugConsolePanel.tsx(1,42): error TS7016: Could not find a declaration file for module '../debug/experiment-inspect.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/src/debug/experiment-inspect.mjs' implicitly has an 'any' type.
+src/components/ReleaseDeleteButton.tsx(50,3): error TS2322: Type 'unknown' is not assignable to type 'number'.
+src/components/ReleaseDeleteButton.tsx(53,12): error TS18046: 'total' is of type 'unknown'.
+src/components/ReleasesPanel.tsx(455,288): error TS18046: 's' is of type 'unknown'.
+src/components/ScriptLibraryPanel.tsx(3,27): error TS7016: Could not find a declaration file for module '../../worker/experiments/saved-script-settings.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/experiments/saved-script-settings.mjs' implicitly has an 'any' type.
+src/components/ScriptLibraryPanel.tsx(22,74): error TS2571: Object is of type 'unknown'.
+src/components/ScriptLibraryPanel.tsx(24,92): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'SetStateAction<Library | null>'.
+src/components/ScriptLibraryPanel.tsx(28,57): error TS18046: 'data' is of type 'unknown'.
+src/components/ScriptLibraryPanel.tsx(29,16): error TS18046: 'data' is of type 'unknown'.
+src/components/ScriptLibraryPanel.tsx(30,12): error TS18046: 'data' is of type 'unknown'.
+src/components/ScriptLibraryPanel.tsx(46,56): error TS18046: 'page' is of type 'unknown'.
+src/components/ScriptLibraryPanel.tsx(46,183): error TS18046: 'page' is of type 'unknown'.
+src/components/ScriptLibraryPanel.tsx(46,240): error TS18046: 'page' is of type 'unknown'.
+src/components/ScriptSetupPanel.tsx(39,39): error TS18046: 'data' is of type 'unknown'.
+src/components/ScriptSetupPanel.tsx(40,5): error TS2322: Type 'unknown' is not assignable to type 'State'.
+src/components/SitePackagesPanel.tsx(4,37): error TS7016: Could not find a declaration file for module '../download/saved-package.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/src/download/saved-package.mjs' implicitly has an 'any' type.
+src/components/SitePackagesPanel.tsx(15,245): error TS2571: Object is of type 'unknown'.
+src/components/SitePackagesPanel.tsx(24,31): error TS2571: Object is of type 'unknown'.
+src/components/SiteRuntimePanel.tsx(14,273): error TS18046: 'e' is of type 'unknown'.
+src/components/SiteRuntimePanel.tsx(16,183): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'State'.
+src/components/UnitRulesPanel.tsx(36,22): error TS18046: 'data' is of type 'unknown'.
+src/components/UnitRulesPanel.tsx(37,10): error TS18046: 'data' is of type 'unknown'.
+src/organization.ts(13,68): error TS18046: 'result' is of type 'unknown'.
+worker/app-builtin-runtime-preview.ts(1,38): error TS7016: Could not find a declaration file for module './organization/service.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/organization/service.mjs' implicitly has an 'any' type.
+worker/app-builtin-runtime-preview.ts(6,78): error TS7016: Could not find a declaration file for module './runtime/builtin-preview-service.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/runtime/builtin-preview-service.mjs' implicitly has an 'any' type.
+worker/app-builtin-runtime-preview.ts(7,38): error TS7016: Could not find a declaration file for module './runtime/preview-snapshot.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/runtime/preview-snapshot.mjs' implicitly has an 'any' type.
+worker/app-builtin-runtime-preview.ts(8,39): error TS7016: Could not find a declaration file for module './runtime/prebid-preflight-service.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/runtime/prebid-preflight-service.mjs' implicitly has an 'any' type.
+worker/app-builtin-runtime-preview.ts(9,38): error TS7016: Could not find a declaration file for module './runtime/artifact-bundle-service.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/runtime/artifact-bundle-service.mjs' implicitly has an 'any' type.
+worker/app-builtin-runtime-preview.ts(11,37): error TS7016: Could not find a declaration file for module './site-runtime/service.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/site-runtime/service.mjs' implicitly has an 'any' type.
+worker/app-builtin-runtime-preview.ts(12,67): error TS7016: Could not find a declaration file for module './site-runtime/releases.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/site-runtime/releases.mjs' implicitly has an 'any' type.
+worker/app-builtin-runtime-preview.ts(13,34): error TS7016: Could not find a declaration file for module './site-runtime/ab-editor.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/site-runtime/ab-editor.mjs' implicitly has an 'any' type.
+worker/app-builtin-runtime-preview.ts(14,46): error TS7016: Could not find a declaration file for module './site-runtime/prebid-cache-settings.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/site-runtime/prebid-cache-settings.mjs' implicitly has an 'any' type.
+worker/app-builtin-runtime-preview.ts(15,39): error TS7016: Could not find a declaration file for module './site-runtime/script-library.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/site-runtime/script-library.mjs' implicitly has an 'any' type.
+worker/external-deployments.ts(2,39): error TS7016: Could not find a declaration file for module './deployment-manifest-pin.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/deployment-manifest-pin.mjs' implicitly has an 'any' type.
+worker/imports.ts(425,34): error TS2345: Argument of type 'string' is not assignable to parameter of type 'never'.
+worker/imports.ts(438,25): error TS2345: Argument of type 'string' is not assignable to parameter of type 'never'.
+worker/prebid-builds.ts(3,37): error TS7016: Could not find a declaration file for module './runtime/builtin-preview-service.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/runtime/builtin-preview-service.mjs' implicitly has an 'any' type.
+worker/prebid-builds.ts(4,24): error TS7016: Could not find a declaration file for module './runtime/preview-snapshot.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/runtime/preview-snapshot.mjs' implicitly has an 'any' type.
+worker/prebid-builds.ts(5,61): error TS7016: Could not find a declaration file for module './test-workspace/runtime-catalog.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/test-workspace/runtime-catalog.mjs' implicitly has an 'any' type.
+worker/prebid-builds.ts(6,41): error TS7016: Could not find a declaration file for module './site-runtime/service.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/site-runtime/service.mjs' implicitly has an 'any' type.
+worker/prebid-mode-release.ts(102,28): error TS2304: Cannot find name 'D1Value'.
+worker/prebid-mode-release.ts(367,56): error TS2345: Argument of type 'Request<CfHostMetadata, Cf>' is not assignable to parameter of type 'Request<unknown, CfProperties<unknown>>'.
+  Type 'Cf' is not assignable to type 'CfProperties<unknown>'.
+    Type 'Cf' is not assignable to type 'IncomingRequestCfProperties<unknown>'.
+      Type 'Cf' is not assignable to type 'IncomingRequestCfPropertiesBase'.
+worker/prebid-mode.ts(3,37): error TS7016: Could not find a declaration file for module './runtime/builtin-preview-service.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/runtime/builtin-preview-service.mjs' implicitly has an 'any' type.
+worker/prebid-mode.ts(4,24): error TS7016: Could not find a declaration file for module './runtime/preview-snapshot.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/runtime/preview-snapshot.mjs' implicitly has an 'any' type.
+worker/prebid-mode.ts(5,61): error TS7016: Could not find a declaration file for module './test-workspace/runtime-catalog.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/test-workspace/runtime-catalog.mjs' implicitly has an 'any' type.
+worker/prebid-mode.ts(6,41): error TS7016: Could not find a declaration file for module './site-runtime/service.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/site-runtime/service.mjs' implicitly has an 'any' type.
+worker/prebid-mode.ts(7,56): error TS7016: Could not find a declaration file for module './site-runtime/prebid-cache-settings.mjs'. '/workspace/scratch/e705f0fe998d/tessera-audit/worker/site-runtime/prebid-cache-settings.mjs' implicitly has an 'any' type.
+worker/release-size-map-compat.ts(260,50): error TS2345: Argument of type 'Request<CfHostMetadata, Cf>' is not assignable to parameter of type 'Request<unknown, CfProperties<unknown>>'.
+  Type 'Cf' is not assignable to type 'CfProperties<unknown>'.
+    Type 'Cf' is not assignable to type 'IncomingRequestCfProperties<unknown>'.
+      Type 'Cf' is not assignable to type 'IncomingRequestCfPropertiesBase'.
+worker/runtime-controls-release.ts(442,51): error TS2345: Argument of type 'Request<CfHostMetadata, Cf>' is not assignable to parameter of type 'Request<unknown, CfProperties<unknown>>'.
+  Type 'Cf' is not assignable to type 'CfProperties<unknown>'.
+    Type 'Cf' is not assignable to type 'IncomingRequestCfProperties<unknown>'.
+      Type 'Cf' is not assignable to type 'IncomingRequestCfPropertiesBase'.
+worker/runtime-integrations-release.ts(219,57): error TS2345: Argument of type 'Request<CfHostMetadata, Cf>' is not assignable to parameter of type 'Request<unknown, CfProperties<unknown>>'.
+  Type 'Cf' is not assignable to type 'CfProperties<unknown>'.
+    Type 'Cf' is not assignable to type 'IncomingRequestCfProperties<unknown>'.
+      Type 'Cf' is not assignable to type 'IncomingRequestCfPropertiesBase'.
+worker/size-map-compat.ts(346,34): error TS2345: Argument of type 'string' is not assignable to parameter of type 'never'.
+worker/size-map-compat.ts(358,25): error TS2345: Argument of type 'string' is not assignable to parameter of type 'never'.

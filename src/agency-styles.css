@@ -1,0 +1,71 @@
+.agency-page{display:grid;gap:20px}.agency-page .panel{min-width:0}.agency-page label,.agency-dialog label,.agency-tree-tools label,.agency-filter{display:grid;gap:6px;font-size:13px;font-weight:600}.agency-page input,.agency-page select,.agency-dialog input,.agency-tree-tools input,.agency-filter select{box-sizing:border-box;width:100%;min-width:0;padding:10px 12px;border:1px solid #d8dfea;border-radius:8px;font:inherit;background:#fff;color:#202936}.agency-page p{color:#647084}.agency-actions{display:flex;gap:8px;flex-wrap:wrap}.agency-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:16px;margin-top:22px}.agency-card{border:1px solid #dbe1eb;border-radius:12px;padding:18px;min-width:0}.agency-card-heading{display:flex;align-items:center;gap:12px}.agency-card h3{margin:0;overflow-wrap:anywhere}.agency-logo{flex:0 0 40px;width:40px;height:40px;display:grid;place-items:center;border-radius:9px;background:#f2f4f8;color:#3b4658;font-weight:700;overflow:hidden}.agency-logo img{display:block;width:100%;height:100%;object-fit:contain}.agency-assignment{display:grid;grid-template-columns:minmax(160px,1fr) minmax(180px,1fr) auto;gap:12px;align-items:center;padding:16px 0;border-top:1px solid #e3e8f0}.agency-assignment small{display:block;color:#687587;margin-top:5px}.agency-assignment p{grid-column:1/-1;margin:0}.agency-publisher-open{font:inherit;font-weight:700;text-align:left;color:#253044;background:none;border:0;padding:0;cursor:pointer;overflow-wrap:anywhere}.agency-dialog{padding:24px;width:min(540px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box;border:1px solid #dbe1eb;border-radius:16px;color:#202936;box-shadow:0 20px 90px #0005}.agency-dialog::backdrop{background:#11182788}.agency-dialog form{display:grid;gap:20px}.agency-dialog h2{margin:0}.agency-logo-editor{display:flex;align-items:center;gap:16px}.agency-logo-editor .agency-logo{width:64px;height:64px;flex-basis:64px}.agency-logo-editor label{min-width:0}.agency-logo-editor small{font-weight:400;color:#647084}.agency-tree-tools{display:grid;gap:12px;padding:0 0 16px}.agency-tree-tools label{color:#bac4d1}.agency-tree-tools input,.agency-tree-tools select{background:#252c35;color:#e8ecf2;border-color:#3c4553}.agency-tree-group{margin:0 0 16px;min-width:0}.agency-tree-heading{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;color:#edf0f5;padding:10px 0;text-align:left;font:inherit;cursor:pointer}.agency-tree-heading .agency-logo{flex-basis:30px;width:30px;height:30px;font-size:12px}.agency-tree-name{min-width:0;font-size:14px;font-weight:750;overflow-wrap:anywhere}.agency-tree-name small{display:block;font-size:11px;color:#a7b2c2;font-weight:400;margin-top:4px}.agency-tree-publishers{border-left:1px solid #3b4552;padding-left:9px;margin-left:8px}.agency-tree-publishers .publisher-account-row{grid-template-columns:27px minmax(0,1fr) 32px}.publisher-collapse{border:0;background:transparent;color:#b4bfcd;cursor:pointer;min-width:0}.agency-selection-breadcrumb{overflow-wrap:anywhere}.agency-read-error{padding:8px;color:#ffc3b2;font-size:12px}@media(max-width:760px){.agency-assignment{grid-template-columns:1fr}.agency-page .panel-heading{flex-wrap:wrap;gap:12px}.agency-logo-editor{align-items:flex-start}.agency-actions .button{white-space:normal}}
+
+
+/* Agency identity and browsing filter have separate, consistently aligned spaces. */
+.agency-overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px 24px;
+  margin: 20px 0;
+  padding: 16px 18px;
+  border: 1px solid #e4e9f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+.agency-overview-identity {
+  display: flex;
+  flex: 1 1 200px;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.agency-overview-identity .agency-logo {
+  box-sizing: border-box;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  padding: 5px;
+  border: 1px solid #e1e6ee;
+  border-radius: 10px;
+  background: #fff;
+}
+.agency-overview-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.agency-overview-label {
+  color: #7b8798;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.agency-overview-name {
+  color: #202936;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.agency-overview .agency-filter {
+  flex: 0 1 200px;
+  min-width: 0;
+  max-width: 100%;
+  gap: 6px;
+  color: #647084;
+  font-size: 12px;
+}
+.agency-overview .agency-filter select {
+  min-height: 40px;
+  font-size: 13px;
+  font-weight: 500;
+}
+@media (max-width: 760px) {
+  .agency-overview { flex-direction: column; align-items: stretch; padding: 16px; gap: 16px; }
+  .agency-overview-identity, .agency-overview .agency-filter { flex: none; }
+  .agency-overview .agency-filter { width: 100%; }
+}

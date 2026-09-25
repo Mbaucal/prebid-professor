@@ -1,14 +1,5 @@
-/* The original prototype account card is replaced by the authenticated session card. */
-.sidebar > .account-card {
-  visibility: hidden;
-}
-
 .auth-account-card {
-  position: fixed;
-  z-index: 50;
-  left: 18px;
-  bottom: 18px;
-  width: 234px;
+  width: 100%;
   min-height: 58px;
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) 32px 32px;
@@ -100,13 +91,4 @@
 .auth-account-card > button:disabled {
   cursor: wait;
   opacity: 0.55;
-}
-
-@media (max-width: 760px) {
-  .auth-account-card {
-    left: auto;
-    right: 12px;
-    bottom: 12px;
-    width: min(330px, calc(100vw - 24px));
-  }
 }

@@ -1,3 +1,9 @@
+import AgenciesPanel from './components/AgenciesPanel';
+import AgencyOverview from './components/AgencyOverview';
+import { useOrganization, agencyFor, inAgency } from './organization';
+import AppFrame, { WorkspaceContent } from './components/AppFrame';
+import AuthAccount from './components/AuthAccount';
+import ApiIntegrationsPanel from './components/ApiIntegrationsPanel';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from './api';
 import AdsTxtPanel from './components/AdsTxtPanel';
@@ -11,6 +17,7 @@ import ExportPanel from './components/ExportPanel';
 import HierarchySidebar from './components/HierarchySidebar';
 import PrebidBuildsPanel from './components/PrebidBuildsPanel';
 import ReleasesPanel from './components/ReleasesPanel';
+import SiteTestPagePanel from './components/SiteTestPagePanel';
 import MockupBuilderPanel from './components/MockupBuilderPanel';
 import MonitoringReadonlyPanel from './components/MonitoringReadonlyPanel';
 import type {
@@ -21,16 +28,18 @@ import type {
   Site,
 } from './shared/types';
 
-const navItems = ['Publishers', 'Releases', 'Prebid builds', 'Audit log', 'Settings'] as const;
+const navItems = ['Publishers', 'Agencies', 'Releases', 'Prebid builds', 'API integracije', 'Audit log', 'Settings'] as const;
 type GlobalSection = (typeof navItems)[number];
 const globalDescriptions: Record<GlobalSection, string> = {
+  Agencies: 'Organize agencies, publishers and sites, with an optional agency logo.',
+  'API integracije': 'Povežite GAM mreže i kreirajte ad unite iz šablona.',
   Publishers: 'Manage publisher accounts, sites and every site-level configuration workflow.',
   Releases: 'Review immutable releases across all publishers and sites.',
   'Prebid builds': 'Inspect every uploaded Prebid.js build and module manifest.',
   'Audit log': 'Review configuration, release and operational activity recorded in D1.',
   Settings: 'Check runtime health, bindings, security and retention safeguards.',
 };
-const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Export', 'Mockup', 'Monitoring', 'Debug', 'Ads.txt'] as const;
+const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Test page', 'Export', 'Mockup', 'Monitoring', 'Debug', 'Ads.txt'] as const;
 
 type PublisherTab = (typeof publisherTabs)[number];
 type ModalMode = 'create-publisher' | 'create-site' | 'edit-site' | 'duplicate-site' | null;
@@ -105,6 +114,8 @@ function nextCopyId(value: string): string {
 }
 
 export default function App() {
+  const organization = useOrganization();
+  const [agencyFilter, setAgencyFilter] = useState('all');
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [publishers, setPublishers] = useState<PublisherAccount[]>([]);
@@ -114,6 +125,7 @@ export default function App() {
   const [activePublisherId, setActivePublisherId] = useState<string | null>(null);
   const [activeSiteId, setActiveSiteId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<PublisherTab>('Overview');
+  const [configEntry, setConfigEntry] = useState<'ad-units' | 'generator-profiles'>('generator-profiles');
   const [modal, setModal] = useState<ModalMode>(null);
   const [publisherForm, setPublisherForm] = useState<PublisherForm>(emptyPublisherForm);
   const [siteForm, setSiteForm] = useState<SiteForm>(emptySiteForm);
@@ -172,14 +184,28 @@ export default function App() {
   }, []);
 
   const publisher = useMemo(
-    () => publishers.find((item) => item.id === activePublisherId) ?? publishers[0] ?? null,
-    [activePublisherId, publishers],
+    () => publishers.find((item) => item.id === activePublisherId) ?? publishers.filter(p => inAgency(organization.data,p.id,agencyFilter))[0] ?? null,
+    [activePublisherId, publishers, organization.data, agencyFilter],
   );
 
   const site = useMemo(() => {
     if (!publisher) return null;
     return publisher.sites.find((item) => item.id === activeSiteId) ?? publisher.sites[0] ?? null;
   }, [activeSiteId, publisher]);
+
+  const agency = agencyFor(organization.data, publisher?.id);
+  function filterAgency(value: string) {
+    setAgencyFilter(value);
+    if (!publisher || !inAgency(organization.data, publisher.id, value)) {
+      const next = publishers.find(p => inAgency(organization.data, p.id, value));
+      setActivePublisherId(next?.id ?? null); setActiveSiteId(next?.sites[0]?.id ?? null); setActiveTab('Overview');
+    }
+  }
+  function openAgency(value: string) { filterAgency(value); setActiveSection('Publishers'); setActiveTab('Overview'); }
+  function openAgencyPublisher(id: string) { const account=publishers.find(p=>p.id===id); if(account){setAgencyFilter('all'); if(account.id===publisher?.id)setActiveSection('Publishers'); else selectPublisher(account);} }
+  useEffect(() => {
+    if (activePublisherId && !inAgency(organization.data, activePublisherId, agencyFilter)) setAgencyFilter('all');
+  }, [organization.data]);
 
   const totalSites = useMemo(
     () => publishers.reduce((sum, item) => sum + item.sitesCount, 0),
@@ -209,6 +235,7 @@ export default function App() {
     siteId: string,
     tab: 'Overview' | 'Releases' | 'Prebid.js',
   ) {
+    setAgencyFilter('all');
     setActivePublisherId(publisherAccountId);
     setActiveSiteId(siteId);
     setActiveTab(tab);
@@ -382,9 +409,10 @@ export default function App() {
             </span>
           </div>
           <p>
-            A publisher is the business/account. Each site keeps its own GAM path, bidders, ad units,
+            Agencies group publisher accounts. Each site keeps its own GAM path, bidders, ad units,
             releases and ads.txt configuration. Drag any site in the sidebar onto another publisher to move it.
           </p>
+          <AgencyOverview agency={agency} data={organization.data} filter={agencyFilter} onFilter={filterAgency} />
           {hierarchyError ? <p className="inline-warning">Hierarchy API: {hierarchyError}</p> : null}
 
           {publisher ? (
@@ -416,7 +444,7 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <button className="empty-site-cta" onClick={openCreateSite} type="button">
+            <button className="empty-site-cta" disabled={!publisher} onClick={openCreateSite} type="button">
               ＋ Add the first site to {publisher?.name ?? 'this publisher'}
             </button>
           )}
@@ -424,9 +452,9 @@ export default function App() {
 
         <article className="panel api-panel">
           <div className="panel-heading">
-            <div><span className="panel-kicker">Current selection</span><h2>Publisher → Site</h2></div>
+            <div><span className="panel-kicker">Current selection</span><h2>Agency → Publisher → Site</h2></div>
           </div>
-          <pre>{JSON.stringify({ publisher: publisher?.id, site: site?.id, health }, null, 2)}</pre>
+          <pre>{JSON.stringify({ agency: agency?.name ?? null, publisher: publisher?.id, site: site?.id, health }, null, 2)}</pre>
         </article>
 
         <article className="panel stats-panel">
@@ -461,13 +489,9 @@ export default function App() {
         : 'Create site';
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">PP</div>
-          <div><strong>Prebid Professor</strong><span>Ad-tech control plane</span></div>
-        </div>
-
+    <AppFrame
+      account={<AuthAccount />}
+      navigation={
         <nav className="main-nav" aria-label="Main navigation">
           {navItems.map((item) => (
             <button
@@ -480,9 +504,14 @@ export default function App() {
             </button>
           ))}
         </nav>
-
-        {publisherWorkspace ? (
+      }
+      sidebarContent={publisherWorkspace || activeSection === 'Agencies' ? (
           <HierarchySidebar
+            organization={organization.data}
+            organizationError={organization.error}
+            agencyFilter={agencyFilter}
+            onAgencyFilter={filterAgency}
+            onManageAgencies={() => selectGlobalSection('Agencies')}
             activePublisherId={publisher?.id ?? null}
             activeSiteId={site?.id ?? null}
             error={hierarchyError}
@@ -503,18 +532,13 @@ export default function App() {
           </div>
         )}
 
-        <div className="account-card">
-          <div className="avatar">S</div>
-          <div><strong>srdjan</strong><span>admin · signed session</span></div>
-        </div>
-      </aside>
-
+    >
       <main className="workspace">
         {publisherWorkspace ? (
           <>
         <header className="topbar">
           <div>
-            <span className="eyebrow">Publishers / {publisher?.name ?? 'No publisher'} / {site?.name ?? 'No site'}</span>
+            <span className="eyebrow agency-selection-breadcrumb">{agency?.name ?? 'Without agency'} / {publisher?.name ?? 'No publisher'} / {site?.name ?? 'No site'}</span>
             <h1>{site?.name ?? publisher?.name ?? 'Prebid Professor'}</h1>
             {site ? (
               <div className="publisher-meta">
@@ -537,7 +561,6 @@ export default function App() {
             <button className="button secondary" disabled={!site} onClick={openEditSite} type="button">Edit site</button>
             <button className="button secondary" disabled={!site} onClick={openDuplicateSite} type="button">Duplicate site</button>
             <button className="button danger" disabled={!site} onClick={() => void removeSite()} type="button">Delete site</button>
-            <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Validate</button>
             <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Generate</button>
             <button className="button primary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Publish ↗</button>
           </div>
@@ -557,20 +580,26 @@ export default function App() {
           ))}
         </section>
 
+        <WorkspaceContent pageKey={`${activeSection}:${site?.id ?? publisher?.id}:${activeTab}`}>
         {activeTab === 'Overview' ? renderOverview() : null}
         {activeTab === 'Config' && site ? (
-          <ConfigPanel onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
+          <ConfigPanel onGenerate={() => setActiveTab('Releases')} onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
         ) : null}
         {activeTab === 'Prebid.js' && site ? (
           <PrebidBuildsPanel publisherId={site.id} siteName={site.name} />
         ) : null}
         {activeTab === 'Releases' && site ? (
           <ReleasesPanel
+            onNavigate={destination => {
+              if (destination === 'prebid') setActiveTab('Prebid.js');
+              else { setConfigEntry('generator-profiles'); setActiveTab('Config'); }
+            }}
             onChanged={() => loadHierarchy(publisher?.id, site.id)}
             publisherId={site.id}
             siteName={site.name}
           />
         ) : null}
+        {activeTab === 'Test page' && site ? <SiteTestPagePanel key={site.id} publisherId={site.id} /> : null}
         {activeTab === 'Export' && site ? <ExportPanel publisherId={site.id} site={site} /> : null}
         {activeTab === 'Mockup' && site ? <MockupBuilderPanel publisherId={site.id} siteName={site.name} /> : null}
         {activeTab === 'Monitoring' && site ? <MonitoringReadonlyPanel site={site} /> : null}
@@ -580,9 +609,10 @@ export default function App() {
         {activeTab === 'Ads.txt' && site ? (
           <AdsTxtPanel onChanged={() => loadHierarchy(publisher?.id, site.id)} site={site} />
         ) : null}
-        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Monitoring' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
+        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Test page' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Monitoring' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
           ? renderPlaceholder(activeTab)
           : null}
+        </WorkspaceContent>
           </>
         ) : (
           <>
@@ -594,6 +624,8 @@ export default function App() {
               </div>
               <button className="button secondary" onClick={() => selectGlobalSection('Publishers')} type="button">Open publishers</button>
             </header>
+            <WorkspaceContent pageKey={activeSection}>
+            {activeSection === 'Agencies' ? <AgenciesPanel controller={organization} publishers={publishers} onOpenPublisher={openAgencyPublisher} onOpenAgency={openAgency} /> : null}
             {activeSection === 'Releases' ? (
               <GlobalReleasesPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
             ) : null}
@@ -603,7 +635,9 @@ export default function App() {
             {activeSection === 'Audit log' ? (
               <AuditLogPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
             ) : null}
+            {activeSection === 'API integracije' ? <ApiIntegrationsPanel sites={publishers.flatMap(p => p.sites)} onInventoryChanged={(id)=>loadHierarchy(undefined,id)} onOpenSite={(id)=>{const owner=publishers.find(p=>p.sites.some(s=>s.id===id));if(owner){setAgencyFilter('all');setActivePublisherId(owner.id);setActiveSiteId(id);setConfigEntry('ad-units');setActiveTab('Config');setActiveSection('Publishers');}}} /> : null}
             {activeSection === 'Settings' ? <SettingsPanel publishers={publishers} /> : null}
+            </WorkspaceContent>
           </>
         )}
       </main>
@@ -790,6 +824,6 @@ export default function App() {
           </section>
         </div>
       ) : null}
-    </div>
+    </AppFrame>
   );
 }
