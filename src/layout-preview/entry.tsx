@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import AppFrame, { WorkspaceContent } from '../components/AppFrame';
+import MinimumHeightCssPreview from './MinimumHeightCssPreview';
 import '../dashboard-styles';
 
 // A review surface with synthetic examples only: no API client, saves or publishing.
@@ -33,6 +34,7 @@ function LayoutPreview() {
       </div><div className="top-actions"><button className="button secondary" onClick={() => setDialog(true)}>O pregledu</button><a className="button secondary" href="/">Nazad na TEST</a></div></header>
       {section === 'Publishers' && <section className="tabbar" aria-label="Site sections">{tabs.map(item => <button key={item} className={`tab${tab === item ? ' active' : ''}`} onClick={() => setTab(item)}>{item}</button>)}</section>}
       <WorkspaceContent pageKey={`${section}:${selected}:${tab}`}>
+        {section === 'Publishers' && tab === 'Export' ? <MinimumHeightCssPreview /> :
         <section className="content-grid">
           <article className="panel overview-panel"><div className="panel-heading"><div><span className="panel-kicker">{section === 'Publishers' ? tab : section}</span><h2>{site.name}</h2></div><span className="health-pill healthy">TEST pregled</span></div>
             <p>Zaglavlje i tabovi ostaju na mestu dok se sadržaj ispod njih skroluje. Meni sa leve strane ima svoju listu i nalog pri dnu.</p>
@@ -41,7 +43,7 @@ function LayoutPreview() {
           </article>
           <article className="panel api-panel"><span className="panel-kicker">Current selection</span><h2>Publisher → Site</h2><pre>{JSON.stringify({ publisher: site.name, site: site.domain, layout: 'fixed viewport', content: 'independent scroll', sidebar: 'independent scroll', data: 'examples only' }, null, 2)}</pre></article>
           {Array.from({ length: 10 }, (_, i) => <article className="panel overview-panel" key={i}><span className="panel-kicker">Primer sadržaja {i + 1}</span><h2>{section === 'Publishers' ? tab : section}</h2><p>Duži sadržaj za proveru skrolovanja. Tamna pozadina levog menija ostaje do dna prozora, bez preklapanja sa nalogom.</p><div className="publisher-facts"><div><span>Domain</span><code>{site.domain}</code></div><div><span>Status</span><code>Example</code></div></div></article>)}
-        </section>
+        </section>}
       </WorkspaceContent>
     </main>
     {dialog && <div className="modal-backdrop"><section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="preview-title"><div className="modal-heading"><h2 id="preview-title">Pregled rasporeda</h2><button autoFocus className="icon-button" aria-label="Close preview dialog" onClick={() => setDialog(false)}>×</button></div><div style={{ padding: 24 }}>Ovo je pregled izgleda sa generičkim podacima. Podešavanja sajtova se ovde ne menjaju.</div></section></div>}
