@@ -3,12 +3,12 @@ import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {displayName} from '../../worker/experiments/saved-script-settings.mjs';
 import './ab-experiments.css';
 
-type Settings={mode:'fresh-only'|'auction-with-cache';refreshSeconds:number|null;maxBidAgeSeconds?:number};
+type Settings={mode:'fresh-only'|'auction-with-cache';refreshSeconds:number|null;maxBidAgeSeconds?:number;positionOverrides?:Record<string,boolean>};
 type ScriptRef={id:string;name:string;settings:Settings};
 type Saved=ScriptRef&{collection:'scripts'|'tests';createdAt:string;bytes:number;sha256:string;trafficBPercent?:number;scripts?:{A:ScriptRef;B:ScriptRef}};
-type Library={supported:boolean;revision:string;baseline:{release:string;positions:number;prebidVersion:string};prebid:{enabled:boolean;bidCache:{enabled:boolean;maxBidAgeSeconds:number}};scripts:Saved[];tests:Saved[];deletedScripts:Saved[];deletedTests:Saved[];nextCursors:{scripts:string|null;tests:string|null}};
+type Library={supported:boolean;revision:string;baseline:{release:string;positions:number;prebidVersion:string};prebid:{enabled:boolean;bidCache:{enabled:boolean;maxBidAgeSeconds:number;positionOverrides?:Record<string,boolean>}};scripts:Saved[];tests:Saved[];deletedScripts:Saved[];deletedTests:Saved[];nextCursors:{scripts:string|null;tests:string|null}};
 type Kind='scripts'|'tests';
-const description=(s:Settings)=>`${s.mode==='fresh-only'?'Fresh auction':`Auction + cached bids, up to ${s.maxBidAgeSeconds} s`} · ${s.refreshSeconds===null?'baseline refresh rules':`${s.refreshSeconds} s refresh`}`;
+const description=(s:Settings)=>`${s.positionOverrides?'Site default: ':''}${s.mode==='fresh-only'?'Fresh auction':`Auction + cached bids, up to ${s.maxBidAgeSeconds} s`}${s.positionOverrides?' · '+Object.entries(s.positionOverrides).map(([code,on])=>`${code}: cache ${on?'On':'Off'}`).join(' · '):''} · ${s.refreshSeconds===null?'baseline refresh rules':`${s.refreshSeconds} s refresh`}`;
 const merge=(items:Saved[],added:Saved[])=>[...new Map([...items,...added].map(p=>[p.id,p])).values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
 
 export default function ScriptLibraryPanel({publisherId,onOpenDemand}:{publisherId:string;onOpenDemand?:()=>void}) {
@@ -64,14 +64,15 @@ export default function ScriptLibraryPanel({publisherId,onOpenDemand}:{publisher
     {error?<p role="alert" className="runtime-error">{error}</p>:null}{message?<p role="status" className="runtime-message">{message}</p>:null}
     {!library?<p>Loading saved scripts…</p>:<>
       <p>Name and save each script once. Use it on its own, or select two saved versions for an A/B test.</p>
-      <details className="ab-baseline"><summary>Starting point: Tanjug · {library.baseline.positions} positions · Prebid {library.baseline.prebidVersion}</summary><p>Uses the reviewed {library.baseline.release} inventory, bidders and consent setup. Bid caching uses the saved Demand → Prebid settings. Other Config changes are not included in this pilot.</p></details>
+      <details className="ab-baseline"><summary>Starting point: Tanjug · {library.baseline.positions} positions · Prebid {library.baseline.prebidVersion}</summary><p>Uses the reviewed {library.baseline.release} inventory, bidders and consent setup. Bid caching uses the saved Demand → Prebid default and Ad units position choices. Other Config changes are not included in this pilot.</p></details>
       {!library.prebid.enabled?<p className="ab-help">Prebid is off. Enable it in Config → Demand → Prebid to create a new script. {onOpenDemand?<button type="button" onClick={onOpenDemand}>Edit Prebid settings</button>:null}</p>:null}
       <form onSubmit={saveScript}><fieldset className="ab-form" disabled={busy || !library.prebid.enabled}><legend>New script</legend>
         <label>Script name<input required maxLength={80} value={name} onChange={e=>setName(e.target.value)} placeholder="For example: Standard 30s or Cache 60s"/></label>
         <div className="ab-arms"><div>
-          <div className="ab-help" aria-label="Saved bid caching settings"><strong>Bid caching: {library.prebid.bidCache.enabled?'On':'Off'}</strong>
-            <p>{library.prebid.bidCache.enabled?`New auctions + valid cached bids, up to ${library.prebid.bidCache.maxBidAgeSeconds} s.`:'Fresh auction only.'}</p>
-            <p>Saved in Config → Demand → Prebid.</p>
+          <div className="ab-help" aria-label="Saved bid caching settings"><strong>{library.prebid.bidCache.positionOverrides?'Site default — bid caching: ':'Bid caching: '}{library.prebid.bidCache.enabled?'On':'Off'}</strong>
+            {library.prebid.bidCache.positionOverrides?<p>{Object.entries(library.prebid.bidCache.positionOverrides).map(([code,on])=>`${code}: cache ${on?'On':'Off'}`).join(' · ')} · Maximum bid age: {library.prebid.bidCache.maxBidAgeSeconds} s</p>:null}
+            <p>{library.prebid.bidCache.positionOverrides?'Positions without an override: ':''}{library.prebid.bidCache.enabled?`New auctions + valid cached bids, up to ${library.prebid.bidCache.maxBidAgeSeconds} s.`:'Fresh auction only.'}</p>
+            <p>Site default: Config → Demand → Prebid. Position choices: Config → Ad units.</p>
             {onOpenDemand?<button className="button secondary" type="button" onClick={onOpenDemand}>Edit Prebid settings</button>:null}
           </div>
         </div><div>

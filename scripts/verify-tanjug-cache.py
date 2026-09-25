@@ -9,13 +9,17 @@ manifest_path=root/'release.json' if (root/'release.json').is_file() else root.p
 manifest=json.loads(manifest_path.read_text())
 readiness=manifest.get('kind')=='static-aa-readiness-observer'
 cmp_fix=True
-config=manifest['config']; single=config.get('deliveryMode')=='single'; saved_profile=manifest.get('kind') in ['saved-script-v1','saved-test-v1']; arms=config.get('scripts',config.get('arms',{})); checks=[]; page_errors=[]; blocked=set()
+config=manifest['config']; single=config.get('deliveryMode')=='single'; saved_profile=manifest.get('kind') in ['saved-script-v1','saved-script-v2','saved-test-v1']; arms=config.get('scripts',config.get('arms',{})); checks=[]; page_errors=[]; blocked=set()
 mock=pathlib.Path('tests/runtime/mock-ad-libraries.js').read_text()
 # Keep synthetic GPT and TCF. Prebid always comes from the actual shipped file.
 a=mock.index('  window.pbjs = {');b=mock.index('  window.__tcfapi =',a)
 mock=mock[:a]+mock[b:]
 mock=mock.replace('const observations = { requests:', 'const observations = { requests:')
 mock=mock.replace('sizes: slot.sizes, at: Date.now()', 'sizes: slot.sizes, Variant: slot.getConfig().targeting.Variant, at: Date.now()')
+position_cache=manifest.get('kind')=='saved-script-v2'
+if position_cache:
+ mock=mock.replace('Variant: slot.getConfig().targeting.Variant, at: Date.now()', "Variant: slot.getConfig().targeting.Variant, round: window.__fixtureBidRounds?.get('pubmatic:'+slot.id), bid: (()=>{const b=window.pbjs?.getBidResponseByAdId?.(slot.getTargeting('hb_adid')[0]);return b?{cpm:b.cpm,auctionId:b.auctionId}:null;})(), latestAuction: [...(window.pbjs?.getEvents?.()||[])].reverse().find(e=>e.eventType==='auctionInit'&&e.args.adUnitCodes?.includes(slot.id))?.args.auctionId, at: Date.now()")
+ mock+=';window.__positionCacheTest=true;'
 mock+='\n'+pathlib.Path('tests/runtime/full-cache-browser-fixture.js').read_text()
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
@@ -87,6 +91,7 @@ try:
    cases=[('A',1280,'normal'),('B',1280,'normal'),('B',390,'normal'),('A',1280,'delayed'),('B',1280,'auto'),('A',1280,'duplicate'),('A',1280,'wrong'),('A',1280,'failed'),('A',1280,'tampered')]
    if cmp_fix:cases += [('A',1280,'cmp-late'),('B',1280,'cmp-late'),('B',390,'cmp-string'),('A',1280,'cmp-absent'),('B',1280,'cmp-absent')]
    if single:cases=[('S',1280,'normal'),('S',390,'normal'),('S',1280,'duplicate')]
+   if position_cache:cases=[('S',1280,'normal'),('S',390,'normal')]
    if os.environ.get('SCRIPT_LIBRARY_SMOKE')=='1' and not single:cases=[('A',1280,'normal'),('B',1280,'normal')]
    for arm,width,case in cases:
     chosen=config['script'] if single else arms[arm]
@@ -102,6 +107,7 @@ try:
       blocked.add(urllib.parse.urlsplit(r.request.url).hostname)
       if r.request.url.startswith('https://readiness-fixture.invalid/bid?'):
        rows=json.loads(urllib.parse.parse_qs(urllib.parse.urlsplit(r.request.url).query)['payload'][0])
+       if position_cache:rows=[x for x in rows if x.get('fixtureRound')!=5]
        rows=[{**x,'creativeId':'synthetic','currency':'EUR','netRevenue':True,'ad':'<div>Synthetic readiness test</div>','meta':{'advertiserDomains':['example.invalid']}} for x in rows]
        r.fulfill(status=200,headers={'content-type':'application/json','access-control-allow-origin':origin},body=json.dumps({'bids':rows}));return
       if r.request.resource_type in ['fetch','xhr']:
@@ -169,6 +175,21 @@ try:
      if cached and case in ['normal','auto','cmp-string']:
       wait(page,"AdBidCache.snapshot().policy?.selections.fresh>0",timeout=15000)
       check(label+': cache policy is active with native fresh targeting',page.evaluate("pbjs.getConfig('useBidCache')===true && AdBidCache.snapshot().policy.selections.errors===0"))
+     if position_cache:
+      check(label+': packaged overrides match selection',state['positionOverrides']=={'Billboard':False,'Sticky':True})
+      page.locator('#Billboard').scroll_into_view_if_needed()
+      page.evaluate("__testAds.emit('slotVisibilityChanged',{slot:adSlots.Billboard,inViewPercentage:100})")
+      wait(page,"__testAds.observations.requests.some(r=>r.id==='Billboard'&&r.round>=5)&&__testAds.observations.requests.some(r=>r.id==='Sticky'&&r.round>=4)",timeout=45000)
+      rows=page.evaluate("__testAds.observations.requests.filter(r=>['Billboard','Sticky'].includes(r.id))")
+      def request(code,round):return next(r for r in rows if r['id']==code and r.get('round')==round)
+      off=request('Billboard',2);on=request('Sticky',2)
+      check(label+': off uses fresh 1 CPM while on can reuse unused 4 CPM',off['bid']['cpm']==1 and off['bid']['auctionId']==off['latestAuction'] and on['bid']['cpm']==4 and on['bid']['auctionId']!=on['latestAuction'])
+      for code in ['Billboard','Sticky']:
+       third=request(code,4)
+       check(label+': higher fresh CPM wins third refresh for '+code,third['bid']['cpm']==12 and third['bid']['auctionId']==third['latestAuction'])
+      empty=request('Billboard',5)
+      check(label+': off with no fresh bid still requests GAM without stale targeting',empty['bid'] is None)
+      check(label+': per-position policy reports no targeting errors',page.evaluate('AdBidCache.snapshot().policy.selections.errors===0'))
      page.locator('#InText_1').scroll_into_view_if_needed()
      wait(page,"__testAds.observations.requests.some(r=>r.id==='InText_1')",timeout=15000)
      check(label+': lazy request carries Variant',page.evaluate("__testAds.observations.requests.filter(r=>r.id==='InText_1').every(r=>r.Variant=="+variant_expression+')'))
