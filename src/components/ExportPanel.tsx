@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { zipSync } from 'fflate';
 import { api } from '../api';
+import { formatMinimumHeightCss } from '../export/min-height-css';
 import type { AdUnit, Site } from '../shared/types';
 
 type Props = {
@@ -323,6 +324,7 @@ export default function ExportPanel({ publisherId, site }: Props) {
       return;
     }
     let cancelled = false;
+    setCssText('');
     setLoadingCss(true);
     fetch(url, { cache: 'no-store' })
       .then(async (response) => {
@@ -330,7 +332,7 @@ export default function ExportPanel({ publisherId, site }: Props) {
         return response.text();
       })
       .then((text) => {
-        if (!cancelled) setCssText(text);
+        if (!cancelled) setCssText(formatMinimumHeightCss(text));
       })
       .catch(() => {
         if (!cancelled) setCssText('');
@@ -535,6 +537,7 @@ export default function ExportPanel({ publisherId, site }: Props) {
               <button disabled={!cssText} onClick={() => downloadText(cssText, `min-height-${safeFileName(site.id)}.css`, 'text/css')} type="button">Download</button>
             </div>
           </div>
+          <p className="export-card-note">Grouped by viewport width and minimum height. Values follow the selected release.</p>
           <pre className="export-code compact">{loadingCss ? 'Loading CSS artifact…' : cssText || 'CSS artifact is not available for this source.'}</pre>
         </article>
 
