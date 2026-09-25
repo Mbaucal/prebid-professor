@@ -212,3 +212,33 @@ test('simple setup gives an actionable missing-inventory error without saving pa
  await assert.rejects(changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true,enablePrebid:false}),/Add at least one enabled ad unit/);
  assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
 });
+
+test('new runtime saves GPID overrides with position settings, reloads, rejects stale tabs and preserves site configuration',async()=>{
+ const {storePrebidFile}=await import('../../worker/test-workspace/prebid-files.mjs');
+ const {prebidStore,getPrebidSettings,savePrebidSettings}=await import('../../worker/test-workspace/prebid-settings.mjs');
+ const {f}=await setup({prebidFiles:true});await select(f);
+ const bytes=new TextEncoder().encode('/* prebid.js v11.11.0\nModules: consentManagementTcf, tcfControl, currency, adformBidAdapter, gptPreAuction */\nwindow.prebidFixtureOnly=true;');
+ const uploaded=await storePrebidFile(prebidStore(f.env),bytes,TEST_EMAIL);
+ const settings=await getPrebidSettings(f.env);
+ await savePrebidSettings(f.env,TEST_EMAIL,{expectedRevision:settings.revision,acknowledge:true,draft:{...settings.draft,enablePrebid:true,buildId:uploaded.file.id,bidders:[{bidder:'adform',params:{mid:123},enabled:true}]}});
+ let s=await siteRuntimeSettings(f.env,'test-site');
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'version',revision:s.revision,runtime:s.runtimes.find(r=>r.version==='3.15.0').pin,allowPreview:true});
+ s=await siteRuntimeSettings(f.env,'test-site');
+ const automatic=s.demandSignals.placements.Billboard.gpid;
+ const before=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ const position={code:'Billboard',display:'standard',overlay:null,lazy:null,gpid:'publisher/contracted-billboard'};
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:s.revision,position});
+ await assert.rejects(changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:s.revision,position:{...position,gpid:'stale'}}),e=>e.status===409);
+ s=await siteRuntimeSettings(f.env,'test-site');
+ assert.equal(s.demandSignals.placements.Billboard.gpid,position.gpid);
+ const after=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ assert.deepEqual(after.builtinRuntimeSelection,before.builtinRuntimeSelection);
+ assert.equal(after.enablePrebid,true);
+ await assert.rejects(changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:s.revision,position:{...position,gpid:'not valid'}}),/without whitespace/);
+ assert.equal((await siteRuntimeSettings(f.env,'test-site')).revision,s.revision);
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:s.revision,position:{...position,gpid:''}});
+ s=await siteRuntimeSettings(f.env,'test-site');
+ assert.equal(s.demandSignals.placements.Billboard.gpid,automatic);
+ const zip=unzipSync(new Uint8Array(await(await siteRuntimeBundle(f.env,'test-site',{action:'bundle',revision:s.revision,acknowledge:true})).arrayBuffer()));
+ assert.equal(JSON.parse(new TextDecoder().decode(zip['config.json'])).demandSignals.placements.Billboard.gpid,automatic);
+});

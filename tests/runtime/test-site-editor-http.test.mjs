@@ -118,7 +118,7 @@ test('TakeOver ad position saves map, Prebid override, lazy rules and original u
   const config=JSON.parse(new TextDecoder().decode(zip['config.json']));
   assert.equal(config.adPosition.demand,'site');assert.equal(config.lazyRules.Billboard.enabled,false);
   const selection=(await req(f,'/test-api/runtime-selection',cookie)).data;
-  assert.equal(selection.runtimes.length,3);
+  assert.equal(selection.runtimes.length,4);
   const downgrade=await req(f,'/test-api/runtime-selection',cookie,{expectedRevision:selection.revision,selection:{runtime:selection.runtimes[1].pin,allowPreview:true,enablePrebid:true,prebidBuildId:file.file.id}});
   assert.equal(downgrade.r.status,422);
   assert.deepEqual((await state(f,cookie)).draft.units.at(-1),s.draft.units.at(-1));

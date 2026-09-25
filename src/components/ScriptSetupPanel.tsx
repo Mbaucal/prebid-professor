@@ -94,9 +94,10 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
         {!selected ? <option value={version}>Choose an available version</option> : null}
         {state.runtimes.map(item => <option key={item.pin.runtimeSha256} value={item.pin.runtimeSha256}>{runtimeLabel(item.version)}</option>)}
       </select></label> : null}
-      {selected?.version.startsWith('3.13.0') ? <p className="script-prebid-note">
+      {selected?.pin.capabilities.includes('gam-request-reporting') ? <p className="script-prebid-note">
         GAM reporting: refresh count, bucket, interval and policy. {prebid ? 'Also includes current-auction bid counts and timeout.' : 'No Prebid auction values are sent in GAM / AdX only mode.'} Key definitions are included in the downloaded package. Enable key-value reporting in GAM to use them in reports.
       </p> : null}
+      {selected?.pin.capabilities.includes('stable-gpid') && prebid ? <p className="script-prebid-note">Sends all bidder offers and deals to GAM. Adds a stable GPID for each position. Your Prebid build must include gptPreAuction; new build plans select it automatically.</p> : null}
       {prebid ? <div className={blockedBuild ? 'runtime-error' : 'script-prebid-note'}>
         <p>{state.prebid.status === 'off' ? 'Select a current Prebid.js build before enabling bidders.' : state.prebid.message}</p>
         {onOpenPrebid ? <button type="button" onClick={onOpenPrebid}>Open Prebid.js</button> : null}

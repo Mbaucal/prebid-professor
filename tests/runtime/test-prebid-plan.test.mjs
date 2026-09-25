@@ -21,7 +21,7 @@ async function upload(f,configuration){return (await storePrebidFile(prebidStore
 const activate=(f,r)=>savePrebidSettings(f.env,actor,{...r,acknowledge:true});
 test('export before any file: normalized options, deterministic modules, no private values or writes',async()=>{
   const f=await ready(),r=await request(f),before=await snap(f),puts=f.log.puts.length,gets=f.log.gets.length,p=await plan(f,r);
-  assert.deepEqual(p.configuration,{version:'11.11.0',modules:['consentManagementTcf','currency','openxBidAdapter','tcfControl']});
+  assert.deepEqual(p.configuration,{version:'11.11.0',modules:['consentManagementTcf','currency','gptPreAuction','openxBidAdapter','tcfControl']});
   assert.equal(p.persisted,false);assert.deepEqual(Object.keys(p.configuration),['version','modules']);assert(!JSON.stringify(p.configuration).includes('private'));
   assert.deepEqual(await snap(f),before);assert.equal(f.log.puts.length,puts);assert.equal(f.log.gets.length,gets);
   const url=new URL(p.builderUrl);assert.deepEqual(url.searchParams.get('modules').split(','),p.configuration.modules);assert(!p.builderUrl.includes('private'));
@@ -38,7 +38,7 @@ test('pending plan survives reload while all active rows and exact pin stay unch
 test('round-trip activates original bytes and uses identical features in generated package',async()=>{
   const f=await ready(),r=await request(f);r.options.floorsEnabled=true;r.options.currencyConversionEnabled=false;r.options.hardFloor=0.08;
   const id=r.options.userIds.find(x=>x.name==='id5Id');id.enabled=true;id.settings.params.partner=1355;
-  const p=await plan(f,r);assert.deepEqual(p.configuration.modules,['consentManagementTcf','id5IdSystem','openxBidAdapter','priceFloors','tcfControl','userId']);
+  const p=await plan(f,r);assert.deepEqual(p.configuration.modules,['consentManagementTcf','gptPreAuction','id5IdSystem','openxBidAdapter','priceFloors','tcfControl','userId']);
   await saveBuildPlan(f.env,actor,{...r,acknowledge:true});r.expectedRevision=(await getPrebidSettings(f.env)).revision;r.draft.buildId=await upload(f,p.configuration);await activate(f,r);
   const settings=await snap(f),resolved=await selectedWorkspaceRuntime(settings,f.env.BUILDS),{prebidBuilds,...snapshot}=settings;
   const out=await buildArtifactCandidate({snapshot,pin:resolved.pin,buildTimestamp:'20260913_210000',takeOver:{enabled:false},prebid:resolved.prebid});

@@ -2,7 +2,7 @@ import { runtimeCatalog, descriptorForPin, previewInput, prepareSiteRuntimeSelec
 /** Authenticated TEST configuration service. No live endpoints or ad execution. */
 import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
-import { prebidRequirements } from '../runtime/prebid-artifact-check.mjs';
+import { prebidRequirements } from '../runtime-demand-v1/requirements.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { WorkspaceError, TEST_SITE } from './boundary.mjs';
 import { assertWorkspaceSiteScope } from './site-draft.mjs';

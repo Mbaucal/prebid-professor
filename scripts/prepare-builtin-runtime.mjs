@@ -5,6 +5,7 @@ import { resolve, dirname } from 'node:path';
 import { assertBuildTimestamp, sha256, REFERENCE_SHA256 } from './extract-reference391.mjs';
 import { runtimeReleaseHistory, assertRuntimeReleaseSource } from '../worker/runtime/runtime-release-history.mjs';
 
+import { prepareDemandRuntime } from './prepare-demand-runtime.mjs';
 import { prepareReportingRuntime } from './prepare-reporting-runtime.mjs';
 import { prepareNextRuntime } from './prepare-next-runtime.mjs';
 import { prepareTestPageClient } from './prepare-test-page-client.mjs';
@@ -68,6 +69,7 @@ export async function prepareBuiltinRuntime(root = ROOT) {
     `// Generated from checksum-verified source; no network or runtime eval.\nexport const descriptor = ${JSON.stringify(descriptor, null, 2)};\nexport const sourceComponents = ${JSON.stringify(components, null, 2)};\n`);
   await prepareNextRuntime(root);
   await prepareReportingRuntime(root);
+  await prepareDemandRuntime(root);
   await prepareTestPageClient(root);
   return descriptor;
 }
