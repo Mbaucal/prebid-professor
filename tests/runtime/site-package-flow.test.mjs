@@ -16,12 +16,12 @@ async function fixture(){const f=workspaceStore();fixtures.push(f);f.sqlite.exec
  const s=await siteRuntimeSettings(f.env,'first');await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});return f;}
 async function generate(f,note='First package'){const s=await siteRuntimeSettings(f.env,'first');return (await generatePackage(f.env,'first','tester',{revision:s.revision,notes:note})).release;}
 async function promote(f,id,action){return changePackageChannel(f.env,'first',id,'tester',action,{acknowledge:true,channelRevision:await channelRevision(f.env,'first')});}
-test('reporting version completes the real site Generate, read, download and Pages verification flow',async()=>{
+for(const version of ['3.13.0','3.14.0'])test(version+' completes the real site Generate, read, download and Pages verification flow',async()=>{
  const f=await fixture(),old=await generate(f),before=await readPackage(f.env,'first',old.id);
- const s=await siteRuntimeSettings(f.env,'first'),r=s.runtimes.find(r=>r.version==='3.13.0');assert(r);
+ const s=await siteRuntimeSettings(f.env,'first'),r=s.runtimes.find(r=>r.version===version);assert(r);
  await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:s.revision,runtime:r.pin,allowPreview:true});
  const release=await generate(f,'GAM reporting'),p=await readPackage(f.env,'first',release.id);
- assert.equal(p.manifest.runtime.runtimeVersion,'3.13.0');assert(p.files['gam-reporting.json']);assert(!p.files['prebid.js']);
+ assert.equal(p.manifest.runtime.runtimeVersion,version);assert(p.files['gam-reporting.json']);assert(!p.files['prebid.js']);
  assert.equal(Object.keys(JSON.parse(new TextDecoder().decode(p.files['gam-reporting.json'])).keys).length,7);
  assert.match(new TextDecoder().decode(p.files['README.txt']),/Enable custom key-value reporting/);
  await verifyPackage(p.files,{site_id:'first',release_id:release.id,release_version:release.version});
