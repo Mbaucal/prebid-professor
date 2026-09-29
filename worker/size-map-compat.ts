@@ -342,7 +342,7 @@ async function buildSizeMapImport(db: D1Database, siteId: string, csv: string): 
 
   parsed.rows.forEach((row) => {
     const name = value(row, 'name', 'sizeMap', 'mapName').trim();
-    const group = groups.get(name) ?? { firstRow: row.rowNumber, breakpoints: new Map(), errors: [] };
+    const group: Group = groups.get(name) ?? { firstRow: row.rowNumber, breakpoints: new Map(), errors: [] };
     if (!name) group.errors.push(`Row ${row.rowNumber}: name is required.`);
     try {
       const minWidth = parseInteger(value(row, 'minWidth', 'viewportWidth'), 0);

@@ -15,7 +15,7 @@ export default function SiteTestPagePanel({ publisherId, endpoint, testOnly=fals
   useEffect(() => {
     const abort = new AbortController(); setLoading(true); setError(''); setReleases([]); setSelected('');
     fetch(url,{credentials:'same-origin',cache:'no-store',signal:abort.signal}).then(async response => {
-      const data = await response.json(); if(!response.ok) throw Error(data.error || 'Could not load saved packages.');
+      const data = await response.json() as { releases?: Release[]; error?: string }; if(!response.ok) throw Error(data.error || 'Could not load saved packages.');
       if(abort.signal.aborted) return;
       const expected = testOnly ? /^builtin-draft-[a-f0-9]{64}$/ : /^builtin-release-[a-f0-9]{64}$/;
       const items = (data.releases || []).filter((item:Release) => expected.test(item.id));
