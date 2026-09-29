@@ -93,6 +93,11 @@ targeted editor HTTP suite also passes. No runtime source/hash changed for this
 test correction. The combined PM integration of PR109/110/111/112 passes strict
 type checks, the production build and 61 targeted security/runtime/package tests;
 its single package-test merge overlap retains both security and 3.14 assertions.
+The existing browser history check also now expects five retained records with
+four selectable builds, and explicitly checks that 3.14 is first. Its full
+loopback-TLS browser run remains a GitHub CI gate; this workspace's browser proxy
+does not support that DNS remapping. The separate intercepted 3.14 setup and
+runtime browser checks above do run locally.
 
 Hosted publisher TEST with the actual CMP and Google GPT is required before
 production promotion. Offline tests cannot verify Google request privacy fields,
