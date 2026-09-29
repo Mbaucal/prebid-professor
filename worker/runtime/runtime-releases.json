@@ -19,7 +19,7 @@
     "date": "2026-09-30",
     "title": "Consent readiness and reliable initial ad requests",
     "sourceManifest": "scripts/prepare-readiness-runtime.mjs",
-    "sourceCommit": "3d56708a5669a27c9c34b00ad36728468a0d64fd",
+    "sourceCommit": "ec8f2dacca94ff3fc5373d11afc4e2c83aca9a56",
     "changes": [
       "Waits for a completed CMP decision; unknown scope or a pending choice never becomes an NPA fallback.",
       "Separates Prebid loading, pre-auction readiness and the actual auction deadline; missing Prebid falls back to GAM only after a completed CMP decision.",
