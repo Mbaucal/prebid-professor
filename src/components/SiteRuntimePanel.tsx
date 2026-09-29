@@ -11,11 +11,11 @@ export default function SiteRuntimePanel({publisherId,view,unitCode,endpoint,onC
  const url=endpoint??`/api/publishers/${encodeURIComponent(publisherId)}/builtin-site-settings`;
  const [state,setState]=useState<State|null>(null),[version,setVersion]=useState(''),[approved,setApproved]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[failed,setFailed]=useState(false),[stale,setStale]=useState(false);
  const [draft,setDraft]=useState<Position|null>(null);
- async function request(body?:unknown){const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});if(!r.ok){const e=await r.json();throw Error(e.error||'Request failed.');}return r;}
+ async function request(body?:unknown){const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});if(!r.ok){const e=await r.json() as {error?:string};throw Error(e.error||'Request failed.');}return r;}
  function accept(data:State){setState(data);setVersion(data.selected?.runtimeSha256??'');setApproved(false);setDraft(null);setStale(false);}
- useEffect(()=>{let active=true;setState(null);setDraft(null);setMessage('');setFailed(false);setStale(false);setBusy(false);request().then(r=>r.json()).then(data=>{if(active)accept(data);}).catch(e=>{if(active){setMessage(e.message);setFailed(true);}});return()=>{active=false;};},[url,publisherId]);
+ useEffect(()=>{let active=true;setState(null);setDraft(null);setMessage('');setFailed(false);setStale(false);setBusy(false);request().then(r=>r.json() as Promise<State>).then(data=>{if(active)accept(data);}).catch(e=>{if(active){setMessage(e.message);setFailed(true);}});return()=>{active=false;};},[url,publisherId]);
  async function run(fn:()=>Promise<void>){if(busy)return;setBusy(true);setFailed(false);try{await fn();}catch(e){setMessage(e instanceof Error?e.message:'Could not complete this action.');setFailed(true);setStale(true);}finally{setBusy(false);}}
- async function reload(note='Saved settings loaded.'){accept(await(await request()).json());setMessage(note);}
+ async function reload(note='Saved settings loaded.'){accept(await(await request()).json() as State);setMessage(note);}
  const needsPrebid=state?.prebid.status==='missing'||state?.prebid.status==='ambiguous';
  const selected=state?.runtimes.find(r=>r.pin.runtimeSha256===version);
  async function saveVersion(){if(!selected||!state)return;await request({action:'version',revision:state.revision,runtime:selected.pin,allowPreview:approved});await reload('Script version saved. Your site settings and Prebid choice are retained.');await onChanged?.();}

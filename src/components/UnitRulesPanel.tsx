@@ -32,7 +32,7 @@ async function loadLoadingSummary(publisherId: string): Promise<LoadingSummary> 
     credentials: 'same-origin', cache: 'no-store',
   });
   if (!response.ok) throw new Error('Loading behavior is unavailable. Reload to try again.');
-  const data = await response.json();
+  const data = await response.json() as { loadingSummary: LoadingSummary };
   if (!Array.isArray(data.loadingSummary?.units)) throw new Error('Loading behavior is unavailable. Reload to try again.');
   return data.loadingSummary;
 }

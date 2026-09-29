@@ -35,7 +35,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
       headers: body ? { 'content-type': 'application/json' } : {},
       body: body ? JSON.stringify(body) : undefined,
     });
-    const data = await response.json();
+    const data = await response.json() as State & { error?: string };
     if (!response.ok) throw new Error(data.error || 'Script setup could not be loaded.');
     return data;
   }

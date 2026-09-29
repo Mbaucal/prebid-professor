@@ -724,7 +724,8 @@ function implementationHtml(snapshot: Snapshot, origin: string): string {
 }
 
 async function putArtifact(bucket: R2Bucket, key: string, body: string | ArrayBuffer, fileName: string, metadata: Record<string, string>) {
-  const bytes = typeof body === 'string' ? new TextEncoder().encode(body).buffer : body;
+  // TextEncoder allocates an ArrayBuffer; Workers types expose the wider ArrayBufferLike.
+  const bytes = typeof body === 'string' ? new TextEncoder().encode(body).buffer as ArrayBuffer : body;
   const hash = await sha256Hex(bytes);
   await bucket.put(key, bytes, {
     httpMetadata: { contentType: contentType(fileName), cacheControl: 'public, max-age=31536000, immutable' },
