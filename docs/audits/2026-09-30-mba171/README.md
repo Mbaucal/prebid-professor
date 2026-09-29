@@ -85,6 +85,15 @@ The root PM visually inspected the setup screenshots before recording acceptance
 
 ## Remaining acceptance boundaries
 
+The first GitHub run passed the new readiness browser job but found four stale
+catalog-count assertions in the existing compiled Worker/editor checks. These now
+verify the exact four-version list and unchanged default. The three affected local
+compiled workerd checks pass (12 selection, 27 Prebid, 17 editor checks). The
+targeted editor HTTP suite also passes. No runtime source/hash changed for this
+test correction. The combined PM integration of PR109/110/111/112 passes strict
+type checks, the production build and 61 targeted security/runtime/package tests;
+its single package-test merge overlap retains both security and 3.14 assertions.
+
 Hosted publisher TEST with the actual CMP and Google GPT is required before
 production promotion. Offline tests cannot verify Google request privacy fields,
 real ad delivery, fill rate or revenue. The saved-package Test page has no
