@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 import {workspaceStore} from '../support/test-workspace-store.mjs';
 import {siteRuntimeSettings,changeSiteRuntime} from '../../worker/site-runtime/service.mjs';
-import {generatePackage,packageDownload,readPackage,changePackageChannel,channelRevision,builtInCdn,packageResponse,packageState} from '../../worker/site-runtime/releases.mjs';
+import {generatePackage,packageDownload,readPackage,changePackageChannel,channelRevision,builtInCdn,packageResponse,packageState,packageAssetResponse} from '../../worker/site-runtime/releases.mjs';
 import {verifyPackage,verifyPublicPackage,scriptsDelivery} from '../../scripts/pages-release-verification.mjs';
 import {sha256} from '../../worker/runtime/prebid-artifact-check.mjs';
 import {deploymentManifestPin} from '../../worker/deployment-manifest-pin.mjs';
@@ -16,6 +16,28 @@ async function fixture(){const f=workspaceStore();fixtures.push(f);f.sqlite.exec
  const s=await siteRuntimeSettings(f.env,'first');await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});return f;}
 async function generate(f,note='First package'){const s=await siteRuntimeSettings(f.env,'first');return (await generatePackage(f.env,'first','tester',{revision:s.revision,notes:note})).release;}
 async function promote(f,id,action){return changePackageChannel(f.env,'first',id,'tester',action,{acknowledge:true,channelRevision:await channelRevision(f.env,'first')});}
+test('publisher HTML is isolated on immutable, channel and authenticated artifact URLs without changing package bytes',async()=>{
+ const f=await fixture(),release=await generate(f),original=await readPackage(f.env,'first',release.id);
+ const check=async(response,method='GET')=>{
+  assert.equal(response.status,200);
+  assert.match(response.headers.get('content-security-policy'),/^sandbox allow-scripts allow-popups;/);
+  assert.doesNotMatch(response.headers.get('content-security-policy'),/allow-same-origin|allow-top-navigation|allow-popups-to-escape-sandbox/);
+  assert.equal(response.headers.get('referrer-policy'),'no-referrer');
+  assert.equal(response.headers.get('cache-control'),'private, no-store');
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()),method==='HEAD'?new Uint8Array():original.files['implementation.html']);
+ };
+ for(const channel of [`releases/${release.id}`,'staging','current']){
+  if(channel==='staging')await promote(f,release.id,'staging');
+  if(channel==='current')await promote(f,release.id,'production');
+  for(const method of ['GET','HEAD'])await check(await builtInCdn(new Request(`https://tessera.invalid/cdn/first/${channel}/implementation.html`,{method}),f.env),method);
+ }
+ await check(await packageAssetResponse(new Request('https://tessera.invalid/api/artifact'),f.env,'first',release.id,'implementation.html'));
+ const script=await builtInCdn(new Request(`https://tessera.invalid/cdn/first/releases/${release.id}/ads.js`),f.env);
+ assert.equal(script.headers.get('content-security-policy'),null);
+ assert.equal(script.headers.get('cache-control'),'public, max-age=31536000, immutable');
+ assert.deepEqual(new Uint8Array(await script.arrayBuffer()),original.files['ads.js']);
+ assert.deepEqual((await readPackage(f.env,'first',release.id)).files,original.files);
+});
 test('reporting version completes the real site Generate, read, download and Pages verification flow',async()=>{
  const f=await fixture(),old=await generate(f),before=await readPackage(f.env,'first',old.id);
  const s=await siteRuntimeSettings(f.env,'first'),r=s.runtimes.find(r=>r.version==='3.13.0');assert(r);

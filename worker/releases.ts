@@ -1,4 +1,5 @@
 import { isStoredBuiltinDraft, STORED_DRAFT_BLOCK } from './runtime/stored-draft-safety.mjs';
+import { artifactResponseHeaders } from './artifact-response-headers';
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
 import { compileRuntime, type GeneratorEngine } from './runtime-compiler';
@@ -1029,5 +1030,5 @@ export async function serveReleaseCdn(request: Request, env: ReleaseEnv): Promis
   headers.set('cache-control', immutable ? 'public, max-age=31536000, immutable' : pathname.includes('/staging/') ? 'no-store' : 'public, max-age=60, stale-while-revalidate=300');
   headers.set('etag', object.httpEtag);
   const body = request.method === 'HEAD' ? null : (object as R2ObjectBody).body;
-  return new Response(body, { headers });
+  return new Response(body, { headers: artifactResponseHeaders(key, headers) });
 }
