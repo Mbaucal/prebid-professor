@@ -1,0 +1,59 @@
+name: Consent readiness checks
+on:
+  pull_request:
+    branches: [main, feature/isolated-runtime-workspace-v1]
+    paths:
+      - worker/**
+      - src/components/ScriptSetupPanel.tsx
+      - src/components/SiteRuntimePanel.tsx
+      - scripts/**
+      - tests/**
+      - vendor/**
+      - package.json
+      - package-lock.json
+      - .github/workflows/consent-readiness-checks.yml
+  push:
+    branches: [feature/isolated-runtime-workspace-v1]
+permissions:
+  contents: read
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Install locked tools without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Prepare runtime and local-only fixtures
+        run: |
+          node scripts/prepare-builtin-runtime.mjs
+          node scripts/prepare-test-workspace.mjs
+          node --experimental-strip-types scripts/prepare-readiness-browser-fixtures.mjs
+      - name: Consent, deadline, reporting and pending-slot regressions
+        run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
+      - name: Install pinned Chromium verification tools
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Generated scripts with real Prebid and intercepted CMP/GPT
+        run: python scripts/verify-consent-readiness.py
+      - name: Explicit version selection and desktop/mobile setup
+        run: python scripts/verify-readiness-setup.py
+      - name: Save synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: consent-readiness-evidence
+          path: |
+            .generated/readiness-evidence/browser-results.json
+            .generated/readiness-setup-evidence/*.json
+            .generated/readiness-setup-evidence/*.png

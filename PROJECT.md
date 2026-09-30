@@ -1,3 +1,17 @@
+## 2026-09-30 — Central PM coordination and UX acceptance
+
+Marko designated one central PM chat and approved two implementation agents plus
+an independent reviewer. Current assignments and results live in the short
+[Linear START HERE](https://linear.app/mbaucal/document/tessera-start-here-aktuelni-pm-rad-57156b7568fa).
+Follow [AGENTS.md](AGENTS.md) for isolated worktrees, shared-file ownership and
+evidence-based completion. Historical status notes below are not fresh blockers.
+
+The first parallel round is MBA-171 (new CMP/Prebid readiness runtime), MBA-101
+(strict type checking and CI) and independent review of MBA-172 / PR109. These
+are development/review assignments, not production promotion. Marko explicitly
+requires meaningful UX and consistent existing design for platform changes;
+check altered flows visually on desktop and narrow screens before acceptance.
+
 ## 2026-09-23 — Test page UX and developer review (MBA-104)
 
 Follow-up to accepted MBA-94: align the diagnostic page and saved-release link

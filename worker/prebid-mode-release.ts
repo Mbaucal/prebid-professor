@@ -99,7 +99,7 @@ function wrapStatement(statement: D1PreparedStatement, query: string): D1Prepare
   return new Proxy(statement, {
     get(target, property) {
       if (property === 'bind') {
-        return (...values: D1Value[]) => wrapStatement(target.bind(...values), query);
+        return (...values: Parameters<D1PreparedStatement['bind']>) => wrapStatement(target.bind(...values), query);
       }
       if (property === 'first') {
         return async () => {

@@ -5,6 +5,7 @@ import { resolve, dirname } from 'node:path';
 import { assertBuildTimestamp, sha256, REFERENCE_SHA256 } from './extract-reference391.mjs';
 import { runtimeReleaseHistory, assertRuntimeReleaseSource } from '../worker/runtime/runtime-release-history.mjs';
 
+import { prepareReadinessRuntime } from './prepare-readiness-runtime.mjs';
 import { prepareCreativeRuntime } from './prepare-creative-runtime.mjs';
 import { prepareDemandRuntime } from './prepare-demand-runtime.mjs';
 import { prepareNextRuntime } from './prepare-next-runtime.mjs';
@@ -72,6 +73,7 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareCreativeRuntime(root);
   await prepareReportingRuntime(root);
   await prepareDemandRuntime(root);
+  await prepareReadinessRuntime(root);
   await prepareTestPageClient(root);
   return descriptor;
 }

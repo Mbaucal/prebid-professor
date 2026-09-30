@@ -21,6 +21,7 @@ type DebugScope = {
 };
 
 type DebugCommand = {
+  scope?: 'page';
   id: string;
   category: DebugCategory;
   title: string;

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { runtimeLabel } from '../site-workspace/runtime-labels';
 import '../site-workspace/runtime.css';
 
-type Pin = { runtimeSha256: string; runtimeVersion: string };
+type Pin = { runtimeSha256: string; runtimeVersion: string; capabilities: readonly string[] };
 type State = {
   revision: string; selected: Pin | null; enablePrebid: boolean; validationIssue: string | null;
   prebid: { status: string; message: string };
@@ -35,7 +35,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
       headers: body ? { 'content-type': 'application/json' } : {},
       body: body ? JSON.stringify(body) : undefined,
     });
-    const data = await response.json();
+    const data = await response.json() as State & { error?: string };
     if (!response.ok) throw new Error(data.error || 'Script setup could not be loaded.');
     return data;
   }
@@ -87,13 +87,16 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
         </label>
       </div>
       <div className="script-version-summary">
-        <span>Script version <strong>{runtimeLabel(selected?.version ?? state.selected?.runtimeVersion ?? '')}</strong>{!state.selected ? ' · Default for new scripts' : ''}</span>
+        <span>Script version <strong>{runtimeLabel(selected?.version ?? state.selected?.runtimeVersion ?? '')}</strong>{!state.selected && version === state.runtimes[0]?.pin.runtimeSha256 ? ' · Default for new scripts' : dirty ? ' · Unsaved selection' : ''}</span>
         <button type="button" disabled={busy} aria-expanded={showVersions} onClick={() => setShowVersions(!showVersions)}>{showVersions ? 'Hide versions' : 'Change version'}</button>
       </div>
       {showVersions ? <label>Script version<select aria-label="Script version" value={version} disabled={busy} onChange={e => setVersion(e.target.value)}>
         {!selected ? <option value={version}>Choose an available version</option> : null}
         {state.runtimes.map(item => <option key={item.pin.runtimeSha256} value={item.pin.runtimeSha256}>{runtimeLabel(item.version)}</option>)}
       </select></label> : null}
+      {selected?.version.startsWith('3.14.0') ? <p className="script-prebid-note">
+        Waits for your CMP decision before requesting ads. If Prebid fails to load, Google ads are requested only after consent is resolved.
+      </p> : null}
       {selected?.pin.capabilities.includes('gam-request-reporting') ? <p className="script-prebid-note">
         GAM reporting: refresh count, bucket, interval and policy. {prebid ? 'Also includes current-auction bid counts and timeout.' : 'No Prebid auction values are sent in GAM / AdX only mode.'} Key definitions are included in the downloaded package. Enable key-value reporting in GAM to use them in reports.
       </p> : null}

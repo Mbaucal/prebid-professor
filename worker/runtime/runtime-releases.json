@@ -1,5 +1,33 @@
 [
   {
+    "id": "tessera-readiness-v1",
+    "version": "3.14.0",
+    "codeSha256": "ddfb7326bef527aafd0f0bceca343287e2ded9dfa8c11095c5ac9378b5a89871",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness"
+    ],
+    "date": "2026-09-30",
+    "title": "Consent readiness and reliable initial ad requests",
+    "sourceManifest": "scripts/prepare-readiness-runtime.mjs",
+    "sourceCommit": "ec8f2dacca94ff3fc5373d11afc4e2c83aca9a56",
+    "changes": [
+      "Waits for a completed CMP decision; unknown scope or a pending choice never becomes an NPA fallback.",
+      "Separates Prebid loading, pre-auction readiness and the actual auction deadline; missing Prebid falls back to GAM only after a completed CMP decision.",
+      "Late or incomplete auctions cannot add stale bid targeting or repeat an initial request. Native GPT and Prebid retain TCF enforcement, including rejection.",
+      "Explicit opt-in for newly generated packages. Existing selections, old generators and saved package bytes remain unchanged. Direct ID5-to-PPID copying is disabled pending its separate consent review."
+    ]
+  },
+  {
     "id": "tessera-demand-v1",
     "version": "3.15.0",
     "codeSha256": "ef166b6da60a36e3e8817f6df4e2a961e34868382cdb0fae5e36751c545b6528",
