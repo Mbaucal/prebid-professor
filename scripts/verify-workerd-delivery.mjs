@@ -30,8 +30,18 @@ async function call(path,body,runner=false){return mf.dispatchFetch(origin+path,
 async function json(path,body,status=200,runner=false){const response=await call(path,body,runner),data=await response.json();assert.equal(response.status,status,JSON.stringify(data));return data;}
 try {
   mf=start();await mf.ready;
+  const db=await mf.getD1Database('DB');
+  const schema=()=>db.prepare("SELECT name,type,sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' ORDER BY name").all();
+  assert.deepEqual((await schema()).results,[],'Fresh local D1 has no application schema');
   const logged=await mf.dispatchFetch(origin+'/api/auth/login',{method:'POST',redirect:'manual',headers:{origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:bindings.TEST_ADMIN_EMAIL,password}).toString()});
   assert.equal(logged.status,303);cookie=logged.headers.get('set-cookie').split(';')[0];
+  const beforeSchema=(await schema()).results;
+  assert.deepEqual(beforeSchema.map(row=>[row.name,row.type]),[['auth_login_limits','table'],['auth_login_limits_expiry','index']]);
+  const normalized=sql=>sql.replace(/\s+/g,' ').trim();
+  assert.equal(normalized(beforeSchema[0].sql),'CREATE TABLE auth_login_limits ( source_key TEXT PRIMARY KEY NOT NULL, attempts INTEGER NOT NULL CHECK (attempts >= 1 AND attempts <= 6), reset_at INTEGER NOT NULL )');
+  assert.equal(normalized(beforeSchema[1].sql),'CREATE INDEX auth_login_limits_expiry ON auth_login_limits (reset_at)');
+  const beforeRows=(await db.prepare('SELECT * FROM auth_login_limits ORDER BY source_key').all()).results;
+  assert.equal(beforeRows.length,1);assert.match(beforeRows[0].source_key,/^[a-f0-9]{64}$/);assert.equal(beforeRows[0].attempts,1);
   const initial=await json('/test-api/deployments');check('Empty delivery ledger reads without schema initialization',initial.revision===0&&initial.sources.length===1);
   const targetBody={expectedRevision:0,siteId:'tanjug-test',target:TARGET};
   const targetRace=await Promise.all([call('/test-api/deployments/target',targetBody),call('/test-api/deployments/target',targetBody)]);
@@ -50,8 +60,9 @@ try {
   await json(path+'/report',{...runnerIdentity,status:'success',deliverySha256:run.delivery.sha256,deploymentUrl:'https://1234abcd.tessera-fixture.pages.dev/',productionBranch:'main'},200,true);
   history=await json('/test-api/deployments');
   check('Compiled callback records success and normalizes immutable URL',history.runs[0].status==='success'&&history.runs[0].deploymentUrl==='https://1234abcd.tessera-fixture.pages.dev');
-  const db=await mf.getD1Database('DB'),tables=await db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE '_cf_%'").all();
-  check('Deployment uses no new or reset D1 tables',tables.results.length===0);
+  assert.deepEqual((await schema()).results,beforeSchema,'Deployment must not add or change any D1 schema objects');
+  assert.deepEqual((await db.prepare('SELECT * FROM auth_login_limits ORDER BY source_key').all()).results,beforeRows,'Deployment must not reset or change login rows');
+  check('Deployment preserves the exact preexisting login schema and rows; no business tables added',true);
   await mf.dispose();mf=null;mf=start();await mf.ready;
   const restarted=await json('/test-api/deployments');check('Target and deployment history survive Worker restart',JSON.stringify(history)===JSON.stringify(restarted));
   await mkdir('.generated/delivery-evidence',{recursive:true});
