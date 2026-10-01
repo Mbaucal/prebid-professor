@@ -1,5 +1,6 @@
 """CI browser regression: real compiled package, synthetic GPT, zero live ads."""
 import json
+import sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
@@ -11,9 +12,10 @@ gpt='''(()=>{const pending=window.googletag.cmd.slice();window.__testOptions={al
 googletag.apiReady=true;googletag.openConsole=()=>{window.__consoleOpened=true};
 pending.forEach(fn=>fn());})();'''
 results=[]
+prerequisites_only="--consent-prerequisites-only" in sys.argv
 with sync_playwright() as p:
  browser=p.chromium.launch(headless=True)
- for width in (1440,390):
+ for width in (() if prerequisites_only else (1440,390)):
     context=browser.new_context(viewport={'width':width,'height':900})
     context.add_cookies([{'name':'admin-fixture','value':'must-not-be-readable','url':'https://tessera.fixture.invalid'}])
     page=context.new_page();errors=[];external=[]
@@ -134,7 +136,7 @@ with sync_playwright() as p:
      raise
     context.close()
  # Fault paths must be actionable and must never report registration success.
- for scenario in ('blocked','stalled','wrong-path','duplicate-dom','duplicate-slot'):
+ for scenario in (() if prerequisites_only else ('blocked','stalled','wrong-path','duplicate-dom','duplicate-slot')):
     context=browser.new_context(viewport={'width':1440,'height':900})
     page=context.new_page()
     if scenario=='stalled': page.clock.install()
@@ -180,13 +182,13 @@ with sync_playwright() as p:
     'googletag.apiReady=true;',
     "if(fixtureCMP)window.__tcfapi=fixtureCMP;else delete window.__tcfapi;googletag.apiReady=true;")
  for width in (1440,390):
-  for scenario in ('missing-late-decision','script-error','gpt-error'):
+  for scenario in (('prebid-error','prebid-timeout') if prerequisites_only else ('missing-late-decision','script-error','gpt-error','prebid-error','prebid-timeout')):
    context=browser.new_context(viewport={'width':width,'height':900})
    page=context.new_page();errors=[];external=[];fail_gpt=[scenario=='gpt-error'];consent_evidence={}
    page.on('pageerror',lambda error:errors.append(str(error)))
    def route_consent(r):
     if r.request.url=='https://tessera.fixture.invalid/consent-test':
-     r.fulfill(status=200,headers=headers,body=(out/'readiness.html').read_text())
+     r.fulfill(status=200,headers=headers,body=(out/('readiness-prebid.html' if scenario.startswith('prebid-') else 'readiness.html')).read_text())
     elif r.request.url=='https://securepubads.g.doubleclick.net/tag/js/gpt.js':
      external.append(r.request.url)
      if fail_gpt[0]:
@@ -207,10 +209,15 @@ with sync_playwright() as p:
    try:
     page.goto('https://tessera.fixture.invalid/consent-test')
     expect(page.locator('[data-consent]')).to_be_hidden()
-    if scenario=='script-error':
+    if scenario in ('script-error','prebid-error'):
      # Browser-only fault injection; do not alter the archived script or CSP.
      page.evaluate('''()=>{const append=Element.prototype.appendChild;Element.prototype.appendChild=function(n){
        if(n.tagName==='SCRIPT' && n.src.startsWith('data:application/javascript;')){queueMicrotask(()=>n.onerror(new Event('error')));return n;}
+       return append.call(this,n);};}''')
+    if scenario=='prebid-timeout':
+     page.clock.install()
+     page.evaluate('''()=>{const append=Element.prototype.appendChild;Element.prototype.appendChild=function(n){
+       if(n.tagName==='SCRIPT' && n.src.startsWith('data:application/javascript;'))return n;
        return append.call(this,n);};}''')
     if scenario=='missing-late-decision':
      page.evaluate('''()=>{const append=Element.prototype.appendChild;Element.prototype.appendChild=function(n){
@@ -218,6 +225,10 @@ with sync_playwright() as p:
        return append.call(this,n);};}''')
     start=page.get_by_role('button',name='Start test',exact=True)
     start.focus();page.keyboard.press('Enter')
+    if scenario=='prebid-timeout':
+     expect(page.locator('[data-asset="prebid"]')).to_have_text('prebid: loading')
+     expect(page.locator('[data-consent]')).to_have_text('Checking consent status')
+     page.clock.fast_forward(21000)
     if scenario=='missing-late-decision':
      expect(page.locator('[data-consent]')).to_have_text('Checking consent status')
      assert not external
@@ -226,8 +237,18 @@ with sync_playwright() as p:
     if scenario!='missing-late-decision':
      expect(page.locator('[data-summary]')).to_contain_text('A required script failed to load',timeout=10000)
      report=copy_report();assert report['errors']
-     assert report['assets']['ads' if scenario=='script-error' else 'gpt']=='failed'
-     if scenario=='script-error': assert report['consent']['status']=='unavailable'
+     failed_asset='prebid' if scenario.startswith('prebid-') else 'ads' if scenario=='script-error' else 'gpt'
+     assert report['assets'][failed_asset]=='failed'
+     if scenario.startswith('prebid-'):
+      assert report['assets']['ads']=='not started' and report['assets']['gpt']=='not started'
+      assert report['consent']=={'status':'unavailable','phase':None,'ready':None,'epoch':None}
+      expect(page.locator('[data-consent]')).to_have_text('Consent diagnostics unavailable')
+      expect(page.locator('[data-consent-detail]')).to_contain_text('Prebid could not load')
+      assert not external
+      consent_evidence['failedPrerequisite']={'assets':report['assets'],'consent':report['consent']}
+     elif scenario=='gpt-error':
+      assert report['consent']['status']=='available' and report['consent']['phase']=='cmp-missing'
+     if scenario in ('script-error','prebid-error'): assert report['consent']['status']=='unavailable'
      assert not page.evaluate('window.__testAds?.observations.requests.length || 0')
      page.screenshot(path=str(out/f'consent-{scenario}-{width}.png'),full_page=True)
      restart=page.get_by_role('button',name='Restart test',exact=True)
@@ -239,6 +260,13 @@ with sync_playwright() as p:
     expect(page.locator('[data-consent]')).to_have_text('Waiting for publisher consent',timeout=10000)
     expect(page.locator('[data-consent-detail]')).to_contain_text('does not load the publisher CMP')
     assert page.evaluate('typeof window.__tcfapi')=='undefined'
+    if scenario.startswith('prebid-'):
+     expect(page.locator('[data-asset="prebid"]')).to_have_text('prebid: ready')
+     assert page.evaluate('window.__fixturePrebidLoaded')
+     recovered=copy_report()
+     assert recovered['consent']=={'status':'available','phase':'cmp-missing','ready':False,'epoch':0}
+     assert not recovered['errors']
+     consent_evidence['afterRestart']={'assets':recovered['assets'],'consent':recovered['consent']}
     assert not page.evaluate('__testAds.observations.requests.length')
     assert 'All ' not in page.locator('[data-summary]').inner_text()
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
@@ -287,5 +315,5 @@ with sync_playwright() as p:
    finally:
     context.close()
  browser.close()
-(out/'result.json').write_text(json.dumps(results,indent=2))
-print('PASS saved 3.10 / 3.14 packages; consent missing, pending, decision, errors/recovery, keyboard/report; responsive slots/Sticky; zero live ads')
+(out/('prerequisite-result.json' if prerequisites_only else 'result.json')).write_text(json.dumps(results,indent=2))
+print('PASS Prebid prerequisite error/timeout/restart at 1440/390; zero live ads' if prerequisites_only else 'PASS saved 3.10 / 3.14 packages; consent and prerequisite errors/recovery, keyboard/report; responsive slots/Sticky; zero live ads')

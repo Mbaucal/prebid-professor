@@ -49,6 +49,13 @@ test('consent report is a small allowlist, independent of loaded libraries and r
   runtime.snapshot=()=>({consent:{phase:'decision-ready',ready:true,epoch:1,accepted:false,gdprApplies:true}});
   assert.deepEqual(readTestPageConsent(runtime,available),{status:'available',phase:'decision-ready',ready:true,epoch:1},'A complete decision must not be relabelled as acceptance.');
 });
+test('failed Prebid prerequisite is unavailable until a restarted load reaches the saved script',() => {
+  const runtime={snapshot:()=>({consent:{phase:'cmp-missing',ready:false,epoch:0}})};
+  assert.equal(readTestPageConsent(runtime,{started:true,ads:'not started',prebid:'loading'}).status,'loading');
+  assert.deepEqual(readTestPageConsent(runtime,{started:true,ads:'not started',prebid:'failed'}),{status:'unavailable',phase:null,ready:null,epoch:null});
+  assert.equal(readTestPageConsent(runtime,{started:false,ads:'not started',prebid:'not started'}).status,'not-started');
+  assert.deepEqual(readTestPageConsent(runtime,{started:true,ads:'ready',prebid:'ready'}),{status:'available',phase:'cmp-missing',ready:false,epoch:0});
+});
 test('missing, malformed and throwing consent diagnostics remain unknown',() => {
   const available={started:true,ads:'ready'};
   for(const runtime of [null,{}, {snapshot:()=>null},{snapshot:()=>({consent:{ready:true,phase:'cmp-missing'}})},

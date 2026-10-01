@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { Miniflare,Headers as MiniflareHeaders } from 'miniflare';
 import { positionFixture } from '../tests/support/position-runtime-fixture.mjs';
-import { runtimeCatalog,buildArtifactCandidate } from '../worker/test-workspace/runtime-catalog.mjs';
+import { runtimeCatalog,buildArtifactCandidate,previewInput } from '../worker/test-workspace/runtime-catalog.mjs';
 import { pinRuntime } from '../worker/runtime/version-pin.mjs';
 import { saveDraftRelease } from '../worker/runtime/draft-release-store.mjs';
+import { prebidRequirements, sha256 } from '../worker/runtime/prebid-artifact-check.mjs';
 import { testPageScript } from '../.generated/test-page-client.mjs';
 const out=new URL('../.generated/test-page-evidence/',import.meta.url);await mkdir(out,{recursive:true});
 const snapshot=positionFixture(false),config=JSON.parse(snapshot.config.config_json);
@@ -34,9 +35,20 @@ try{
   // Preserve conditional writes while adapting Node's Headers to the proxy's
   // supported Headers class. This adapter exists only in the local fixture.
   const bucket={get:key=>rawBucket.get(key),put:(key,bytes,options)=>rawBucket.put(key,bytes,{...options,onlyIf:new MiniflareHeaders(options.onlyIf)})};
-  for(const [name,version] of [['page','3.10.0-tessera.preview.1'],['readiness','3.14.0']]) {
+  for(const [name,version,withPrebid] of [['page','3.10.0-tessera.preview.1'],['readiness','3.14.0'],['readiness-prebid','3.14.0',true]]) {
     const descriptor=runtimeCatalog.find(runtime=>runtime.version===version);assert(descriptor);
-    const candidate=await buildArtifactCandidate({snapshot,pin:pinRuntime(descriptor,{allowPreview:true}),buildTimestamp:'20261001_170000'});
+    const current=structuredClone(snapshot),buildTimestamp='20261001_170000';
+    let prebid=null;
+    if(withPrebid) {
+      const config=JSON.parse(current.config.config_json);config.enablePrebid=true;current.config.config_json=JSON.stringify(config);
+      current.bidders=positionFixture(true).bidders;
+      const requirements=prebidRequirements(previewInput(current,descriptor,buildTimestamp),config);
+      // Synthetic prerequisite bytes, never an external library or live bidder.
+      const bytes=new TextEncoder().encode(`/* prebid.js v11.34.0\nModules: ${requirements.modules.join(',')} */\nwindow.__fixturePrebidLoaded=true;window.pbjs=window.pbjs||{que:[]};`);
+      prebid={bytes:bytes.buffer,report:{status:'checked',siteId:current.site.id,requiredModules:requirements.modules,declaredModules:requirements.modules,
+        build:{id:'test-page-prerequisite-fixture',version:'11.34.0',sha256:await sha256(bytes),byteSize:bytes.byteLength}}};
+    }
+    const candidate=await buildArtifactCandidate({snapshot:current,pin:pinRuntime(descriptor,{allowPreview:true}),buildTimestamp,prebid});
     const saved=await saveDraftRelease({isolation:'explicit-test-store',db:await mf.getD1Database('DB'),bucket},
       {siteId:'test-site',candidate,actor:'tester@example.invalid',note:'Compiled Worker browser test'});
     const response=await mf.dispatchFetch(origin+'/test-api/site-test-page/'+saved.draft.id+'?googfc',{headers:{cookie}});
