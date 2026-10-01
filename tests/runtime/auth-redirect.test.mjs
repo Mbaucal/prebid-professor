@@ -28,7 +28,7 @@ for (const next of ['/\\external.invalid', '//external.invalid', '/\n/external.i
     assert.match(await page.text(), /name="next" value="\/"/);
   });
 }
-for (const [next, expected] of [['/config?site=example#units', '/config?site=example#units'], ['/releases?url=https%3A%2F%2Fexample.invalid', '/releases?url=https%3A%2F%2Fexample.invalid'], ['/old/../config', '/config'], ['/', '/']]) {
+for (const [next, expected] of [['/?section=publishers&publisher=publisher-a&site=site-a2&tab=config&agency=north', '/?section=publishers&publisher=publisher-a&site=site-a2&tab=config&agency=north'], ['/config?site=example#units', '/config?site=example#units'], ['/releases?url=https%3A%2F%2Fexample.invalid', '/releases?url=https%3A%2F%2Fexample.invalid'], ['/old/../config', '/config'], ['/', '/']]) {
   test(`login preserves internal destination ${next}`, async () => {
     assert.equal((await login(next)).headers.get('location'), expected);
   });
