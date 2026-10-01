@@ -1,3 +1,16 @@
+// Only copy known diagnostics. Never serialize arbitrary runtime/CMP data.
+export function readTestPageConsent(runtime, {started, ads}) {
+  const state = {status:!started ? 'not-started' : ads === 'not started' || ads === 'loading' ? 'loading' : 'unavailable', phase:null, ready:null, epoch:null};
+  if (!started || ads !== 'ready') return state;
+  try {
+    if (typeof runtime?.snapshot !== 'function') return state;
+    const consent = runtime.snapshot()?.consent;
+    const phases = ['cmp-missing','cmp-loading','cmp-error','scope-unknown','user-decision','decision-ready'];
+    if (!consent || !phases.includes(consent.phase) || typeof consent.ready !== 'boolean' || consent.ready !== (consent.phase === 'decision-ready')) return state;
+    return {status:'available',phase:consent.phase,ready:consent.ready,epoch:Number.isSafeInteger(consent.epoch) && consent.epoch >= 0 ? consent.epoch : null};
+  } catch { return state; }
+}
+
 // Bundled as a complete browser program, then embedded as data in the Worker.
 export function testPageClient() {
   'use strict';
@@ -44,6 +57,7 @@ export function testPageClient() {
     return {
       testedAt:new Date().toISOString(), siteId:model.siteId, releaseId:model.releaseId, runtimeVersion:model.runtimeVersion,
       prebidVersion:model.prebidVersion, assets:{...assets}, viewport:{width:innerWidth,height:innerHeight}, startedViewport, gptReady:!!window.googletag?.apiReady,
+      consent:readTestPageConsent(window.__tesseraReadiness,{started,ads:assets.ads}),
       consoleSnapshot, cssPreviews:[...stickyViews].filter(([,view]) => view.preview).map(([id]) => id),
       units:model.units.map(unit => {
         const nodes = dom.get(unit.id) || [], found = slots.get(unit.id) || [], path = found[0]?.getAdUnitPath() || null;
@@ -129,6 +143,18 @@ export function testPageClient() {
     const gpt = s.units.filter(u => u.slotCount === 1 && u.pathOk).length, active = s.units.filter(u => u.active);
     for (const [key,value] of Object.entries({dom:dom + ' / ' + s.units.length,gpt:gpt + ' / ' + s.units.length,active:active.length + ' / ' + s.units.length,requests:active.filter(u => u.requests).length + ' / ' + active.length})) setText(one('[data-metric="' + key + '"]'), value);
     for (const [key,value] of Object.entries(assets)) { const tag = one('[data-asset="' + key + '"]'); if(tag) { setText(tag, key + ': ' + value); tag.className = 'pill ' + (value === 'ready' ? 'ok' : value === 'failed' ? 'bad' : value === 'loading' ? 'wait' : ''); } }
+    const consent = s.consent, consentTag = one('[data-consent]'), consentDetail = one('[data-consent-detail]');
+    const waitingConsent = consent.status === 'available' && !consent.ready;
+    const consentCopy = assets.ads === 'failed' ? ['Consent diagnostics unavailable','The saved script could not load. Restart the test to try again.']
+      : consent.status === 'loading' ? ['Checking consent status','Waiting for the saved script to load.']
+      : consent.status !== 'available' ? ['Consent diagnostics unavailable','This package does not provide a readable consent status. Script loading and slot registration do not verify consent.']
+      : consent.phase === 'decision-ready' ? ['CMP decision ready','A CMP decision is available. This can include rejection; GPT and Prebid still apply that decision. This is not a passed consent test.']
+      : consent.phase === 'user-decision' ? ['Waiting for user decision','The CMP is waiting for a choice. Ad requests remain paused until a decision is available.']
+      : consent.phase === 'cmp-missing' ? ['Waiting for publisher consent','This isolated page does not load the publisher CMP. Test this package on the publisher website to check consent.']
+      : ['Waiting for publisher consent','The CMP has not supplied a complete decision and scope. Ad requests remain paused.'];
+    consentTag.hidden = consentDetail.hidden = !started;
+    setText(consentTag, consentCopy[0]); consentTag.className = 'pill' + (waitingConsent ? ' wait' : '');
+    setText(consentDetail, consentCopy[1]);
     setText(one('[data-viewport]'), innerWidth + ' × ' + innerHeight + ' px');
     const resized = startedViewport && (startedViewport.width !== innerWidth || startedViewport.height !== innerHeight);
     one('[data-resize-notice]').hidden = !resized;
@@ -169,6 +195,7 @@ export function testPageClient() {
       : !started ? 'Ready. Click Start test to load this saved package.' : !s.gptReady ? 'Loading the saved scripts and Google GPT…'
       : dom !== s.units.length ? 'Container check failed: ' + dom + ' / ' + s.units.length + ' valid DIVs. Check missing or duplicate rows.'
       : s.units.some(u => u.slotCount > 1 || (u.slotCount && !u.pathOk)) ? 'GPT registration mismatch. Check the highlighted slots and GAM paths.'
+      : waitingConsent ? 'Ad requests are waiting for a CMP decision. Registered positions do not confirm consent.'
       : gpt === s.units.length ? 'All ' + gpt + ' positions are present and registered. ' + active.length + ' active at this width. Empty ads are OK.'
       : 'Registered ' + gpt + ' / ' + s.units.length + ' positions. ' + (Date.now() - readyAt > 12000 ? 'Check waiting rows and recorded errors.' : 'Waiting for initialization…');
     setText(one('[data-summary]'), summary + (errors.length ? ' ' + errors.length + ' recorded error(s); see package details below.' : ''));
