@@ -1,3 +1,4 @@
+import { cloneAuthenticatedRequest } from './http';
 import { apiError, json } from './http';
 import {
   publishReleaseToProduction,
@@ -216,7 +217,7 @@ export async function generateReleaseWithIntegrations(
     return apiError(error instanceof Error ? error.message : 'Integration settings could not be read.', 422);
   }
 
-  const base = await generateReleaseWithRuntimeControls(request.clone(), env, siteId);
+  const base = await generateReleaseWithRuntimeControls(cloneAuthenticatedRequest(request), env, siteId);
   const responseText = await base.text();
   let payload: JsonRecord;
   try {

@@ -1,3 +1,4 @@
+import { cloneAuthenticatedRequest } from './http';
 import { apiError, json } from './http';
 import {
   generateReleaseWithFluidPreflight,
@@ -364,7 +365,7 @@ export async function generateReleaseForDemandMode(
     return apiError('The selected generator template does not contain ENABLE_PREBID.', 422);
   }
 
-  const base = await generateReleaseWithFluidPreflight(request.clone(), withAdxOnlyEnvironment(env), siteId);
+  const base = await generateReleaseWithFluidPreflight(cloneAuthenticatedRequest(request), withAdxOnlyEnvironment(env), siteId);
   const responseText = await base.text();
   let payload: JsonRecord;
   try {
