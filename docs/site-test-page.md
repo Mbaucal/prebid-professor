@@ -106,3 +106,15 @@ existing table scrolls within its panel and the page has no horizontal overflow.
 Evidence is produced by the existing CI gate under
 `.generated/test-page-evidence/`; this is local/CI verification, not a hosted
 publisher acceptance or deployment claim.
+
+Review follow-up: a failed or timed-out Prebid prerequisite now makes consent
+diagnostics unavailable instead of leaving “Checking consent status” active
+when the saved ad script never started. The explanation identifies Prebid and
+keeps the existing restart action. A GPT failure after the saved script loaded
+does not discard a readable CMP status. The existing browser verifier now has a
+separate compiler-generated Prebid fixture with synthetic bytes and error/timeout
+plus restart cases at 1440/390. Targeted follow-up verification passed 10/10 Node
+tests and 4/4 prerequisite browser cases on each layout variant, with zero live
+requests. Run `python scripts/verify-site-test-page.py --consent-prerequisites-only`
+for this focused check; evidence is `prerequisite-result.json` alongside its
+screenshots. The default existing CI gate also includes these four cases.

@@ -1,7 +1,8 @@
 // Only copy known diagnostics. Never serialize arbitrary runtime/CMP data.
-export function readTestPageConsent(runtime, {started, ads}) {
-  const state = {status:!started ? 'not-started' : ads === 'not started' || ads === 'loading' ? 'loading' : 'unavailable', phase:null, ready:null, epoch:null};
-  if (!started || ads !== 'ready') return state;
+export function readTestPageConsent(runtime, {started, ads, prebid}) {
+  const prerequisiteFailed = prebid === 'failed';
+  const state = {status:!started ? 'not-started' : prerequisiteFailed ? 'unavailable' : ads === 'not started' || ads === 'loading' ? 'loading' : 'unavailable', phase:null, ready:null, epoch:null};
+  if (!started || prerequisiteFailed || ads !== 'ready') return state;
   try {
     if (typeof runtime?.snapshot !== 'function') return state;
     const consent = runtime.snapshot()?.consent;
@@ -47,7 +48,7 @@ export function testPageClient() {
     return {
       testedAt:new Date().toISOString(), siteId:model.siteId, releaseId:model.releaseId, runtimeVersion:model.runtimeVersion,
       prebidVersion:model.prebidVersion, assets:{...assets}, viewport:{width:innerWidth,height:innerHeight}, gptReady:!!window.googletag?.apiReady,
-      consent:readTestPageConsent(window.__tesseraReadiness,{started,ads:assets.ads}),
+      consent:readTestPageConsent(window.__tesseraReadiness,{started,ads:assets.ads,prebid:assets.prebid}),
       consoleSnapshot, cssPreviews:[...stickyViews].filter(([,view]) => view.preview).map(([id]) => id),
       units:model.units.map(unit => {
         const nodes = dom.get(unit.id) || [], found = slots.get(unit.id) || [], path = found[0]?.getAdUnitPath() || null;
@@ -132,7 +133,8 @@ export function testPageClient() {
     for (const [key,value] of Object.entries(assets)) { const tag = one('[data-asset="' + key + '"]'); if(tag) { tag.textContent = key + ': ' + value; tag.className = 'pill ' + (value === 'ready' ? 'ok' : value === 'failed' ? 'bad' : 'wait'); } }
     const consent = s.consent, consentTag = one('[data-consent]'), consentDetail = one('[data-consent-detail]');
     const waitingConsent = consent.status === 'available' && !consent.ready;
-    const consentCopy = assets.ads === 'failed' ? ['Consent diagnostics unavailable','The saved script could not load. Restart the test to try again.']
+    const consentCopy = assets.prebid === 'failed' ? ['Consent diagnostics unavailable','Prebid could not load, so the saved script has not started. Restart the test to try again.']
+      : assets.ads === 'failed' ? ['Consent diagnostics unavailable','The saved script could not load. Restart the test to try again.']
       : consent.status === 'loading' ? ['Checking consent status','Waiting for the saved script to load.']
       : consent.status !== 'available' ? ['Consent diagnostics unavailable','This package does not provide a readable consent status. Script loading and slot registration do not verify consent.']
       : consent.phase === 'decision-ready' ? ['CMP decision ready','A CMP decision is available. This can include rejection; GPT and Prebid still apply that decision. This is not a passed consent test.']
