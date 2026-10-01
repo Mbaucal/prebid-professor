@@ -4,7 +4,8 @@ import { useOrganization, agencyFor, inAgency } from './organization';
 import AppFrame, { WorkspaceContent } from './components/AppFrame';
 import AuthAccount from './components/AuthAccount';
 import ApiIntegrationsPanel from './components/ApiIntegrationsPanel';
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { canonicalDashboardURL, dashboardURL, globalSections as navItems, readDashboardNavigation, resolveDashboardNavigation, siteTabs as publisherTabs, type DashboardNavigation, type NavigationRequest, type GlobalSection, type PublisherTab } from './dashboard-navigation';
 import { api } from './api';
 import AdsTxtPanel from './components/AdsTxtPanel';
 import AuditLogPanel from './components/AuditLogPanel';
@@ -28,8 +29,6 @@ import type {
   Site,
 } from './shared/types';
 
-const navItems = ['Publishers', 'Agencies', 'Releases', 'Prebid builds', 'API integracije', 'Audit log', 'Settings'] as const;
-type GlobalSection = (typeof navItems)[number];
 const globalDescriptions: Record<GlobalSection, string> = {
   Agencies: 'Organize agencies, publishers and sites, with an optional agency logo.',
   'API integracije': 'Povežite GAM mreže i kreirajte ad unite iz šablona.',
@@ -39,9 +38,6 @@ const globalDescriptions: Record<GlobalSection, string> = {
   'Audit log': 'Review configuration, release and operational activity recorded in D1.',
   Settings: 'Check runtime health, bindings, security and retention safeguards.',
 };
-const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Test page', 'Export', 'Mockup', 'Monitoring', 'Debug', 'Ads.txt'] as const;
-
-type PublisherTab = (typeof publisherTabs)[number];
 type ModalMode = 'create-publisher' | 'create-site' | 'edit-site' | 'duplicate-site' | null;
 
 type PublisherForm = {
@@ -115,16 +111,15 @@ function nextCopyId(value: string): string {
 
 export default function App() {
   const organization = useOrganization();
-  const [agencyFilter, setAgencyFilter] = useState('all');
+  const [navigationRequest, setNavigationRequest] = useState(() => readDashboardNavigation(window.location.search));
+  const navigationRef = useRef(navigationRequest);
+  const hierarchyRequest = useRef(0);
+  const [hierarchyLoaded, setHierarchyLoaded] = useState(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [publishers, setPublishers] = useState<PublisherAccount[]>([]);
   const [hierarchyError, setHierarchyError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<GlobalSection>('Publishers');
-  const [activePublisherId, setActivePublisherId] = useState<string | null>(null);
-  const [activeSiteId, setActiveSiteId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<PublisherTab>('Overview');
   const [configEntry, setConfigEntry] = useState<'ad-units' | 'generator-profiles'>('generator-profiles');
   const [modal, setModal] = useState<ModalMode>(null);
   const [publisherForm, setPublisherForm] = useState<PublisherForm>(emptyPublisherForm);
@@ -132,40 +127,35 @@ export default function App() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const loadHierarchy = useCallback(
-    async (preferredPublisherId?: string, preferredSiteId?: string) => {
-      setLoading(true);
-      try {
-        const items = await api.listPublisherAccounts();
-        setPublishers(items);
-        setHierarchyError(null);
+  const commitNavigation = useCallback((navigation: DashboardNavigation, replace = false) => {
+    const url = dashboardURL(window.location.href, navigation);
+    const currentURL = window.location.pathname + window.location.search + window.location.hash;
+    if (url !== currentURL) window.history[replace ? 'replaceState' : 'pushState'](null, '', url);
+    const next = readDashboardNavigation(window.location.search);
+    navigationRef.current = next;
+    setNavigationRequest(next);
+  }, []);
 
-        const allSites = items.flatMap((item) => item.sites);
-        const preferredSite = preferredSiteId
-          ? allSites.find((candidate) => candidate.id === preferredSiteId) ?? null
-          : null;
-        const candidatePublisher = preferredSite?.publisherAccountId
-          ? items.find((item) => item.id === preferredSite.publisherAccountId) ?? null
-          : items.find((item) => item.id === preferredPublisherId) ??
-            items.find((item) => item.id === activePublisherId) ??
-            items[0] ??
-            null;
-        const candidateSite =
-          preferredSite ??
-          candidatePublisher?.sites.find((candidate) => candidate.id === activeSiteId) ??
-          candidatePublisher?.sites[0] ??
-          null;
-
-        setActivePublisherId(candidatePublisher?.id ?? null);
-        setActiveSiteId(candidateSite?.id ?? null);
-      } catch (error) {
-        setHierarchyError(error instanceof Error ? error.message : 'Publisher hierarchy could not be loaded.');
-      } finally {
-        setLoading(false);
+  const loadHierarchy = useCallback(async (preferredPublisherId?: string, preferredSiteId?: string, requestedNavigation: NavigationRequest = navigationRef.current) => {
+    const requestId = ++hierarchyRequest.current;
+    setLoading(true);
+    try {
+      const items = await api.listPublisherAccounts();
+      if (requestId !== hierarchyRequest.current) return;
+      setPublishers(items);
+      setHierarchyLoaded(true);
+      setHierarchyError(null);
+      // A response must not take the user back after they navigated elsewhere.
+      if (preferredPublisherId && navigationRef.current === requestedNavigation) {
+        commitNavigation({...requestedNavigation, publisherId:preferredPublisherId, siteId:preferredSiteId ?? null,
+          tab:preferredSiteId ? requestedNavigation.tab : 'Overview', agencyFilter:preferredPublisherId === requestedNavigation.publisherId ? requestedNavigation.agencyFilter : 'all'});
       }
-    },
-    [activePublisherId, activeSiteId],
-  );
+    } catch (error) {
+      if (requestId === hierarchyRequest.current) setHierarchyError(error instanceof Error ? error.message : 'Publisher hierarchy could not be loaded.');
+    } finally {
+      if (requestId === hierarchyRequest.current) setLoading(false);
+    }
+  }, [commitNavigation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,29 +173,49 @@ export default function App() {
     };
   }, []);
 
-  const publisher = useMemo(
-    () => publishers.find((item) => item.id === activePublisherId) ?? publishers.filter(p => inAgency(organization.data,p.id,agencyFilter))[0] ?? null,
-    [activePublisherId, publishers, organization.data, agencyFilter],
-  );
-
-  const site = useMemo(() => {
-    if (!publisher) return null;
-    return publisher.sites.find((item) => item.id === activeSiteId) ?? publisher.sites[0] ?? null;
-  }, [activeSiteId, publisher]);
-
+  const selection = useMemo(() => resolveDashboardNavigation(navigationRequest, publishers, organization.data), [navigationRequest, publishers, organization.data]);
+  const navigationPending = !hierarchyLoaded || (navigationRequest.agencyFilter !== 'all' && organization.loading);
+  const navigationError = hierarchyError || (navigationRequest.agencyFilter !== 'all' ? organization.error : null) || (!navigationPending ? selection.error : null);
+  const publisher = navigationPending || navigationError ? null : selection.publisher;
+  const site = navigationPending || navigationError ? null : selection.site;
+  const {section:activeSection, tab:activeTab, agencyFilter} = selection.navigation;
   const agency = agencyFor(organization.data, publisher?.id);
-  function filterAgency(value: string) {
-    setAgencyFilter(value);
-    if (!publisher || !inAgency(organization.data, publisher.id, value)) {
-      const next = publishers.find(p => inAgency(organization.data, p.id, value));
-      setActivePublisherId(next?.id ?? null); setActiveSiteId(next?.sites[0]?.id ?? null); setActiveTab('Overview');
-    }
-  }
-  function openAgency(value: string) { filterAgency(value); setActiveSection('Publishers'); setActiveTab('Overview'); }
-  function openAgencyPublisher(id: string) { const account=publishers.find(p=>p.id===id); if(account){setAgencyFilter('all'); if(account.id===publisher?.id)setActiveSection('Publishers'); else selectPublisher(account);} }
+
   useEffect(() => {
-    if (activePublisherId && !inAgency(organization.data, activePublisherId, agencyFilter)) setAgencyFilter('all');
-  }, [organization.data]);
+    const restore = () => {
+      const next = readDashboardNavigation(window.location.search);
+      navigationRef.current = next;
+      setNavigationRequest(next);
+      setModal(null);
+      setConfigEntry('generator-profiles');
+    };
+    window.addEventListener('popstate', restore);
+    return () => window.removeEventListener('popstate', restore);
+  }, []);
+
+  useEffect(() => {
+    if (!navigationPending && !navigationError && navigationRef.current === navigationRequest && canonicalDashboardURL(window.location.href, navigationRequest, selection.navigation)) {
+      commitNavigation(selection.navigation, true);
+    }
+  }, [navigationPending, navigationError, navigationRequest, selection.navigation, commitNavigation]);
+
+  function navigate(patch: Partial<DashboardNavigation>) {
+    commitNavigation({...selection.navigation, ...patch});
+    setModal(null);
+  }
+  function setActiveTab(tab: PublisherTab) { navigate({tab}); }
+  function filterAgency(value: string) {
+    const keep = publisher && inAgency(organization.data, publisher.id, value);
+    navigate({agencyFilter:value, ...(!keep ? {publisherId:null, siteId:null, tab:'Overview'} : {})});
+  }
+  function openAgency(value: string) {
+    const keep = publisher && inAgency(organization.data, publisher.id, value);
+    navigate({section:'Publishers', agencyFilter:value, tab:'Overview', ...(!keep ? {publisherId:null, siteId:null} : {})});
+  }
+  function openAgencyPublisher(id: string) {
+    const account = publishers.find(item => item.id === id);
+    if (account) navigate({section:'Publishers', agencyFilter:'all', publisherId:id, siteId:account.sites[0]?.id ?? null, tab:'Overview'});
+  }
 
   const totalSites = useMemo(
     () => publishers.reduce((sum, item) => sum + item.sitesCount, 0),
@@ -213,33 +223,17 @@ export default function App() {
   );
 
   function selectPublisher(account: PublisherAccount) {
-    setActiveSection('Publishers');
-    setActivePublisherId(account.id);
-    setActiveSiteId(account.sites[0]?.id ?? null);
-    setActiveTab('Overview');
+    navigate({section:'Publishers', publisherId:account.id, siteId:account.sites[0]?.id ?? null, tab:'Overview'});
   }
 
   function selectSite(accountId: string, selectedSite: Site) {
-    setActiveSection('Publishers');
-    setActivePublisherId(accountId);
-    setActiveSiteId(selectedSite.id);
+    navigate({section:'Publishers', publisherId:accountId, siteId:selectedSite.id});
   }
 
-  function selectGlobalSection(section: GlobalSection) {
-    setActiveSection(section);
-    setModal(null);
-  }
+  function selectGlobalSection(section: GlobalSection) { navigate({section}); }
 
-  function openSiteWorkspace(
-    publisherAccountId: string,
-    siteId: string,
-    tab: 'Overview' | 'Releases' | 'Prebid.js',
-  ) {
-    setAgencyFilter('all');
-    setActivePublisherId(publisherAccountId);
-    setActiveSiteId(siteId);
-    setActiveTab(tab);
-    setActiveSection('Publishers');
+  function openSiteWorkspace(publisherAccountId: string, siteId: string, tab: 'Overview' | 'Releases' | 'Prebid.js') {
+    navigate({agencyFilter:'all', publisherId:publisherAccountId, siteId, tab, section:'Publishers'});
   }
 
   function openCreatePublisher() {
@@ -249,7 +243,6 @@ export default function App() {
   }
 
   function openCreateSiteForPublisher(publisherAccountId: string) {
-    setActivePublisherId(publisherAccountId);
     setSiteForm({ ...emptySiteForm, publisherAccountId });
     setFormError(null);
     setModal('create-site');
@@ -310,6 +303,7 @@ export default function App() {
     }
 
     setSubmitting(true);
+    const requestedNavigation = navigationRef.current;
     try {
       const created = await api.createPublisherAccount({
         id: publisherForm.id.trim(),
@@ -317,7 +311,7 @@ export default function App() {
         status: publisherForm.status,
         notes: publisherForm.notes.trim() || null,
       });
-      await loadHierarchy(created.id);
+      await loadHierarchy(created.id, undefined, requestedNavigation);
       setModal(null);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Publisher could not be created.');
@@ -335,6 +329,7 @@ export default function App() {
     }
 
     setSubmitting(true);
+    const requestedNavigation = navigationRef.current;
     try {
       const common = {
         publisherAccountId: siteForm.publisherAccountId,
@@ -356,7 +351,7 @@ export default function App() {
               })
             : await api.createSite({ id: siteForm.id.trim(), ...common });
 
-      await loadHierarchy(saved.publisherAccountId ?? siteForm.publisherAccountId, saved.id);
+      await loadHierarchy(saved.publisherAccountId ?? siteForm.publisherAccountId, saved.id, requestedNavigation);
       setModal(null);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Site could not be saved.');
@@ -366,9 +361,10 @@ export default function App() {
   }
 
   async function moveSiteToPublisher(siteId: string, targetPublisherId: string) {
+    const requestedNavigation = navigationRef.current;
     try {
       const moved = await api.moveSite(siteId, targetPublisherId);
-      await loadHierarchy(targetPublisherId, moved.id);
+      await loadHierarchy(targetPublisherId, moved.id, requestedNavigation);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Site could not be moved.';
       setHierarchyError(message);
@@ -380,10 +376,12 @@ export default function App() {
   async function removeSite() {
     if (!site) return;
     if (!window.confirm(`Delete ${site.name} (${site.domain})? Its config, ad units, bidders, imports and releases will be deleted.`)) return;
+    const requestedNavigation = navigationRef.current;
     try {
       const previousPublisher = site.publisherAccountId ?? publisher?.id;
       await api.deleteSite(site.id);
-      await loadHierarchy(previousPublisher);
+      if (navigationRef.current === requestedNavigation) commitNavigation({...requestedNavigation, publisherId:previousPublisher ?? null, siteId:null, tab:'Overview'});
+      await loadHierarchy();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Site could not be deleted.');
     }
@@ -534,7 +532,11 @@ export default function App() {
 
     >
       <main className="workspace">
-        {publisherWorkspace ? (
+        {navigationError ? <section className="panel" role="alert">
+          <h1>Selection unavailable</h1><p>{navigationError}</p>
+          <p>Choose a site or workspace from the navigation to continue.</p>
+          <button className="button secondary" disabled={loading || organization.loading} onClick={() => { void loadHierarchy(); void organization.reload(); }} type="button">Reload hierarchy</button>
+        </section> : navigationPending ? <section className="panel" role="status"><h1>Loading publisher hierarchy…</h1></section> : publisherWorkspace ? (
           <>
         <header className="topbar">
           <div>
@@ -583,7 +585,7 @@ export default function App() {
         <WorkspaceContent pageKey={`${activeSection}:${site?.id ?? publisher?.id}:${activeTab}`}>
         {activeTab === 'Overview' ? renderOverview() : null}
         {activeTab === 'Config' && site ? (
-          <ConfigPanel onGenerate={() => setActiveTab('Releases')} onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
+          <ConfigPanel onGenerate={() => setActiveTab('Releases')} onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)} publisherId={site.id} />
         ) : null}
         {activeTab === 'Prebid.js' && site ? (
           <PrebidBuildsPanel publisherId={site.id} siteName={site.name} />
@@ -594,7 +596,7 @@ export default function App() {
               if (destination === 'prebid') setActiveTab('Prebid.js');
               else { setConfigEntry('generator-profiles'); setActiveTab('Config'); }
             }}
-            onChanged={() => loadHierarchy(publisher?.id, site.id)}
+            onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)}
             publisherId={site.id}
             siteName={site.name}
           />
@@ -607,7 +609,7 @@ export default function App() {
           <DebugConsolePanel domain={site.domain} publisherId={site.id} siteName={site.name} />
         ) : null}
         {activeTab === 'Ads.txt' && site ? (
-          <AdsTxtPanel onChanged={() => loadHierarchy(publisher?.id, site.id)} site={site} />
+          <AdsTxtPanel onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)} site={site} />
         ) : null}
         {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Test page' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Monitoring' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
           ? renderPlaceholder(activeTab)
@@ -635,7 +637,7 @@ export default function App() {
             {activeSection === 'Audit log' ? (
               <AuditLogPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
             ) : null}
-            {activeSection === 'API integracije' ? <ApiIntegrationsPanel sites={publishers.flatMap(p => p.sites)} onInventoryChanged={(id)=>loadHierarchy(undefined,id)} onOpenSite={(id)=>{const owner=publishers.find(p=>p.sites.some(s=>s.id===id));if(owner){setAgencyFilter('all');setActivePublisherId(owner.id);setActiveSiteId(id);setConfigEntry('ad-units');setActiveTab('Config');setActiveSection('Publishers');}}} /> : null}
+            {activeSection === 'API integracije' ? <ApiIntegrationsPanel sites={publishers.flatMap(p => p.sites)} onInventoryChanged={(id)=>{const owner=publishers.find(p=>p.sites.some(s=>s.id===id));return loadHierarchy(owner?.id,id,navigationRequest);}} onOpenSite={(id)=>{const owner=publishers.find(p=>p.sites.some(s=>s.id===id));if(owner){setConfigEntry('ad-units');navigate({agencyFilter:'all',publisherId:owner.id,siteId:id,tab:'Config',section:'Publishers'});}}} /> : null}
             {activeSection === 'Settings' ? <SettingsPanel publishers={publishers} /> : null}
             </WorkspaceContent>
           </>
