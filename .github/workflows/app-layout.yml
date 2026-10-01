@@ -2,7 +2,7 @@ name: Dashboard layout checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [src/**, scripts/prepare-layout-preview.mjs, scripts/layout-ui-fixture.mjs, scripts/verify-app-layout.py, worker/test-workspace/layout-preview.mjs, .github/workflows/app-layout.yml]
+    paths: [src/**, scripts/prepare-layout-preview.mjs, scripts/layout-ui-fixture.mjs, scripts/verify-app-layout.py, scripts/verify-dashboard-navigation.py, tests/runtime/dashboard-navigation.test.mjs, worker/test-workspace/layout-preview.mjs, .github/workflows/app-layout.yml]
 permissions:
   contents: read
 jobs:
@@ -20,10 +20,14 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
+      - run: node --experimental-strip-types --test tests/runtime/dashboard-navigation.test.mjs
       - run: python scripts/verify-app-layout.py
+      - run: python scripts/verify-dashboard-navigation.py --test-integrations
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: layout-evidence
-          path: .generated/layout-evidence/
+          path: |
+            .generated/layout-evidence/
+            .generated/navigation-evidence/
           retention-days: 14

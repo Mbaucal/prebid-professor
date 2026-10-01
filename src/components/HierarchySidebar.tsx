@@ -1,6 +1,6 @@
 import AgencyHierarchy from './AgencyHierarchy';
 import type { Organization } from '../organization';
-import { useEffect, useState, type DragEvent, type FormEvent } from 'react';
+import { useState, type DragEvent, type FormEvent } from 'react';
 import { api } from '../api';
 import type {
   PublisherAccount,
@@ -32,8 +32,6 @@ type PublisherEditForm = {
   notes: string;
 };
 
-const RETURN_TO_PUBLISHER_KEY = 'prebid-professor:return-to-publisher';
-
 export default function HierarchySidebar({
   publishers,
   organization, agencyFilter, onAgencyFilter, onManageAgencies, organizationError,
@@ -63,16 +61,6 @@ export default function HierarchySidebar({
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [deletingPublisher, setDeletingPublisher] = useState(false);
 
-  useEffect(() => {
-    const returnId = sessionStorage.getItem(RETURN_TO_PUBLISHER_KEY);
-    if (!returnId) return;
-
-    const account = publishers.find((publisher) => publisher.id === returnId);
-    if (!account) return;
-
-    sessionStorage.removeItem(RETURN_TO_PUBLISHER_KEY);
-    onSelectPublisher(account);
-  }, [onSelectPublisher, publishers]);
 
   function startDrag(event: DragEvent<HTMLButtonElement>, site: Site) {
     event.dataTransfer.effectAllowed = 'move';
@@ -150,7 +138,7 @@ export default function HierarchySidebar({
     setEditError(null);
 
     try {
-      const updated = await api.updatePublisherAccount(editingPublisher.id, {
+      await api.updatePublisherAccount(editingPublisher.id, {
         name,
         status: editForm.status,
         notes: editForm.notes.trim() || null,
@@ -158,7 +146,6 @@ export default function HierarchySidebar({
 
       // Reload the hierarchy from D1 so the sidebar, breadcrumb, page title and
       // overview all receive the new publisher name in one consistent refresh.
-      sessionStorage.setItem(RETURN_TO_PUBLISHER_KEY, updated.id);
       window.location.reload();
     } catch (requestError) {
       setEditError(
@@ -195,7 +182,6 @@ export default function HierarchySidebar({
 
     try {
       await api.deletePublisherAccount(editingPublisher.id);
-      sessionStorage.removeItem(RETURN_TO_PUBLISHER_KEY);
       window.location.reload();
     } catch (requestError) {
       setEditError(
