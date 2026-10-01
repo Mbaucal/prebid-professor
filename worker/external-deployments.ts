@@ -1,5 +1,6 @@
 import { isStoredBuiltinDraft, STORED_DRAFT_BLOCK } from './runtime/stored-draft-safety.mjs';
 import { deploymentManifestPin } from './deployment-manifest-pin.mjs';
+import { validateCallbackLinks } from './deployment-callback-urls';
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
 
@@ -721,27 +722,66 @@ export async function deploymentCallback(request: Request, env: ExternalDeployEn
   const current = await fetchDeploymentByCorrelation(env.DB, correlationId);
   if (!current) return apiError('Deployment correlation ID was not found.', 404);
 
+  const target = await fetchTarget(env.DB, current.publisher_id, current.target_id);
+  if (!target) return apiError('The deployment target was not found.', 409);
+  let repository: string;
+  let branch = current.channel === 'production' ? target.production_branch : target.preview_branch;
+  try {
+    // Dispatch already records repo/branch in its audit event. Prefer that
+    // provenance if the configured repo or target branch changed afterward.
+    const audit = await env.DB.prepare(`SELECT details_json FROM audit_log
+      WHERE publisher_id = ? AND entity_type = 'external_deployment' AND entity_id = ?
+        AND action = 'external_deployment.dispatched' ORDER BY created_at DESC LIMIT 1`)
+      .bind(current.publisher_id, current.id).first<{ details_json: string }>();
+    const details: unknown = audit ? JSON.parse(audit.details_json) : null;
+    if (audit) {
+      if (!isRecord(details) || typeof details.repository !== 'string' || typeof details.branch !== 'string'
+        || !/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(details.repository)
+        || !/^[A-Za-z0-9._/-]{1,255}$/.test(details.branch)) throw new Error('Invalid dispatch provenance.');
+      repository = details.repository;
+      branch = details.branch;
+    } else {
+      repository = repositoryParts(env).full;
+    }
+  } catch {
+    return apiError('Deployment provenance could not be loaded.', 503);
+  }
+  let links;
+  try {
+    links = validateCallbackLinks(input, current, { repository, branch, channel: current.channel,
+      projectName: target.project_name, publicBaseUrl: target.public_base_url });
+  } catch (error) {
+    return apiError(error instanceof Error ? error.message : 'Callback URLs are invalid.', 422);
+  }
+
   const now = new Date().toISOString();
   const completedAt = ['success', 'failed'].includes(status) ? now : null;
-  await env.DB
+  const updated = await env.DB
     .prepare(
       `UPDATE external_deployments
        SET status = ?, github_run_id = ?, github_run_url = ?, provider_deployment_url = ?,
            provider_alias_url = ?, message = ?, updated_at = ?, completed_at = ?
-       WHERE correlation_id = ?`,
+       WHERE correlation_id = ? AND github_run_id IS ? AND github_run_url IS ?
+         AND provider_deployment_url IS ? AND provider_alias_url IS ? AND updated_at = ?`,
     )
     .bind(
       status,
-      text(input.githubRunId) || current.github_run_id,
-      text(input.githubRunUrl) || current.github_run_url,
-      text(input.deploymentUrl) || current.provider_deployment_url,
-      text(input.aliasUrl) || current.provider_alias_url,
+      links.githubRunId,
+      links.githubRunUrl,
+      links.deploymentUrl,
+      links.aliasUrl,
       text(input.message) || current.message,
       now,
       completedAt,
       correlationId,
+      current.github_run_id,
+      current.github_run_url,
+      current.provider_deployment_url,
+      current.provider_alias_url,
+      current.updated_at,
     )
     .run();
+  if (updated.meta.changes !== 1) return apiError('Deployment changed during callback validation. Retry the callback.', 409);
 
   const row = await fetchDeploymentByCorrelation(env.DB, correlationId);
   return json({ ok: true, deployment: row ? deploymentPayload(row) : null });
