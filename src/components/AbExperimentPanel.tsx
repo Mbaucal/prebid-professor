@@ -1,10 +1,8 @@
 import ConfirmDeleteButton from './ConfirmDeleteButton';
 import {useEffect, useRef, useState, type FormEvent} from 'react';
-import {DEFAULT_PACKAGE_SETTINGS, validatePackageSettings} from '../../worker/experiments/package-settings-v1.mjs';
+import {DEFAULT_PACKAGE_SETTINGS, validatePackageSettings, type ArmSettings as Arm, type PackageSettings as Settings} from '../../worker/experiments/package-settings-v1.mjs';
 import './ab-experiments.css';
 
-type Arm = {mode:'fresh-only'|'auction-with-cache'; refreshSeconds:number|null; maxBidAgeSeconds?:number};
-type Settings = {schemaVersion:1; trafficBPercent:number; arms:{A:Arm; B:Arm}};
 type Saved = {release:string; settings:Settings; notes:string; createdAt:string; bytes:number; sha256:string};
 type State = {supported:boolean; revision:string; defaults:Settings; baseline:{release:string;positions:number;prebidVersion:string;sha256:string;bytes:number}; packages:Saved[]; deletedPackages:Saved[]; nextCursor:string|null};
 type ArmForm = {mode:Arm['mode']; refreshMode:'preserve'|'fixed'; seconds:string; age:string};
@@ -14,19 +12,19 @@ const refreshLabel=(a:Arm)=>a.refreshSeconds===null?'Baseline position rules':`$
 
 export default function AbExperimentPanel({publisherId,archiveOnly=false}:{publisherId:string;archiveOnly?:boolean}) {
   const base=`/api/publishers/${encodeURIComponent(publisherId)}/ab-experiments`;
-  const [state,setState]=useState<State|null>(null),[arms,setArms]=useState({A:armForm(DEFAULT_PACKAGE_SETTINGS.arms.A as Arm),B:armForm(DEFAULT_PACKAGE_SETTINGS.arms.B as Arm)});
+  const [state,setState]=useState<State|null>(null),[arms,setArms]=useState({A:armForm(DEFAULT_PACKAGE_SETTINGS.arms.A),B:armForm(DEFAULT_PACKAGE_SETTINGS.arms.B)});
   const [traffic,setTraffic]=useState('50'),[notes,setNotes]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
   const lock=useRef(false);
   async function request(path='',init:RequestInit={}) {
     const response=await fetch(base+path,{credentials:'same-origin',cache:'no-store',...init});
-    if(!response.ok){let text='A/B request failed. Please retry.';try{text=(await response.json()).error||text;}catch{}throw Error(text);}
+    if(!response.ok){let text='A/B request failed. Please retry.';try{text=(await response.json() as {error?:string}).error||text;}catch{}throw Error(text);}
     return response;
   }
   async function load(more=false) {
     const data:State=await(await request(more&&state?.nextCursor?'?cursor='+encodeURIComponent(state.nextCursor):'')).json();
     setState(old=>more&&old?{...data,packages:[...new Map([...old.packages,...data.packages].map(p=>[p.release,p])).values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)),deletedPackages:[...new Map([...(old.deletedPackages||[]),...(data.deletedPackages||[])].map(p=>[p.release,p])).values()]}:data);
   }
-  useEffect(()=>{let active=true;request().then(r=>r.json()).then(data=>{if(active)setState(data);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[base]);
+  useEffect(()=>{let active=true;request().then(r=>r.json() as Promise<State>).then(data=>{if(active)setState(data);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[base]);
   async function run(action:()=>Promise<void>) {
     if(lock.current)return;lock.current=true;setBusy(true);setError('');setMessage('');
     try{await action();}catch(e){setError(e instanceof Error?e.message:'A/B request failed.');}finally{lock.current=false;setBusy(false);}
@@ -36,12 +34,12 @@ export default function AbExperimentPanel({publisherId,archiveOnly=false}:{publi
     return validatePackageSettings({schemaVersion:1,trafficBPercent:Number(traffic),arms:Object.fromEntries((['A','B'] as const).map(v=>[v,{
       mode:arms[v].mode,refreshSeconds:arms[v].refreshMode==='preserve'?null:Number(arms[v].seconds),
       ...(arms[v].mode==='auction-with-cache'?{maxBidAgeSeconds:Number(arms[v].age)}:{}),
-    }]))}) as Settings;
+    }]))});
   }
   async function generate(event:FormEvent) {
     event.preventDefault();await run(async()=>{
       const selected=settings();
-      const data=await(await request('',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({revision:state!.revision,settings:selected,notes})})).json();
+      const data=await(await request('',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({revision:state!.revision,settings:selected,notes})})).json() as {package:Saved;alreadySaved:boolean};
       // Keep the successful generation visible even if a subsequent list reload fails.
       setState(old=>old?{...old,packages:[data.package,...old.packages.filter(p=>p.release!==data.package.release)]}:old);
       setNotes('');setMessage(data.alreadySaved?'This exact package is already saved. Download it below.':'New A/B package saved. Download the complete ZIP below.');

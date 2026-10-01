@@ -163,9 +163,19 @@ function clearSessionCookie(): string {
 
 function safeNext(value: string | null | undefined): string {
   const candidate = String(value ?? '').trim();
-  if (!candidate.startsWith('/') || candidate.startsWith('//')) return '/';
-  if (candidate.startsWith('/login') || candidate.startsWith('/api/auth')) return '/';
-  return candidate;
+  // Browsers treat backslashes as separators and strip some control characters.
+  // Validate the parsed destination, not just its first two characters.
+  if (!candidate.startsWith('/') || candidate.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(candidate)) return '/';
+  try {
+    const origin = 'https://tessera.invalid';
+    const destination = new URL(candidate, origin);
+    const path = decodeURIComponent(destination.pathname);
+    if (destination.origin !== origin || path.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(path)) return '/';
+    if (path.startsWith('/login') || path.startsWith('/api/auth')) return '/';
+    return `${destination.pathname}${destination.search}${destination.hash}`;
+  } catch {
+    return '/';
+  }
 }
 
 async function createSession(email: string, secret: string): Promise<string> {

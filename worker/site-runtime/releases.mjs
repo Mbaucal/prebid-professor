@@ -7,6 +7,7 @@ import { takeOverForBuild } from '../test-workspace/takeover-settings.mjs';
 import { zipSync } from 'fflate';
 import {requireSupportedCacheGenerator} from './prebid-cache-settings.mjs';
 import { siteSetupState } from './setup-state.mjs';
+import { artifactResponseHeaders } from '../artifact-response-headers.ts';
 
 const encode=new TextEncoder(),decode=new TextDecoder('utf-8',{fatal:true});
 const ID=/^builtin-release-[a-f0-9]{64}$/;
@@ -109,7 +110,7 @@ export async function packageAssetResponse(request,env,site,id,name){
   check(request.method==='GET','Method not allowed.',405);
   check(!new URL(request.url).search,'Unknown query.',400);
   const p=await readPackage(env,site,id,{requestedFile:name??'manifest.json'});
-  if(name)return new Response(p.files[name],{headers:{...headers,'content-type':type(name)}});
+  if(name)return new Response(p.files[name],{headers:artifactResponseHeaders(name,{...headers,'content-type':type(name)})});
   const files=Object.entries(p.manifest.files).map(([name,e])=>({name,byteSize:e.byteSize,sha256:e.sha256}));
   files.push({name:'manifest.json',byteSize:p.files['manifest.json'].length,sha256:await sha256(p.files['manifest.json'])});
   files.sort((a,b)=>a.name.localeCompare(b.name,'en'));
@@ -151,7 +152,7 @@ export async function builtInCdn(request,env){
  if(channel){let rows;try{rows=await db(env).prepare('SELECT id FROM releases WHERE publisher_id=? AND status=? LIMIT 2').bind(site,channel==='current'?'production':'staging').all();}catch{return null;}if(!rows.results.some(r=>ID.test(r.id)))return null;check(rows.results.length===1,'Channel is ambiguous.');id=rows.results[0].id;}
  // Registered immutable draft URLs are workflow sources; channel URLs still require a published channel.
  const p=await readPackage(env,site,id,{requestedFile:name});check(p.files[name],'File not found.',404);
- return new Response(request.method==='HEAD'?null:p.files[name],{headers:{'content-type':type(name),'cache-control':channel?'no-cache':'public, max-age=31536000, immutable','access-control-allow-origin':'*','x-content-type-options':'nosniff','etag':`"${await sha256(p.files[name])}"`}});
+ return new Response(request.method==='HEAD'?null:p.files[name],{headers:artifactResponseHeaders(name,{'content-type':type(name),'cache-control':channel?'no-cache':'public, max-age=31536000, immutable','access-control-allow-origin':'*','x-content-type-options':'nosniff','etag':`"${await sha256(p.files[name])}"`})});
 }
 export async function packageResponse(request,env,site,actor,options={}){
  const headers={'content-type':'application/json','cache-control':'private, no-store','x-content-type-options':'nosniff'};

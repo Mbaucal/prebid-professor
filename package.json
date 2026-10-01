@@ -13,7 +13,11 @@
     "deploy": "npm run build && wrangler deploy",
     "cf-typegen": "wrangler types",
     "db:migrate:local": "wrangler d1 migrations apply prebid-professor-db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply prebid-professor-db --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply prebid-professor-db --remote",
+    "typecheck": "npm run typecheck:app && npm run typecheck:worker && npm run typecheck:tooling",
+    "typecheck:app": "tsc --noEmit -p tsconfig.json",
+    "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
+    "typecheck:tooling": "tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
     "fflate": "^0.8.2",
