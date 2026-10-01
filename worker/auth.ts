@@ -1,3 +1,80 @@
+// The existing D1 binding is shared across Worker isolates. No in-memory counter,
+// new binding, email-derived identity, or user-controlled forwarding header.
+export const LOGIN_LIMIT = 5;
+export const LOGIN_WINDOW_SECONDS = 60;
+export const LOGIN_UNAVAILABLE_RETRY_SECONDS = 30;
+export const LOGIN_LIMITER_TABLE_SQL = `CREATE TABLE IF NOT EXISTS auth_login_limits (
+  source_key TEXT PRIMARY KEY NOT NULL,
+  attempts INTEGER NOT NULL CHECK (attempts >= 1 AND attempts <= 6),
+  reset_at INTEGER NOT NULL
+)`;
+export const LOGIN_LIMITER_INDEX_SQL = 'CREATE INDEX IF NOT EXISTS auth_login_limits_expiry ON auth_login_limits (reset_at)';
+
+type LimiterEnv = { DB?: D1Database; SESSION_SECRET?: string };
+export type LoginLimit = { allowed: boolean; retryAfter: number };
+
+async function sourceKey(request: Request, secret: string): Promise<string> {
+  // Cloudflare supplies this at our direct edge ingress. A missing/invalid source
+  // shares a single conservative bucket: it must never create an unmetered path.
+  // Same-zone Worker relays are part of the trusted deployment boundary.
+  const address = request.headers.get('cf-connecting-ip')?.trim().toLowerCase() ?? '';
+  let source = 'unknown-source';
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(address) && address.split('.').every(part => Number(part) <= 255)) {
+    source = address.split('.').map(Number).join('.');
+  } else if (/^[a-f0-9:]+$/.test(address) && address.includes(':')) {
+    try {
+      // URL parsing canonicalizes equivalent IPv6 spellings.
+      source = new URL(`https://[${address}]/`).hostname;
+    } catch { /* Use the shared unknown-source budget. */ }
+  }
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
+  const hash = await crypto.subtle.sign('HMAC', key, encoder.encode(`tessera-login-v1:${source}`));
+  return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2,'0')).join('');
+}
+
+async function consume(request: Request, env: LimiterEnv): Promise<LoginLimit> {
+  if (!env.DB || !env.SESSION_SECRET) throw new Error('Login limiter unavailable');
+  const key = await sourceKey(request, env.SESSION_SECRET);
+  // The upsert makes checking + consuming one atomic write, even across isolates.
+  // D1's clock sets expiry. Blocked retries do not extend it. Stale identifiers
+  // are pruned after a day; no raw IP, attempted email or password is persisted.
+  const result = await env.DB.batch([
+    env.DB.prepare(LOGIN_LIMITER_TABLE_SQL),
+    env.DB.prepare(LOGIN_LIMITER_INDEX_SQL),
+    env.DB.prepare('DELETE FROM auth_login_limits WHERE reset_at < unixepoch() - 86400'),
+    env.DB.prepare(`INSERT INTO auth_login_limits (source_key, attempts, reset_at)
+      VALUES (?, 1, unixepoch() + ?)
+      ON CONFLICT(source_key) DO UPDATE SET
+        attempts = CASE WHEN reset_at <= unixepoch() THEN 1 ELSE min(attempts + 1, ?) END,
+        reset_at = CASE WHEN reset_at <= unixepoch() THEN unixepoch() + ? ELSE reset_at END
+      RETURNING attempts, reset_at - unixepoch() AS retry_after`)
+      .bind(key, LOGIN_WINDOW_SECONDS, LOGIN_LIMIT + 1, LOGIN_WINDOW_SECONDS),
+  ]);
+  const row = result[3]?.results?.[0] as { attempts?: number; retry_after?: number } | undefined;
+  if (result.some(item => !item.success) || !row || !Number.isInteger(row.attempts) || !Number.isInteger(row.retry_after)) {
+    throw new Error('Login limiter did not confirm a decision');
+  }
+  return {allowed: row.attempts! <= LOGIN_LIMIT, retryAfter: Math.max(1, Math.min(LOGIN_WINDOW_SECONDS, row.retry_after!))};
+}
+
+export async function withLoginServiceDeadline<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Login limiter timed out')), 3000); }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+
+export function consumeLoginAttempt(request: Request, env: LimiterEnv): Promise<LoginLimit> {
+  return withLoginServiceDeadline(consume(request, env));
+}
+
 export interface AuthEnv {
   ADMIN_EMAIL?: string;
   ADMIN_PASSWORD?: string;
@@ -255,6 +332,7 @@ export function renderLoginPage(
   env: AuthEnv,
   errorMessage: string | null = null,
   status = 200,
+  email = '',
 ): Response {
   const url = new URL(request.url);
   const next = safeNext(url.searchParams.get('next'));
@@ -299,10 +377,10 @@ export function renderLoginPage(
       <span class="kicker">Admin access</span>
       <h1>Sign in</h1>
       <p>Use the administrator credentials configured as encrypted Cloudflare Worker secrets.</p>
-      ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
+      ${error ? `<div class="error" role="alert">${escapeHtml(error)}</div>` : ''}
       <form method="post" action="/api/auth/login">
         <input type="hidden" name="next" value="${escapeHtml(next)}" />
-        <label><span>Email</span><input name="email" type="email" autocomplete="username" required /></label>
+        <label><span>Email</span><input name="email" type="email" autocomplete="username" value="${escapeHtml(email)}" maxlength="320" required /></label>
         <label><span>Password</span><input name="password" type="password" autocomplete="current-password" required /></label>
         <button type="submit"${setupIssue ? ' disabled' : ''}>Sign in securely</button>
       </form>
@@ -334,7 +412,7 @@ async function readLoginInput(request: Request): Promise<{ email: string; passwo
   };
 }
 
-export async function handleLogin(request: Request, env: AuthEnv): Promise<Response> {
+export async function handleLogin(request: Request, env: AuthEnv & { DB?: D1Database }): Promise<Response> {
   if (request.method !== 'POST') return new Response('Method not allowed.', { status: 405 });
   if (!isSameOriginMutation(request)) return new Response('Cross-site login request blocked.', { status: 403 });
 
@@ -348,6 +426,21 @@ export async function handleLogin(request: Request, env: AuthEnv): Promise<Respo
     return renderLoginPage(request, env, 'The login form could not be read.', 400);
   }
 
+  const loginUrl = new URL(request.url);
+  loginUrl.pathname = '/login';
+  loginUrl.searchParams.set('next', input.next);
+  const failure = (message: string, status: number, retryAfter?: number): Response => {
+    const response = renderLoginPage(new Request(loginUrl, {headers: request.headers}), env, message, status, input.email.slice(0,320));
+    if (retryAfter) response.headers.set('retry-after', String(retryAfter));
+    return response;
+  };
+  try {
+    const limit = await consumeLoginAttempt(request, env);
+    if (!limit.allowed) return failure(`Too many sign-in attempts. Try again in ${limit.retryAfter} seconds.`, 429, limit.retryAfter);
+  } catch {
+    return failure('Sign-in is temporarily unavailable. Please try again in 30 seconds.', 503, LOGIN_UNAVAILABLE_RETRY_SECONDS);
+  }
+
   const normalizedEmail = input.email.trim().toLowerCase();
   const allowedEmails = configuredEmails(env);
   const emailChecks = await Promise.all(
@@ -357,15 +450,7 @@ export async function handleLogin(request: Request, env: AuthEnv): Promise<Respo
   const passwordOk = await secureTextEqual(input.password, String(env.ADMIN_PASSWORD));
 
   if (!emailOk || !passwordOk) {
-    const loginUrl = new URL(request.url);
-    loginUrl.pathname = '/login';
-    loginUrl.searchParams.set('next', input.next);
-    return renderLoginPage(
-      new Request(loginUrl.toString(), { headers: request.headers }),
-      env,
-      'Email or password is incorrect.',
-      401,
-    );
+    return failure('Email or password is incorrect.', 401);
   }
 
   const token = await createSession(normalizedEmail, String(env.SESSION_SECRET));

@@ -12,7 +12,7 @@ import { getSiteDraft, saveSiteDraft } from './site-draft-service.mjs';
 import { siteDraftPage, siteDraftScript } from './site-draft-page.mjs';
 import { zipSync } from 'fflate';
 import { downloadScript } from '../../.generated/download.mjs';
-import { getAuthenticatedUser, handleLogin, handleLogout } from '../auth.ts';
+import { getAuthenticatedUser, handleLogin, handleLogout, withLoginServiceDeadline } from '../auth.ts';
 import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
@@ -79,8 +79,27 @@ async function route(request,env) {
     if ((request.headers.get('content-type')||'').split(';')[0]!=='application/x-www-form-urlencoded') throw new WorkspaceError(415,'Submit the test login form.');
     const form=new URLSearchParams(text);
     if ([...form.keys()].some((k)=>!['email','password'].includes(k)) || form.getAll('email').length!==1 || form.getAll('password').length!==1) throw new WorkspaceError(400,'Invalid login form.');
-    const response=await handleLogin(new Request(new URL('/api/auth/login',origin),{method:'POST',headers:{'content-type':'application/json',origin},body:JSON.stringify({email:form.get('email'),password:form.get('password'),next:'/'})}),auth);
-    if (response.status!==303) return html(loginPage('Email or test password is incorrect.'),response.status);
+    // Confirm the isolated TEST database before the login limiter can write.
+    // An empty workspace is valid; unknown schemas/identities are never repaired.
+    try { await withLoginServiceDeadline(inspectTestSchema(env.DB)); }
+    catch {
+      const response=html(loginPage('Sign-in is temporarily unavailable. Please try again in 30 seconds.',form.get('email') || ''),503);
+      response.headers.set('retry-after','30');
+      return response;
+    }
+    const loginHeaders=new Headers(request.headers);
+    loginHeaders.set('content-type','application/json');
+    loginHeaders.set('origin',origin);
+    const response=await handleLogin(new Request(new URL('/api/auth/login',origin),{method:'POST',headers:loginHeaders,body:JSON.stringify({email:form.get('email'),password:form.get('password'),next:'/'})}),{...auth,DB:env.DB});
+    if (response.status!==303) {
+      const retry=response.headers.get('retry-after');
+      const message=response.status===429 ? `Too many sign-in attempts. Try again in ${retry || 60} seconds.`
+        : response.status===503 ? 'Sign-in is temporarily unavailable. Please try again in 30 seconds.'
+        : 'Email or test password is incorrect.';
+      const result=html(loginPage(message,form.get('email') || ''),response.status);
+      if(retry)result.headers.set('retry-after',retry);
+      return result;
+    }
     return new Response(null,{status:303,headers:{...headers,location:'/', 'set-cookie':response.headers.get('set-cookie')}});
   }
   const actor=await getAuthenticatedUser(request,auth);
