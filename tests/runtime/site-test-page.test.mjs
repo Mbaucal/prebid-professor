@@ -4,7 +4,7 @@ import { unzipSync } from 'fflate';
 import worker from '../../worker/test-workspace/index.mjs';
 import { workspaceStore, ORIGIN, TEST_EMAIL, TEST_PASSWORD } from '../support/test-workspace-store.mjs';
 import { packageTestModel, renderPackageTestPage, packageTestPageResponse, testPageHeaders } from '../../worker/site-runtime/test-page.mjs';
-import { testPageClient } from '../../worker/site-runtime/test-page-client.mjs';
+import { testPageClient, readTestPageConsent } from '../../worker/site-runtime/test-page-client.mjs';
 import { build } from 'esbuild';
 const fixtures = [];
 test.afterEach(() => { while(fixtures.length) fixtures.pop().close(); });
@@ -35,6 +35,26 @@ test('original Prebid bytes are included only when the archived package requires
   assert.equal(model.prebidVersion,'11.34.0');assert.deepEqual(Buffer.from(model.assets.prebid,'base64'),Buffer.from(files['prebid.js']));
   delete files['prebid.js'];assert.throws(()=>packageTestModel(files,'site-a','saved-one'),/dependency/);
   assert.throws(()=>packageTestModel(input(),'another-site','saved-one'),/match this site/);
+});
+test('consent report is a small allowlist, independent of loaded libraries and registered slots',() => {
+  const available={started:true,ads:'ready'};
+  assert.deepEqual(readTestPageConsent(undefined,available),{status:'unavailable',phase:null,ready:null,epoch:null});
+  const runtime={snapshot:()=>({consent:{ready:false,phase:'cmp-missing',epoch:0,tcString:'private-tc',vendor:{consents:{1:true}}},events:[{identity:'private-id'}]})};
+  assert.deepEqual(readTestPageConsent(runtime,available),{status:'available',phase:'cmp-missing',ready:false,epoch:0});
+  assert.equal(readTestPageConsent(runtime,{started:false,ads:'ready'}).status,'not-started');
+  assert.equal(readTestPageConsent(runtime,{started:true,ads:'loading'}).status,'loading');
+  assert.equal(readTestPageConsent(runtime,{started:true,ads:'failed'}).status,'unavailable');
+  runtime.snapshot=()=>({consent:{phase:'user-decision',ready:false,epoch:0}});
+  assert.equal(readTestPageConsent(runtime,available).ready,false);
+  runtime.snapshot=()=>({consent:{phase:'decision-ready',ready:true,epoch:1,accepted:false,gdprApplies:true}});
+  assert.deepEqual(readTestPageConsent(runtime,available),{status:'available',phase:'decision-ready',ready:true,epoch:1},'A complete decision must not be relabelled as acceptance.');
+});
+test('missing, malformed and throwing consent diagnostics remain unknown',() => {
+  const available={started:true,ads:'ready'};
+  for(const runtime of [null,{}, {snapshot:()=>null},{snapshot:()=>({consent:{ready:true,phase:'cmp-missing'}})},
+    {snapshot:()=>({consent:{ready:false,phase:'unknown-private-tc-string'}})}, {snapshot:()=>{throw Error('private-tc-string');}}]) {
+    assert.deepEqual(readTestPageConsent(runtime,available),{status:'unavailable',phase:null,ready:null,epoch:null});
+  }
 });
 test('lazy labels honor saved ATF/BTF and per-position overrides',() => {
   const files=input(),config=JSON.parse(new TextDecoder().decode(files['config.json']));
@@ -77,7 +97,9 @@ async function stored() {
 }
 test('authenticated TEST page reads exact archived bytes without modifying settings, channels or R2',async()=>{
   const {f,cookie,id}=await stored(),path='/test-api/site-test-page/'+id;
-  const original=unzipSync(new Uint8Array(await (await worker.fetch(req('/test-api/releases/'+id+'/download',cookie),f.env)).arrayBuffer()));
+  const download=await worker.fetch(req('/test-api/releases/'+id+'/download',cookie),f.env);
+  assert.equal(download.status,200,await download.clone().text());
+  const original=unzipSync(new Uint8Array(await download.arrayBuffer()));
   // The current editor can diverge or become invalid; this test still opens the archived release.
   f.sqlite.prepare("UPDATE publisher_configs SET config_json='{}'").run();
   const puts=f.log.puts.length,batches=f.log.batches;

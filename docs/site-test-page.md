@@ -65,3 +65,44 @@ Sticky browser coverage includes empty and filled responses, close behavior,
 fixed placement while scrolling on desktop/mobile, preview isolation, responsive
 preview size, and a before/live comparison after a synthetic external style
 change. This checks observation, not the externally hosted Google console UI.
+
+## Consent status (MBA-184)
+
+After **Start test**, the existing status panel reads the saved runtime's optional
+readiness diagnostics. **Waiting for publisher consent** explains that this
+isolated page does not load the publisher CMP and directs the operator to test
+that same package on the publisher website. **Waiting for user decision** means
+that the runtime is still waiting for a CMP choice. Registered slots and loaded
+libraries do not change either waiting status into a successful consent test.
+
+**CMP decision ready** means a decision is available, including a possible
+rejection or an explicit decision that GDPR does not apply. It does not mean
+consent was accepted, a bidder may participate, or an ad was delivered. Older
+packages and unreadable diagnostics show **Consent diagnostics unavailable**,
+without inferring a consent state from slot counts. Script errors keep the
+existing error/restart flow; the report remains usable while waiting.
+
+**Copy report** adds only `consent.status`, `phase`, `ready` and `epoch` from an
+explicit allowlist. It does not copy raw CMP data, TC strings, vendor maps,
+identity values or runtime event payloads. The observer does not call the CMP,
+change a decision, create a fallback CMP, or alter the archived runtime/CSP.
+
+The existing site-editor browser gate now covers real compiler-produced 3.10
+and 3.14 GAM-only archives through the authenticated compiled Worker and local
+D1/R2. Chromium at 1440 and 390 px checks 33 seconds of missing-CMP waiting with
+zero dispatches, synthetic late user-decision/decision-ready transitions,
+neutral old-package status, loading, script/GPT failures, keyboard restart and
+report fallback, diagnostics failure/recovery and export sentinel scrubbing.
+GPT and the late CMP event are test doubles; all network routes are intercepted.
+These checks do not establish live Google consent enforcement or publisher UX.
+
+Local verification on 2026-10-01: `npm ci`, all three strict typecheck scopes,
+production build, TEST Worker dry-run, 9/9 targeted Node tests and 8/8 browser
+cases passed. The Node suite ran with `TZ=UTC`, matching CI: the pre-existing
+archived ZIP route uses a 1980-01-01 UTC timestamp that falls in 1979 under the
+container's default western timezone. No ZIP/runtime change was made here.
+Visual review covered desktop and 390 px waiting, ready and error states; the
+existing table scrolls within its panel and the page has no horizontal overflow.
+Evidence is produced by the existing CI gate under
+`.generated/test-page-evidence/`; this is local/CI verification, not a hosted
+publisher acceptance or deployment claim.

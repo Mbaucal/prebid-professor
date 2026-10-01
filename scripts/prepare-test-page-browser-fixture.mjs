@@ -14,7 +14,6 @@ snapshot.units[2].code='Branding';
 snapshot.maps[1].map_json=JSON.stringify([{viewport:[0,0],sizes:[]},{viewport:[1300,0],sizes:[[160,600]]}]);
 snapshot.units.push({code:'Sticky',type:'ATF',media_type:'banner',size_map_key:'sticky',enabled:1,sort_order:3});
 snapshot.maps.push({name:'sticky',map_json:JSON.stringify([{viewport:[0,0],sizes:[[320,50]]},{viewport:[1200,0],sizes:[[970,90]]}])});
-const candidate=await buildArtifactCandidate({snapshot,pin:pinRuntime(runtimeCatalog[0],{allowPreview:true}),buildTimestamp:'20260922_220000'});
 // The HTML must come from the actual Wrangler bundle, not an imported source
 // renderer: source-only tests missed Function#toString dropping __name helpers.
 const compiled=new URL('../.generated/test-workspace-active-dry-run/',import.meta.url);
@@ -35,13 +34,17 @@ try{
   // Preserve conditional writes while adapting Node's Headers to the proxy's
   // supported Headers class. This adapter exists only in the local fixture.
   const bucket={get:key=>rawBucket.get(key),put:(key,bytes,options)=>rawBucket.put(key,bytes,{...options,onlyIf:new MiniflareHeaders(options.onlyIf)})};
-  const saved=await saveDraftRelease({isolation:'explicit-test-store',db:await mf.getD1Database('DB'),bucket},
-    {siteId:'test-site',candidate,actor:'tester@example.invalid',note:'Compiled Worker browser test'});
-  const response=await mf.dispatchFetch(origin+'/test-api/site-test-page/'+saved.draft.id+'?googfc',{headers:{cookie}});
-  assert.equal(response.status,200);const html=await response.text();
-  assert(html.includes('<script>'+testPageScript+'</script>'),'Compiled Worker must return the complete browser bundle unchanged.');
-  assert.equal(outbound,0);
-  await writeFile(new URL('page.html',out),html);
-  await writeFile(new URL('headers.json',out),JSON.stringify(Object.fromEntries(response.headers)));
+  for(const [name,version] of [['page','3.10.0-tessera.preview.1'],['readiness','3.14.0']]) {
+    const descriptor=runtimeCatalog.find(runtime=>runtime.version===version);assert(descriptor);
+    const candidate=await buildArtifactCandidate({snapshot,pin:pinRuntime(descriptor,{allowPreview:true}),buildTimestamp:'20261001_170000'});
+    const saved=await saveDraftRelease({isolation:'explicit-test-store',db:await mf.getD1Database('DB'),bucket},
+      {siteId:'test-site',candidate,actor:'tester@example.invalid',note:'Compiled Worker browser test'});
+    const response=await mf.dispatchFetch(origin+'/test-api/site-test-page/'+saved.draft.id+'?googfc',{headers:{cookie}});
+    assert.equal(response.status,200);const html=await response.text();
+    assert(html.includes('<script>'+testPageScript+'</script>'),'Compiled Worker must return the complete browser bundle unchanged.');
+    assert.equal(outbound,0);
+    await writeFile(new URL(name+'.html',out),html);
+    await writeFile(new URL('headers.json',out),JSON.stringify(Object.fromEntries(response.headers)));
+  }
   console.log('Prepared authenticated page from the actual Wrangler Worker with local D1/R2; no hosted data or ad requests.');
 }finally{await mf.dispose();}
