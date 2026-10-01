@@ -10,7 +10,7 @@ const credentials = { ADMIN_EMAIL: 'admin@example.invalid', ADMIN_PASSWORD: rand
 const mf = new Miniflare({
   modules: true, script: await readFile('dist/prebid_professor/index.js', 'utf8'),
   compatibilityDate: config.compatibility_date, compatibilityFlags: config.compatibility_flags,
-  cf: false, host: '127.0.0.1', port: 0, bindings: credentials, r2Buckets: ['BUILDS'],
+  cf: false, host: '127.0.0.1', port: 0, bindings: credentials, d1Databases: ['DB'], r2Buckets: ['BUILDS'],
   outboundService: () => { throw Error('Security regression must not make outbound requests.'); },
 });
 const request = (path, options = {}) => mf.dispatchFetch(origin + path, { redirect: 'manual', ...options });

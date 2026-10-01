@@ -1,3 +1,4 @@
+import { copyAuthenticatedActor } from './http';
 import type { PublisherStatus, UpdateSiteInput } from '../src/shared/types';
 import { apiError, getActor, json, readJson } from './http';
 import { fetchSite, type DatabaseEnv } from './publishers';
@@ -185,10 +186,10 @@ export async function moveSite(
     return apiError(error instanceof Error ? error.message : 'Invalid JSON body.');
   }
 
-  const syntheticRequest = new Request(request.url, {
+  const syntheticRequest = copyAuthenticatedActor(request, new Request(request.url, {
     method: 'PATCH',
     headers: request.headers,
     body: JSON.stringify({ publisherAccountId: input.publisherAccountId }),
-  });
+  }));
   return updateSite(syntheticRequest, env, siteId);
 }

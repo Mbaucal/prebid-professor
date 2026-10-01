@@ -2,14 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleLogin, renderLoginPage } from '../../worker/auth.ts';
 
+import { loginStore } from '../support/login-store.mjs';
+
 const origin = 'https://tessera.invalid';
 const env = { ADMIN_EMAIL: 'tester@example.invalid', ADMIN_PASSWORD: 'synthetic-password-only', SESSION_SECRET: 'synthetic-session-secret-not-used-outside-tests' };
 async function login(next, json = false) {
   const body = { email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWORD, next };
-  return handleLogin(new Request(origin + '/api/auth/login', {
+  const store=loginStore();
+  try { return await handleLogin(new Request(origin + '/api/auth/login', {
     method: 'POST', headers: { origin, 'content-type': json ? 'application/json' : 'application/x-www-form-urlencoded' },
     body: json ? JSON.stringify(body) : new URLSearchParams(body),
-  }), env);
+  }), {...env,DB:store.DB}); } finally {store.close();}
 }
 for (const next of ['/\\external.invalid', '//external.invalid', '/\n/external.invalid', '/\t/external.invalid', 'https://external.invalid', '/%5cexternal.invalid', '/%2fexternal.invalid', '/x/../login', '/%61pi/auth/login', '/api/auth/logout', '/bad%zz']) {
   test(`login rejects unsafe or authentication-loop next ${JSON.stringify(next)}`, async () => {
