@@ -16,7 +16,7 @@ export type DashboardNavigation = {
   tab: PublisherTab;
   agencyFilter: string;
 };
-export type NavigationRequest = DashboardNavigation & { defaultSelection: boolean; invalid: boolean };
+export type NavigationRequest = DashboardNavigation & { defaultSelection: boolean; invalid: boolean; sourceSearch: string };
 export const emptyNavigation: DashboardNavigation = {section:'Publishers', publisherId:null, siteId:null, tab:'Overview', agencyFilter:'all'};
 
 export function readDashboardNavigation(search: string): NavigationRequest {
@@ -24,7 +24,7 @@ export function readDashboardNavigation(search: string): NavigationRequest {
   const section = params.has('section') ? globalSections[sectionKeys.indexOf(params.get('section')!)] : 'Publishers';
   const tab = params.has('tab') ? siteTabs[tabKeys.indexOf(params.get('tab')!)] : 'Overview';
   const invalid = !section || !tab || keys.some(key => params.getAll(key).length > 1 || (params.has(key) && (!params.get(key)?.trim() || params.get(key)!.length > 128)));
-  return {...emptyNavigation, section:section ?? 'Publishers', tab:tab ?? 'Overview', publisherId:params.get('publisher'), siteId:params.get('site'), agencyFilter:params.get('agency') ?? 'all', invalid, defaultSelection:!keys.some(key => params.has(key))};
+  return {...emptyNavigation, section:section ?? 'Publishers', tab:tab ?? 'Overview', publisherId:params.get('publisher'), siteId:params.get('site'), agencyFilter:params.get('agency') ?? 'all', invalid, defaultSelection:!keys.some(key => params.has(key)), sourceSearch:search};
 }
 
 export function dashboardURL(current: string, navigation: DashboardNavigation): string {
@@ -36,6 +36,15 @@ export function dashboardURL(current: string, navigation: DashboardNavigation): 
   url.searchParams.set('tab', tabKeys[siteTabs.indexOf(navigation.tab)]);
   if (navigation.agencyFilter !== 'all') url.searchParams.set('agency', navigation.agencyFilter);
   return url.pathname + url.search + url.hash;
+}
+
+export function canonicalDashboardURL(current: string, request: NavigationRequest, navigation: DashboardNavigation): string | null {
+  const url = new URL(current);
+  // Browser traversal can update the URL before popstate restores React state.
+  // Only canonicalize the query from which this request was actually read.
+  if (url.search !== request.sourceSearch) return null;
+  const canonical = dashboardURL(current, navigation);
+  return canonical === url.pathname + url.search + url.hash ? null : canonical;
 }
 
 export function resolveDashboardNavigation(request: NavigationRequest, publishers: PublisherAccount[], organization: Organization) {

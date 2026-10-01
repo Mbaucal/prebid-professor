@@ -20,10 +20,26 @@ try:
  with sync_playwright() as p:
   browser=p.chromium.launch(headless=True)
   for width in [1440,390]:
-   accounts=copy.deepcopy(initial);fault={'hierarchy':False,'agency':False,'defer':False};pending=[];pending_saves=[];pending_deletes=[]
+   accounts=copy.deepcopy(initial);fault={'hierarchy':False,'agency':False,'defer':False};pending=[];pending_saves=[];pending_deletes=[];pending_organization=[]
    requests=[];external=[];errors=[];writes=[]
    context=browser.new_context(viewport={'width':width,'height':900})
    page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
+   history_trace=[]
+   page.on('console',lambda message:history_trace.append(json.loads(message.text[9:])) if message.text.startswith('NAVTRACE:') else None)
+   # Test-only scheduling control: real history traversal, optionally delayed App callback.
+   page.add_init_script("""(()=>{
+     const state=window.__navigationOrder={hold:false,pending:[]};
+     const note=(event,extra={})=>console.log('NAVTRACE:'+JSON.stringify({event,url:location.href,heading:document.querySelector('.workspace h1')?.textContent,...extra}));
+     const add=window.addEventListener.bind(window),remove=window.removeEventListener.bind(window),listeners=new Map();
+     window.addEventListener=(type,listener,...options)=>{
+       if(type!=='popstate'||typeof listener!=='function')return add(type,listener,...options);
+       const wrapped=event=>{note('popstate');if(state.hold){state.pending.push(()=>listener(event));note('listener-held')}else listener(event)};
+       listeners.set(listener,wrapped);return add(type,wrapped,...options);
+     };
+     window.removeEventListener=(type,listener,...options)=>remove(type,type==='popstate'?(listeners.get(listener)||listener):listener,...options);
+     state.release=()=>{state.hold=false;state.pending.splice(0).forEach(call=>call());note('listener-released')};
+     for(const name of ['pushState','replaceState']){const original=history[name];history[name]=function(state,title,url){note(name,{target:url});return original.apply(this,arguments)}}
+   })()""")
    def route(r):
     url=urlparse(r.request.url);path=url.path;method=r.request.method
     if not r.request.url.startswith(origin+'/'):
@@ -33,6 +49,7 @@ try:
      if fault['defer']:pending.append(r);return
      r.fulfill(status=503 if fault['hierarchy'] else 200,json={'error':'Synthetic hierarchy unavailable'} if fault['hierarchy'] else {'publishers':accounts});return
     if path=='/api/organization':
+     if fault.get('defer_organization'):pending_organization.append(r);return
      r.fulfill(status=503 if fault['agency'] else 200,json={'error':'Synthetic agency unavailable'} if fault['agency'] else organization);return
     if path.endswith('/builtin-site-settings'):
      if method=='POST':
@@ -83,6 +100,28 @@ try:
     expect(page.locator('.workspace h1')).to_have_text('Settings');settings=page.url
     page.reload();expect(page.locator('.workspace h1')).to_have_text('Settings');assert page.url==settings
     page.go_back();current('site-a2','Config');record('global-section-history')
+    # Force the pre-popstate window: Back has moved the URL but App still renders Settings.
+    # A late organization response must not canonicalize that stale render over the new URL.
+    page.goto(origin+'/?site=site-a2&tab=config');current('site-a2','Config')
+    menu();page.locator('.main-nav').get_by_role('button',name='Settings',exact=True).click()
+    expect(page.locator('.workspace h1')).to_have_text('Settings')
+    fault['defer_organization']=True
+    page.reload(wait_until='domcontentloaded');expect(page.locator('.workspace h1')).to_have_text('Settings')
+    page.evaluate('window.__navigationOrder.hold=true');history_start=len(history_trace)
+    page.go_back();back_url=page.url
+    assert parse_qs(urlparse(back_url).query)['section']==['publishers']
+    expect(page.locator('.workspace h1')).to_have_text('Settings')
+    assert page.evaluate('window.__navigationOrder.pending.length')==1
+    fault['defer_organization']=False
+    with page.expect_request_finished(lambda request:request.url==origin+'/api/organization'):
+     for r in pending_organization:r.fulfill(json=organization)
+    pending_organization.clear()
+    # Yield through rendering/effects after the delivered response, without a fixed delay.
+    page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+    assert page.url==back_url,history_trace[history_start:]
+    assert not [event for event in history_trace[history_start:] if event['event']=='replaceState']
+    page.evaluate('window.__navigationOrder.release()');current('site-a2','Config')
+    assert page.url==back_url;record('back-during-late-organization')
     page.goto(origin+'/?site=site-b1&tab=config&agency=south');current('site-b1','Config')
     assert parse_qs(urlparse(page.url).query)['publisher']==['publisher-b'];record('direct-link-resolved-owner')
     # Filtering out the active site leaves an explicit empty selection, not another site's editor.
@@ -179,8 +218,9 @@ try:
     assert len(writes)==6,writes
     results.append({'case':'traffic-boundary','width':width,'passed':True,'syntheticWrites':writes,'externalRequests':external,'pageErrors':errors})
    except Exception:
-    page.screenshot(path=str(out/f'failure-{width}.png'));(out/f'failure-{width}.json').write_text(json.dumps({'url':page.url,'errors':errors,'requests':requests,'body':page.locator('body').inner_text()},indent=2));raise
-   finally:context.close()
+    page.screenshot(path=str(out/f'failure-{width}.png'));(out/f'failure-{width}.json').write_text(json.dumps({'url':page.url,'errors':errors,'requests':requests,'historyTrace':history_trace,'body':page.locator('body').inner_text()},indent=2));raise
+   finally:
+    (out/f'history-{width}.json').write_text(json.dumps(history_trace,indent=2));context.close()
   browser.close()
  (out/'result.json').write_text(json.dumps({'scope':'actual production dashboard with intercepted synthetic APIs; no hosted data or ad traffic','checks':results},indent=2))
  print(f'PASS: {len(results)} navigation cases, desktop/390; synthetic publisher edit/delete, no external traffic')

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readDashboardNavigation,resolveDashboardNavigation,dashboardURL} from '../../src/dashboard-navigation.ts';
+import {readDashboardNavigation,resolveDashboardNavigation,dashboardURL,canonicalDashboardURL} from '../../src/dashboard-navigation.ts';
 
 const publishers=[{id:'publisher-a',sites:[{id:'site-a1'},{id:'site-a2'}]},{id:'publisher-b',sites:[{id:'site-b1'}]},{id:'empty',sites:[]}];
 const organization={agencies:[{id:'north'},{id:'south'}],memberships:[{publisherId:'publisher-a',agencyId:'north'},{publisherId:'publisher-b',agencyId:'south'}]};
@@ -49,4 +49,18 @@ test('global sections keep their site context and URL writer preserves direct en
   const url=dashboardURL('https://tessera.invalid/dashboard?next=keep#anchor',state.navigation);
   assert(url.startsWith('/dashboard?next=keep&section=releases&'));assert(url.endsWith('&agency=north#anchor'));
   assert.equal(resolve(new URL(url,'https://tessera.invalid').search).navigation.tab,'Config');
+});
+test('canonicalization cannot overwrite a newer browser URL with a stale render',()=>{
+  const settingsQuery='?campaign=keep&section=settings&publisher=publisher-a&site=site-a2&tab=config';
+  const settings=readDashboardNavigation(settingsQuery);
+  const backURL='https://tessera.invalid/?campaign=keep&section=publishers&publisher=publisher-a&site=site-a2&tab=config#anchor';
+  const staleSelection=resolveDashboardNavigation(settings,publishers,organization);
+  // The previous mismatch-only check would have replaced Back's Config URL with Settings.
+  assert.equal(dashboardURL(backURL,staleSelection.navigation),'/' + settingsQuery + '#anchor');
+  assert.equal(canonicalDashboardURL(backURL,settings,staleSelection.navigation),null);
+  const incomplete='https://tessera.invalid/?site=site-a2&tab=config#anchor';
+  const restored=readDashboardNavigation(new URL(incomplete).search);
+  const selected=resolveDashboardNavigation(restored,publishers,organization);
+  assert.equal(canonicalDashboardURL(incomplete,restored,selected.navigation),'/?section=publishers&publisher=publisher-a&site=site-a2&tab=config#anchor');
+  assert.equal(canonicalDashboardURL(backURL,readDashboardNavigation(new URL(backURL).search),selected.navigation),null);
 });

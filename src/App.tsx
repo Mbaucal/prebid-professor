@@ -5,7 +5,7 @@ import AppFrame, { WorkspaceContent } from './components/AppFrame';
 import AuthAccount from './components/AuthAccount';
 import ApiIntegrationsPanel from './components/ApiIntegrationsPanel';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { dashboardURL, globalSections as navItems, readDashboardNavigation, resolveDashboardNavigation, siteTabs as publisherTabs, type DashboardNavigation, type NavigationRequest, type GlobalSection, type PublisherTab } from './dashboard-navigation';
+import { canonicalDashboardURL, dashboardURL, globalSections as navItems, readDashboardNavigation, resolveDashboardNavigation, siteTabs as publisherTabs, type DashboardNavigation, type NavigationRequest, type GlobalSection, type PublisherTab } from './dashboard-navigation';
 import { api } from './api';
 import AdsTxtPanel from './components/AdsTxtPanel';
 import AuditLogPanel from './components/AuditLogPanel';
@@ -194,10 +194,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!navigationPending && !navigationError && (navigationRequest.defaultSelection || dashboardURL(window.location.href, selection.navigation) !== window.location.pathname + window.location.search + window.location.hash)) {
+    if (!navigationPending && !navigationError && navigationRef.current === navigationRequest && canonicalDashboardURL(window.location.href, navigationRequest, selection.navigation)) {
       commitNavigation(selection.navigation, true);
     }
-  }, [navigationPending, navigationError, navigationRequest.defaultSelection, selection.navigation, commitNavigation]);
+  }, [navigationPending, navigationError, navigationRequest, selection.navigation, commitNavigation]);
 
   function navigate(patch: Partial<DashboardNavigation>) {
     commitNavigation({...selection.navigation, ...patch});
