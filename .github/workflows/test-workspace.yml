@@ -48,10 +48,13 @@ jobs:
         run: node scripts/check-test-activation.mjs
       - name: Preserve runtime versions and their recorded history
         run: node scripts/check-runtime-release-history.mjs HEAD^
-      - name: Prepare locked built-in generator and schema without accessing any database
+      - name: Prepare from the connected TEST build directory without accessing any database
+        working-directory: ops/runtime-test
         run: |
-          node scripts/prepare-builtin-runtime.mjs
-          node scripts/prepare-test-workspace.mjs
+          node ../../scripts/prepare-builtin-runtime.mjs
+          node ../../scripts/prepare-test-workspace.mjs
+      - name: Keep named baseline output independent of the caller working directory
+        run: node --experimental-strip-types --test tests/runtime/test-build-cwd.test.mjs
       - name: Exercise real authentication, compiler, SQL schema and stored-draft HTTP workflow
         run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs tests/runtime/site-runtime-selection.test.mjs tests/runtime/runtime-selection-cas.test.mjs tests/runtime/test-runtime-selection.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/tanjug-pilot.test.mjs
       - name: Verify read-only ads version UI routes
