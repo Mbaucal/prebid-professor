@@ -7,13 +7,15 @@ root=Path(__file__).resolve().parent.parent
 out=root/'.generated/script-library-ui';out.mkdir(exist_ok=True)
 process=subprocess.Popen(['node','scripts/script-library-browser-fixture.mjs'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
 assert json.loads(process.stdout.readline())['ready']
-errors=[];requests=[];checks=[];last_saved=None
+errors=[];requests=[];checks=[];last_saved=None;hold_next_save=False;held_save=[]
 def check(name,ok):
  assert ok,name
  checks.append(name)
 def route(r):
- global last_saved
+ global last_saved,hold_next_save
  url=urlsplit(r.request.url);assert url.netloc=='tessera.fixture.invalid'
+ if hold_next_save and r.request.method=='PUT' and url.path.endswith('/prebid-mode'):
+  hold_next_save=False;held_save.append(r);return
  payload={'path':url.path+('?' + url.query if url.query else ''),'method':r.request.method,'body':r.request.post_data}
  process.stdin.write(json.dumps(payload)+'\n');process.stdin.flush()
  result=json.loads(process.stdout.readline());assert 'error' not in result,result
@@ -119,7 +121,12 @@ try:
   position('Sticky').get_by_role('button',name='Bid cache: Off',exact=True).click()
   cache_dialog=page.get_by_role('dialog',name='Bid cache · Sticky',exact=True)
   cache_dialog.get_by_label('Bid cache for Sticky',exact=True).select_option('on')
-  cache_dialog.get_by_role('button',name='Save position setting').click();cache_dialog.get_by_role('status').wait_for()
+  hold_next_save=True
+  cache_dialog.get_by_role('button',name='Save position setting').click()
+  page.wait_for_function("document.activeElement?.getAttribute('role')==='dialog' && document.querySelector('[role=dialog] button').disabled")
+  page.keyboard.press('Tab');page.keyboard.press('Shift+Tab')
+  check('Saving keeps keyboard focus inside the busy position dialog',page.evaluate("document.activeElement?.getAttribute('role')==='dialog'") and len(held_save)==1)
+  route(held_save.pop());cache_dialog.get_by_role('status').wait_for()
   check('Position on overrides site off',cache_dialog.get_by_text('Effective: On',exact=True).is_visible())
   check('Position modal fits mobile',cache_dialog.bounding_box()['width']<=390)
   page.screenshot(path=str(out/'position-cache-mobile.png'))

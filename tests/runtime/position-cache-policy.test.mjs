@@ -89,3 +89,36 @@ test('all off disables native reuse and snapshots cannot alter position choices'
   assert.equal(on.config.bidCacheFilterFunction(on.bid),false);
   assert.equal(on.policy.snapshot().positionOverrides.P1,false);
 });
+
+test('one shared auction applies opposite cache choices without cross-slot targeting',()=>{
+  const codes=['Billboard','Sticky'],values=Object.fromEntries(codes.map(code=>[code,{publisher:[code],hb_old:['stale']}]));
+  const slots=Object.fromEntries(codes.map(code=>[code,{
+    getTargetingKeys:()=>Object.keys(values[code]),getTargeting:key=>values[code][key]||[],clearTargeting:key=>delete values[code][key],
+  }]));
+  const config={},events=new Map(),bids=[];let epoch=1;
+  const pbjs={version:'11.34.0',getConfig:key=>config[key],setConfig:next=>Object.assign(config,next),
+    onEvent:(name,fn)=>events.set(name,fn),offEvent:name=>events.delete(name),getBidResponseByAdId:id=>bids.find(bid=>bid.adId===id),
+    setTargetingForGPTAsync(selected){
+      for(const code of selected){
+        const bid=bids.filter(bid=>bid.adUnitCode===code&&(bid.auctionId==='current'||config.bidCacheFilterFunction(bid))).sort((a,b)=>b.cpm-a.cpm)[0];
+        if(bid){values[code].hb_adid=[bid.adId];bid.status='targetingSet';}
+      }
+    }};
+  const policy=createPositionBidCachePolicy({pbjs,siteId:'test',mode:'auction-with-cache',positionOverrides:{Billboard:false,Sticky:true},
+    contextForCode:code=>({slot:slots[code],epoch,sizes:[[300,250]]}),now:()=>10000});
+  for(const auctionId of ['previous','current']){
+    events.get('auctionInit')({auctionId,adUnitCodes:codes});
+    for(const code of codes)bids.push({adId:code+'-'+auctionId,adUnitCode:code,auctionId,cpm:auctionId==='previous'?4:1,
+      mediaType:'banner',status:'good',width:300,height:250,responseTimestamp:9900,ttl:60});
+  }
+  assert.equal(config.bidCacheFilterFunction(bids[0]),false);
+  assert.equal(config.bidCacheFilterFunction(bids[1]),true);
+  assert(policy.target('Billboard','current'));assert(policy.target('Sticky','current'));
+  assert.deepEqual(values.Billboard,{publisher:['Billboard'],hb_adid:['Billboard-current']});
+  assert.deepEqual(values.Sticky,{publisher:['Sticky'],hb_adid:['Sticky-previous']});
+  assert.equal(policy.snapshot().selections.fresh,1);assert.equal(policy.snapshot().selections.cache,1);
+  epoch++;
+  assert.equal(config.bidCacheFilterFunction({...bids[1],status:'good',adId:'unused-old-epoch'}),false);
+  assert.equal(policy.snapshot().checks.rejected.context,1);
+  policy.stop();
+});

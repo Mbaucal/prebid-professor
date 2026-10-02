@@ -18,7 +18,7 @@ mock=mock.replace('const observations = { requests:', 'const observations = { re
 mock=mock.replace('sizes: slot.sizes, at: Date.now()', 'sizes: slot.sizes, Variant: slot.getConfig().targeting.Variant, at: Date.now()')
 position_cache=manifest.get('kind')=='saved-script-v2'
 if position_cache:
- mock=mock.replace('Variant: slot.getConfig().targeting.Variant, at: Date.now()', "Variant: slot.getConfig().targeting.Variant, round: window.__fixtureBidRounds?.get('pubmatic:'+slot.id), bid: (()=>{const b=window.pbjs?.getBidResponseByAdId?.(slot.getTargeting('hb_adid')[0]);return b?{cpm:b.cpm,auctionId:b.auctionId}:null;})(), latestAuction: [...(window.pbjs?.getEvents?.()||[])].reverse().find(e=>e.eventType==='auctionInit'&&e.args.adUnitCodes?.includes(slot.id))?.args.auctionId, at: Date.now()")
+ mock=mock.replace('Variant: slot.getConfig().targeting.Variant, at: Date.now()', "Variant: slot.getConfig().targeting.Variant, round: window.__fixtureBidRounds?.get('pubmatic:'+slot.id), bid: (()=>{const b=window.pbjs?.getBidResponseByAdId?.(slot.getTargeting('hb_adid')[0]);return b?{cpm:b.cpm,auctionId:b.auctionId,adUnitCode:b.adUnitCode}:null;})(), hbTargeting: Object.fromEntries(slot.getTargetingKeys().filter(k=>k.startsWith('hb_')).map(k=>[k,slot.getTargeting(k)])), latestAuction: [...(window.pbjs?.getEvents?.()||[])].reverse().find(e=>e.eventType==='auctionInit'&&e.args.adUnitCodes?.includes(slot.id))?.args.auctionId, at: Date.now()")
  mock+=';window.__positionCacheTest=true;'
 mock+='\n'+pathlib.Path('tests/runtime/full-cache-browser-fixture.js').read_text()
 class Handler(BaseHTTPRequestHandler):
@@ -183,12 +183,18 @@ try:
       rows=page.evaluate("__testAds.observations.requests.filter(r=>['Billboard','Sticky'].includes(r.id))")
       def request(code,round):return next(r for r in rows if r['id']==code and r.get('round')==round)
       off=request('Billboard',2);on=request('Sticky',2)
+      check(label+': targeting stays with its own position',all(r['bid'] is None or r['bid']['adUnitCode']==r['id'] for r in rows))
+      for code,last in [('Billboard',5),('Sticky',4)]:
+       selected=[request(code,round) for round in range(1,last+1)]
+       check(label+': every refresh starts a distinct fresh auction for '+code,len({r['latestAuction'] for r in selected})==last and all(r['latestAuction'] for r in selected))
       check(label+': off uses fresh 1 CPM while on can reuse unused 4 CPM',off['bid']['cpm']==1 and off['bid']['auctionId']==off['latestAuction'] and on['bid']['cpm']==4 and on['bid']['auctionId']!=on['latestAuction'])
       for code in ['Billboard','Sticky']:
        third=request(code,4)
        check(label+': higher fresh CPM wins third refresh for '+code,third['bid']['cpm']==12 and third['bid']['auctionId']==third['latestAuction'])
       empty=request('Billboard',5)
-      check(label+': off with no fresh bid still requests GAM without stale targeting',empty['bid'] is None)
+      # The wrapper owns hb_ver/hb_version metadata; empty native keys have no effective targeting.
+      stale={key:value for key,value in empty['hbTargeting'].items() if key not in ['hb_ver','hb_version'] and value}
+      check(label+': off with no fresh bid still requests GAM without stale targeting',empty['bid'] is None and not stale)
       check(label+': per-position policy reports no targeting errors',page.evaluate('AdBidCache.snapshot().policy.selections.errors===0'))
      page.locator('#InText_1').scroll_into_view_if_needed()
      wait(page,"__testAds.observations.requests.some(r=>r.id==='InText_1')",timeout=15000)

@@ -14,6 +14,7 @@ const mf = new Miniflare({
   compatibilityDate: config.compatibility_date,
   compatibilityFlags: config.compatibility_flags,
   cf: false,
+  d1Databases: ['DB'],
   host: '127.0.0.1',
   port: 0,
   bindings: {

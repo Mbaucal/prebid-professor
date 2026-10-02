@@ -195,7 +195,7 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
               <input type="checkbox" checked={cacheEnabled} disabled={!payload.bidCacheAvailable && !cacheEnabled} onChange={e => { setCacheEnabled(e.target.checked); if (!e.target.checked && !validAge) setMaxAge(String(payload.prebidMode.bidCache.maxBidAgeSeconds)); }} />
               Reuse valid, unused bids
             </label>
-            <p>Site default: {cacheEnabled ? 'new auctions with valid, unused cached bids also allowed.' : 'current auction only.'} Each refresh starts a new auction.</p>
+            <p>{payload.bidCacheAvailable?'Site default: ':'Saved site preference: '}{cacheEnabled ? 'new auctions with valid, unused cached bids also allowed.' : 'current auction only.'} {payload.bidCacheAvailable?'Each refresh starts a new auction.':'This generator does not apply cached-bid settings.'}</p>
             {Object.keys(positionOverrides).length?<p>Position overrides: {Object.entries(positionOverrides).map(([code,on])=>`${code}: ${on?'On':'Off'}`).join(' · ')}. Change these under Ad units → Bid cache.</p>:null}
             {hasCache ? <label className="prebid-cache-age">Maximum bid age (seconds)
               <input aria-label="Maximum bid age (seconds)" type="number" min={1} max={300} step={1} required value={maxAge} onChange={e => setMaxAge(e.target.value)} />

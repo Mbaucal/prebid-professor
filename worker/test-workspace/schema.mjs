@@ -1,3 +1,4 @@
+import { LOGIN_LIMITER_TABLE_SQL, LOGIN_LIMITER_INDEX_SQL } from '../auth.ts';
 import {validOrganizationObjects} from '../organization/schema.mjs';
 import { statements, schemaSha256 } from '../../.generated/test-workspace-schema.mjs';
 import { WorkspaceError, TEST_DATABASE, TEST_BUCKET, TEST_SITE } from './boundary.mjs';
@@ -22,10 +23,19 @@ export async function inspectTestSchema(db) {
   const current = session(db);
   const result = await current.prepare("SELECT name,type,sql FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' ORDER BY name").all();
   if (result.success === false || !Array.isArray(result.results)) throw new WorkspaceError(503,'Test schema could not be checked.');
-  if (!result.results.length) return { ready:false, empty:true };
-  const extension = result.results.filter(row => row.name.startsWith('organization_'));
+  const authObjects = result.results.filter(row => row.name.startsWith('auth_login_'));
+  const expectedAuth = [
+    {name:'auth_login_limits',type:'table',sql:normalizedDdl(LOGIN_LIMITER_TABLE_SQL.replace(' IF NOT EXISTS',''))},
+    {name:'auth_login_limits_expiry',type:'index',sql:normalizedDdl(LOGIN_LIMITER_INDEX_SQL.replace(' IF NOT EXISTS',''))},
+  ];
+  if (authObjects.length && JSON.stringify(authObjects.map(row=>({name:row.name,type:row.type,sql:normalizedDdl(row.sql)}))) !== JSON.stringify(expectedAuth)) {
+    throw new WorkspaceError(409,'Login limiter schema does not match the reviewed version. No repairs were applied.');
+  }
+  const workspaceObjects = result.results.filter(row => !row.name.startsWith('auth_login_'));
+  if (!workspaceObjects.length) return { ready:false, empty:true };
+  const extension = workspaceObjects.filter(row => row.name.startsWith('organization_'));
   if (extension.length && !validOrganizationObjects(extension)) throw new WorkspaceError(409,'Agency schema extension does not match the reviewed version. No repairs were applied.');
-  const actual = result.results.filter(row => !row.name.startsWith('organization_')).map((row) => ({name:row.name,type:row.type,sql:normalizedDdl(row.sql)}));
+  const actual = workspaceObjects.filter(row => !row.name.startsWith('organization_')).map((row) => ({name:row.name,type:row.type,sql:normalizedDdl(row.sql)}));
   if (JSON.stringify(actual) !== JSON.stringify(expectedObjects)) {
     throw new WorkspaceError(409,'The current test schema, indexes or safety guards do not match the reviewed version. Nothing was initialized.');
   }

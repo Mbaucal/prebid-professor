@@ -1,9 +1,9 @@
 import ConfirmDeleteButton from './ConfirmDeleteButton';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
+import type {ScriptSettings as Settings} from '../../worker/experiments/saved-script-settings.mjs';
 import {displayName} from '../../worker/experiments/saved-script-settings.mjs';
 import './ab-experiments.css';
 
-type Settings={mode:'fresh-only'|'auction-with-cache';refreshSeconds:number|null;maxBidAgeSeconds?:number;positionOverrides?:Record<string,boolean>};
 type ScriptRef={id:string;name:string;settings:Settings};
 type Saved=ScriptRef&{collection:'scripts'|'tests';createdAt:string;bytes:number;sha256:string;trafficBPercent?:number;scripts?:{A:ScriptRef;B:ScriptRef}};
 type Library={supported:boolean;revision:string;baseline:{release:string;positions:number;prebidVersion:string};prebid:{enabled:boolean;bidCache:{enabled:boolean;maxBidAgeSeconds:number;positionOverrides?:Record<string,boolean>}};scripts:Saved[];tests:Saved[];deletedScripts:Saved[];deletedTests:Saved[];nextCursors:{scripts:string|null;tests:string|null}};
@@ -19,15 +19,15 @@ export default function ScriptLibraryPanel({publisherId,onOpenDemand}:{publisher
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');const lock=useRef(false);
   async function request(path='',init:RequestInit={}) {
     const response=await fetch(base+path,{credentials:'same-origin',cache:'no-store',...init});
-    if(!response.ok){let text='Could not complete the request.';try{text=(await response.json()).error||text;}catch{}throw Error(text);}return response;
+    if(!response.ok){let text='Could not complete the request.';try{text=(await response.json() as {error?:string}).error||text;}catch{}throw Error(text);}return response;
   }
-  useEffect(()=>{let active=true;request().then(r=>r.json()).then(s=>{if(active)setLibrary(s);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[base]);
+  useEffect(()=>{let active=true;request().then(r=>r.json() as Promise<Library>).then(s=>{if(active)setLibrary(s);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[base]);
   async function run(fn:()=>Promise<void>){if(lock.current)return;lock.current=true;setBusy(true);setError('');setMessage('');try{await fn();}catch(e){setError(e instanceof Error?e.message:'Could not complete the request.');}finally{lock.current=false;setBusy(false);}}
   async function save(kind:Kind,payload:object) {
-    const data=await(await request('/'+kind,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({revision:library!.revision,...payload})})).json();
+    const data=await(await request('/'+kind,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({revision:library!.revision,...payload})})).json() as {item:Saved;alreadySaved:boolean};
     setLibrary(old=>old?{...old,[kind]:merge(old[kind],[data.item])}:old);
     setMessage(data.alreadySaved?'This named version is already saved. Download it below.':`${kind==='scripts'?'Script':'A/B test'} saved. Download its complete ZIP below.`);
-    return data.item as Saved;
+    return data.item;
   }
   async function saveScript(e:FormEvent){e.preventDefault();await run(async()=>{
     const saved=await save('scripts',{name:displayName(name),refreshSeconds:refresh==='preserve'?null:Number(seconds)});if(!a)setA(saved.id);else if(!b)setB(saved.id);
@@ -42,14 +42,14 @@ export default function ScriptLibraryPanel({publisherId,onOpenDemand}:{publisher
     setMessage(`${p.name} downloaded. Upload the complete ZIP to the existing Tanjug Pages project to activate it.`);
   }
   async function more(kind:Kind) {
-    const page=await(await request(`?collection=${kind}&cursor=${encodeURIComponent(library!.nextCursors[kind]!)}`)).json();
+    const page=await(await request(`?collection=${kind}&cursor=${encodeURIComponent(library!.nextCursors[kind]!)}`)).json() as {items:Saved[];deleted:Saved[];nextCursor:string|null};
     setLibrary(old=>old?{...old,[kind]:merge(old[kind],page.items),[kind==='scripts'?'deletedScripts':'deletedTests']:merge(old[kind==='scripts'?'deletedScripts':'deletedTests']||[],page.deleted||[]),nextCursors:{...old.nextCursors,[kind]:page.nextCursor}}:old);
   }
   async function removeSaved(p:Saved,restore=false) {
     if(lock.current)throw Error('Another action is in progress.');lock.current=true;setBusy(true);setError('');
     try {
       await request(`/${p.collection}/${p.id}.zip`,{method:restore?'PUT':'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({confirmId:p.id,sha256:p.sha256})});
-      setLibrary(await(await request()).json());
+      setLibrary(await(await request()).json() as Library);
       if(!restore&&p.collection==='scripts'){if(a===p.id)setA('');if(b===p.id)setB('');}
       setMessage(restore?`${p.name} restored.`:`${p.name} deleted. You can restore it from Deleted scripts and tests.`);
     }finally{lock.current=false;setBusy(false);}
@@ -60,11 +60,11 @@ export default function ScriptLibraryPanel({publisherId,onOpenDemand}:{publisher
   function details(s:Saved){return <details><summary>Version details</summary><code>{s.id}</code><p>SHA-256 <code>{s.sha256}</code></p></details>;}
   if(library?.supported===false)return null;
   return <section className="ab-editor" aria-label="Script library">
-    <div className="ab-heading"><div><span className="panel-kicker">Saved versions</span><h2>Scripts and A/B tests</h2></div><button className="button secondary" disabled={busy} onClick={()=>void run(async()=>setLibrary(await(await request()).json()))}>Reload library</button></div>
+    <div className="ab-heading"><div><span className="panel-kicker">Saved versions</span><h2>Scripts and A/B tests</h2></div><button className="button secondary" disabled={busy} onClick={()=>void run(async()=>setLibrary(await(await request()).json() as Library))}>Reload library</button></div>
     {error?<p role="alert" className="runtime-error">{error}</p>:null}{message?<p role="status" className="runtime-message">{message}</p>:null}
     {!library?<p>Loading saved scripts…</p>:<>
       <p>Name and save each script once. Use it on its own, or select two saved versions for an A/B test.</p>
-      <details className="ab-baseline"><summary>Starting point: Tanjug · {library.baseline.positions} positions · Prebid {library.baseline.prebidVersion}</summary><p>Uses the reviewed {library.baseline.release} inventory, bidders and consent setup. Bid caching uses the saved Demand → Prebid default and Ad units position choices. Other Config changes are not included in this pilot.</p></details>
+      <details className="ab-baseline"><summary>Starting point: Tanjug · {library.baseline.positions} positions · Prebid {library.baseline.prebidVersion}</summary><p>Uses the reviewed {library.baseline.release} inventory, bidders and consent setup. Bid caching uses the saved Demand → Prebid default and Ad units position choices. Named scripts keep this baseline's consent behavior and do not use the runtime version selected in Script setup. Other Config changes are not included in this pilot.</p></details>
       {!library.prebid.enabled?<p className="ab-help">Prebid is off. Enable it in Config → Demand → Prebid to create a new script. {onOpenDemand?<button type="button" onClick={onOpenDemand}>Edit Prebid settings</button>:null}</p>:null}
       <form onSubmit={saveScript}><fieldset className="ab-form" disabled={busy || !library.prebid.enabled}><legend>New script</legend>
         <label>Script name<input required maxLength={80} value={name} onChange={e=>setName(e.target.value)} placeholder="For example: Standard 30s or Cache 60s"/></label>

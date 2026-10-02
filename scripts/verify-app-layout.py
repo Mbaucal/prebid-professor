@@ -83,6 +83,23 @@ try:
                 page.get_by_role('button', name='O pregledu', exact=True).click()
                 expect(page.get_by_role('dialog')).to_be_in_viewport()
                 page.get_by_role('button', name='Close preview dialog', exact=True).click()
+        page.goto('http://127.0.0.1:4182/layout-preview')
+        page.get_by_role('button', name='Export', exact=True).click()
+        expect(page.get_by_role('heading', name='Minimum-height CSS', exact=True)).to_be_visible()
+        css = page.locator('.export-code').text_content()
+        assert '/* 0–468px */' in css and '/* >= 1300px */' in css
+        assert '#P1, #P2, #P3, #P4, #P5, #P6, #P7 { min-height: 250px; }' in css
+        with page.expect_download() as pending:
+            page.get_by_role('button', name='Download', exact=True).click()
+        download = pending.value
+        assert download.suggested_filename == 'min-height-example.css'
+        assert Path(download.path()).read_text() == css
+        page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
+        page.get_by_role('button', name='Copy', exact=True).click()
+        expect(page.get_by_role('button', name='✓ Copied', exact=True)).to_be_visible()
+        assert page.evaluate('navigator.clipboard.readText()') == css
+        page.screenshot(path=str(out / 'minimum-height-css-export.png'))
+        checks.append({'page': '/layout-preview', 'export': 'comments, grouped positions, exact copy and download', 'passed': True})
         assert not errors, errors
         assert not external, external
         assert not writes, writes

@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 
 export type BidCachePayload={revision:string;bidCacheAvailable:boolean;bidCachePositions:string[];
   prebidMode:{enabled:boolean;bidCache:{enabled:boolean;maxBidAgeSeconds:number;positionOverrides?:Record<string,boolean>}}};
@@ -14,6 +14,7 @@ export default function PositionBidCachePanel({publisherId,code,onClose,onSaved}
   useEffect(()=>{const previous=document.activeElement as HTMLElement|null;dialog.current?.focus();return()=>previous?.focus();},[]);
   const [data,setData]=useState<BidCachePayload|null>(null),[choice,setChoice]=useState('inherit');
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
+  useLayoutEffect(()=>{if(busy)dialog.current?.focus();},[busy]);
   useEffect(()=>{const handle=(event:KeyboardEvent)=>{if(event.key==='Escape'&&!busy){event.preventDefault();onClose();}};document.addEventListener('keydown',handle);return()=>document.removeEventListener('keydown',handle);},[busy,onClose]);
   function accept(next:BidCachePayload){setData(next);const override=next.prebidMode.bidCache.positionOverrides?.[code];setChoice(override===undefined?'inherit':override?'on':'off');}
   async function reload(){setBusy(true);setError('');setMessage('');try{accept(await fetchBidCacheSettings(publisherId));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
@@ -32,6 +33,7 @@ export default function PositionBidCachePanel({publisherId,code,onClose,onSaved}
   return <div className="modal-backdrop"><section className="modal-card ad-unit-modal" ref={dialog} tabIndex={-1} onKeyDown={event=>{
       if(event.key==='Tab'){
         const controls=Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),select:not(:disabled)')??[]);
+        if(!controls.length){event.preventDefault();dialog.current?.focus();return;}
         const first=controls[0],last=controls.at(-1);
         if(event.shiftKey&&(document.activeElement===first||document.activeElement===dialog.current)){event.preventDefault();last?.focus();}
         else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
@@ -47,7 +49,7 @@ export default function PositionBidCachePanel({publisherId,code,onClose,onSaved}
         <option value="inherit">Use site setting ({inherited?'On':'Off'})</option><option value="on">On — allow valid cached bids</option><option value="off">Off — current auction only</option>
       </select></label>
       <p><strong>Effective: {!data.prebidMode.enabled?'Inactive — Prebid is off':effective?'On':'Off'}</strong></p>
-      <p>Every refresh still starts a new auction. {effective?'Valid, unused bids from earlier auctions for this position may also compete.':'This position uses only bids from its current auction.'}</p>
+      <p>{data.prebidMode.enabled?'Every refresh still starts a new auction.':'When Prebid is enabled, every refresh starts a new auction.'} {effective?'Valid, unused bids from earlier auctions for this position may also compete.':'This position uses only bids from its current auction.'}</p>
       {effective?<p>Maximum cached bid age: {data.prebidMode.bidCache.maxBidAgeSeconds} seconds, or less if its original TTL expires.</p>:null}
       <p>Applies to the next named script in Releases → Scripts and A/B tests.</p>
       <button className="button primary" disabled={busy||!dirty||!data.prebidMode.enabled} onClick={()=>void save()}>{busy?'Saving…':'Save position setting'}</button>

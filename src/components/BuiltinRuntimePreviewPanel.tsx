@@ -8,7 +8,7 @@ type Result = { siteId: string; fileName: string; content: string; checksum: str
 async function jsonRequest<T>(url: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin', ...init });
   let payload;
-  try { payload = await response.json(); } catch { throw new Error('The server did not return JSON. Sign in again, then reload this panel.'); }
+  try { payload = await response.json() as T & { error?: string }; } catch { throw new Error('The server did not return JSON. Sign in again, then reload this panel.'); }
   if (!response.ok) throw new Error(payload.error || `Request failed (${response.status}).`);
   return payload as T;
 }

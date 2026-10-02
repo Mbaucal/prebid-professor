@@ -19,6 +19,8 @@ on:
       - scripts/pages-release-verification.mjs
       - worker/deployment-manifest-pin.mjs
       - worker/external-deployments.ts
+      - worker/deployment-callback-urls.ts
+      - tests/runtime/deployment-callback.test.mjs
       - tests/runtime/pages-deployment.test.mjs
       - .github/workflows/deploy-pages-release.yml
       - .github/workflows/pages-deployment-checks.yml
@@ -41,6 +43,8 @@ on:
       - scripts/pages-release-verification.mjs
       - worker/deployment-manifest-pin.mjs
       - worker/external-deployments.ts
+      - worker/deployment-callback-urls.ts
+      - tests/runtime/deployment-callback.test.mjs
       - tests/runtime/pages-deployment.test.mjs
       - .github/workflows/deploy-pages-release.yml
       - .github/workflows/pages-deployment-checks.yml
@@ -61,4 +65,4 @@ jobs:
       - run: node scripts/prepare-builtin-runtime.mjs
       - run: node scripts/prepare-test-workspace.mjs
       - name: Verify package bytes, target branch, callback retries and existing draft barriers
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/publisher-delivery.test.mjs tests/runtime/builtin-reverification.test.mjs tests/runtime/pages-deployment.test.mjs tests/runtime/stored-draft-legacy-guards.test.mjs tests/runtime/builtin-test-delivery.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/deployment-callback.test.mjs tests/runtime/publisher-delivery.test.mjs tests/runtime/builtin-reverification.test.mjs tests/runtime/pages-deployment.test.mjs tests/runtime/stored-draft-legacy-guards.test.mjs tests/runtime/builtin-test-delivery.test.mjs

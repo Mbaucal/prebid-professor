@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { zipSync } from 'fflate';
 import { api } from '../api';
+import { formatMinimumHeightCss } from '../export/min-height-css';
+import MinimumHeightCssExport from './MinimumHeightCssExport';
 import type { AdUnit, Site } from '../shared/types';
 
 type Props = {
@@ -323,6 +325,7 @@ export default function ExportPanel({ publisherId, site }: Props) {
       return;
     }
     let cancelled = false;
+    setCssText('');
     setLoadingCss(true);
     fetch(url, { cache: 'no-store' })
       .then(async (response) => {
@@ -330,7 +333,7 @@ export default function ExportPanel({ publisherId, site }: Props) {
         return response.text();
       })
       .then((text) => {
-        if (!cancelled) setCssText(text);
+        if (!cancelled) setCssText(formatMinimumHeightCss(text));
       })
       .catch(() => {
         if (!cancelled) setCssText('');
@@ -527,16 +530,9 @@ export default function ExportPanel({ publisherId, site }: Props) {
           <pre className="export-code compact">{divs || 'No active ad units.'}</pre>
         </article>
 
-        <article className="export-card">
-          <div className="export-card-heading">
-            <div><span className="panel-kicker">Layout stability</span><h3>Minimum-height CSS</h3></div>
-            <div className="export-card-actions">
-              <button disabled={!cssText} onClick={() => void copyText(cssText, 'css')} type="button">{copied === 'css' ? '✓ Copied' : 'Copy'}</button>
-              <button disabled={!cssText} onClick={() => downloadText(cssText, `min-height-${safeFileName(site.id)}.css`, 'text/css')} type="button">Download</button>
-            </div>
-          </div>
-          <pre className="export-code compact">{loadingCss ? 'Loading CSS artifact…' : cssText || 'CSS artifact is not available for this source.'}</pre>
-        </article>
+        <MinimumHeightCssExport cssText={cssText} loading={loadingCss} copied={copied === 'css'}
+          onCopy={() => void copyText(cssText, 'css')}
+          onDownload={() => downloadText(cssText, `min-height-${safeFileName(site.id)}.css`, 'text/css')} />
 
         <article className="export-card">
           <div className="export-card-heading">

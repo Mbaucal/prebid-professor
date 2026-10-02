@@ -10,7 +10,7 @@ export function useOrganization(endpoint='/api/organization'){
   const [error,setError]=useState<string|null>(null),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false);
   const request=useCallback(async(path='',body?:unknown)=>{
     const response=await fetch(endpoint+path,{credentials:'same-origin',...(body===undefined?{}:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})});
-    const result=await response.json();if(!response.ok)throw Error(result.error||'Agency request failed.');
+    const result=await response.json() as Organization & {error?:string};if(!response.ok)throw Error(result.error||'Agency request failed.');
     return result as Organization;
   },[endpoint]);
   const reload=useCallback(async()=>{setLoading(true);try{setData(await request());setError(null);}catch(e){setError((e as Error).message);}finally{setLoading(false);}},[request]);
