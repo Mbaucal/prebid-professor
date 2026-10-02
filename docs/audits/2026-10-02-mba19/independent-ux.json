@@ -1,0 +1,86 @@
+{
+  "scope": "Actual compiled TEST Worker and reused React; local signed login and ephemeral D1/R2; synthetic 503/409 ordering; all browser URLs intercepted with external traffic blocked",
+  "checks": [
+    {
+      "width": 1440,
+      "name": "initial-loading-is-read-only",
+      "passed": true
+    },
+    {
+      "width": 1440,
+      "name": "status-503-retry",
+      "passed": true
+    },
+    {
+      "width": 1440,
+      "name": "explicit-prepare-pending",
+      "passed": true
+    },
+    {
+      "width": 1440,
+      "name": "prepare-503-retry-opens-existing-controls",
+      "passed": true
+    },
+    {
+      "width": 1440,
+      "name": "position-loading-error-retry",
+      "passed": true
+    },
+    {
+      "width": 1440,
+      "name": "position-409-recovery-keyboard",
+      "passed": true
+    },
+    {
+      "width": 1440,
+      "name": "ready-reload-preserves-section-without-prepare",
+      "passed": true
+    },
+    {
+      "width": 1440,
+      "name": "library-test-scope-visible",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "name": "initial-loading-is-read-only",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "name": "status-503-retry",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "name": "explicit-prepare-pending",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "name": "prepare-503-retry-opens-existing-controls",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "name": "position-loading-error-retry",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "name": "position-409-recovery-keyboard",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "name": "ready-reload-preserves-section-without-prepare",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "name": "library-test-scope-visible",
+      "passed": true
+    }
+  ],
+  "passed": 16
+}

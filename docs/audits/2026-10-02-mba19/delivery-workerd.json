@@ -1,0 +1,41 @@
+{
+  "scope": "LOCAL compiled workerd + Miniflare R2/D1, mocked GitHub; no hosted deployment",
+  "compiledSha256": "30d6a2409558d89fea6f5463f934bdba3983936a4f782d4094d4de25552a799f",
+  "checks": [
+    {
+      "name": "Empty delivery ledger reads without schema initialization",
+      "passed": true
+    },
+    {
+      "name": "Real R2 If-None-Match makes exactly one first setup succeed",
+      "passed": true
+    },
+    {
+      "name": "Real R2 If-Match serializes simultaneous publish requests",
+      "passed": true
+    },
+    {
+      "name": "Compiled runner can claim a private package only once",
+      "passed": true
+    },
+    {
+      "name": "Immutable delivery cache retains exact original ZIP bytes",
+      "passed": true
+    },
+    {
+      "name": "Compiled callback records success and normalizes immutable URL",
+      "passed": true
+    },
+    {
+      "name": "Deployment preserves the exact preexisting login schema and rows; no business tables added",
+      "passed": true
+    },
+    {
+      "name": "Target and deployment history survive Worker restart",
+      "passed": true
+    }
+  ],
+  "passed": 8,
+  "failed": 0,
+  "dispatches": 1
+}

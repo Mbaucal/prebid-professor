@@ -23,7 +23,7 @@ const script=await readFile(new URL(names[0],compiled),'utf8');
 const workerConfig=JSON.parse(await readFile(new URL('../ops/runtime-test/wrangler.active.jsonc',import.meta.url),'utf8'));
 const origin=workerConfig.vars.TEST_PUBLIC_ORIGIN,password=randomBytes(24).toString('hex');
 let outbound=0;
-const mf=new Miniflare({name:'test-page-browser-fixture',modules:true,script,compatibilityDate:workerConfig.compatibility_date,cf:false,host:'127.0.0.1',port:0,
+const mf=new Miniflare({name:'test-page-browser-fixture',modules:true,script,compatibilityDate:workerConfig.compatibility_date,compatibilityFlags:workerConfig.compatibility_flags,cf:false,host:'127.0.0.1',port:0,
   bindings:{...workerConfig.vars,TEST_ADMIN_EMAIL:'tester@example.invalid',TEST_ADMIN_PASSWORD:password,TEST_SESSION_SECRET:randomBytes(48).toString('hex')},
   d1Databases:{DB:'local-test-page-db'},r2Buckets:{BUILDS:'local-test-page-builds'},
   outboundService:()=>{outbound++;return new Response('No external requests in this fixture',{status:503});}});

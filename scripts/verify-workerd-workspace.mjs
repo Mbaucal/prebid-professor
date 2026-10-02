@@ -40,7 +40,7 @@ function checked(name, condition = true) { assert(condition, name); checks.push(
 function start() {
   return new Miniflare({
     name: 'local-tessera-workspace-verification', modules: true, script,
-    compatibilityDate: config.compatibility_date, host: '127.0.0.1', port: 0,
+    compatibilityDate: config.compatibility_date, compatibilityFlags: config.compatibility_flags, host: '127.0.0.1', port: 0,
     cf: false, bindings,
     // Miniflare 5 uses one shared persistence root. Legacy d1Persist/r2Persist
     // options are ignored by this version and would invalidate the restart test.

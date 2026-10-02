@@ -18,7 +18,7 @@ const bindings={...config.vars,TEST_WORKSPACE_ENABLED:'true',TEST_PUBLIC_ORIGIN:
   TEST_SESSION_SECRET:randomBytes(48).toString('hex'),TEST_DEPLOY_SECRET:secret,TEST_GITHUB_ACTIONS_TOKEN:randomBytes(32).toString('hex')};
 let mf,cookie='',dispatches=[];const checks=[];
 const check=(name,ok)=>{assert(ok,name);checks.push({name,passed:true});};
-const start=()=>new Miniflare({name:'local-delivery-test',modules:true,script,compatibilityDate:config.compatibility_date,
+const start=()=>new Miniflare({name:'local-delivery-test',modules:true,script,compatibilityDate:config.compatibility_date,compatibilityFlags:config.compatibility_flags,
   host:'127.0.0.1',port:0,cf:false,bindings,resourcePersistencePath:directory,
   d1Databases:{DB:'local-delivery-d1'},r2Buckets:{BUILDS:'local-delivery-r2'},outboundService:async request=>{
     assert.equal(request.url,'https://api.github.com/repos/Mbaucal/prebid-professor/actions/workflows/deploy-pages-release.yml/dispatches');
