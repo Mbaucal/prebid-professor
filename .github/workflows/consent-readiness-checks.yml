@@ -46,6 +46,8 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Generated scripts with real Prebid and intercepted CMP/GPT
         run: python scripts/verify-consent-readiness.py
+      - name: Atomic consent boundary and failure-detection controls
+        run: python scripts/verify-consent-boundary.py
       - name: Explicit version selection and desktop/mobile setup
         run: python scripts/verify-readiness-setup.py
       - name: Save synthetic evidence
@@ -55,5 +57,6 @@ jobs:
           name: consent-readiness-evidence
           path: |
             .generated/readiness-evidence/browser-results.json
+            .generated/readiness-evidence/boundary-results.json
             .generated/readiness-setup-evidence/*.json
             .generated/readiness-setup-evidence/*.png
