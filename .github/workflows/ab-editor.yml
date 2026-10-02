@@ -27,7 +27,7 @@ jobs:
       - name: Build app and verify pinned package/service contracts
         run: |
           npm run build
-          node --test tests/runtime/configurable-ab.test.mjs tests/runtime/ab-editor.test.mjs tests/runtime/full-cache-policy.test.mjs tests/runtime/full-cache-lifecycle.test.mjs tests/runtime/experiment-inspect.test.mjs
+          node --test tests/runtime/configurable-ab.test.mjs tests/runtime/ab-editor.test.mjs tests/runtime/full-cache-policy.test.mjs tests/runtime/position-cache-policy.test.mjs tests/runtime/full-cache-lifecycle.test.mjs tests/runtime/experiment-inspect.test.mjs
           node scripts/verify-ab-editor-workerd.mjs
           node --test tests/runtime/saved-scripts.test.mjs tests/runtime/script-library.test.mjs
           node scripts/verify-script-library-workerd.mjs
@@ -35,11 +35,15 @@ jobs:
         run: |
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
+      - name: Verify per-position auctions and controls
+        run: |
+          TANJUG_PACKAGE_DIR=.generated/script-library-delivered/positions/deploy python scripts/verify-tanjug-cache.py
+          TANJUG_PACKAGE_DIR=.generated/script-library-delivered/positions-default-off/deploy python scripts/verify-tanjug-cache.py
+          python scripts/verify-script-library-ui.py
       - name: Exercise the editor and downloaded package
         run: |
           python scripts/verify-ab-editor-ui.py
           TANJUG_PACKAGE_DIR=.generated/ab-editor-delivered/deploy python scripts/verify-tanjug-cache.py
-          python scripts/verify-script-library-ui.py
           TANJUG_PACKAGE_DIR=.generated/script-library-delivered/ab/deploy python scripts/verify-tanjug-cache.py
           TANJUG_PACKAGE_DIR=.generated/script-library-delivered/cache/deploy python scripts/verify-tanjug-cache.py
           TANJUG_PACKAGE_DIR=.generated/script-library-delivered/fresh/deploy python scripts/verify-tanjug-cache.py

@@ -47,6 +47,7 @@ try {
   const output='.generated/script-library-delivered/';await mkdir(output,{recursive:true});
   async function materialize(kind,id,label,expected){
     const response=await call('/'+kind+'/'+id+'.zip');const bytes=new Uint8Array(await response.arrayBuffer());
+    assert.equal(response.status,200,Buffer.from(bytes).toString().slice(0,1000));
     check(label+': exact offline ZIP from compiled Worker',response.status===200&&sha256(bytes)===expected.archiveSha256);
     for(const [name,data] of Object.entries(unzipSync(bytes))){const target=output+label+'/deploy/'+name;await mkdir(target.slice(0,target.lastIndexOf('/')),{recursive:true});await writeFile(target,data);}
     await writeFile(output+label+'/release.json',JSON.stringify(expected.manifest,null,2));
@@ -106,6 +107,28 @@ try {
   check('Draft release needs explicit confirmation',(await deletion('releases','draft-release',false)).status===422);
   check('Current Prebid remains protected',(await deletion('prebid-builds','current-build',true)).status===409);
   check('Archived Prebid needs explicit confirmation',(await deletion('prebid-builds','old-build',false)).status===422);
+  // Per-position settings go through the real authenticated API and compiled generator.
+  for(const positionOverrides of [{Unknown:true},{Sticky:'false'},null,[]]) {
+    const current=await(await demand()).json();
+    check('Reject invalid position map '+JSON.stringify(positionOverrides),(await demand({enabled:true,revision:current.revision,bidCache:{enabled:false,maxBidAgeSeconds:60,positionOverrides}})).status===422);
+  }
+  for(const [label,enabled,positionOverrides] of [
+    ['positions',true,{Billboard:false,Sticky:true}],
+    ['positions-default-off',false,{Billboard:false,Sticky:true}],
+  ]) {
+    const current=await(await demand()).json();
+    const response=await demand({enabled:true,revision:current.revision,bidCache:{enabled,maxBidAgeSeconds:60,positionOverrides}});
+    assert.equal(response.status,200,await response.clone().text());
+    const roundtrip=await(await demand()).json();
+    check(label+': saved overrides round-trip',roundtrip.prebidMode.bidCache.enabled===enabled&&roundtrip.prebidMode.bidCache.positionOverrides.Billboard===false&&roundtrip.prebidMode.bidCache.positionOverrides.Sticky===true);
+    check(label+': supported positions are returned',roundtrip.bidCachePositions.includes('Billboard')&&roundtrip.bidCachePositions.includes('Sticky'));
+    const state=await(await call()).json(),body={revision:state.revision,name:label,refreshSeconds:2};
+    const created=await call('/scripts',body),data=await created.json();assert.equal(created.status,201,JSON.stringify(data));
+    const expected=await buildSavedScript({...inputs,...body,settings:{mode:enabled?'auction-with-cache':'fresh-only',refreshSeconds:2,maxBidAgeSeconds:60,positionOverrides}});
+    check(label+': versioned position runtime',data.item.id===expected.id&&expected.manifest.kind==='saved-script-v2');
+    await materialize('scripts',data.item.id,label,expected);
+  }
+  check('Old downloaded cache version remains byte-identical after position changes',sha256(new Uint8Array(await(await call(suffix)).arrayBuffer()))===item.sha256);
   check('Generation made no external network request',outbound===0);
   await writeFile(output+'workerd-report.json',JSON.stringify({scope:'Compiled production Worker, ephemeral D1/R2 and synthetic identity only',checks,passed:checks.length,failed:0},null,2));
   console.log(JSON.stringify({passed:checks.length,failed:0}));

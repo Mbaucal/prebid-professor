@@ -52,3 +52,20 @@ test('names, settings, foreign baselines and corrupted archives are rejected',as
   await assert.rejects(()=>buildSavedTest({...inputs,name:'Bad',trafficBPercent:50,scripts:{A:a,B:{...b,manifest:{...b.manifest,baseline:'other'}}}}));
   assert.throws(()=>verifySavedScript(b.manifest,new Uint8Array(b.archive.length)));
 });
+
+test('position overrides produce new immutable packages and preserve old/new A/B bytes',async()=>{
+  const settings={...fresh,maxBidAgeSeconds:60,positionOverrides:{Sticky:true,Billboard:false}};
+  const p=await buildSavedScript({...inputs,name:'Position choices',settings});
+  assert.match(p.id,/^tanjug-script-2\.0\.0-/);assert.equal(p.manifest.kind,'saved-script-v2');
+  assert.deepEqual(JSON.parse(JSON.stringify(run(p).state.positionOverrides)),{Billboard:false,Sticky:true});
+  verifySavedScript(p.manifest,p.archive);
+  const reordered=await buildSavedScript({...inputs,name:'Position choices',settings:{...settings,positionOverrides:{Billboard:false,Sticky:true}}});
+  assert.deepEqual(p.archive,reordered.archive);
+  const changed=await buildSavedScript({...inputs,name:'Position choices',settings:{...settings,positionOverrides:{Billboard:true,Sticky:true}}});
+  assert.notEqual(p.id,changed.id);
+  const mixed=await buildSavedTest({...inputs,name:'Old and new',trafficBPercent:50,scripts:{A:b,B:p}});
+  for(const source of [b,p])assert.deepEqual(unzipSync(mixed.archive)[source.manifest.script.path],unzipSync(source.archive)[source.manifest.script.path]);
+  assert.equal(run(mixed,4294967295).state.scriptRelease,p.id);
+  assert.equal(run(mixed,0).state.scriptRelease,b.id);
+  for(const positionOverrides of [{},{Unknown:true},{Sticky:'false'},null,[]])assert.throws(()=>scriptSettings({...settings,positionOverrides}));
+});

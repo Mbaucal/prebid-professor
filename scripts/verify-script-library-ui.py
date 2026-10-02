@@ -7,13 +7,15 @@ root=Path(__file__).resolve().parent.parent
 out=root/'.generated/script-library-ui';out.mkdir(exist_ok=True)
 process=subprocess.Popen(['node','scripts/script-library-browser-fixture.mjs'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
 assert json.loads(process.stdout.readline())['ready']
-errors=[];requests=[];checks=[];last_saved=None
+errors=[];requests=[];checks=[];last_saved=None;hold_next_save=False;held_save=[]
 def check(name,ok):
  assert ok,name
  checks.append(name)
 def route(r):
- global last_saved
+ global last_saved,hold_next_save
  url=urlsplit(r.request.url);assert url.netloc=='tessera.fixture.invalid'
+ if hold_next_save and r.request.method=='PUT' and url.path.endswith('/prebid-mode'):
+  hold_next_save=False;held_save.append(r);return
  payload={'path':url.path+('?' + url.query if url.query else ''),'method':r.request.method,'body':r.request.post_data}
  process.stdin.write(json.dumps(payload)+'\n');process.stdin.flush()
  result=json.loads(process.stdout.readline());assert 'error' not in result,result
@@ -112,6 +114,48 @@ try:
   check('Demand off disables new scripts but preserves saved versions',page.get_by_role('button',name='Save script version',exact=True).is_disabled() and page.get_by_role('article',name='Script: Standard 10s',exact=True).count()==1)
   page.get_by_role('button',name='Edit Prebid settings',exact=True).first.click();page.get_by_role('radio').first.check()
   check('Re-enabling Prebid restores its cache choices',page.get_by_role('checkbox',name='Reuse valid, unused bids',exact=True).is_checked() and page.get_by_label('Maximum bid age (seconds)',exact=True).input_value()=='30')
+  page.get_by_role('checkbox',name='Reuse valid, unused bids',exact=True).uncheck()
+  page.get_by_role('button',name='Save Prebid settings',exact=True).click();page.get_by_text('Prebid settings saved.',exact=False).wait_for()
+  page.get_by_role('button',name='Ad positions',exact=True).click()
+  def position(code):return page.locator('.ad-unit-card').filter(has=page.locator('code',has_text=code))
+  position('Sticky').get_by_role('button',name='Bid cache: Off',exact=True).click()
+  cache_dialog=page.get_by_role('dialog',name='Bid cache · Sticky',exact=True)
+  cache_dialog.get_by_label('Bid cache for Sticky',exact=True).select_option('on')
+  hold_next_save=True
+  cache_dialog.get_by_role('button',name='Save position setting').click()
+  page.wait_for_function("document.activeElement?.getAttribute('role')==='dialog' && document.querySelector('[role=dialog] button').disabled")
+  page.keyboard.press('Tab');page.keyboard.press('Shift+Tab')
+  check('Saving keeps keyboard focus inside the busy position dialog',page.evaluate("document.activeElement?.getAttribute('role')==='dialog'") and len(held_save)==1)
+  route(held_save.pop());cache_dialog.get_by_role('status').wait_for()
+  check('Position on overrides site off',cache_dialog.get_by_text('Effective: On',exact=True).is_visible())
+  check('Position modal fits mobile',cache_dialog.bounding_box()['width']<=390)
+  page.screenshot(path=str(out/'position-cache-mobile.png'))
+  page.keyboard.press('Escape');cache_dialog.wait_for(state='detached')
+  position('Billboard').get_by_role('button',name='Bid cache: Off',exact=True).click()
+  page.get_by_label('Bid cache for Billboard',exact=True).select_option('off')
+  page.get_by_role('button',name='Save position setting').click();page.get_by_role('status').wait_for()
+  page.get_by_role('button',name='Close bid cache settings').click()
+  check('Saving another position preserves existing override',position('Sticky').get_by_role('button',name='Bid cache: On',exact=True).is_visible())
+  page.get_by_role('button',name='Demand → Prebid',exact=True).click()
+  page.get_by_role('checkbox',name='Reuse valid, unused bids',exact=True).check()
+  page.get_by_role('button',name='Save Prebid settings',exact=True).click();page.get_by_text('Prebid settings saved.',exact=False).wait_for()
+  page.get_by_role('button',name='Ad positions',exact=True).click()
+  position('Billboard').get_by_role('button',name='Bid cache: Off',exact=True).wait_for()
+  check('Changing site default preserves explicit position off',position('Sticky').get_by_role('button',name='Bid cache: On',exact=True).is_visible())
+  page.get_by_role('button',name='Releases',exact=True).click()
+  page.get_by_label('Script name',exact=True).fill('Position cache')
+  page.get_by_role('button',name='Save script version',exact=True).click();page.get_by_role('status').filter(has_text='Script saved').wait_for()
+  check('Saved package captures position choices',last_saved['settings']['positionOverrides']=={'Billboard':False,'Sticky':True} and last_saved['id'].startswith('tanjug-script-2.0.0-'))
+  page.get_by_role('button',name='Ad positions',exact=True).click()
+  position('Billboard').get_by_role('button',name='Bid cache: Off',exact=True).click()
+  page.get_by_label('Bid cache for Billboard',exact=True).select_option('inherit')
+  page.get_by_role('button',name='Save position setting').click();page.get_by_role('status').wait_for()
+  check('Returning to site setting uses current default',page.get_by_text('Effective: On',exact=True).is_visible())
+  page.get_by_role('button',name='Close bid cache settings').click()
+  page.reload();page.get_by_role('button',name='Ad positions',exact=True).click()
+  position('Billboard').get_by_role('button',name='Bid cache: On',exact=True).wait_for()
+  check('Inherited setting survives reload',position('Sticky').get_by_role('button',name='Bid cache: On',exact=True).is_visible())
+  check('Position settings introduce no UI error',not errors)
   browser.close()
 finally:
  process.stdin.close();process.wait(timeout=10)

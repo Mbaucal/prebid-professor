@@ -20,11 +20,13 @@ const cookie=login.headers.get('set-cookie').split(';')[0];
 const harness=await build({stdin:{contents:`
   import {useState} from 'react';import {createRoot} from 'react-dom/client';
   import ScriptLibraryPanel from './src/components/ScriptLibraryPanel';
+  import AdUnitsPanel from './src/components/AdUnitsPanel';
+  import './src/ad-units.css';
   import PrebidModePanel from './src/components/PrebidModePanel';
   import './src/styles.css';import './src/site-workspace/runtime.css';import './src/prebid-mode.css';
   function App(){const [tab,setTab]=useState('releases');return <main className="site-runtime-panel" style={{maxWidth:1100,margin:'auto',padding:16}}>
-    <nav><button onClick={()=>setTab('demand')}>Demand → Prebid</button><button onClick={()=>setTab('releases')}>Releases</button></nav>
-    {tab==='demand'?<PrebidModePanel publisherId="tanjug"/>:<ScriptLibraryPanel publisherId="tanjug" onOpenDemand={()=>setTab('demand')}/>}
+    <nav><button onClick={()=>setTab('positions')}>Ad positions</button><button onClick={()=>setTab('demand')}>Demand → Prebid</button><button onClick={()=>setTab('releases')}>Releases</button></nav>
+    {tab==='positions'?<AdUnitsPanel publisherId="tanjug"/>:tab==='demand'?<PrebidModePanel publisherId="tanjug"/>:<ScriptLibraryPanel publisherId="tanjug" onOpenDemand={()=>setTab('demand')}/>}
   </main>;}createRoot(document.getElementById('root')).render(<App/>);
 `,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,outdir:'.generated/ab-ui',jsx:'automatic',format:'iife',minify:true,define:{'process.env.NODE_ENV':'"production"'}});
 console.log(JSON.stringify({ready:true}));

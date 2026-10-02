@@ -4,6 +4,7 @@ import {zipSync,unzipSync} from 'fflate';
 import {sha256,integrity} from './static-aa-package.mjs';
 import {configurePreparedArm,preparePackageTemplates} from '../worker/experiments/configurable-cache-v1.mjs';
 import {savedScriptLoader,scriptSettings,displayName,SCRIPT_ID} from '../worker/experiments/saved-scripts-v1.mjs';
+import {preparePositionCacheTemplate,configurePositionCacheArm,positionScriptLoader} from '../worker/experiments/position-cache-v2.mjs';
 
 export const BASELINE_SHA='bd0d9a6973903a3ec585f88e4b815eefb7a061ec8a32593f671b53ce211dfb1e';
 const SOURCE_SHA='0faec2eccdcedbd29153357c7a94c879cdec4a8d037b16593a94a7884f242e2b';
@@ -15,7 +16,7 @@ const inventory=files=>Object.fromEntries(Object.entries(files).map(([name,bytes
 function inputs({base,previousArchive,preparedTemplates}) {
   assert.equal(sha256(base),SOURCE_SHA);assert.equal(sha256(previousArchive),BASELINE_SHA);
   const previous=unzipSync(previousArchive);assert.equal(sha256(previous['prebid.js']),PREBID_SHA);
-  const recipe=preparedTemplates??preparePackageTemplates(Buffer.from(base).toString());
+  const recipe=preparedTemplates??{...preparePackageTemplates(Buffer.from(base).toString()),positionCached:preparePositionCacheTemplate(Buffer.from(base).toString())};
   const files=Object.fromEntries(['prebid.js','sticky.css','min-height.css','_headers','404.html'].map(n=>[n,previous[n]]));
   const prebidPath=`releases/prebid-${PREBID_SHA}/prebid.js`;files[prebidPath]=previous['prebid.js'];
   return {recipe,files,context:{baseRuntime:'3.9.1',prebidVersion:'11.34.0',prebidPath,prebidIntegrity:integrity(previous['prebid.js']),
@@ -24,26 +25,29 @@ function inputs({base,previousArchive,preparedTemplates}) {
 
 export async function buildSavedScript(args) {
   const name=displayName(args.name),settings=scriptSettings(args.settings),{recipe,files,context}=inputs(args);
+  const profile=settings.positionOverrides?2:1,loader=profile===2?positionScriptLoader:savedScriptLoader;
   const paired={schemaVersion:1,trafficBPercent:50,arms:{A:settings,B:settings}};
-  let source=configurePreparedArm(settings.mode==='fresh-only'?recipe.fresh:recipe.cached,'A',paired,SENTINEL);
+  let source=profile===2?configurePositionCacheArm(recipe.positionCached,settings,SENTINEL)
+    :configurePreparedArm(settings.mode==='fresh-only'?recipe.fresh:recipe.cached,'A',paired,SENTINEL);
   const guard='window.__adVariantDelivery.release !== '+JSON.stringify(SENTINEL);
   assert.equal(source.split(guard).length,2);
   source=source.replace(guard,'window.__adVariantDelivery.scriptRelease !== '+JSON.stringify(SENTINEL));
   const template=await compact(source);
   // Include actual compiled loader bytes in identity; no request-time function.toString().
-  const loaderFingerprint=await compact(savedScriptLoader(recipe.loader,{...context,release:TEST_SENTINEL,deliveryMode:'single',script:{}}));
-  const id='tanjug-script-1.0.0-'+sha256(Buffer.concat([Buffer.from(JSON.stringify({profile:1,name,settings,baseline:BASELINE_SHA})),template,loaderFingerprint]));
+  const loaderFingerprint=await compact(loader(recipe.loader,{...context,release:TEST_SENTINEL,deliveryMode:'single',script:{}}));
+  const id=`tanjug-script-${profile}.0.0-`+sha256(Buffer.concat([Buffer.from(JSON.stringify({profile,name,settings,baseline:BASELINE_SHA})),template,loaderFingerprint]));
   const runtime=Buffer.from(template.toString().replaceAll(SENTINEL,id)),path=`releases/${id}/runtime.js`;
   const script={id,name,settings,path,sha256:sha256(runtime),integrity:integrity(runtime)};
   files[path]=runtime;
   const config={...context,release:id,deliveryMode:'single',script};
-  files['ads.js']=await compact(savedScriptLoader(recipe.loader,config));
-  const manifest={schemaVersion:1,kind:'saved-script-v1',id,name,baseline:BASELINE_SHA,settings,script,config,files:inventory(files)};
+  files['ads.js']=await compact(loader(recipe.loader,config));
+  const manifest={schemaVersion:1,kind:`saved-script-v${profile}`,id,name,baseline:BASELINE_SHA,settings,script,config,files:inventory(files)};
   const bytes=archive(files);return {id,name,settings,manifest,archive:bytes,archiveSha256:sha256(bytes)};
 }
 
 export function verifySavedScript(manifest,bytes) {
-  assert.equal(manifest.kind,'saved-script-v1');assert.equal(manifest.schemaVersion,1);assert.equal(manifest.baseline,BASELINE_SHA);
+  const profile=manifest.settings?.positionOverrides?2:1;
+  assert.equal(manifest.kind,`saved-script-v${profile}`);assert(manifest.id?.startsWith(`tanjug-script-${profile}.0.0-`));assert.equal(manifest.schemaVersion,1);assert.equal(manifest.baseline,BASELINE_SHA);
   assert(SCRIPT_ID.test(manifest.id));assert.equal(displayName(manifest.name),manifest.name);scriptSettings(manifest.settings);
   const seen=new Set();let total=0;
   const files=unzipSync(bytes,{filter(entry){const e=manifest.files[entry.name];assert(!seen.has(entry.name)&&e&&e.bytes===entry.originalSize&&e.bytes>0&&e.bytes<2*1024*1024);seen.add(entry.name);total+=e.bytes;assert(total<8*1024*1024);return true;}});
@@ -67,7 +71,8 @@ export async function buildSavedTest(args) {
     scripts[v]=saved.manifest.script;runtimes[scripts[v].path]=parts[scripts[v].path];
   }
   Object.assign(files,runtimes);
-  const template=await compact(savedScriptLoader(recipe.loader,{...context,release:TEST_SENTINEL,deliveryMode:'ab',name,trafficBPercent,scripts}));
+  const loader=Object.values(scripts).some(s=>s.settings.positionOverrides)?positionScriptLoader:savedScriptLoader;
+  const template=await compact(loader(recipe.loader,{...context,release:TEST_SENTINEL,deliveryMode:'ab',name,trafficBPercent,scripts}));
   const id='tanjug-test-1.0.0-'+sha256(template);
   files['ads.js']=Buffer.from(template.toString().replaceAll(TEST_SENTINEL,id));
   const config={...context,release:id,deliveryMode:'ab',name,trafficBPercent,scripts};

@@ -8,6 +8,8 @@ export async function seedScriptLibrary(db) {
     INSERT INTO bidders VALUES('tanjug',1);
     CREATE TABLE bidder_overrides(publisher_id TEXT);
     CREATE TABLE prebid_builds(id TEXT PRIMARY KEY,publisher_id TEXT,version TEXT,file_key TEXT,file_url TEXT,modules_json TEXT,status TEXT,uploaded_by TEXT,uploaded_at TEXT);
+    CREATE TABLE ad_units(id TEXT PRIMARY KEY,publisher_id TEXT,code TEXT,type TEXT,media_type TEXT,size_map_key TEXT,enabled INTEGER,sort_order INTEGER,notes TEXT,created_at TEXT,updated_at TEXT);
+    INSERT INTO ad_units VALUES('billboard','tanjug','Billboard','ATF','banner','Billboard',1,0,NULL,'2026-09-24','2026-09-24'),('sticky','tanjug','Sticky','ATF','banner','Sticky',1,1,NULL,'2026-09-24','2026-09-24');
     CREATE TABLE audit_log(id TEXT PRIMARY KEY,actor TEXT,action TEXT,publisher_id TEXT,entity_type TEXT,entity_id TEXT,details_json TEXT,created_at TEXT);
   `.replace(/\n/g,' '));
 }

@@ -4,7 +4,8 @@ import { readPreviewSnapshot } from './runtime/builtin-preview-service.mjs';
 import { digest } from './runtime/preview-snapshot.mjs';
 import { runtimeCatalog, prepareSiteRuntimeSelection } from './test-workspace/runtime-catalog.mjs';
 import { commitSiteConfiguration } from './site-runtime/service.mjs';
-import { bidCacheSettings, supportsNamedScripts } from './site-runtime/prebid-cache-settings.mjs';
+import { bidCacheSettings, supportsNamedScripts, hasBidCache } from './site-runtime/prebid-cache-settings.mjs';
+import { CACHE_POSITIONS } from './experiments/position-cache-settings.mjs';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -76,6 +77,7 @@ async function buildPayload(db: D1Database, siteId: string, config: JsonRecord):
   return {
     revision: await digest(config),
     bidCacheAvailable: supportsNamedScripts(site),
+    bidCachePositions: supportsNamedScripts(site) ? CACHE_POSITIONS : [],
     ok: true,
     prebidMode: {
       enabled,
@@ -149,7 +151,7 @@ export async function updatePrebidMode(
   if (Object.hasOwn(body,'bidCache') && body.revision !== await digest(config)) {
     return apiError('Prebid settings changed. Reload before saving.', 409);
   }
-  if (body.enabled && bidCache.enabled) {
+  if (body.enabled && (hasBidCache(bidCache) || bidCache.positionOverrides)) {
     const site = await env.DB.prepare('SELECT domain, gam_path FROM publishers WHERE id = ?').bind(siteId).first();
     if (!supportsNamedScripts(site)) return apiError('Bid caching is currently available for the reviewed Tanjug script generator.', 422);
   }

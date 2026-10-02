@@ -30,7 +30,7 @@ export default {
       const actor = await getAuthenticatedUser(request, env);
       return organizationResponse(request, env, actor?.email);
     }
-    const libraryMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/script-library(?:\/(scripts|tests)(?:\/(tanjug-(?:script|test)-1\.0\.0-[a-f0-9]{64})\.zip)?)?$/);
+    const libraryMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/script-library(?:\/(scripts|tests)(?:\/(tanjug-(?:script-[12]|test-1)\.0\.0-[a-f0-9]{64})\.zip)?)?$/);
     if(libraryMatch){
       const actor=await getAuthenticatedUser(request,env);
       const fail=(error:string,status:number)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'private, no-store'}});
