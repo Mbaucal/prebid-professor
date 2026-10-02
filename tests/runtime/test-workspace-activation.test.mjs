@@ -23,6 +23,8 @@ test('neither configuration is accepted under the other activation mode', () => 
   assert.throws(() => assertTestDeployment(disabled, { active: true }));
 });
 const faults = [
+  ['missing reviewed Node compatibility', (c) => { delete c.compatibility_flags; }],
+  ['unreviewed compatibility flag', (c) => { c.compatibility_flags.push('nodejs_compat_populate_process_env'); }],
   ['production worker', (c) => { c.name = 'prebid-professor'; }],
   ['other account', (c) => { c.account_id = '00000000000000000000000000000000'; }],
   ['legacy entrypoint', (c) => { c.main = '../../worker/index.ts'; }],

@@ -6,6 +6,13 @@ on:
       - src/components/BuiltinRuntimePreviewPanel.tsx
       - src/builtin-runtime-preview.css
       - src/preview/**
+      - src/site-workspace/**
+      - src/components/ScriptLibraryPanel.tsx
+      - src/components/PositionBidCachePanel.tsx
+      - src/components/PrebidModePanel.tsx
+      - src/components/ConfirmDeleteButton.tsx
+      - src/components/ab-experiments.css
+      - src/components/confirm-delete.css
       - worker/**
       - ops/runtime-test/**
       - scripts/**
@@ -49,6 +56,8 @@ jobs:
         run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs tests/runtime/site-runtime-selection.test.mjs tests/runtime/runtime-selection-cas.test.mjs tests/runtime/test-runtime-selection.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/tanjug-pilot.test.mjs
       - name: Verify read-only ads version UI routes
         run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
+      - name: Named-script TEST setup and isolated method boundaries
+        run: node --experimental-strip-types --test tests/runtime/named-script-test.test.mjs
       - name: Verify current-auction reporting and GAM-only omission
         run: node --experimental-strip-types --test tests/runtime/gam-reporting.test.mjs tests/runtime/demand-signals.test.mjs tests/runtime/identity-inspect.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/test-prebid-plan.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
@@ -68,12 +77,15 @@ jobs:
           node scripts/verify-workerd-workspace.mjs
           node scripts/verify-workerd-selection.mjs
           node scripts/verify-workerd-delivery.mjs
+          node scripts/verify-named-script-test-workerd.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
       - name: Browser settings, stale-tab protection, Generate, Save, reopen and exact download
         run: python scripts/verify-test-workspace.py
+      - name: Reused named-script UI, explicit setup, collision refusal and exact download
+        run: python scripts/verify-named-script-test-ui.py
       - name: Compare generated reporting runtime against unchanged delivery behavior
         run: |
           node --experimental-strip-types scripts/prepare-reporting-browser-fixtures.mjs
@@ -100,6 +112,8 @@ jobs:
             .generated/delivery-evidence/*.png
             .generated/reporting-evidence/browser-results.json
             .generated/demand-evidence/browser-results.json
+            .generated/named-script-test-evidence/*.json
+            .generated/named-script-test-evidence/*.png
           if-no-files-found: ignore
           retention-days: 14
   adapter-wire:

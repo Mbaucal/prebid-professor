@@ -1,0 +1,14 @@
+{
+  "scope": "Offline test activation configuration check; NOT hosted Cloudflare verification",
+  "worker": "prebid-professor-test",
+  "origin": "https://prebid-professor-test.mbaucal.workers.dev",
+  "databaseId": "d27843e4-a53c-403a-baed-04a193f6d5c6",
+  "bucket": "prebid-professor-test-builds",
+  "defaultConfigurationDisabled": true,
+  "noRoutesOrCrons": true,
+  "credentialsRead": false,
+  "hostedTest": false,
+  "deploymentPerformed": false,
+  "compiledBundlesIdentical": true,
+  "compiledSha256": "30d6a2409558d89fea6f5463f934bdba3983936a4f782d4094d4de25552a799f"
+}

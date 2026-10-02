@@ -82,7 +82,7 @@ async function call(path, body) {
 }
 const connect = () => call('/connect', {networkCode:'123456', credentials});
 try {
-  mf = new Miniflare({modules:true, script, compatibilityDate:config.compatibility_date,
+  mf = new Miniflare({modules:true, script, compatibilityDate:config.compatibility_date,compatibilityFlags:config.compatibility_flags,
     cf:false, host:'127.0.0.1', port:0, resourcePersistencePath:directory, bindings,
     d1Databases:{DB:'local-gam-database'}, r2Buckets:{BUILDS:'local-gam-files'}, outboundService:outbound});
   const login = await mf.dispatchFetch(origin + '/api/auth/login', {method:'POST', redirect:'manual',

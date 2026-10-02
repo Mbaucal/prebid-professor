@@ -15,7 +15,7 @@ export function assertTestDeployment(config, { active = false } = {}) {
     name: 'prebid-professor-test',
     account_id: 'b5e5e6f70b811e8f97af71df1af46308',
     main: '../../worker/test-workspace/index.mjs',
-    compatibility_date: '2026-07-15', workers_dev: true, preview_urls: false,
+    compatibility_date: '2026-07-15', compatibility_flags: ['nodejs_compat'], workers_dev: true, preview_urls: false,
     routes: [], triggers: { crons: [] },
     d1_databases: [{ binding: 'DB', database_name: 'prebid-professor-test-db', database_id: 'd27843e4-a53c-403a-baed-04a193f6d5c6' }],
     r2_buckets: [{ binding: 'BUILDS', bucket_name: 'prebid-professor-test-builds' }],

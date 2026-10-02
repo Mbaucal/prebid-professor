@@ -19,7 +19,7 @@ const password=randomBytes(24).toString('hex');
 const bindings={...config.vars,TEST_WORKSPACE_ENABLED:'true',TEST_PUBLIC_ORIGIN:origin,TEST_ADMIN_EMAIL:'tester@example.invalid',TEST_ADMIN_PASSWORD:password,TEST_SESSION_SECRET:randomBytes(48).toString('hex')};
 let mf,cookie='',outbound=0;const checks=[];
 const check=(name,ok)=>{assert(ok,name);checks.push({name,passed:true});};
-const start=()=>new Miniflare({name:'local-selection-test',modules:true,script,compatibilityDate:config.compatibility_date,
+const start=()=>new Miniflare({name:'local-selection-test',modules:true,script,compatibilityDate:config.compatibility_date,compatibilityFlags:config.compatibility_flags,
   host:'127.0.0.1',port:0,cf:false,bindings,resourcePersistencePath:directory,
   d1Databases:{DB:'local-selection-d1'},r2Buckets:{BUILDS:'local-selection-r2'},
   outboundService:()=>{outbound++;return new Response('No outbound requests in this test',{status:503});}});

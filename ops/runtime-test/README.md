@@ -4,9 +4,11 @@ This standalone entrypoint is built on PR #26. It reuses the approved generator,
 
 ## Scope
 
+The bounded [named-script TEST extension](NAMED-SCRIPTS.md) adds a separate, explicitly prepared Tanjug fixture and the existing named-library UI/API. Its package storage and soft-delete/restore routes are separate from the original built-in draft flow described below.
+
 A synthetic example.invalid site; GPT-only generation, optional approved TakeOver code, text-only preview, reviewed Save and verified historical ZIP download. No actual ad requests from the workspace. No CMS, email, publisher publish, deletion, bulk upload, general site management or cron. The HTML inside a downloaded candidate can request ads if separately served; do not install it live.
 
-`POST /test-api/setup` is explicit, authenticated and same-origin. It accepts only an empty database, creates checksum-locked schema without production seeds, and creates one synthetic site as one D1 batch. GET requests never initialize. Recognized schemas are reusable; other/nonempty databases are refused. Twenty-package quota includes partial upload intents. No automatic cleanup or destructive reset.
+`POST /test-api/setup` is explicit, authenticated and same-origin. It accepts only an empty database, creates checksum-locked schema without production seeds, and creates one synthetic site as one D1 batch. GET requests never initialize. Recognized schemas are reusable; other/nonempty databases are refused. The built-in draft twenty-package quota includes partial upload intents; it does not cover the separate named-script library. No automatic cleanup or destructive reset.
 
 Generate performs no R2 write. A 20-minute signed review receipt binds the actor, origin, configuration, runtime, timestamp, TakeOver choice and exact package hash. Save accepts that receipt, not uploaded files, and compares the deterministic regenerated package before using the immutable store. Historical reads verify saved bytes without regenerating. Failed/uncertain storage is retained for exact retry.
 

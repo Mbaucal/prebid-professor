@@ -55,3 +55,6 @@ execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-inventory-previ
 execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-layout-preview.mjs', import.meta.url))], { stdio: 'inherit' });
 
 execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-agency-workspace.mjs', import.meta.url))], { stdio: 'inherit' });
+
+execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-site-ab-baseline.mjs', import.meta.url))], { stdio: 'inherit' });
+execFileSync(process.execPath, [fileURLToPath(new URL('./prepare-named-script-test.mjs', import.meta.url))], { stdio: 'inherit' });

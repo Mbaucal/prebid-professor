@@ -4,6 +4,7 @@
   "account_id": "b5e5e6f70b811e8f97af71df1af46308",
   "main": "../../worker/test-workspace/index.mjs",
   "compatibility_date": "2026-07-15",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
   "routes": [],
