@@ -223,6 +223,7 @@ with sync_playwright() as p:
      # Observe loading with no additional callback, then identical loading events.
      page.evaluate('''()=>{for(const callback of window.__fixtureCmpListeners)callback({gdprApplies:true,cmpStatus:'loading',listenerId:1},true);}''')
      page.clock.fast_forward(1000)
+     assert copy_report()['consentWait']['phase']=='cmp-loading'
      page.clock.fast_forward(31000)
      expect(page.locator('[data-consent]')).to_have_text('Consent wait is taking longer')
      assert copy_report()['consentWait']['prolonged']
