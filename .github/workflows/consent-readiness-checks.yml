@@ -39,7 +39,9 @@ jobs:
           node scripts/prepare-test-workspace.mjs
           node --experimental-strip-types scripts/prepare-readiness-browser-fixtures.mjs
       - name: Consent, deadline, reporting and pending-slot regressions
-        run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
+        run: |
+          node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
+          node tests/runtime/cmp-recovery-experiment.test.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0
@@ -50,6 +52,9 @@ jobs:
         run: python scripts/verify-consent-boundary.py
       - name: Explicit version selection and desktop/mobile setup
         run: python scripts/verify-readiness-setup.py
+      - name: Experimental CMP recovery safety with native Prebid
+        # Draft investigation: known unsafe native cases must fail this check.
+        run: python scripts/verify-cmp-recovery-experiment.py
       - name: Save synthetic evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -60,3 +65,4 @@ jobs:
             .generated/readiness-evidence/boundary-results.json
             .generated/readiness-setup-evidence/*.json
             .generated/readiness-setup-evidence/*.png
+            .generated/cmp-recovery-native/results.json
