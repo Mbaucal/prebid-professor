@@ -28,7 +28,7 @@ jobs:
       - run: node --experimental-strip-types scripts/prepare-site-ab-baseline.mjs
       - name: Verify login redirects and publisher HTML isolation
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/auth-redirect.test.mjs tests/runtime/login-rate-limit.test.mjs tests/runtime/test-login-security.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/release-html-security.test.mjs
-      - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/site-draft.test.mjs tests/runtime/test-site-editor-http.test.mjs tests/runtime/ad-position-runtime.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/site-duplication.test.mjs tests/runtime/site-package-flow.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/size-map-csv-template.test.mjs tests/runtime/site-test-page.test.mjs
+      - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/site-draft.test.mjs tests/runtime/test-site-editor-http.test.mjs tests/runtime/ad-position-runtime.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/site-duplication.test.mjs tests/runtime/site-package-flow.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/size-map-csv-template.test.mjs tests/runtime/site-test-page.test.mjs tests/runtime/consent-wait-observer.test.mjs
       - run: npm run build
       - name: Verify security boundaries in the compiled production Worker
         run: node scripts/verify-artifact-boundary.mjs && node scripts/verify-auth-boundaries.mjs
