@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/isolated-runtime-workspace-v1]
   pull_request:
-    branches: [main]
+    branches: [main, feature/isolated-runtime-workspace-v1]
 
 permissions:
   contents: read
@@ -22,7 +22,10 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Check browser, Worker and build-tool types
+        run: npm run typecheck
 
       - name: Build dashboard and Worker
         run: npm run build

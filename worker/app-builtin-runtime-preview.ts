@@ -1,3 +1,5 @@
+import { organizationResponse } from './organization/service.mjs';
+import { gamResponse } from './integrations/gam-service.mjs';
 import { blockStoredDraftCdn } from './runtime/stored-draft-safety.mjs';
 import baseApp from './app-ads-txt-managed-file';
 import { getAuthenticatedUser, isSameOriginMutation, type AuthEnv } from './auth';
@@ -6,16 +8,59 @@ import { previewInput, digest } from './runtime/preview-snapshot.mjs';
 import { handlePrebidPreflight } from './runtime/prebid-preflight-service.mjs';
 import { handleArtifactBundle } from './runtime/artifact-bundle-service.mjs';
 import type { ReleaseEnv } from './releases';
-interface Env extends AuthEnv, ReleaseEnv { ASSETS: Fetcher }
+import { siteRuntimeResponse } from './site-runtime/service.mjs';
+import { packageResponse, packageAssetResponse, builtInCdn } from './site-runtime/releases.mjs';
+import { packageTestPageResponse } from './site-runtime/test-page.mjs';
+interface Env extends AuthEnv, ReleaseEnv { ASSETS: Fetcher; GAM_CREDENTIALS_KEY?: string }
 const downstream = baseApp as {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
   scheduled?(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> | void;
 };
 export default {
   async fetch(request, env, ctx): Promise<Response> {
+    try { const cdn = await builtInCdn(request,env); if(cdn)return cdn; }
+    catch { return new Response('Release file unavailable',{status:404,headers:{'cache-control':'no-store'}}); }
     const draftBlock = blockStoredDraftCdn(request);
     if (draftBlock) return draftBlock;
     const url = new URL(request.url);
+    if (url.pathname === '/api/organization' || url.pathname.startsWith('/api/organization/')) {
+      const actor = await getAuthenticatedUser(request, env);
+      return organizationResponse(request, env, actor?.email);
+    }
+    if (url.pathname.startsWith('/api/integrations/gam/')) {
+      const actor = await getAuthenticatedUser(request, env);
+      if (!actor) return new Response(JSON.stringify({error:'Authentication required.'}), {status:401,headers:{'content-type':'application/json','cache-control':'no-store'}});
+      return gamResponse(request,env,actor.email);
+    }
+
+    const packageMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-releases(?:\/(builtin-release-[a-f0-9]{64})\/(index|test-page|files\/([a-zA-Z][a-zA-Z0-9.-]*)))?$/);
+    if(packageMatch){
+      const actor=await getAuthenticatedUser(request,env);
+      const fail=(error:string,status:number)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'private, no-store'}});
+      if(!actor)return fail('Authentication required.',401);
+      if(!isSameOriginMutation(request)||(request.method==='POST'&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
+      if(packageMatch[3]==='test-page')return packageTestPageResponse(request,env,packageMatch[1],packageMatch[2]);
+      if(packageMatch[2])return packageAssetResponse(request,env,packageMatch[1],packageMatch[2],packageMatch[4]??null);
+      return packageResponse(request,env,packageMatch[1],actor.email);
+    }
+    // Built-in releases are changed only through the verified package workflow.
+    if(/^\/api\/publishers\/[^/]+\/releases\/builtin-release-[a-f0-9]{64}(?:\/|$)/.test(url.pathname)&&!['GET','HEAD'].includes(request.method))return new Response(JSON.stringify({error:'Use Generate and releases for this built-in package.'}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});
+    const oldGenerate=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/releases\/(generate|validate)$/);
+    if(oldGenerate){
+      if(!await getAuthenticatedUser(request,env))return new Response('Authentication required.',{status:401});
+      const row=await env.DB?.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=?').bind(oldGenerate[1]).first<{config_json:string}>();
+      if(row&&JSON.parse(row.config_json).builtinRuntimeSelection)return new Response(JSON.stringify({error:'Use Generate and releases with the saved built-in script version.'}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});
+    }
+    const settingsMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-site-settings$/);
+    if(settingsMatch){
+      const actor=await getAuthenticatedUser(request,env);
+      const fail=(error:string,status:number)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'private, no-store'}});
+      if(!actor)return fail('Authentication required.',401);
+      if(url.search)return fail('Unknown query.',400);
+      if(!['GET','POST'].includes(request.method))return fail('Method not allowed.',405);
+      if(!isSameOriginMutation(request)||(request.method==='POST'&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
+      return siteRuntimeResponse(request,env,settingsMatch[1],actor.email);
+    }
     const match = url.pathname.match(/^\/api\/publishers\/([^/]+)\/(builtin-runtime-preview|builtin-runtime-prebid-check|builtin-runtime-bundle)$/);
     if (!match) return downstream.fetch(request, env, ctx);
     const headers = { 'content-type': 'application/json', 'cache-control': 'private, no-store' };

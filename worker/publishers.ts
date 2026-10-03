@@ -8,9 +8,11 @@ import type {
   Site,
 } from '../src/shared/types';
 import { apiError, getActor, json, readJson } from './http';
+import { prepareDuplicatedPrebid } from './prebid-duplicate.mjs';
 
 export interface DatabaseEnv {
   DB?: D1Database;
+  BUILDS?: R2Bucket;
 }
 
 type SiteRow = {
@@ -319,15 +321,25 @@ async function duplicateSiteRecord(
   config.domain = domain;
   config.gamPath = gamPath;
 
+  if (await fetchSite(env.DB, id)) throw new Error('Site id already exists (unique).');
+  const copied = await prepareDuplicatedPrebid(env, sourceId, id, config, Boolean(input.copyPrebidBuild));
+  const currentBuilds = JSON.stringify(copied.sourceRows.map((row: Record<string, unknown>) =>
+    [row.id, row.version, row.file_key, row.modules_json, row.uploaded_at]));
+
   const statements: D1PreparedStatement[] = [
     env.DB
       .prepare(
         `INSERT INTO publishers (
           id, publisher_account_id, name, domain, gam_path, status, current_version,
           ads_txt_url, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?)`,
+        ) SELECT ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?
+        WHERE (SELECT config_json FROM publisher_configs WHERE publisher_id=? LIMIT 1)=?
+          AND (SELECT json_group_array(json_array(id,version,file_key,modules_json,uploaded_at))
+            FROM (SELECT id,version,file_key,modules_json,uploaded_at FROM prebid_builds
+              WHERE publisher_id=? AND status='current' ORDER BY uploaded_at DESC,id LIMIT 2))=?`,
       )
-      .bind(id, publisherAccountId, name, domain, gamPath, status, adsTxtUrl, now, now),
+      .bind(id, publisherAccountId, name, domain, gamPath, status, adsTxtUrl, now, now,
+        sourceId, sourceConfig?.config_json ?? null, sourceId, currentBuilds),
     env.DB
       .prepare(
         `INSERT INTO publisher_configs (
@@ -396,7 +408,7 @@ async function duplicateSiteRecord(
     );
   }
 
-  if (input.copyPrebidBuild) {
+  if (copied.build) {
     statements.push(
       env.DB
         .prepare(
@@ -404,13 +416,10 @@ async function duplicateSiteRecord(
             id, publisher_id, version, file_key, file_url, modules_json, status,
             uploaded_by, uploaded_at
           )
-          SELECT lower(hex(randomblob(16))), ?, version, file_key, file_url,
-                 modules_json, 'current', ?, ?
-          FROM prebid_builds
-          WHERE publisher_id = ? AND status = 'current'
-          ORDER BY uploaded_at DESC LIMIT 1`,
+          VALUES (?, ?, ?, ?, ?, ?, 'current', ?, ?)`,
         )
-        .bind(id, actor, now, sourceId),
+        .bind(copied.build.id, id, copied.build.version, copied.build.file_key,
+          copied.build.file_url, copied.build.modules_json, actor, now),
     );
   }
 

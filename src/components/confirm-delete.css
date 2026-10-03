@@ -1,0 +1,7 @@
+.confirm-delete { width:min(460px,calc(100vw - 32px)); box-sizing:border-box; border:1px solid #d4dbe5; border-radius:16px; padding:24px; color:#1f2937; background:#fff; box-shadow:0 24px 70px #0004; }
+.confirm-delete::backdrop { background:#0f172a80; }
+.confirm-delete h2 { margin:0 0 16px; }
+.confirm-delete p { line-height:1.5; }
+.confirm-delete-name { font-weight:700; overflow-wrap:anywhere; }
+.confirm-delete [role=alert] { color:#b42318; }
+.confirm-delete-actions { display:flex; justify-content:flex-end; gap:12px; margin-top:24px; }

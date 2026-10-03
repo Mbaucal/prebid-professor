@@ -45,7 +45,7 @@ function manifestBytes(manifest: Record<string, unknown> | null): number {
     return 0;
   }
 
-  return Object.values(manifest.files as Record<string, unknown>).reduce((total, value) => {
+  return Object.values(manifest.files as Record<string, unknown>).reduce<number>((total, value) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return total;
     const size = Number((value as Record<string, unknown>).size);
     return total + (Number.isFinite(size) && size > 0 ? size : 0);

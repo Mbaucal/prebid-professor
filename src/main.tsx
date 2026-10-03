@@ -4,47 +4,8 @@ import App from './App';
 import AdsTxtCmsConnectionPortal from './components/AdsTxtCmsConnectionPortal';
 import AdsTxtManagedFilePortal from './components/AdsTxtManagedFilePortal';
 import AdsTxtRequirementsCollapse from './components/AdsTxtRequirementsCollapse';
-import AuthAccount from './components/AuthAccount';
 import TesseraBranding from './components/TesseraBranding';
-import './styles.css';
-import './publisher-workflows.css';
-import './publisher-hierarchy.css';
-import './ad-units.css';
-import './bidders.css';
-import './bidder-build-selection.css';
-import './imports.css';
-import './size-maps.css';
-import './size-maps-compat.css';
-import './unit-rules.css';
-import './prebid-builds.css';
-import './prebid-storage.css';
-import './generator-profiles.css';
-import './advanced-refresh.css';
-import './runtime-controls.css';
-import './supply-chain-consent.css';
-import './user-id-modules.css';
-import './prebid-mode.css';
-import './releases.css';
-import './release-diff.css';
-import './release-deletion.css';
-import './external-deployments.css';
-import './export.css';
-import './mockup-builder.css';
-import './debug-console.css';
-import './ads-txt.css';
-import './ads-txt-requirements-collapse.css';
-import './ads-txt-managed-file.css';
-import './ads-txt-cms-connection.css';
-import './global-workspaces.css';
-import './monitoring-readonly.css';
-import './monitoring-email-preview.css';
-import './monitoring-email-send.css';
-import './monitoring-notification-rules.css';
-import './gmail-connection.css';
-import './tessera-branding.css';
-import './auth-account.css';
-import './admin-helpers.css';
-import './ads-txt-admin-guide.css';
+import './dashboard-styles';
 
 const root = document.getElementById('root');
 
@@ -59,6 +20,5 @@ createRoot(root).render(
     <AdsTxtRequirementsCollapse />
     <AdsTxtManagedFilePortal />
     <AdsTxtCmsConnectionPortal />
-    <AuthAccount />
   </StrictMode>,
 );

@@ -1,0 +1,51 @@
+{
+  "scope": "production handlers + local SQLite + fake R2; no external traffic",
+  "results": [
+    {
+      "case": "source readiness",
+      "status": "passed",
+      "detail": "Real saved runtime selection and Prebid artifact validate before duplication."
+    },
+    {
+      "case": "duplicate, copyPrebidBuild=true",
+      "status": "failed",
+      "httpStatus": 201,
+      "savedPinId": "build-source",
+      "currentBuildId": "ba47514e1499d53d81a9089e18da8ae3",
+      "sharesSourceObject": true,
+      "runtimeError": {
+        "code": "prebid_selection_required",
+        "message": "Select the exact current Prebid build for this site."
+      },
+      "artifactIssues": [
+        "unverified_build_path"
+      ]
+    },
+    {
+      "case": "duplicate, copyPrebidBuild=false",
+      "status": "failed",
+      "httpStatus": 201,
+      "savedPinId": "build-source",
+      "currentBuildId": null,
+      "sharesSourceObject": false,
+      "runtimeError": {
+        "code": "prebid_selection_required",
+        "message": "Select the exact current Prebid build for this site."
+      },
+      "artifactIssues": [
+        "current_build_missing_or_ambiguous"
+      ]
+    },
+    {
+      "case": "source preservation",
+      "status": "passed"
+    },
+    {
+      "case": "delete archived build on duplicate preserves original site artifact",
+      "status": "failed",
+      "deleteStatus": 200,
+      "originalArtifactPresent": false,
+      "sourceError": "The selected Prebid file is missing."
+    }
+  ]
+}
