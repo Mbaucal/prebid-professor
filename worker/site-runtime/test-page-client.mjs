@@ -12,6 +12,24 @@ export function readTestPageConsent(runtime, {started, ads, prebid}) {
   } catch { return state; }
 }
 
+// Passive observation only: elapsed time starts when this page first sees a phase.
+// A repeated snapshot or callback is not progress. No CMP calls or serving timers.
+export function createConsentWaitObserver(now = () => performance.now()) {
+  let phase = null, since = null;
+  return consent => {
+    const pending = consent.status === 'available' && consent.ready === false;
+    if (!pending) {
+      if (consent.ready === true || consent.status === 'not-started') { phase = null; since = null; }
+      return null;
+    }
+    const time = now();
+    if (phase !== consent.phase || since === null) { phase = consent.phase; since = time; }
+    const observedSeconds = Math.max(0, Math.floor((time - since) / 1000));
+    const prolonged = observedSeconds >= 30 && ['cmp-loading','cmp-error','scope-unknown'].includes(phase);
+    return {phase, observedSeconds, prolonged};
+  };
+}
+
 // Bundled as a complete browser program, then embedded as data in the Worker.
 export function testPageClient() {
   'use strict';
@@ -25,6 +43,7 @@ export function testPageClient() {
   let consoleSnapshot = null;
   let startedViewport = null, scanPosition = '', renderPending = false;
   const stickyViews = new Map();
+  const observeConsentWait = createConsentWaitObserver();
   const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
   const scrollBehavior = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
   function scheduleRender() {
@@ -55,10 +74,11 @@ export function testPageClient() {
       try { googletag.pubads().getSlots().forEach(slot => { const id = slot.getSlotElementId(); slots.set(id,[...(slots.get(id) || []),slot]); }); }
       catch (e) { record(e.message); }
     }
+    const consent = readTestPageConsent(window.__tesseraReadiness,{started,ads:assets.ads,prebid:assets.prebid});
     return {
       testedAt:new Date().toISOString(), siteId:model.siteId, releaseId:model.releaseId, runtimeVersion:model.runtimeVersion,
       prebidVersion:model.prebidVersion, assets:{...assets}, viewport:{width:innerWidth,height:innerHeight}, startedViewport, gptReady:!!window.googletag?.apiReady,
-      consent:readTestPageConsent(window.__tesseraReadiness,{started,ads:assets.ads,prebid:assets.prebid}),
+      consent, consentWait:observeConsentWait(consent),
       consoleSnapshot, cssPreviews:[...stickyViews].filter(([,view]) => view.preview).map(([id]) => id),
       units:model.units.map(unit => {
         const nodes = dom.get(unit.id) || [], found = slots.get(unit.id) || [], path = found[0]?.getAdUnitPath() || null;
@@ -152,8 +172,12 @@ export function testPageClient() {
       : consent.status !== 'available' ? ['Consent diagnostics unavailable','This package does not provide a readable consent status. Script loading and slot registration do not verify consent.']
       : consent.phase === 'decision-ready' ? ['CMP decision ready','A CMP decision is available. This can include rejection; GPT and Prebid still apply that decision. This is not a passed consent test.']
       : consent.phase === 'user-decision' ? ['Waiting for user decision','The CMP is waiting for a choice. Ad requests remain paused until a decision is available.']
+      : s.consentWait?.prolonged ? ['Consent wait is taking longer','The CMP has not supplied a complete decision for at least 30 seconds in the observed state. This may be a delay, not a failure. Requests remain paused; a later valid decision can resume the saved script. Check the publisher CMP and network on the publisher website.']
       : consent.phase === 'cmp-missing' ? ['Waiting for publisher consent','This isolated page does not load the publisher CMP. Test this package on the publisher website to check consent.']
       : ['Waiting for publisher consent','The CMP has not supplied a complete decision and scope. Ad requests remain paused.'];
+    const waitTime = one('[data-consent-time]');
+    waitTime.hidden = !s.consentWait;
+    setText(waitTime, s.consentWait ? 'Current consent state observed for ' + s.consentWait.observedSeconds + 's on this page.' : '');
     consentTag.hidden = consentDetail.hidden = !started;
     setText(consentTag, consentCopy[0]); consentTag.className = 'pill' + (waitingConsent ? ' wait' : '');
     setText(consentDetail, consentCopy[1]);
