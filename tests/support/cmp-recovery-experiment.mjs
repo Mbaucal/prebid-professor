@@ -18,8 +18,10 @@ export function createCmpRecoveryExperiment(host) {
     if (disposed) return;
     const api = typeof host.__tcfapi === 'function' ? host.__tcfapi : null;
     if (!active || active.api !== api) {
-      detach(active);invalidate();
+      const previous = active;
       const record = active = {api,live:true,id:null,removed:new Set(),generation:++generation};
+      detach(previous);invalidate();
+      if(active!==record || (typeof host.__tcfapi==='function'?host.__tcfapi:null)!==api) { inspect();return; }
       if (api) {
         metrics.registrations++;
         try {
@@ -44,10 +46,80 @@ export function createCmpRecoveryExperiment(host) {
   }
   function poll() { inspect();if(!disposed)timer=host.setTimeout(poll,250); }
   const facade = Object.create(host);
+  // Scheduled readiness work must observe replacement before using cached consent.
+  facade.setTimeout = (fn, ms) => host.setTimeout(() => { inspect(); if (!disposed) fn(); }, ms);
+  facade.clearTimeout = id => host.clearTimeout(id);
   facade.__tcfapi = (command,version,fn) => {
     if (command !== 'addEventListener' || callback || disposed) return;
     callback=fn;poll();
   };
-  return {facade, snapshot:()=>({...metrics,generation,pendingTimer:timer!==null,disposed}),
+  function createReadiness(factory, options) {
+    let gate, nativePb = null, guardedPb = null;
+    const requestState = Symbol('experiment request epoch');
+    const dispatchState = new WeakMap();
+    Object.defineProperty(facade,'pbjs',{get() {
+      if (nativePb === host.pbjs) return guardedPb;
+      nativePb=host.pbjs;
+      if (!nativePb) return guardedPb=nativePb;
+      const pb=nativePb;guardedPb=Object.create(pb);
+      guardedPb.getAdserverTargetingForAdUnitCode=(...args)=>{
+        inspect();const before=generation,epoch=gate.snapshot().consent.epoch;
+        const values=pb.getAdserverTargetingForAdUnitCode(...args);
+        inspect();
+        return !disposed && generation===before && gate.snapshot().consent.ready && gate.snapshot().consent.epoch===epoch ? values : {};
+      };
+      return guardedPb;
+    }});
+    const wrappedOptions = {...options,
+      alive(slot) {
+        inspect();
+        dispatchState.set(slot,{generation,epoch:gate.snapshot().consent.epoch});
+        return !options.alive || options.alive(slot);
+      },
+      rawRequest(pb, input) {
+        const epoch = gate.snapshot().consent.epoch;
+        if(input[requestState])input[requestState].epoch=epoch;
+        inspect();
+        if (disposed || !gate.snapshot().consent.ready || gate.snapshot().consent.epoch !== epoch) return;
+        const guarded = Object.create(pb);
+        guarded.requestBids = next => {
+          inspect();
+          if (disposed || !gate.snapshot().consent.ready || gate.snapshot().consent.epoch !== epoch) return;
+          const callback = next.bidsBackHandler;
+          return pb.requestBids({...next,bidsBackHandler(...args) {
+            inspect();
+            if (!disposed) return callback?.apply(this,args);
+          }});
+        };
+        return options.rawRequest(guarded,input);
+      },
+      rawDispatch(service, slots, settings) {
+        inspect();
+        if (disposed) return;
+        const consent=gate.snapshot().consent;
+        const current=slots.every(slot=>{const state=dispatchState.get(slot);return state && state.generation===generation && state.epoch===consent.epoch;});
+        if (!current || !consent.ready) {
+          gate.dispatch(service,slots,settings);return;
+        }
+        return options.rawDispatch(service,slots,settings);
+      }
+    };
+    gate = factory(facade,wrappedOptions);
+    return Object.fromEntries(Object.entries(gate).map(([name,fn]) => [name,(...args) => {
+      inspect();
+      if (disposed && name !== 'snapshot' && name !== 'targeting') return;
+      if(name==='request') {
+        const [pb,input]=args,state={epoch:null},callback=input.bidsBackHandler;
+        return fn(pb,{...input,[requestState]:state,bidsBackHandler(...values) {
+          inspect();
+          if(disposed)return;
+          const current=gate.snapshot().consent;
+          return callback?.(...(current.ready && current.epoch===state.epoch ? values : [undefined,undefined,undefined]));
+        }});
+      }
+      return fn(...args);
+    }]));
+  }
+  return {facade, createReadiness, snapshot:()=>({...metrics,generation,pendingTimer:timer!==null,disposed}),
     dispose() { if(disposed)return;disposed=true;host.clearTimeout(timer);timer=null;detach(active);invalidate();callback=null;active=null; }};
 }
