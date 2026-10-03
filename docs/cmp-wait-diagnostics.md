@@ -1,0 +1,13 @@
+# CMP waiting observation (MBA-190, first slice)
+
+The existing saved-package Test page observes the existing readiness snapshot. After 30 seconds in a continuous observed `cmp-loading`, `scope-unknown` or `cmp-error` phase it displays “Consent wait is taking longer”. This is a diagnostic threshold, not a serving timeout or proof of a broken CMP. No CMP listeners, retries, reinjection, consent overrides, requests, runtime versions or saved package bytes are added or changed.
+
+The page shows seconds in the current observed phase. The monotonic observer begins when the page first sees that phase, not when the publisher CMP first loaded. Identical snapshots/callbacks do not reset it. A changed phase starts a new interval; ready clears it; a subsequent loading state starts fresh. An unavailable snapshot hides diagnostics but retains the prior interval so a transient read failure cannot erase a prolonged wait. Restart creates a new observer. A user decision can take any duration without being labelled stalled. Missing CMP retains the explanation that this isolated page does not load the publisher CMP. Elapsed text is outside live regions, and status explanations change only when the state changes.
+
+Copy report keeps the existing `consent` allowlist and adds nullable `consentWait` with only `phase`, `observedSeconds` and `prolonged`. No raw TC/EID or arbitrary error data is copied through this observer.
+
+Frozen 3.14 exposes phase/ready/epoch only. It cannot tell a silent stub from loading with callbacks; thrown registration can remain `cmp-loading` in its snapshot. A nonforwarding stub replaced after listener registration is not repaired by this UI. Later valid decisions delivered to the existing listener can clear the warning and allow the existing runtime to resume under native consent enforcement. No claim of provider repair or complete MBA-190 recovery is made.
+
+Remaining MBA-190 work requires a separately reviewed, explicitly selected runtime version for listener replacement/cleanup and richer callback/progress diagnostics, plus actual locked-Prebid browser coverage. Limited Ads fallback needs its own verified publisher/CMP/GPT integration decision. No fallback is enabled here.
+
+Validation uses the existing isolated compiled Worker Test-page fixture, synthetic GPT and unchanged 3.14 GAM-only package; external requests are intercepted. It covers desktop/narrow prolonged loading, repeated loading callbacks, prolonged user choice, late rejection and unavailable/recovery, alongside existing script/GPT/Prebid load failures and restart. This does not establish native Prebid or real publisher serving behavior.

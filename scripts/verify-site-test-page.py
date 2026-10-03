@@ -145,6 +145,7 @@ with sync_playwright() as p:
     field=page.locator('[data-report]');expect(field).to_be_visible();expect(field).to_be_focused()
     return json.loads(field.input_value())
    try:
+    if scenario=='missing-late-decision': page.clock.install()
     page.goto('https://tessera.fixture.invalid/consent-test')
     expect(page.locator('[data-consent]')).to_be_hidden()
     if scenario in ('script-error','prebid-error'):
@@ -209,7 +210,7 @@ with sync_playwright() as p:
     assert 'All ' not in page.locator('[data-summary]').inner_text()
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
     if scenario=='missing-late-decision':
-     page.clock.install();page.clock.fast_forward(33000)
+     page.clock.fast_forward(33000)
      assert not page.evaluate('__testAds.observations.requests.length')
      report=copy_report()
      assert report['consent']=={'status':'available','phase':'cmp-missing','ready':False,'epoch':0}
@@ -219,6 +220,22 @@ with sync_playwright() as p:
        if(command==='addEventListener'){window.__fixtureCmpListeners.push(callback);callback({gdprApplies:true,cmpStatus:'loaded',eventStatus:'cmpuishown',listenerId:1},true);}
      };}''')
      page.clock.fast_forward(1500)
+     # Observe loading with no additional callback, then identical loading events.
+     page.evaluate('''()=>{for(const callback of window.__fixtureCmpListeners)callback({gdprApplies:true,cmpStatus:'loading',listenerId:1},true);}''')
+     page.clock.fast_forward(1000)
+     page.clock.fast_forward(31000)
+     expect(page.locator('[data-consent]')).to_have_text('Consent wait is taking longer')
+     assert copy_report()['consentWait']['prolonged']
+     assert not page.evaluate('__testAds.observations.requests.length')
+     page.evaluate('''()=>{for(let i=0;i<10;i++)for(const callback of window.__fixtureCmpListeners)callback({gdprApplies:true,cmpStatus:'loading',listenerId:1},true);}''')
+     page.clock.fast_forward(1000)
+     assert copy_report()['consentWait']['observedSeconds']>=30
+     expect(page.locator('[data-consent-detail]')).to_contain_text('Requests remain paused')
+     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+     page.screenshot(path=str(out/f'consent-prolonged-{width}.png'),full_page=True)
+     page.evaluate('''()=>{for(const callback of window.__fixtureCmpListeners)callback({gdprApplies:true,cmpStatus:'loaded',eventStatus:'cmpuishown',listenerId:1},true);}''')
+     page.clock.fast_forward(33000)
+     assert not copy_report()['consentWait']['prolonged']
      expect(page.locator('[data-consent]')).to_have_text('Waiting for user decision')
      assert not page.evaluate('__testAds.observations.requests.length')
      page.screenshot(path=str(out/f'consent-user-decision-{width}.png'),full_page=True)
@@ -233,6 +250,7 @@ with sync_playwright() as p:
      page.evaluate('''()=>{const snapshot=window.__tesseraReadiness.snapshot;window.__tesseraReadiness.snapshot=()=>{
        const state=snapshot();state.consent.tcString='private-tc';state.consent.vendor={consents:{1:true}};state.events=[{identity:'private-id'}];return state;};}''')
      report=copy_report();assert report['consent']=={'status':'available','phase':'decision-ready','ready':True,'epoch':1}
+     assert report['consentWait'] is None
      consent_evidence['lateDecision']={'consent':report['consent'],'dispatches':page.evaluate('__testAds.observations.requests.length')}
      assert all(value not in json.dumps(report) for value in ('private-tc','private-id','tcString','synthetic-decision-no-real-user','vendor'))
      page.screenshot(path=str(out/f'consent-ready-{width}.png'),full_page=True)
