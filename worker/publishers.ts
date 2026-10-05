@@ -1,3 +1,4 @@
+import { ensureAdsTxtVersionIntents } from './ads-txt-version-intents';
 import type {
   CreatePublisherInput,
   CreateSiteInput,
@@ -491,18 +492,52 @@ export async function deleteSite(
   siteId: string,
 ): Promise<Response> {
   if (!env.DB) return databaseMissing();
+  await ensureAdsTxtVersionIntents(env.DB);
+  const intents = await env.DB.prepare('SELECT id, object_key, state FROM ads_txt_version_intents WHERE site_id = ?')
+    .bind(siteId).all<{id:string;object_key:string;state:string}>();
+  if (intents.results.some(intent => intent.state === 'writing')) return apiError('A version save is still pending. Try again after it finishes; contact support if this continues.', 409);
   const site = await fetchSite(env.DB, siteId);
-  if (!site) return apiError('Site not found.', 404);
+  if (!site && !intents.results.length) return apiError('Site not found.', 404);
+  try {
+    if (intents.results.length && !env.BUILDS) return apiError('Snapshot storage is unavailable. Retry when storage is restored.', 503);
+    for (const intent of intents.results) {
+      await env.BUILDS!.delete(intent.object_key);
+      await env.DB.prepare("DELETE FROM ads_txt_version_intents WHERE id = ? AND state = 'cleanup'").bind(intent.id).run();
+    }
+  } catch { return apiError('Snapshot cleanup is incomplete. Retry deleting the site to finish cleanup.', 503); }
+  if (!site) return json({ok:true,deletedId:siteId});
 
+  // Keep site and snapshot metadata until every R2 deletion succeeds. R2 deletes
+  // are idempotent, so retrying a partial failure can still discover every key.
+  const versionsTable = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ads_txt_versions'").first();
+  let snapshotKeys: string[] = [];
+  if (versionsTable) {
+    const snapshots = await env.DB.prepare('SELECT object_key FROM ads_txt_versions WHERE site_id = ?').bind(siteId).all<{object_key:string}>();
+    snapshotKeys = snapshots.results.map(snapshot => snapshot.object_key);
+    if (snapshots.results.length && !env.BUILDS) return apiError('Snapshot storage is unavailable. Retry deleting the site when storage is restored.', 503);
+    try {
+      for (const snapshot of snapshots.results) await env.BUILDS!.delete(snapshot.object_key);
+    } catch {
+      return apiError('Snapshot cleanup is incomplete; some saved files may already be removed. Retry deleting the site to finish cleanup.', 503);
+    }
+  }
+
+  // A version saved during R2 cleanup must not be orphaned by the cascade.
+  // Both statements evaluate this guard in the same atomic D1 batch.
+  const unchanged = versionsTable
+    ? "(SELECT COUNT(*) FROM ads_txt_versions WHERE site_id = ?) = ?"
+    : "NOT EXISTS (SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ads_txt_versions')";
+  const noPending = 'NOT EXISTS (SELECT 1 FROM ads_txt_version_intents WHERE site_id = ?) AND EXISTS (SELECT 1 FROM publishers WHERE id = ?)';
+  const guardArgs = versionsTable ? [siteId, snapshotKeys.length] : [];
   const actor = getActor(request);
   const now = new Date().toISOString();
   try {
-    await env.DB.batch([
+    const result = await env.DB.batch([
       env.DB
         .prepare(
           `INSERT INTO audit_log (
             id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-          ) VALUES (?, ?, 'site.deleted', NULL, 'site', ?, ?, ?)`,
+          ) SELECT ?, ?, 'site.deleted', NULL, 'site', ?, ?, ? WHERE ${unchanged} AND ${noPending}`,
         )
         .bind(
           crypto.randomUUID(),
@@ -510,9 +545,13 @@ export async function deleteSite(
           siteId,
           JSON.stringify({ name: site.name, domain: site.domain, publisherAccountId: site.publisherAccountId }),
           now,
+          ...guardArgs,
+          siteId,
+          siteId,
         ),
-      env.DB.prepare('DELETE FROM publishers WHERE id = ?').bind(siteId),
+      env.DB.prepare(`DELETE FROM publishers WHERE id = ? AND ${unchanged} AND ${noPending}`).bind(siteId, ...guardArgs, siteId, siteId),
     ]);
+    if (!result[1].meta.changes) return apiError('A version save started during cleanup. Retry deleting the site after it finishes.', 409);
   } catch (error) {
     return apiError('Site could not be deleted.', 500, error instanceof Error ? error.message : String(error));
   }
