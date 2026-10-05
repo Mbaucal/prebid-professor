@@ -4,8 +4,10 @@ import ReleaseDiffPanel from './ReleaseDiffPanel';
 import ReleaseDeleteButton from './ReleaseDeleteButton';
 import SitePackagesPanel from './SitePackagesPanel';
 import ScriptLibraryPanel from './ScriptLibraryPanel';
+import ReleaseActionFocus, {type ReleaseActionRequest} from './ReleaseActionFocus';
 
 type Props = {
+  actionRequest?:ReleaseActionRequest|null;
   publisherId: string;
   siteName: string;
   onNavigate?: (destination: 'prebid' | 'versions' | 'demand') => void;
@@ -269,7 +271,7 @@ function LegacyReleasesPanel({ publisherId, siteName, onChanged }: Props) {
   }
 
   return (
-    <section className="releases-page">
+    <section className="releases-page" data-release-busy={generating||validating||busyReleaseId?true:undefined}>
       <div className="release-toolbar">
         <div>
           <span className="panel-kicker">Validate, generate, stage, publish and roll back</span>
@@ -283,18 +285,18 @@ function LegacyReleasesPanel({ publisherId, siteName, onChanged }: Props) {
           <button className="button secondary" disabled={validating || loading} onClick={() => void runValidation()} type="button">
             {validating ? 'Validating…' : 'Validate now'}
           </button>
-          <button className="button primary" disabled={generating || !validation?.ok} onClick={() => void generate()} type="button">
+          <button className="button primary" data-release-target="generate" disabled={generating || !validation?.ok} onClick={() => void generate()} type="button">
             {generating ? 'Generating…' : 'Generate draft'}
           </button>
         </div>
       </div>
 
-      {error ? <div className="form-error config-error">{error}</div> : null}
+      {error ? <div className="form-error config-error">{error}<button data-release-retry onClick={()=>void load()}>Retry releases</button></div> : null}
       {success ? <div className="release-success">✓ {success}</div> : null}
-      {loading ? <div className="config-loading">Loading release state from D1 and R2…</div> : null}
+      {loading ? <div data-release-loading className="config-loading">Loading release state from D1 and R2…</div> : null}
 
       <div className="release-top-grid">
-        <article className={`release-panel validation-panel ${validation?.ok ? 'ready' : 'blocked'}`}>
+        <article tabIndex={-1} data-release-target={!validation?.ok?'setup':undefined} className={`release-panel validation-panel ${validation?.ok ? 'ready' : 'blocked'}`}>
           <div className="release-panel-heading">
             <div>
               <span className="panel-kicker">Preflight</span>
@@ -414,10 +416,10 @@ function LegacyReleasesPanel({ publisherId, siteName, onChanged }: Props) {
               </div>
 
               <div className="release-actions">
-                <button disabled={isBusy || isProduction} onClick={() => void promote(release, 'staging')} type="button">
+                <button disabled={isBusy || isProduction} data-release-target="stage" onClick={() => void promote(release, 'staging')} type="button">
                   {isBusy ? 'Working…' : 'Publish staging'}
                 </button>
-                <button className="production-action" disabled={isBusy || !canPublishProduction} onClick={() => void promote(release, 'production')} type="button">
+                <button className="production-action" data-release-target="publish" disabled={isBusy || !canPublishProduction} onClick={() => void promote(release, 'production')} type="button">
                   Publish production
                 </button>
                 <button className="rollback-action" disabled={isBusy || !canRollback} onClick={() => void promote(release, 'rollback')} type="button">
@@ -451,9 +453,12 @@ function LegacyReleasesPanel({ publisherId, siteName, onChanged }: Props) {
 }
 
 export default function ReleasesPanel(props:Props){
- const [builtin,setBuiltin]=useState<boolean|null>(null),[workflowError,setWorkflowError]=useState(false);
- useEffect(()=>{let active=true;setBuiltin(null);setWorkflowError(false);fetch(`/api/publishers/${encodeURIComponent(props.publisherId)}/builtin-site-settings`,{credentials:'same-origin',cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json() as Promise<{releaseWorkflow:'builtin'|'legacy'}>;}).then(s=>{if(active)setBuiltin(s.releaseWorkflow==='builtin');}).catch(()=>{if(active)setWorkflowError(true);});return()=>{active=false;};},[props.publisherId]);
- if(workflowError)return <p role="alert">Release settings could not be loaded. Reload this site before generating.</p>;
- if(builtin===null)return <p>Loading release workflow…</p>;
- return builtin?<SitePackagesPanel key={props.publisherId} publisherId={props.publisherId} onChanged={props.onChanged} onNavigate={props.onNavigate}/>:<><LegacyReleasesPanel {...props}/><ScriptLibraryPanel key={props.publisherId} publisherId={props.publisherId} onOpenDemand={props.onNavigate?()=>props.onNavigate!('demand'):undefined}/></>;
+ const [builtin,setBuiltin]=useState<boolean|null>(null),[workflowError,setWorkflowError]=useState(false),[attempt,setAttempt]=useState(0);
+ useEffect(()=>{let active=true;setBuiltin(null);setWorkflowError(false);fetch(`/api/publishers/${encodeURIComponent(props.publisherId)}/builtin-site-settings`,{credentials:'same-origin',cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json() as Promise<{releaseWorkflow:'builtin'|'legacy'}>;}).then(s=>{if(active)setBuiltin(s.releaseWorkflow==='builtin');}).catch(()=>{if(active)setWorkflowError(true);});return()=>{active=false;};},[props.publisherId,attempt]);
+ return <ReleaseActionFocus request={props.actionRequest??null} siteId={props.publisherId}>
+ {workflowError?<p role="alert">Release settings could not be loaded. <button data-release-retry onClick={()=>setAttempt(n=>n+1)}>Retry releases</button></p>
+ :builtin===null?<p data-release-loading>Loading release workflow…</p>
+ :builtin?<SitePackagesPanel key={props.publisherId} publisherId={props.publisherId} onChanged={props.onChanged} onNavigate={props.onNavigate}/>
+ :<><LegacyReleasesPanel key={props.publisherId} {...props}/><ScriptLibraryPanel key={props.publisherId} publisherId={props.publisherId} onOpenDemand={props.onNavigate?()=>props.onNavigate!('demand'):undefined}/></>}
+ </ReleaseActionFocus>;
 }
