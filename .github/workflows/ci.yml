@@ -35,3 +35,31 @@ jobs:
 
       - name: Verify minimum-height CSS export
         run: node --experimental-strip-types --test tests/runtime/min-height-css-export.test.mjs
+
+  isolated-toolchain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install isolated historical compiler and modern tools
+        run: node scripts/bootstrap-toolchain.mjs
+      - name: Check strict types, historical artifacts and modern build
+        run: |
+          node scripts/isolated-toolchain.mjs typecheck
+          node scripts/isolated-toolchain.mjs build
+          node --test tests/runtime/toolchain-isolation.test.mjs
+          node --experimental-strip-types tools/verify-compiled-parity.mjs
+      - name: Package locally without deployment
+        run: node scripts/isolated-toolchain.mjs dry-run
+      - name: Report historical and active dependency scopes separately
+        run: node scripts/audit-isolated-toolchain.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolated-toolchain-evidence
+          path: |
+            .generated/toolchain-evidence/
+            .generated/toolchain-validation/
+          retention-days: 14
