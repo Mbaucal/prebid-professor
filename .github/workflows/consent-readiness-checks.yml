@@ -39,7 +39,9 @@ jobs:
           node scripts/prepare-test-workspace.mjs
           node --experimental-strip-types scripts/prepare-readiness-browser-fixtures.mjs
       - name: Consent, deadline, reporting and pending-slot regressions
-        run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
+        run: |
+          node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
+          node tests/runtime/geo-cmp-fallback-experiment.test.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0
@@ -48,6 +50,9 @@ jobs:
         run: python scripts/verify-consent-readiness.py
       - name: Atomic consent boundary and failure-detection controls
         run: python scripts/verify-consent-boundary.py
+      - name: Experimental regional scope contract with native Prebid only
+        # GPT is explicitly skipped here; this is not end-to-end fallback acceptance.
+        run: python scripts/verify-geo-cmp-fallback.py --native-only
       - name: Explicit version selection and desktop/mobile setup
         run: python scripts/verify-readiness-setup.py
       - name: Save synthetic evidence
@@ -60,3 +65,4 @@ jobs:
             .generated/readiness-evidence/boundary-results.json
             .generated/readiness-setup-evidence/*.json
             .generated/readiness-setup-evidence/*.png
+            .generated/geo-cmp-fallback/results.json
