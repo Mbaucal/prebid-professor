@@ -1,6 +1,7 @@
 import AgenciesPanel from './components/AgenciesPanel';
 import AgencyOverview from './components/AgencyOverview';
 import { useOrganization, agencyFor, inAgency } from './organization';
+import AppFormDialog from './components/AppFormDialog';
 import AppFrame, { WorkspaceContent } from './components/AppFrame';
 import AuthAccount from './components/AuthAccount';
 import ApiIntegrationsPanel from './components/ApiIntegrationsPanel';
@@ -18,6 +19,7 @@ import ExportPanel from './components/ExportPanel';
 import HierarchySidebar from './components/HierarchySidebar';
 import PrebidBuildsPanel from './components/PrebidBuildsPanel';
 import ReleasesPanel from './components/ReleasesPanel';
+import type {ReleaseActionRequest} from './components/ReleaseActionFocus';
 import SiteTestPagePanel from './components/SiteTestPagePanel';
 import MockupBuilderPanel from './components/MockupBuilderPanel';
 import MonitoringReadonlyPanel from './components/MonitoringReadonlyPanel';
@@ -120,7 +122,12 @@ export default function App() {
   const [publishers, setPublishers] = useState<PublisherAccount[]>([]);
   const [hierarchyError, setHierarchyError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [releaseAction,setReleaseAction]=useState<ReleaseActionRequest|null>(null);
+  const releaseSequence=useRef(0);
   const [configEntry, setConfigEntry] = useState<'ad-units' | 'generator-profiles'>('generator-profiles');
+  const modalSession = useRef(0);
+  const modalBusy = useRef(false);
+  const modalOpener = useRef<HTMLElement | null>(null);
   const [modal, setModal] = useState<ModalMode>(null);
   const [publisherForm, setPublisherForm] = useState<PublisherForm>(emptyPublisherForm);
   const [siteForm, setSiteForm] = useState<SiteForm>(emptySiteForm);
@@ -130,7 +137,14 @@ export default function App() {
   const commitNavigation = useCallback((navigation: DashboardNavigation, replace = false) => {
     const url = dashboardURL(window.location.href, navigation);
     const currentURL = window.location.pathname + window.location.search + window.location.hash;
-    if (url !== currentURL) window.history[replace ? 'replaceState' : 'pushState'](null, '', url);
+    setReleaseAction(null);
+    if (url !== currentURL) {
+      modalSession.current++;
+      modalBusy.current = false;
+      setSubmitting(false);
+      setModal(null);
+      window.history[replace ? 'replaceState' : 'pushState'](null, '', url);
+    }
     const next = readDashboardNavigation(window.location.search);
     navigationRef.current = next;
     setNavigationRequest(next);
@@ -184,9 +198,13 @@ export default function App() {
   useEffect(() => {
     const restore = () => {
       const next = readDashboardNavigation(window.location.search);
+      modalSession.current++;
+      modalBusy.current = false;
+      setSubmitting(false);
       navigationRef.current = next;
       setNavigationRequest(next);
       setModal(null);
+      setReleaseAction(null);
       setConfigEntry('generator-profiles');
     };
     window.addEventListener('popstate', restore);
@@ -202,6 +220,11 @@ export default function App() {
   function navigate(patch: Partial<DashboardNavigation>) {
     commitNavigation({...selection.navigation, ...patch});
     setModal(null);
+  }
+  function openReleaseAction(action:'generate'|'publish'){
+    if(!site)return;
+    navigate({tab:'Releases'});
+    setReleaseAction({siteId:site.id,sequence:++releaseSequence.current,action});
   }
   function setActiveTab(tab: PublisherTab) { navigate({tab}); }
   function filterAgency(value: string) {
@@ -236,16 +259,24 @@ export default function App() {
     navigate({agencyFilter:'all', publisherId:publisherAccountId, siteId, tab, section:'Publishers'});
   }
 
+  function beginModal(mode: ModalMode) {
+    modalSession.current++;
+    modalBusy.current = false;
+    setSubmitting(false);
+    modalOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setModal(mode);
+  }
+
   function openCreatePublisher() {
     setPublisherForm(emptyPublisherForm);
     setFormError(null);
-    setModal('create-publisher');
+    beginModal('create-publisher');
   }
 
   function openCreateSiteForPublisher(publisherAccountId: string) {
     setSiteForm({ ...emptySiteForm, publisherAccountId });
     setFormError(null);
-    setModal('create-site');
+    beginModal('create-site');
   }
 
   function openCreateSite() {
@@ -266,7 +297,7 @@ export default function App() {
       copyAdsTxtRequirements: false,
     });
     setFormError(null);
-    setModal('edit-site');
+    beginModal('edit-site');
   }
 
   function openDuplicateSite() {
@@ -285,24 +316,27 @@ export default function App() {
       copyAdsTxtRequirements: true,
     });
     setFormError(null);
-    setModal('duplicate-site');
+    beginModal('duplicate-site');
   }
 
   function closeModal() {
-    if (submitting) return;
+    if (modalBusy.current) return;
     setModal(null);
     setFormError(null);
   }
 
   async function submitPublisher(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (modalBusy.current) return;
     setFormError(null);
     if (!publisherForm.id || !publisherForm.name) {
       setFormError('Publisher ID and name are required.');
       return;
     }
 
+    modalBusy.current = true;
     setSubmitting(true);
+    const session = modalSession.current;
     const requestedNavigation = navigationRef.current;
     try {
       const created = await api.createPublisherAccount({
@@ -311,24 +345,29 @@ export default function App() {
         status: publisherForm.status,
         notes: publisherForm.notes.trim() || null,
       });
+      if (session !== modalSession.current) return;
       await loadHierarchy(created.id, undefined, requestedNavigation);
-      setModal(null);
+      if (session === modalSession.current) setModal(null);
     } catch (error) {
+      if (session !== modalSession.current) return;
       setFormError(error instanceof Error ? error.message : 'Publisher could not be created.');
     } finally {
-      setSubmitting(false);
+      if (session === modalSession.current) { modalBusy.current = false; setSubmitting(false); }
     }
   }
 
   async function submitSite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (modalBusy.current) return;
     setFormError(null);
     if (!siteForm.id || !siteForm.publisherAccountId || !siteForm.name || !siteForm.domain || !siteForm.gamPath) {
       setFormError('Publisher, Site ID, name, domain and GAM path are required.');
       return;
     }
 
+    modalBusy.current = true;
     setSubmitting(true);
+    const session = modalSession.current;
     const requestedNavigation = navigationRef.current;
     try {
       const common = {
@@ -351,12 +390,14 @@ export default function App() {
               })
             : await api.createSite({ id: siteForm.id.trim(), ...common });
 
+      if (session !== modalSession.current) return;
       await loadHierarchy(saved.publisherAccountId ?? siteForm.publisherAccountId, saved.id, requestedNavigation);
-      setModal(null);
+      if (session === modalSession.current) setModal(null);
     } catch (error) {
+      if (session !== modalSession.current) return;
       setFormError(error instanceof Error ? error.message : 'Site could not be saved.');
     } finally {
-      setSubmitting(false);
+      if (session === modalSession.current) { modalBusy.current = false; setSubmitting(false); }
     }
   }
 
@@ -478,6 +519,7 @@ export default function App() {
   }
 
   const publisherWorkspace = activeSection === 'Publishers';
+  const dialogSession = modalSession.current;
   const siteModalOpen = modal === 'create-site' || modal === 'edit-site' || modal === 'duplicate-site';
   const siteModalTitle =
     modal === 'edit-site'
@@ -563,8 +605,8 @@ export default function App() {
             <button className="button secondary" disabled={!site} onClick={openEditSite} type="button">Edit site</button>
             <button className="button secondary" disabled={!site} onClick={openDuplicateSite} type="button">Duplicate site</button>
             <button className="button danger" disabled={!site} onClick={() => void removeSite()} type="button">Delete site</button>
-            <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Generate</button>
-            <button className="button primary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Publish ↗</button>
+            <button className="button secondary" disabled={!site} onClick={() => openReleaseAction('generate')} type="button">Generate</button>
+            <button className="button primary" disabled={!site} onClick={() => openReleaseAction('publish')} type="button">Publish ↗</button>
           </div>
         </header>
 
@@ -585,13 +627,13 @@ export default function App() {
         <WorkspaceContent pageKey={`${activeSection}:${site?.id ?? publisher?.id}:${activeTab}`}>
         {activeTab === 'Overview' ? renderOverview() : null}
         {activeTab === 'Config' && site ? (
-          <ConfigPanel onGenerate={() => setActiveTab('Releases')} onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)} publisherId={site.id} />
+          <ConfigPanel onGenerate={() => openReleaseAction('generate')} onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)} publisherId={site.id} />
         ) : null}
         {activeTab === 'Prebid.js' && site ? (
           <PrebidBuildsPanel publisherId={site.id} siteName={site.name} />
         ) : null}
         {activeTab === 'Releases' && site ? (
-          <ReleasesPanel
+          <ReleasesPanel key={site.id} actionRequest={releaseAction}
             onNavigate={destination => {
               if (destination === 'prebid') setActiveTab('Prebid.js');
               else { setConfigEntry('generator-profiles'); setActiveTab('Config'); }
@@ -645,17 +687,17 @@ export default function App() {
       </main>
 
       {modal === 'create-publisher' ? (
-        <div className="modal-backdrop" onMouseDown={closeModal} role="presentation">
-          <section className="modal-card" onMouseDown={(event) => event.stopPropagation()} role="dialog">
+        <AppFormDialog labelledBy="app-form-title" onDismiss={closeModal} busy={submitting}
+          opener={modalOpener.current} canRestoreFocus={() => modalSession.current === dialogSession}>
             <div className="modal-heading">
-              <div><span className="panel-kicker">Publisher account</span><h2>Create publisher</h2></div>
-              <button className="icon-button" onClick={closeModal} type="button">×</button>
+              <div><span className="panel-kicker">Publisher account</span><h2 id="app-form-title">Create publisher</h2></div>
+              <button aria-label="Close dialog" disabled={submitting} className="icon-button" onClick={closeModal} type="button">×</button>
             </div>
             <form className="publisher-form" onSubmit={submitPublisher}>
               <label>
                 <span>Publisher name</span>
                 <input
-                  autoFocus
+                  data-dialog-initial-focus
                   onChange={(event) => setPublisherForm((current) => ({
                     ...current,
                     name: event.target.value,
@@ -695,22 +737,21 @@ export default function App() {
                   value={publisherForm.notes}
                 />
               </label>
-              {formError ? <div className="form-error">{formError}</div> : null}
+              {formError ? <div className="form-error" role="alert">{formError}</div> : null}
               <div className="modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeModal} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting} type="submit">{submitting ? 'Saving…' : 'Create publisher'}</button>
               </div>
             </form>
-          </section>
-        </div>
+        </AppFormDialog>
       ) : null}
 
       {siteModalOpen ? (
-        <div className="modal-backdrop" onMouseDown={closeModal} role="presentation">
-          <section className="modal-card" onMouseDown={(event) => event.stopPropagation()} role="dialog">
+        <AppFormDialog labelledBy="app-form-title" onDismiss={closeModal} busy={submitting}
+          opener={modalOpener.current} canRestoreFocus={() => modalSession.current === dialogSession}>
             <div className="modal-heading">
-              <div><span className="panel-kicker">Site / domain workflow</span><h2>{siteModalTitle}</h2></div>
-              <button className="icon-button" onClick={closeModal} type="button">×</button>
+              <div><span className="panel-kicker">Site / domain workflow</span><h2 id="app-form-title">{siteModalTitle}</h2></div>
+              <button aria-label="Close dialog" disabled={submitting} className="icon-button" onClick={closeModal} type="button">×</button>
             </div>
             <form className="publisher-form" onSubmit={submitSite}>
               <label>
@@ -727,7 +768,7 @@ export default function App() {
               <label>
                 <span>Site name</span>
                 <input
-                  autoFocus
+                  data-dialog-initial-focus
                   onChange={(event) => setSiteForm((current) => ({
                     ...current,
                     name: event.target.value,
@@ -809,7 +850,7 @@ export default function App() {
                 </div>
               ) : null}
 
-              {formError ? <div className="form-error">{formError}</div> : null}
+              {formError ? <div className="form-error" role="alert">{formError}</div> : null}
               <div className="modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeModal} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting} type="submit">
@@ -823,8 +864,7 @@ export default function App() {
                 </button>
               </div>
             </form>
-          </section>
-        </div>
+        </AppFormDialog>
       ) : null}
     </AppFrame>
   );
