@@ -56,7 +56,7 @@ replaces the previous root dependency tree and the bridge is recreated/verified.
 
 The full baseline commit is recorded in `tools/historical-inputs.json`:
 `685d90b6974133e19e96f7ceb28e60a58b7ce402`.
-The receipt contains the original lock SHA-256, the 22 source-component files
+The receipt contains the original lock SHA-256, the 24 source-component files
 shared by the four available historical runtime manifests, and package file hashes.
 The four variants are reference 3.9.1 preview.2, positions 3.10 preview.1, reporting
 3.13.0 and readiness 3.14.0. All four original source-hash guards still execute.
@@ -68,7 +68,8 @@ baseline install and the unchanged preparers, not from the candidate outputs.
 Negative tests alter the old lock, installed compiler bytes, esbuild binary,
 generated output and root/nested dependency tree and require rejection.
 
-The mutable `test-page-client.mjs` bundle and the unsigned preparer script hashes
+The signed reporting/readiness preparer scripts remain in the permanent source
+gate. The mutable `test-page-client.mjs` bundle and the other unsigned preparer script hashes
 are **one-time baseline comparison evidence**, separated from the permanent frozen
 input/output gate. Ordinary test-page UI development is not required to update a
 historical signature. The isolated build records its current test-page bundle hash

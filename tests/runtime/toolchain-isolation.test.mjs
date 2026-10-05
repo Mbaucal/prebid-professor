@@ -22,3 +22,7 @@ test('unexpected nested dependency cannot shadow the compiler closure',async()=>
  const path=resolve(root,'node_modules/terser/node_modules');await mkdir(resolve(path,'acorn'),{recursive:true});
  try{await assert.rejects(verifyIsolation(root),/Unexpected root package/);}finally{await rm(path,{recursive:true});}
 });
+for (const name of ['readiness','reporting']) {
+ test(`signed ${name} preparer remains a guarded historical input`,async()=>changed(
+  `scripts/prepare-${name}-runtime.mjs`,()=>assert.rejects(verifyIsolation(root),/Historical source changed/)));
+}

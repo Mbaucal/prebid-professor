@@ -24,7 +24,9 @@
     "worker/runtime-reporting-v1/contract.mjs": "3a8f2f8fd0a73edc0d97030bc871c7d768433f6a839b3960a3f7662244170ce7",
     "worker/runtime-readiness-v1/artifact-candidate.mjs": "c77b34bef1546986ff0a85a5ed4b34feb59f278f400c4e6d21bf8fe7e5edb0b9",
     "worker/runtime-readiness-v1/browser-readiness.mjs": "66da1fe1997a4e4fdfd8b3ac0cadd4b99b6c3901f86e2e81de216f856a454ee5",
-    "worker/runtime-readiness-v1/compiler.mjs": "06775d241a67bcdb9a13a40337e7f5cf397416659dc1d8640668d5c4ef268767"
+    "worker/runtime-readiness-v1/compiler.mjs": "06775d241a67bcdb9a13a40337e7f5cf397416659dc1d8640668d5c4ef268767",
+    "scripts/prepare-readiness-runtime.mjs": "c07541ad327b03f31d4e37c579b1431e02bdbc10b7e6bab61e03f0480d85ba61",
+    "scripts/prepare-reporting-runtime.mjs": "64286434ca9f743ccfb3f73ef375dbcb3e5b31fb0e22efc3d4e780487d1be953"
   },
   "productionPackages": {
     "node_modules/@jridgewell/gen-mapping": {
@@ -515,8 +517,6 @@
     "tanjug-pilot/tanjug-test-v1.zip": "eed72a11c2f6db7c90a9ae71f329ba842e34832c91c3e705b1f00469158ba334"
   },
   "baselinePreparers": {
-    "scripts/prepare-reporting-runtime.mjs": "64286434ca9f743ccfb3f73ef375dbcb3e5b31fb0e22efc3d4e780487d1be953",
-    "scripts/prepare-readiness-runtime.mjs": "c07541ad327b03f31d4e37c579b1431e02bdbc10b7e6bab61e03f0480d85ba61",
     "scripts/prepare-builtin-runtime.mjs": "8b5faaca542f40f77e515f69420fcbb64c2163a6aa07825df344ce81a2efafd1",
     "scripts/prepare-next-runtime.mjs": "259d7cb97c1fd432faf5149f4242b9be1837f1c097351e48f343034a1ab47ad4",
     "scripts/prepare-test-page-client.mjs": "6a5174323816725ab09b52b12fdfc72b0b2ec838148aedebe0b56dc131b96c10",
