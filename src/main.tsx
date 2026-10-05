@@ -6,6 +6,8 @@ import AdsTxtManagedFilePortal from './components/AdsTxtManagedFilePortal';
 import AdsTxtRequirementsCollapse from './components/AdsTxtRequirementsCollapse';
 import TesseraBranding from './components/TesseraBranding';
 import './dashboard-styles';
+import AdsTxtVersionsPortal from './components/AdsTxtVersionsPortal';
+import './ads-txt-versions.css';
 
 const root = document.getElementById('root');
 
@@ -19,6 +21,7 @@ createRoot(root).render(
     <App />
     <AdsTxtRequirementsCollapse />
     <AdsTxtManagedFilePortal />
+    <AdsTxtVersionsPortal />
     <AdsTxtCmsConnectionPortal />
   </StrictMode>,
 );

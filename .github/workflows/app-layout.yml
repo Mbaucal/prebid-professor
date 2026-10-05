@@ -2,7 +2,7 @@ name: Dashboard layout checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [src/**, scripts/prepare-layout-preview.mjs, scripts/layout-ui-fixture.mjs, scripts/verify-app-layout.py, scripts/verify-dashboard-navigation.py, tests/runtime/dashboard-navigation.test.mjs, worker/test-workspace/layout-preview.mjs, .github/workflows/app-layout.yml]
+    paths: [src/**, scripts/prepare-layout-preview.mjs, scripts/layout-ui-fixture.mjs, scripts/verify-app-layout.py, scripts/verify-dashboard-navigation.py, scripts/verify-adstxt-versions.py, worker/ads-txt-versions.ts, worker/ads-txt-version-intents.ts, migrations/0007_ads_txt_versions.sql, migrations/0008_ads_txt_version_intents.sql, worker/app-ads-txt-versions.ts, worker/publishers.ts, tests/runtime/ads-txt-versions.test.mjs, tests/runtime/dashboard-navigation.test.mjs, worker/test-workspace/layout-preview.mjs, .github/workflows/app-layout.yml]
 permissions:
   contents: read
 jobs:
@@ -23,6 +23,8 @@ jobs:
       - run: node --experimental-strip-types --test tests/runtime/dashboard-navigation.test.mjs
       - run: python scripts/verify-app-layout.py
       - run: python scripts/verify-dashboard-navigation.py
+      - run: node --experimental-strip-types --loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ads-txt-versions.test.mjs
+      - run: python scripts/verify-adstxt-versions.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -30,4 +32,5 @@ jobs:
           path: |
             .generated/layout-evidence/
             .generated/navigation-evidence/
+            .generated/adstxt-version-evidence/
           retention-days: 14

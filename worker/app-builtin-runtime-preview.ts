@@ -1,7 +1,7 @@
 import { organizationResponse } from './organization/service.mjs';
 import { gamResponse } from './integrations/gam-service.mjs';
 import { blockStoredDraftCdn } from './runtime/stored-draft-safety.mjs';
-import baseApp from './app-ads-txt-managed-file';
+import baseApp from './app-ads-txt-versions';
 import { getAuthenticatedUser, isSameOriginMutation, type AuthEnv } from './auth';
 import { handleBuiltinPreview, readPreviewSnapshot, runtimeDescriptor } from './runtime/builtin-preview-service.mjs';
 import { previewInput, digest } from './runtime/preview-snapshot.mjs';
