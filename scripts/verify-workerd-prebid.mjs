@@ -6,7 +6,7 @@ import { createHash,randomBytes } from 'node:crypto';
 import { mkdtemp,readdir,readFile,mkdir,writeFile,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './local-miniflare.mjs';
 import { generatedLiteral } from '../tests/support/generated-literal.mjs';
 const origin='https://prebid-professor-test.mbaucal.workers.dev';
 const directory=await mkdtemp(join(tmpdir(),'tessera-prebid-workerd-'));

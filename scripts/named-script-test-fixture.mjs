@@ -1,5 +1,5 @@
 // LOCAL compiled TEST Worker, ephemeral real D1/R2, no Cloudflare or outbound traffic.
-import {Miniflare} from 'miniflare';
+import {Miniflare} from './local-miniflare.mjs';
 import {mkdtemp,readFile,readdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';

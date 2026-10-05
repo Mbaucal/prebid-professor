@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './local-miniflare.mjs';
 
 const config = JSON.parse(await readFile('dist/prebid_professor/wrangler.json', 'utf8'));
 const origin = 'https://security-test.example.invalid';

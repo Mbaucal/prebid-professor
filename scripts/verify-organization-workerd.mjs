@@ -3,7 +3,7 @@ import {readFile,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomBytes} from 'node:crypto';
-import {Miniflare} from 'miniflare';
+import {Miniflare} from './local-miniflare.mjs';
 const config=JSON.parse(await readFile('wrangler.jsonc','utf8')),origin='https://prebid-professor.mbaucal.workers.dev';
 const directory=await mkdtemp(join(tmpdir(),'tessera-organization-'));
 const email='agency-fixture@example.invalid',password=randomBytes(24).toString('hex');
