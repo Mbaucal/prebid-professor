@@ -18,6 +18,7 @@ import ExportPanel from './components/ExportPanel';
 import HierarchySidebar from './components/HierarchySidebar';
 import PrebidBuildsPanel from './components/PrebidBuildsPanel';
 import ReleasesPanel from './components/ReleasesPanel';
+import type {ReleaseActionRequest} from './components/ReleaseActionFocus';
 import SiteTestPagePanel from './components/SiteTestPagePanel';
 import MockupBuilderPanel from './components/MockupBuilderPanel';
 import MonitoringReadonlyPanel from './components/MonitoringReadonlyPanel';
@@ -120,6 +121,8 @@ export default function App() {
   const [publishers, setPublishers] = useState<PublisherAccount[]>([]);
   const [hierarchyError, setHierarchyError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [releaseAction,setReleaseAction]=useState<ReleaseActionRequest|null>(null);
+  const releaseSequence=useRef(0);
   const [configEntry, setConfigEntry] = useState<'ad-units' | 'generator-profiles' | 'demand-mode'>('generator-profiles');
   const [modal, setModal] = useState<ModalMode>(null);
   const [publisherForm, setPublisherForm] = useState<PublisherForm>(emptyPublisherForm);
@@ -128,6 +131,7 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
 
   const commitNavigation = useCallback((navigation: DashboardNavigation, replace = false) => {
+    setReleaseAction(null);
     const url = dashboardURL(window.location.href, navigation);
     const currentURL = window.location.pathname + window.location.search + window.location.hash;
     if (url !== currentURL) window.history[replace ? 'replaceState' : 'pushState'](null, '', url);
@@ -187,6 +191,7 @@ export default function App() {
       navigationRef.current = next;
       setNavigationRequest(next);
       setModal(null);
+      setReleaseAction(null);
       setConfigEntry('generator-profiles');
     };
     window.addEventListener('popstate', restore);
@@ -202,6 +207,11 @@ export default function App() {
   function navigate(patch: Partial<DashboardNavigation>) {
     commitNavigation({...selection.navigation, ...patch});
     setModal(null);
+  }
+  function openReleaseAction(action:'generate'|'publish'){
+    if(!site)return;
+    navigate({tab:'Releases'});
+    setReleaseAction({siteId:site.id,sequence:++releaseSequence.current,action});
   }
   function setActiveTab(tab: PublisherTab) { navigate({tab}); }
   function filterAgency(value: string) {
@@ -563,8 +573,8 @@ export default function App() {
             <button className="button secondary" disabled={!site} onClick={openEditSite} type="button">Edit site</button>
             <button className="button secondary" disabled={!site} onClick={openDuplicateSite} type="button">Duplicate site</button>
             <button className="button danger" disabled={!site} onClick={() => void removeSite()} type="button">Delete site</button>
-            <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Generate</button>
-            <button className="button primary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Publish ↗</button>
+            <button className="button secondary" disabled={!site} onClick={() => openReleaseAction('generate')} type="button">Generate</button>
+            <button className="button primary" disabled={!site} onClick={() => openReleaseAction('publish')} type="button">Publish ↗</button>
           </div>
         </header>
 
@@ -585,13 +595,13 @@ export default function App() {
         <WorkspaceContent pageKey={`${activeSection}:${site?.id ?? publisher?.id}:${activeTab}`}>
         {activeTab === 'Overview' ? renderOverview() : null}
         {activeTab === 'Config' && site ? (
-          <ConfigPanel onGenerate={() => setActiveTab('Releases')} onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)} publisherId={site.id} />
+          <ConfigPanel onGenerate={() => openReleaseAction('generate')} onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)} publisherId={site.id} />
         ) : null}
         {activeTab === 'Prebid.js' && site ? (
           <PrebidBuildsPanel publisherId={site.id} siteName={site.name} />
         ) : null}
         {activeTab === 'Releases' && site ? (
-          <ReleasesPanel
+          <ReleasesPanel key={site.id} actionRequest={releaseAction}
             onNavigate={destination => {
               if (destination === 'prebid') setActiveTab('Prebid.js');
               else { setConfigEntry(destination === 'demand' ? 'demand-mode' : 'generator-profiles'); setActiveTab('Config'); }
