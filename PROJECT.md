@@ -1,6 +1,228 @@
+## 2026-09-30 — Central PM coordination and UX acceptance
+
+Marko designated one central PM chat and approved two implementation agents plus
+an independent reviewer. Current assignments and results live in the short
+[Linear START HERE](https://linear.app/mbaucal/document/tessera-start-here-aktuelni-pm-rad-57156b7568fa).
+Follow [AGENTS.md](AGENTS.md) for isolated worktrees, shared-file ownership and
+evidence-based completion. Historical status notes below are not fresh blockers.
+
+The first parallel round is MBA-171 (new CMP/Prebid readiness runtime), MBA-101
+(strict type checking and CI) and independent review of MBA-172 / PR109. These
+are development/review assignments, not production promotion. Marko explicitly
+requires meaningful UX and consistent existing design for platform changes;
+check altered flows visually on desktop and narrow screens before acceptance.
+
+## 2026-09-23 — Complete logo and favicon follow-up (MBA-111)
+
+The earlier route fix exposed a second defect: the PNG itself has a broken IDAT
+checksum and cannot fully decode. Chromium can still report natural dimensions
+while displaying only its top portion; comparing served bytes missed that defect.
+Re-export the existing SVG at 192px and derive a 16/32/48px ICO favicon. All app
+and login references use v21 so browsers replace cached corrupt images. Only
+the exact PNG and ICO paths are public. CI now verifies PNG checksums and full
+PNG/ICO decoding, the bottom logo tile and the full 46px image bounds at three
+viewport sizes, with screenshots of the compiled production login page.
+
+Asset source: `public/tessera-logo.svg`. Export the PNG with Inkscape at 192×192,
+then save a Pillow ICO with `sizes=[(16,16),(32,32),(48,48)]`. No logo redesign.
+This completes the same login-logo correction already authorized for main.
+
+## 2026-09-23 — Anonymous login logo (MBA-111)
+
+The sign-in logo and favicon requested a PNG behind the session guard, returning
+a 303 login redirect instead of image bytes. Only GET/HEAD for the exact
+`/tessera-logo.png` path now reach the static asset binding without a session.
+Other assets and APIs retain their authentication checks; CSP, login handling,
+site settings and saved packages are unchanged. The regression runs against the
+compiled production Worker with its real static assets and checks both login
+states, old cache keys, invalid cookies, HEAD and protected routes.
+
+## 2026-09-23 — Accepted GAM reporting promotion (MBA-103)
+
+Marko tested refresh reporting on TEST and authorized main promotion. Version
+3.13.0 adds four refresh labels in all demand modes and three auction labels only
+for completed Prebid auctions. GAM-only requests omit the auction labels.
+This promotes the accepted reporting change from PR #100, preserving newer main
+features. The explicitly selected runtime retains the tested source hash
+306489d96f842ef1f31cbbff6163786565799dcac2d70e976fe6c94422e4a5bd.
+Default 3.10, saved packages, published channels and publisher scripts remain
+unchanged. Live publisher validation will follow separately.
+Definitions and verification: [GAM reporting](docs/gam-reporting.md), MBA-103.
+
+## 2026-09-23 — Accepted Test page promotion (MBA-94)
+
+Marko accepted the hosted TEST page and authorized main promotion. This transfers
+only the reviewed saved-package Test page, its complete browser-bundle bootstrap
+fix and Sticky inspection from TEST PRs #91/#95/#96, preserving newer main work.
+Sites gain a Test page tab and exact saved-release links. Original archived
+ads.js/Prebid/CSS run after Start in an authenticated isolated HTTPS document.
+It reports actual DIVs, GPT paths, requests and responses, responsive/lazy status,
+and supports Publisher Console and report export. Sticky uses original CSS;
+a separate labelled CSS preview does not change real slots. Page console buttons
+capture real Sticky state before opening, and test controls clear its close button.
+Settings, package bytes, published channels and publisher scripts are unchanged.
+Desktop/mobile regression coverage uses the compiled Worker and synthetic GPT;
+it does not claim validation of live demand or Google's externally hosted UI.
+Details and deployment evidence: docs/site-test-page.md and Linear MBA-94.
+
+## 2026-09-23 — Executed technical and UX audit (MBA-96)
+
+The first audit execution is recorded in [the evidence matrix](docs/audits/2026-09-23-mba96/REPORT.md).
+The main baseline passed 918 Node tests and the production build, but strict
+TypeScript reports 60 diagnostics. Read the matrix for browser, native D1/R2,
+real Prebid and hosted TEST coverage; these results are not a production sign-off.
+
+MBA-97 fixes copied Prebid artifacts referencing the source site's R2 object and
+stale build ID. New copies verify the original bytes, store their own immutable
+object, synchronize the pin and guard the source revision. Deletion refuses legacy
+foreign/shared objects and checks concurrent activation before removing bytes.
+Copying without the build preserves the script version and demand, clears the
+foreign pin and sends the user to Prebid setup. Existing shared rows are not
+silently migrated; unconfirmed storage operations retain bytes for later review.
+
+This audit change is a TEST-first candidate, not a main deployment. MBA-98 through
+MBA-102 track navigation, Publish guidance, modal accessibility, type checking and
+the incomplete hosted BTF Sticky observation. MBA-96 stays open until the remaining
+high-priority findings and hosted delivery/rollback checks are resolved.
+
+## 2026-09-22 — Agency overview appearance (MBA-90)
+
+The Agency label and name now stack vertically beside a padded logo surface.
+The filter has its own label and space; narrow layouts stack it below the
+identity. Dashboard and TEST use the same AgencyOverview component so their
+reviewed presentation matches. This is a visual follow-up to MBA-65, with no
+storage, assignment or runtime changes. TEST review precedes production.
+
+## 2026-09-22 — Agency hierarchy (MBA-65)
+
+Agency → Publisher → Site is implemented in PR #80 (production candidate) and
+PR #81 (isolated TEST). Agencies have names and optional logos, persistent
+publisher assignments, search, collapsible groups, filtering and breadcrumbs.
+Existing publishers remain unassigned until explicitly linked; settings and
+saved releases are unchanged. TEST `/agencies` uses generic example publishers
+with real saved agency metadata. Backend/schema, compiled Worker/D1 and shared
+React desktop/mobile checks pass. Marko accepted TEST on 2026-09-22
+("Odlicno! Moze na main") and authorized production promotion through PR #80.
+Details: `docs/AGENCY_HIERARCHY.md`.
+
+## 2026-09-22 — Bounded dashboard layout (MBA-89)
+
+The dashboard now shares an AppFrame with the authenticated TEST `/layout-preview`.
+The viewport stays fixed; site header/tabs, navigation and account keep their own
+space. Workspace content and the publisher list scroll independently. Narrow
+screens have a collapsible menu; short windows can scroll the header/navigation
+in their bounded regions. This changes no runtime, site configuration or storage.
+Marko accepted the TEST layout on 2026-09-22 ("e tako! :)"). PR #77 promotes
+that reviewed layout to production; TEST PR #78 remains the shared review surface.
+All ten production PR checks passed before promotion, including layout checks
+on the real dashboard and TEST preview at eight viewport sizes.
+
+## 2026-09-20 — Bid caching belongs to Demand → Prebid
+
+Moved cache on/off and maximum bid age from the named release form into the site’s
+saved Demand → Prebid settings. Releases shows the saved choice and a direct edit
+shortcut; generation reads it on the server and rejects stale forms or overrides.
+Saved standalone versions and A/B tests retain their own exact settings/bytes.
+Prebid-off preserves the cache preference and blocks new Prebid script creation.
+The current cache-capable generator remains the reviewed Tanjug named profile;
+older generators explicitly reject enabled caching instead of ignoring it. No
+runtime sources, hosted site configuration or live ad delivery are changed by
+this platform update. Other site Config integration remains separate work.
+
+## 2026-09-20 — Confirmed script deletion and clean import preparation
+
+Added named Yes/No deletion dialogs across saved scripts/tests, old A/B packages, built-in and legacy releases, Prebid history, and legacy generator profiles. Named and older A/B packages can be restored from deleted lists without altering their original bytes or existing tests. Release/Prebid APIs require the exact confirmation ID and retain active-version protections. No hosted records are removed by deployment. User requested cleaning test data and rebuilding the inventory from the actual per-site ads.js/prebid.js files; inventory/cleanup needs authenticated access, and source files are still to be supplied. Preserve existing site settings and live delivery while reconciling.
+
 # Tessera — Product and Project Source of Truth
 
-_Last updated: 2026-07-29_
+_Last updated: 2026-09-22_
+
+## Current checkpoint — GAM line items and Prebid preset (MBA-86)
+
+Marko accepted ordinary line-item creation in live GAM, approved the editable
+original-script Prebid defaults, and explicitly requested **"Spoji u main!"** on
+2026-09-22. This promotion brings only the tested GAM module from TEST PRs #76,
+#79 and #82 onto current main, preserving the accepted agency hierarchy/layout.
+API integracije → Line itemi supports one ordinary line item or the ready-to-run
+Prebid preset: Prebid advertiser, exact placement and trafficker discovery,
+hb_pb, EUR 0.01–20.00/0.01, five numbered orders, 2,000 line items and 40,000
+CPM-named creatives with all 14 size overrides. Advanced settings remain editable.
+
+One explicit **Pokreni i napravi** click runs review and creation with durable
+pause/resume and uncertain-write reconciliation. Existing production GAM
+connections are reused; TEST credentials/jobs are not copied. No new secrets,
+D1 migrations or site/runtime/settings rewrites are introduced. The production
+Worker authentication and GAM routes are exercised locally with synthetic
+Google responses, alongside the TEST and full-range regression checks.
+No full live Prebid run is claimed; the owner approved promotion after the
+ordinary live test and preset review. See `docs/gam-line-items.md`.
+
+## Previous checkpoint — API integrations (MBA-85)
+
+The user's confirmed entry point is a separate global **API integracije** tab. Its first module connects Google Ad Manager and creates ad units from editable presets or pasted names. The line-item module is covered by MBA-86 above.
+
+The owner confirmed successful real GAM creation on TEST on 2026-09-22 and explicitly approved promotion to `main`. The acceptance screenshot shows active `Billboard1` under `test` in network `22038436483` (`direktno.rs`), including Fluid. Production promotion takes only the approved GAM commits onto current `main`.
+
+Implemented: eight source-script presets (26 positions), custom templates, encrypted service-account connection, parent browsing/creation, read-only review, explicit batch creation and immutable GAM ID/path history. Existing site runtime/configuration records are not rewritten. See `docs/gam-api-integrations.md` for scope and setup.
+
+Production uses `prebid-professor` and requires its own `GAM_CREDENTIALS_KEY` Secret and a fresh connection through the UI. TEST secrets, connections and history are not migrated. Tests include the actual compiled production Worker with synthetic Google responses. Automatic attachment of GAM results to local site ad-unit records remains a follow-up.
+
+## Update — 2026-09-20: Named scripts before A/B tests
+
+Marko clarified that cache is a script setting and A/B is optional. The new
+**Scripts and A/B tests** panel implements that model on the reviewed Tanjug
+baseline: give each script a name, save a standalone version, then choose exact
+saved versions A and B in a separately named test. The same version can be reused
+in multiple tests or used alone. Standalone delivery has no Variant key; A/B keeps
+Variant=A/B. Debug includes script name/version and delivery mode.
+
+Names and settings identify immutable script versions. Changing either creates a
+new version; existing tests keep their original references and runtime bytes.
+Download filenames use the chosen name and a short version suffix. Earlier A/B
+packages remain available without modification. Activation still uses a manual
+whole-ZIP Pages upload. Adaptive refresh, other site baselines and current Config
+integration remain follow-up work. Details: docs/experiments/named-script-library.md.
+
+## Update — 2026-09-20: Configurable Tanjug A/B packages
+
+**Tanjug → Releases → A/B testing** now connects the editor to authenticated
+generation, immutable R2 storage and verified whole-ZIP download. Both variants
+have independent fresh-auction/cache modes, cache age limits and standard refresh
+intervals; the traffic split is configurable. Reusing the same inputs returns the
+same release. Debug reports the configured interval and allocation.
+
+This first editor uses the reviewed Tanjug 19-position baseline and Prebid 11.34.0.
+It does not incorporate unrelated Config changes. Activation remains a manual
+whole-ZIP upload to the existing Pages project; generating a package changes no
+live script. A/A 1.0.2 stays available as a fallback. Other sites, adaptive ready-bid
+refresh and direct publication remain follow-up work (MBA-57/59/63/66).
+
+Verification covers schema/storage faults, bundled Worker parity with the offline
+compiler, real React generation/download/history and the minified downloaded
+package with synthetic GPT/TCF and native Prebid. Existing release bytes remain
+unchanged. Agency → Publisher → Site with agency logos is tracked in MBA-65.
+
+## Update — 2026-09-19: A/B and cache diagnostics
+
+PR #64 adds **Debug → Runtime → A/B and bid cache inspect** to the main dashboard.
+Copy command, Preview command and Download .js use one self-contained, page-wide
+inspector. It reads the selected release/variant/hash, per-slot Variant labels,
+duplicate starts, fresh/cache/none selections, rejected offers and fallback counts.
+Fresh-only, waiting, unavailable and stopped instrumentation are distinct states.
+Targeting decisions are not evidence of rendered ads or earned revenue.
+
+Validation: 14 targeted read-only inspector tests and the production dashboard/Worker
+build pass. The main CI runs the inspector tests. This change has no database,
+authentication, Worker route, generated publisher script or refresh-setting changes.
+The command is available once this dashboard change is deployed; release status is
+tracked in MBA-62 and PR #64.
+
+Product status: the Tanjug A/A split and GAM Variant labels were accepted by Marko.
+The full `tanjug-cache-1.0.1` package is prepared, but cache revenue improvement is
+not established. The main A/B configuration editor, per-variant refresh controls,
+new-package generation and additional reporting labels remain development work
+(MBA-57/58/63). Bidder parameter forms are recorded in MBA-64. Existing immutable
+publisher packages are preserved; editing a future draft must create a new release.
 
 This document is the durable source of truth for the Tessera product. It should be updated whenever a feature is completed, a product decision changes, or a new requirement is recovered from earlier planning.
 
@@ -28,10 +250,10 @@ The main product principles are:
 | --- | --- |
 | Repository | `Mbaucal/prebid-professor` |
 | Production branch | `main` |
-| Current development branch | `feature/monitoring-readonly-v1` |
-| Current pull request | `#19` |
+| Isolated TEST branch | `feature/isolated-runtime-workspace-v1` |
+| Current audit | MBA-96; see `docs/audits/2026-09-23-mba96/REPORT.md` |
 | Production Worker | `https://prebid-professor.mbaucal.workers.dev/` |
-| Current branch preview | `https://feature-monitoring-readonly-v1-prebid-professor.mbaucal.workers.dev/` |
+| Isolated TEST Worker | `https://prebid-professor-test.mbaucal.workers.dev/` |
 | Cloudflare Worker name | `prebid-professor` |
 | D1 database | `prebid-professor-db` |
 | R2 bucket | `prebid-professor-builds` |
@@ -74,23 +296,7 @@ The main product principles are:
 
 ## 4. Product model
 
-The intended hierarchy is:
-
-```text
-Publisher company/account
-└── Site/domain
-    ├── General configuration
-    ├── Ad units
-    ├── Size mappings
-    ├── Unit rules
-    ├── Bidders
-    ├── Bidder overrides
-    ├── Prebid mode/build configuration
-    ├── ads.txt requirements
-    ├── Releases and artifacts
-    ├── Monitoring settings and state
-    └── Audit history
-```
+The implemented hierarchy is **Agency → Publisher → Site**. An agency groups publisher accounts; each publisher owns its sites. Each site keeps its own configuration, inventory, size maps, rules, bidders, Prebid build selection, ads.txt requirements, releases, monitoring and audit history.
 
 Site-specific data must never leak into another site's form, build, email template, recipient list, release, or notification state.
 

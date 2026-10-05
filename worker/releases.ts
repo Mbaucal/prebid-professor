@@ -1,3 +1,5 @@
+import { isStoredBuiltinDraft, STORED_DRAFT_BLOCK } from './runtime/stored-draft-safety.mjs';
+import { artifactResponseHeaders } from './artifact-response-headers';
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
 import { compileRuntime, type GeneratorEngine } from './runtime-compiler';
@@ -723,7 +725,8 @@ function implementationHtml(snapshot: Snapshot, origin: string): string {
 }
 
 async function putArtifact(bucket: R2Bucket, key: string, body: string | ArrayBuffer, fileName: string, metadata: Record<string, string>) {
-  const bytes = typeof body === 'string' ? new TextEncoder().encode(body).buffer : body;
+  // TextEncoder allocates an ArrayBuffer; Workers types expose the wider ArrayBufferLike.
+  const bytes = typeof body === 'string' ? new TextEncoder().encode(body).buffer as ArrayBuffer : body;
   const hash = await sha256Hex(bytes);
   await bucket.put(key, bytes, {
     httpMetadata: { contentType: contentType(fileName), cacheControl: 'public, max-age=31536000, immutable' },
@@ -947,6 +950,7 @@ async function promote(request: Request, env: ReleaseEnv, siteId: string, releas
   if (!env.BUILDS) return storageMissing();
   const release = await fetchRelease(env.DB, siteId, releaseId);
   if (!release) return apiError('Release not found.', 404);
+  if (isStoredBuiltinDraft(release)) return apiError(STORED_DRAFT_BLOCK, 409);
   if (release.status === 'failed') return apiError('Failed releases cannot be promoted.', 409);
   if (channel === 'staging' && release.status === 'production') return apiError('The current production release does not need staging promotion.', 409);
   try {
@@ -1027,5 +1031,5 @@ export async function serveReleaseCdn(request: Request, env: ReleaseEnv): Promis
   headers.set('cache-control', immutable ? 'public, max-age=31536000, immutable' : pathname.includes('/staging/') ? 'no-store' : 'public, max-age=60, stale-while-revalidate=300');
   headers.set('etag', object.httpEtag);
   const body = request.method === 'HEAD' ? null : (object as R2ObjectBody).body;
-  return new Response(body, { headers });
+  return new Response(body, { headers: artifactResponseHeaders(key, headers) });
 }

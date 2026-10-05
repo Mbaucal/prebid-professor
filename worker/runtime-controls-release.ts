@@ -1,3 +1,4 @@
+import { cloneAuthenticatedRequest } from './http';
 import { apiError, json } from './http';
 import {
   generateReleaseForDemandMode,
@@ -439,7 +440,7 @@ export async function generateReleaseWithRuntimeControls(
     }
   }
 
-  const base = await generateReleaseForDemandMode(request.clone(), env, siteId);
+  const base = await generateReleaseForDemandMode(cloneAuthenticatedRequest(request), env, siteId);
   const responseText = await base.text();
   let payload: JsonRecord;
   try {

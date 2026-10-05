@@ -34,47 +34,14 @@ function withAuthenticatedActor(request: Request, email: string): Request {
   return new Request(request, { headers });
 }
 
-function normalizeVerifiedSameOriginRequest(request: Request): Request {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return request;
-
-  const requestOrigin = new URL(request.url).origin;
-  const originHeader = request.headers.get('origin')?.trim() ?? '';
-  const refererHeader = request.headers.get('referer')?.trim() ?? '';
-  const fetchSite = request.headers.get('sec-fetch-site')?.trim().toLowerCase() ?? '';
-
-  let verifiedSameOrigin = false;
-  if (originHeader && originHeader !== 'null') {
-    try {
-      verifiedSameOrigin = new URL(originHeader).origin === requestOrigin;
-    } catch {
-      verifiedSameOrigin = false;
-    }
-  } else if (refererHeader) {
-    try {
-      verifiedSameOrigin = new URL(refererHeader).origin === requestOrigin;
-    } catch {
-      verifiedSameOrigin = false;
-    }
-  } else if (originHeader === 'null' && fetchSite === 'same-origin') {
-    verifiedSameOrigin = true;
-  }
-
-  if (!verifiedSameOrigin) return request;
-  const headers = new Headers(request.headers);
-  headers.set('origin', requestOrigin);
-  headers.set('sec-fetch-site', 'same-origin');
-  return new Request(request, { headers });
-}
-
 async function authenticatedRequest(request: Request, env: Env): Promise<Request | Response> {
   const user = await getAuthenticatedUser(request, env);
   if (!user) return apiError('Authentication required.', 401);
 
-  const normalized = normalizeVerifiedSameOriginRequest(request);
-  if (!isSameOriginMutation(normalized)) {
+  if (!isSameOriginMutation(request)) {
     return apiError('Cross-site state-changing request blocked.', 403);
   }
-  return withAuthenticatedActor(normalized, user.email);
+  return withAuthenticatedActor(request, user.email);
 }
 
 function withBuildHeader(response: Response): Response {

@@ -1,3 +1,4 @@
+import { copyAuthenticatedActor } from './http';
 import { apiError } from './http';
 import type { DatabaseEnv } from './publishers';
 import { createFlexibleSizeMap } from './size-map-compat';
@@ -30,10 +31,10 @@ export async function duplicateFlexibleSizeMap(
     return apiError('Source size map JSON is invalid.', 422);
   }
 
-  const syntheticRequest = new Request(request.url, {
+  const syntheticRequest = copyAuthenticatedActor(request, new Request(request.url, {
     method: 'POST',
     headers: request.headers,
     body: JSON.stringify({ name: String(body.name ?? '').trim(), map }),
-  });
+  }));
   return createFlexibleSizeMap(syntheticRequest, env, siteId);
 }

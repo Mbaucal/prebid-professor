@@ -1,0 +1,68 @@
+name: Verify an existing builtin Pages TEST deployment
+
+on:
+  push:
+    branches: [feature/isolated-runtime-workspace-v1]
+    paths: [ops/runtime-test/verify-existing.json]
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+
+concurrency:
+  group: builtin-test-reverification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify the existing immutable TEST deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      receipt_artifact: builtin-reverified-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: node scripts/reverify-builtin-test.mjs validate
+      - name: Compare the original private package and existing public files
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TEST_TRANSFER_SECRET: ${{ secrets.TESSERA_TEST_DEPLOY_SECRET }}
+        run: node scripts/reverify-builtin-test.mjs verify
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: builtin-reverified-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .generated/builtin-reverification/receipt.json
+          if-no-files-found: error
+          retention-days: 90
+
+  report:
+    name: Confirm the existing request without deployment
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: node scripts/reverify-builtin-test.mjs validate
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.verify.outputs.receipt_artifact }}
+          path: .generated/builtin-reverification
+      - name: Wait for this TEST Worker build and record verification
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+          TEST_TRANSFER_SECRET: ${{ secrets.TESSERA_TEST_DEPLOY_SECRET }}
+        run: node scripts/reverify-builtin-test.mjs report

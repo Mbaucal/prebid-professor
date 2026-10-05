@@ -1,0 +1,30 @@
+{
+  "verified": true,
+  "deploymentUrl": "https://b798c608.tanjug.pages.dev",
+  "previewAliasUrl": "https://tessera-test.tanjug.pages.dev",
+  "fileCount": 10,
+  "manifestSha256": "c94d991269f16b09bbc787c73447d1a2a5cc59df154be169aadae64f6ac6a8cc",
+  "deliverySha256": "0636bd773cc023c555f53d9a24839460d7a61b1f3127e028f73d5672d80fd7b1",
+  "deliveryProfile": "archive-v1",
+  "immutable": {
+    "verified": true,
+    "deploymentUrl": "https://b798c608.tanjug.pages.dev",
+    "fileCount": 10,
+    "manifestSha256": "c94d991269f16b09bbc787c73447d1a2a5cc59df154be169aadae64f6ac6a8cc"
+  },
+  "preview": {
+    "verified": true,
+    "deploymentUrl": "https://tessera-test.tanjug.pages.dev",
+    "fileCount": 10,
+    "manifestSha256": "c94d991269f16b09bbc787c73447d1a2a5cc59df154be169aadae64f6ac6a8cc"
+  },
+  "runId": "34865064215",
+  "commit": "d2ffb7da20311e4919ceedbf48bc7d99224e4b78",
+  "project": {
+    "accountId": "6cb2ac6a0a1a0d8b8fc7f9db917cce3d",
+    "projectName": "tanjug",
+    "productionBranch": "main",
+    "branch": "tessera-test",
+    "channel": "staging"
+  }
+}

@@ -1,9 +1,11 @@
 import { useMemo, useState, type ChangeEvent } from 'react';
 import { api } from '../api';
+import { sizeMapsTemplateCsv } from '../shared/size-map-csv-template';
 import type { CsvImportKind, CsvImportPreview } from '../shared/types';
 
 type Props = {
   publisherId: string;
+  onlyKind?: CsvImportKind;
   onChanged?: () => void | Promise<void>;
 };
 
@@ -61,18 +63,12 @@ ogury,device,mobile,"{""assetKey"":""OGY-..."",""adUnitId"":""wm-...""}",true`,
   },
   'size-maps': {
     label: 'Size maps',
-    description: 'Build responsive size maps from breakpoint rows prepared in Excel or Google Sheets.',
+    description: '7 ready-made maps with 25 breakpoints. Remove what you do not need before importing.',
     fileName: 'size-maps-template.csv',
-    csv: `name,minWidth,minHeight,sizes
-Billboard,0,0,320x50|320x100|300x50|300x100
-Billboard,469,0,468x60|320x100|300x100
-Billboard,768,0,728x90|750x100|750x200
-Billboard,1024,0,970x90|970x250|728x90
-P_MAP,0,0,300x250|250x250
-P_MAP,768,0,300x250|300x300|300x600|160x600`,
+    csv: sizeMapsTemplateCsv,
     tips: [
       'Use one row per breakpoint. Rows with the same name are grouped into one size map.',
-      'Separate sizes with |, for example 970x250|728x90.',
+      'Separate sizes with |. Keep fluid and 1x1 where needed; empty sizes disable that viewport.',
       'Existing map names are replaced with the imported breakpoint definition.',
     ],
   },
@@ -90,9 +86,13 @@ function downloadText(fileName: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function BulkImportPanel({ publisherId, onChanged }: Props) {
-  const [kind, setKind] = useState<CsvImportKind>('ad-units');
-  const [csv, setCsv] = useState(templates['ad-units'].csv);
+export default function BulkImportPanel(props: Props) {
+  return <ImportEditor key={`${props.publisherId}:${props.onlyKind ?? 'all'}`} {...props} />;
+}
+
+function ImportEditor({ publisherId, onChanged, onlyKind }: Props) {
+  const [kind, setKind] = useState<CsvImportKind>(onlyKind ?? 'ad-units');
+  const [csv, setCsv] = useState(templates[onlyKind ?? 'ad-units'].csv);
   const [preview, setPreview] = useState<CsvImportPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -178,13 +178,13 @@ export default function BulkImportPanel({ publisherId, onChanged }: Props) {
       <div className="config-toolbar">
         <div>
           <span className="panel-kicker">Spreadsheet workflow</span>
-          <h2>CSV bulk import</h2>
+          <h2>{onlyKind ? `${template.label} CSV import` : 'CSV bulk import'}</h2>
           <p>Prepare repeated configuration in Excel, preview every change, then merge it into D1.</p>
         </div>
         <span className="safe-import-badge">Upsert only · no deletions</span>
       </div>
 
-      <div className="import-kind-grid">
+      {!onlyKind ? <div className="import-kind-grid">
         {(Object.keys(templates) as CsvImportKind[]).map((item) => (
           <button
             className={item === kind ? 'import-kind-card active' : 'import-kind-card'}
@@ -196,7 +196,7 @@ export default function BulkImportPanel({ publisherId, onChanged }: Props) {
             <span>{templates[item].description}</span>
           </button>
         ))}
-      </div>
+      </div> : <p className="size-map-template-description">{template.description}</p>}
 
       <div className="bulk-import-layout">
         <article className="panel import-editor-panel">
@@ -236,7 +236,7 @@ export default function BulkImportPanel({ publisherId, onChanged }: Props) {
           />
 
           <div className="import-actions">
-            <button className="button secondary" disabled={Boolean(busy)} onClick={() => setCsv(template.csv)} type="button">
+            <button className="button secondary" disabled={Boolean(busy)} onClick={() => chooseKind(kind)} type="button">
               Reset template
             </button>
             <button className="button primary" disabled={Boolean(busy) || !csv.trim()} onClick={() => void runPreview()} type="button">

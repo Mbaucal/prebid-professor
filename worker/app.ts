@@ -1,3 +1,4 @@
+import { withAuthenticatedActor } from './http';
 import {
   authStatus,
   getAuthenticatedUser,
@@ -80,11 +81,7 @@ async function releaseStatus(env: Env, siteId: string, releaseId: string): Promi
   return row?.status ?? null;
 }
 
-function withAuthenticatedActor(request: Request, email: string): Request {
-  const headers = new Headers(request.headers);
-  headers.set('x-user-email', email);
-  return new Request(request, { headers });
-}
+
 
 function normalizeVerifiedSameOriginRequest(request: Request): Request {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return request;
@@ -166,6 +163,11 @@ export default {
     if (pathname === '/api/auth/logout') {
       if (request.method !== 'POST') return apiError('Method not allowed.', 405);
       return handleLogout(verifiedRequest);
+    }
+
+    // Sign-in branding needs these exact public assets before a session exists.
+    if ((pathname === '/tessera-logo.png' || pathname === '/favicon.ico') && (request.method === 'GET' || request.method === 'HEAD')) {
+      return env.ASSETS.fetch(request);
     }
 
     const user = await getAuthenticatedUser(request, env);

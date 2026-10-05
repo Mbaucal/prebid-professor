@@ -1,0 +1,84 @@
+name: Cloudflare isolation audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/cloudflare/**
+      - tests/cloudflare/**
+      - ops/tessera-isolation-plan.json
+      - .github/workflows/cloudflare-isolation-audit.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/cloudflare/**
+      - tests/cloudflare/**
+      - ops/tessera-isolation-plan.json
+      - .github/workflows/cloudflare-isolation-audit.yml
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: First run discover_versions; audit requires an exact version UUID
+        required: true
+        type: choice
+        options: [discover_versions, audit]
+        default: discover_versions
+      test_worker:
+        description: Exact Worker name to read; no deployment is performed
+        required: true
+        type: string
+        default: prebid-professor
+      test_version_id:
+        description: Leave empty for discovery; full UUID required only for audit
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test isolation audit with synthetic responses only
+        run: node --test tests/cloudflare/*.test.mjs
+
+  read-cloudflare-metadata:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: offline-tests
+    environment: tessera-isolation-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read selected Cloudflare metadata without changing Cloudflare
+        env:
+          CF_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+          CF_AUDIT_OPERATION: ${{ inputs.operation }}
+          CF_TEST_WORKER: ${{ inputs.test_worker }}
+          CF_TEST_VERSION_ID: ${{ inputs.test_version_id }}
+          CLOUDFLARE_AUDIT_API_TOKEN: ${{ secrets.CLOUDFLARE_AUDIT_API_TOKEN }}
+        run: |
+          mkdir -p .generated
+          node scripts/cloudflare/audit-isolation.mjs > .generated/cloudflare-isolation-audit.json
+      - name: Store sanitized metadata report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-isolation-metadata-${{ github.run_id }}
+          path: .generated/cloudflare-isolation-audit.json
+          if-no-files-found: ignore
+          retention-days: 7

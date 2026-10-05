@@ -1,0 +1,31 @@
+name: Agency hierarchy checks
+on:
+  pull_request:
+    branches: [main, feature/isolated-runtime-workspace-v1]
+    paths: [src/**, worker/organization/**, worker/app-builtin-runtime-preview.ts, worker/test-workspace/**, scripts/**, tests/runtime/organization.test.mjs, .github/workflows/agency-hierarchy.yml]
+permissions:
+  contents: read
+jobs:
+  agencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run build && node scripts/prepare-test-workspace.mjs
+      - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/organization.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs
+      - run: node scripts/verify-organization-workerd.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
+      - run: python scripts/verify-agency-ui.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agency-hierarchy-evidence
+          path: .generated/agency-evidence/
+          retention-days: 14

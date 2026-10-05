@@ -1,0 +1,277 @@
+{
+  "version": "tanjug-test-v1",
+  "buildTimestamp": "20260914_110000",
+  "source": {
+    "name": "ads.js",
+    "url": "https://tanjug.pages.dev/ads.js",
+    "bytes": 42211,
+    "sha256": "8d65c0109e6ce4d07b4ca3fb37a65406ef0a5d5614dff7d92169af3b6969e254",
+    "contentType": "application/javascript"
+  },
+  "runtimeVersion": "3.9.1-tessera.preview.2",
+  "runtimeSha256": "222569881b377c085f0b5d373523d092d64e2ac5dab05d421c3cc9f371078de9",
+  "prebid": {
+    "version": "11.34.0",
+    "sha256": "384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b",
+    "byteSize": 299591,
+    "source": "https://js-download.prebid.org/download",
+    "modules": [
+      "consentManagementTcf",
+      "criteoBidAdapter",
+      "criteoIdSystem",
+      "currency",
+      "id5IdSystem",
+      "lotamePanoramaIdSystem",
+      "openxBidAdapter",
+      "priceFloors",
+      "pubmaticBidAdapter",
+      "schain",
+      "sharedIdSystem",
+      "tcfControl",
+      "teadsBidAdapter",
+      "teadsIdSystem",
+      "userId"
+    ]
+  },
+  "snapshot": {
+    "site": {
+      "id": "tanjug-test",
+      "name": "Tanjug \u2014 TEST pilot",
+      "domain": "tanjug.rs",
+      "gam_path": "/22852026051/Tanjug.rs-Display/"
+    },
+    "config": {
+      "config_json": "{\"enablePrebid\":true,\"userSync\":{\"syncEnabled\":true,\"aliasSyncEnabled\":true,\"syncsPerBidder\":5,\"syncDelay\":3000,\"auctionDelay\":50,\"filterSettings\":{\"all\":{\"bidders\":\"*\",\"filter\":\"include\"}},\"userIds\":[{\"name\":\"sharedId\",\"storage\":{\"type\":\"cookie\",\"name\":\"_sharedid\",\"expires\":365}},{\"name\":\"id5Id\",\"params\":{\"partner\":1355,\"externalModuleUrl\":\"https://cdn.id5-sync.com/api/1.0/id5PrebidModule.js\"},\"storage\":{\"type\":\"html5\",\"name\":\"id5id\",\"expires\":90,\"refreshInSeconds\":28800}},{\"name\":\"teadsId\",\"params\":{\"pubId\":26849}},{\"name\":\"criteo\"},{\"name\":\"lotamePanoramaId\"}]},\"runtimeControls\":{\"sticky\":{\"bottomAdUnitId\":\"Sticky\",\"topAdUnitId\":\"\"},\"consent\":{\"mode\":\"cmp\"},\"takeOver\":{\"enabled\":false},\"floors\":{\"enabled\":true,\"hardFloor\":0.04,\"currency\":\"EUR\",\"bidderFloors\":{\"criteo\":0.04,\"openx\":0.04,\"teads\":0.04},\"rules\":{}},\"currencyConversion\":{\"enabled\":true},\"schain\":{\"enabled\":true,\"version\":\"1.0\",\"complete\":1,\"nodes\":[{\"asi\":\"ringier.rs\",\"sid\":\"20221205191918\",\"hp\":1}]},\"output\":{\"cleanComments\":true}}}"
+    },
+    "units": [
+      {
+        "code": "Billboard",
+        "type": "ATF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "Billboard",
+        "sort_order": 0
+      },
+      {
+        "code": "Billboard_2",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "Billboard_BTF",
+        "sort_order": 1
+      },
+      {
+        "code": "Billboard_3",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "Billboard_BTF",
+        "sort_order": 2
+      },
+      {
+        "code": "Branding_Left",
+        "type": "ATF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "Branding_Map",
+        "sort_order": 3
+      },
+      {
+        "code": "Branding_Right",
+        "type": "ATF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "Branding_Map",
+        "sort_order": 4
+      },
+      {
+        "code": "P1",
+        "type": "ATF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "P",
+        "sort_order": 5
+      },
+      {
+        "code": "P2",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "P",
+        "sort_order": 6
+      },
+      {
+        "code": "P3",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "P",
+        "sort_order": 7
+      },
+      {
+        "code": "P4",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "P",
+        "sort_order": 8
+      },
+      {
+        "code": "P5",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "P",
+        "sort_order": 9
+      },
+      {
+        "code": "P6",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "P",
+        "sort_order": 10
+      },
+      {
+        "code": "P7",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "P",
+        "sort_order": 11
+      },
+      {
+        "code": "P8",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "P",
+        "sort_order": 12
+      },
+      {
+        "code": "InText_1",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "InText",
+        "sort_order": 13
+      },
+      {
+        "code": "InText_2",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "InText",
+        "sort_order": 14
+      },
+      {
+        "code": "InText_3",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "InText",
+        "sort_order": 15
+      },
+      {
+        "code": "InText_4",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "InText",
+        "sort_order": 16
+      },
+      {
+        "code": "InText_5",
+        "type": "BTF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "InText",
+        "sort_order": 17
+      },
+      {
+        "code": "Sticky",
+        "type": "ATF",
+        "media_type": "banner",
+        "enabled": 1,
+        "size_map_key": "Sticky",
+        "sort_order": 18
+      }
+    ],
+    "bidders": [
+      {
+        "bidder": "criteo",
+        "enabled": 1,
+        "params_json": "{\"networkId\":9517}"
+      },
+      {
+        "bidder": "openx",
+        "enabled": 1,
+        "params_json": "{\"unit\":564138077,\"delDomain\":\"ringieraxelspr-d.openx.net\"}"
+      },
+      {
+        "bidder": "teads",
+        "enabled": 1,
+        "params_json": "{\"pageId\":236100,\"placementId\":252872}"
+      },
+      {
+        "bidder": "pubmatic",
+        "enabled": 1,
+        "params_json": "{\"publisherId\":\"158892\",\"adSlot\":\"7257773\"}"
+      }
+    ],
+    "overrides": [],
+    "maps": [
+      {
+        "name": "Billboard",
+        "map_json": "[{\"viewport\":[0,0],\"sizes\":[[360,100],[360,50],[320,100],[320,80],[320,50],[300,100],[300,75],[300,50]]},{\"viewport\":[469,0],\"sizes\":[[468,60]]},{\"viewport\":[768,0],\"sizes\":[[750,200],[750,100],[728,90]]},{\"viewport\":[1024,0],\"sizes\":[[970,250],[970,90],[970,66],[950,90],[728,90]]},{\"viewport\":[1200,0],\"sizes\":[[1200,250],[1060,250],[1000,100],[990,250],[980,250],[980,240],[980,120],[980,90],[970,250],[970,90],[970,66],[950,90]]}]"
+      },
+      {
+        "name": "Billboard_BTF",
+        "map_json": "[{\"viewport\":[0,0],\"sizes\":[[320,100],[300,50]]},{\"viewport\":[469,0],\"sizes\":[[468,60],[320,100],[300,100]]},{\"viewport\":[910,0],\"sizes\":[[800,250],[750,200],[750,100],[728,90],[580,280],[468,60]]}]"
+      },
+      {
+        "name": "Branding_Map",
+        "map_json": "[{\"viewport\":[0,0],\"sizes\":[]},{\"viewport\":[1300,0],\"sizes\":[[160,600]]}]"
+      },
+      {
+        "name": "InText",
+        "map_json": "[{\"viewport\":[0,0],\"sizes\":[\"fluid\",[1,1],[336,280],[320,250],[320,240],[300,250],[250,250],[200,200],[320,100],[320,80],[320,50],[300,100],[300,75],[300,50]]},{\"viewport\":[469,0],\"sizes\":[\"fluid\",[1,1],[468,60],[336,280],[320,250],[320,240],[300,250],[250,250],[200,200],[320,50],[300,50]]},{\"viewport\":[768,0],\"sizes\":[\"fluid\",[1,1],[580,280],[336,280],[320,250],[320,240],[300,250],[250,250],[200,200]]}]"
+      },
+      {
+        "name": "P",
+        "map_json": "[{\"viewport\":[0,0],\"sizes\":[[300,250],[250,250],[200,200],[300,100],[300,50],[320,100],[320,50]]},{\"viewport\":[768,0],\"sizes\":[[300,600],[300,300],[300,250],[250,250],[160,600],[120,600]]}]"
+      },
+      {
+        "name": "Sticky",
+        "map_json": "[{\"viewport\":[0,0],\"sizes\":[[300,50],[320,50],[300,100],[320,100]]},{\"viewport\":[469,0],\"sizes\":[[468,60],[300,50],[320,50],[300,100],[320,100]]},{\"viewport\":[1024,0],\"sizes\":[[728,90],[970,90],[980,90],[1000,100],[750,100]]},{\"viewport\":[1600,0],\"sizes\":[[728,90],[970,90],[980,90],[1000,100],[750,100],[750,200]]}]"
+      }
+    ],
+    "rules": [
+      {
+        "rule_key": "__DEFAULT__",
+        "rule_json": "{\"timeout\":1500,\"cmpTimeout\":8000,\"refresh\":{\"enabled\":true,\"minSeconds\":30,\"minViewPct\":50,\"exitViewPct\":10,\"accumulateViewTime\":false,\"minGapSeconds\":30,\"maxRefreshes\":20,\"schedule\":{\"mode\":\"percentage\",\"firstSeconds\":30,\"growthPercent\":50,\"maxSeconds\":120}}}"
+      },
+      {
+        "rule_key": "__ATF__",
+        "rule_json": "{\"timeout\":800}"
+      },
+      {
+        "rule_key": "__BTF__",
+        "rule_json": "{\"timeout\":1500}"
+      },
+      {
+        "rule_key": "Sticky",
+        "rule_json": "{\"timeout\":1200}"
+      }
+    ]
+  },
+  "changes": [
+    "All 19 positions, six responsive size maps, GAM path and four bidder parameter sets retained.",
+    "TakeOver explicitly OFF as requested.",
+    "Prebid upgraded from 10.10.0 to original 11.34.0 with required currency, priceFloors and schain modules.",
+    "Tessera built-in runtime preview.2 replaces the old wrapper, with shared sticky CSS, responsive reserved heights, consent timer and parser-based minification.",
+    "Refresh preserves 30-second start, 50% growth, 120-second cap, 20-refresh limit; mobile view threshold adapts from 40% to the runtime-supported 50%.",
+    "Original optional Lotame entry retained without inventing a client ID; actual ID delivery and CMP behavior remain staging checks.",
+    "Separate immutable TEST package; existing saved workspace configuration and packages are untouched."
+  ]
+}

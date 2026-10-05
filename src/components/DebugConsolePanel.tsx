@@ -1,3 +1,4 @@
+import { experimentInspectCommand } from '../debug/experiment-inspect.mjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { AdUnit, Bidder } from '../shared/types';
@@ -24,6 +25,7 @@ type DebugCommand = {
   title: string;
   description: string;
   code: string;
+  scope?: 'page';
 };
 
 const ALL = '__all__';
@@ -770,6 +772,14 @@ function liveLoggerCommand(scope: DebugScope): string {
 function buildCommands(scope: DebugScope): DebugCommand[] {
   return [
     {
+      id: 'ab-inspect',
+      category: 'Runtime',
+      title: 'A/B and bid cache inspect',
+      description: 'Show Variant A/B, the loaded release, duplicate starts, fresh/cache selections, rejected offers and fallback counts. Copies a JSON report in DevTools. Reads the entire page; selections do not prove an ad was displayed or earned revenue.',
+      code: experimentInspectCommand,
+      scope: 'page',
+    },
+    {
       id: 'full-diagnostic',
       category: 'Overview',
       title: 'Full diagnostic bundle',
@@ -1030,7 +1040,7 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
           ) : null}
           <label className="debug-search-field">
             <span>Find command</span>
-            <input onChange={(event) => setQuery(event.target.value)} placeholder="bids, targeting, consent…" value={query} />
+            <input onChange={(event) => setQuery(event.target.value)} placeholder="A/B, cache, bids, targeting…" value={query} />
           </label>
         </div>
         <div className="debug-scope-summary">
@@ -1066,8 +1076,8 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
                 </div>
                 <p>{command.description}</p>
                 <div className="debug-command-scope">
-                  <code>{scopeUnit}</code>
-                  <code>{scopeBidder}</code>
+                  <code>{command.scope === 'page' ? 'Entire page' : scopeUnit}</code>
+                  <code>{command.scope === 'page' ? 'All bidders' : scopeBidder}</code>
                 </div>
                 <details className="debug-command-preview">
                   <summary>Preview command</summary>

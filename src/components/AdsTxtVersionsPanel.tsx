@@ -190,6 +190,7 @@ export default function AdsTxtVersionsPanel() {
   const [error, setError] = useState<string | null>(null);
 
   const activeSiteIdRef = useRef('');
+  const siteGeneration = useRef(0);
   const markerSignatureRef = useRef('');
   const detectionGeneration = useRef(0);
   const loadGeneration = useRef(0);
@@ -207,20 +208,20 @@ export default function AdsTxtVersionsPanel() {
         `/api/publishers/${encodeURIComponent(currentSite.id)}/ads-txt/versions?ts=${Date.now()}`,
         { cache: 'no-store', credentials: 'same-origin', headers: { accept: 'application/json' } },
       );
-      if (activeSiteIdRef.current !== currentSite.id || loadGeneration.current !== generation) return;
+      if (activeSiteIdRef.current !== currentSite.id || loadGeneration.current !== generation || activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return;
       setVersions(payload.versions);
       setVersionCount(payload.totalVersions);
       setCurrentFile(payload.currentFile);
       setCurrentVersion(payload.currentVersion);
     } catch (loadError) {
-      if (activeSiteIdRef.current !== currentSite.id || loadGeneration.current !== generation) return;
+      if (activeSiteIdRef.current !== currentSite.id || loadGeneration.current !== generation || activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return;
       setVersions([]);
       setVersionCount(0);
       setCurrentFile(null);
       setCurrentVersion(null);
       setError(loadError instanceof Error ? loadError.message : 'Ads.txt versions could not be loaded.');
     } finally {
-      if (activeSiteIdRef.current === currentSite.id && loadGeneration.current === generation) {
+      if (activeSiteIdRef.current === currentSite.id && loadGeneration.current === generation && activeSiteMarkerFromPage()?.signature === markerSignatureRef.current) {
         setLoading(false);
       }
     }
@@ -233,6 +234,7 @@ export default function AdsTxtVersionsPanel() {
     let debounceId = 0;
 
     const clearResolvedSite = (errorMessage: string): void => {
+      siteGeneration.current++;
       activeSiteIdRef.current = '';
       loadGeneration.current += 1;
       setSite(null);
@@ -263,7 +265,8 @@ export default function AdsTxtVersionsPanel() {
       const changed = markerBefore.signature !== markerSignatureRef.current;
       if (changed) {
         markerSignatureRef.current = markerBefore.signature;
-        activeSiteIdRef.current = '';
+        siteGeneration.current++;
+      activeSiteIdRef.current = '';
         loadGeneration.current += 1;
         setSite(null);
         setVersions([]);
@@ -350,6 +353,7 @@ export default function AdsTxtVersionsPanel() {
 
     return () => {
       disposed = true;
+      siteGeneration.current++;
       detectionGeneration.current += 1;
       loadGeneration.current += 1;
       observer?.disconnect();
@@ -359,10 +363,12 @@ export default function AdsTxtVersionsPanel() {
   }, [loadForSite]);
 
   async function saveCurrentVersion(): Promise<void> {
-    if (!site || saving || !currentFile?.rowCount || matchingVersion) return;
+    if (!site || loading || saving || !currentFile?.rowCount || matchingVersion) return;
     const requestedSite = site;
     const requestedSiteId = requestedSite.id;
+    const generation = siteGeneration.current;
     const reviewedChecksum = currentFile.checksum;
+    if (activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -380,26 +386,28 @@ export default function AdsTxtVersionsPanel() {
           }),
         },
       );
-      if (activeSiteIdRef.current !== requestedSiteId) return;
+      if (activeSiteIdRef.current !== requestedSiteId || siteGeneration.current !== generation || activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return;
       setNote('');
       await loadForSite(requestedSite);
-      if (activeSiteIdRef.current !== requestedSiteId) return;
+      if (activeSiteIdRef.current !== requestedSiteId || siteGeneration.current !== generation || activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return;
       setMessage(payload.message || `Version ${payload.version.versionNumber} saved.`);
       setHistoryOpen(true);
     } catch (saveError) {
-      if (activeSiteIdRef.current !== requestedSiteId) return;
+      if (activeSiteIdRef.current !== requestedSiteId || siteGeneration.current !== generation || activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return;
       setError(saveError instanceof Error ? saveError.message : 'The ads.txt version could not be saved.');
     } finally {
-      if (activeSiteIdRef.current === requestedSiteId) setSaving(false);
+      if (activeSiteIdRef.current === requestedSiteId && siteGeneration.current === generation && activeSiteMarkerFromPage()?.signature === markerSignatureRef.current) setSaving(false);
     }
   }
 
   async function loadVersionDetail(version: VersionMeta): Promise<VersionDetail | null> {
+    if (!site || activeSiteIdRef.current !== site.id || activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return null;
     const cached = details[version.id];
     if (cached) return cached;
     if (!site || actionId) return null;
 
     const requestedSiteId = site.id;
+    const generation = siteGeneration.current;
     setActionId(version.id);
     setError(null);
     try {
@@ -407,43 +415,48 @@ export default function AdsTxtVersionsPanel() {
         `/api/publishers/${encodeURIComponent(requestedSiteId)}/ads-txt/versions/${encodeURIComponent(version.id)}`,
         { cache: 'no-store', credentials: 'same-origin', headers: { accept: 'application/json' } },
       );
-      if (activeSiteIdRef.current !== requestedSiteId) return null;
+      if (activeSiteIdRef.current !== requestedSiteId || siteGeneration.current !== generation || activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return null;
       const detail = payload.version as VersionDetail;
       setDetails((current) => ({ ...current, [version.id]: detail }));
       return detail;
     } catch (detailError) {
-      if (activeSiteIdRef.current === requestedSiteId) {
+      if (activeSiteIdRef.current === requestedSiteId && siteGeneration.current === generation && activeSiteMarkerFromPage()?.signature === markerSignatureRef.current) {
         setError(detailError instanceof Error ? detailError.message : 'The saved version could not be loaded.');
       }
       return null;
     } finally {
-      if (activeSiteIdRef.current === requestedSiteId) setActionId(null);
+      if (activeSiteIdRef.current === requestedSiteId && siteGeneration.current === generation && activeSiteMarkerFromPage()?.signature === markerSignatureRef.current) setActionId(null);
     }
   }
 
   async function togglePreview(version: VersionMeta): Promise<void> {
+    const generation = siteGeneration.current;
     if (previewId === version.id) {
       setPreviewId(null);
       return;
     }
     const detail = await loadVersionDetail(version);
-    if (detail) setPreviewId(version.id);
+    if (detail && siteGeneration.current === generation && activeSiteMarkerFromPage()?.signature === markerSignatureRef.current) setPreviewId(version.id);
   }
 
   async function copyVersion(version: VersionMeta): Promise<void> {
+    const generation = siteGeneration.current;
     const detail = await loadVersionDetail(version);
-    if (!detail) return;
+    if (!detail || siteGeneration.current !== generation || activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return;
     try {
       await copyText(detail.content);
+      if (siteGeneration.current !== generation || activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return;
       setMessage(`Version ${version.versionNumber} copied to the clipboard.`);
     } catch (copyError) {
+      if (siteGeneration.current !== generation || activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return;
       setError(copyError instanceof Error ? copyError.message : 'Clipboard access was blocked.');
     }
   }
 
   async function downloadVersion(version: VersionMeta): Promise<void> {
+    const generation = siteGeneration.current;
     const detail = await loadVersionDetail(version);
-    if (!detail) return;
+    if (!detail || siteGeneration.current !== generation || activeSiteMarkerFromPage()?.signature !== markerSignatureRef.current) return;
     const blob = new Blob([detail.content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -515,7 +528,7 @@ export default function AdsTxtVersionsPanel() {
               </button>
               <button
                 className="button primary"
-                disabled={saving || !currentFile?.rowCount || Boolean(matchingVersion)}
+                disabled={loading || saving || !currentFile?.rowCount || Boolean(matchingVersion)}
                 onClick={() => void saveCurrentVersion()}
                 type="button"
               >

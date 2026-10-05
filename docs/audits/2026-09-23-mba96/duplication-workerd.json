@@ -1,0 +1,39 @@
+{
+  "scope": "compiled production Worker + local native D1/R2; no hosted writes",
+  "checks": [
+    {
+      "name": "Create source through authenticated production route",
+      "passed": true
+    },
+    {
+      "name": "Duplicate commits with real D1 snapshot guard",
+      "passed": true
+    },
+    {
+      "name": "Copy owns a separate native R2 object",
+      "passed": true
+    },
+    {
+      "name": "Copied selection points to its own build",
+      "passed": true
+    },
+    {
+      "name": "Copied site generates a complete bundle in compiled Worker",
+      "passed": true
+    },
+    {
+      "name": "Delete copied file through authenticated route",
+      "passed": true
+    },
+    {
+      "name": "Original native R2 file survives",
+      "passed": true
+    },
+    {
+      "name": "Copied native R2 file is removed",
+      "passed": true
+    }
+  ],
+  "passed": 8,
+  "failed": 0
+}

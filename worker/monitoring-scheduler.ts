@@ -1,4 +1,4 @@
-import { apiError, getActor, json } from './http';
+import { apiError, getActor, json, withAuthenticatedActor } from './http';
 import { runMonitoringNotification, type MonitoringNotificationRunEnv } from './monitoring-notification-run';
 import { listEnabledMonitoringSiteIds } from './monitoring-notification-settings';
 
@@ -48,10 +48,9 @@ async function evaluateSite(
 ): Promise<EvaluationResult> {
   try {
     const response = await runMonitoringNotification(
-      new Request(`https://monitoring.scheduler/${encodeURIComponent(siteId)}`, {
+      withAuthenticatedActor(new Request(`https://monitoring.scheduler/${encodeURIComponent(siteId)}`, {
         method: 'POST',
-        headers: { 'x-user-email': actor },
-      }),
+      }), actor),
       env,
       siteId,
     );

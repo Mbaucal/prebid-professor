@@ -193,3 +193,11 @@
     grid-template-columns: 1fr;
   }
 }
+
+.prebid-cache-settings { margin: 24px 0 0; padding: 18px; border: 1px solid #d5dce6; border-radius: 13px; min-width: 0; }
+.prebid-cache-settings legend { font-weight: 800; padding: 0 6px; }
+.prebid-cache-settings p, .prebid-cache-age span { color: #667183; font-size: 13px; line-height: 1.5; }
+.prebid-cache-toggle { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.prebid-cache-toggle input { width: 18px; height: 18px; accent-color: #ef6f24; }
+.prebid-cache-age { display: grid; gap: 8px; margin-top: 16px; font-weight: 700; }
+.prebid-cache-age input { box-sizing: border-box; width: min(100%, 240px); padding: 10px 12px; border: 1px solid #d5dce6; border-radius: 8px; }

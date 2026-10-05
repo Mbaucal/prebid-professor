@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "trafficBPercent": 50,
+  "arms": {
+    "A": {"mode": "fresh-only", "refreshSeconds": 10},
+    "B": {"mode": "auction-with-cache", "refreshSeconds": 10, "maxBidAgeSeconds": 60}
+  }
+}

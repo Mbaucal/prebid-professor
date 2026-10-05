@@ -72,3 +72,29 @@
     gap: 4px;
   }
 }
+
+.size-map-csv {
+  margin: 0 32px 18px;
+  border: 1px solid #dce3ee;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.size-map-csv > summary {
+  padding: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.size-map-template-description {
+  margin: 0 32px 18px;
+  color: #526174;
+}
+
+@media (max-width: 760px) {
+  .size-map-csv,
+  .size-map-template-description {
+    margin-right: 18px;
+    margin-left: 18px;
+  }
+}

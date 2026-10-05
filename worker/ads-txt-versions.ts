@@ -1,3 +1,4 @@
+import { ensureAdsTxtVersionIntents } from './ads-txt-version-intents';
 import { getManagedAdsTxtFile } from './ads-txt-managed-file';
 import { apiError, getActor, json, readJson } from './http';
 import type { DatabaseEnv } from './publishers';
@@ -294,6 +295,9 @@ export async function createAdsTxtVersion(
   const objectKey = `ads-txt-versions/${encodeURIComponent(siteId)}/${id}.txt`;
   const createdAt = new Date().toISOString();
 
+  await ensureAdsTxtVersionIntents(db);
+  await db.prepare("INSERT INTO ads_txt_version_intents(id, site_id, object_key, state, created_at) VALUES (?, ?, ?, 'writing', ?)")
+    .bind(id, siteId, objectKey, createdAt).run();
   try {
     await env.BUILDS!.put(objectKey, current.file.content, {
       httpMetadata: { contentType: 'text/plain; charset=utf-8' },
@@ -332,6 +336,7 @@ export async function createAdsTxtVersion(
           createdAt,
           siteId,
         ),
+      db.prepare('DELETE FROM ads_txt_version_intents WHERE id = ?').bind(id),
       auditStatement(db, actor, 'ads_txt_version.created', siteId, id, {
         checksum: current.file.checksum,
         rowCount: current.file.rowCount,
@@ -342,8 +347,17 @@ export async function createAdsTxtVersion(
       }, createdAt),
     ]);
   } catch (error) {
-    await env.BUILDS!.delete(objectKey).catch(() => undefined);
     const concurrentExisting = await versionByChecksum(db, siteId, current.file.checksum);
+    // A lost response after a committed batch must never delete its saved snapshot.
+    if (concurrentExisting?.id === id) return json({ ok: true, created: true,
+      message: `Version ${concurrentExisting.version_number} saved.`, version: publicVersion(concurrentExisting) });
+    await db.prepare("UPDATE ads_txt_version_intents SET state = 'cleanup' WHERE id = ?").bind(id).run();
+    try {
+      await env.BUILDS!.delete(objectKey);
+      await db.prepare('DELETE FROM ads_txt_version_intents WHERE id = ?').bind(id).run();
+    } catch {
+      return apiError('The version could not be saved and cleanup is incomplete. Retry after storage is available; contact support if this continues.', 503);
+    }
     if (concurrentExisting) {
       return json({
         ok: true,

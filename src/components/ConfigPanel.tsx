@@ -5,6 +5,7 @@ import BidderBuildSelectionPanel from './BidderBuildSelectionPanel';
 import BiddersPanel from './BiddersPanel';
 import BulkImportPanel from './BulkImportPanel';
 import GeneratorProfilesPanel from './GeneratorProfilesPanel';
+import LegacyGeneratorProfilesPanel from './LegacyGeneratorProfilesPanel';
 import PrebidModePanel from './PrebidModePanel';
 import RuntimeControlsPanel from './RuntimeControlsPanel';
 import SizeMapsCompatPanel from './SizeMapsCompatPanel';
@@ -14,7 +15,10 @@ import UserIdModulesPanel from './UserIdModulesPanel';
 
 type Props = {
   publisherId: string;
+  onOpenPrebid?: () => void;
+  onGenerate?: () => void;
   onChanged?: () => void | Promise<void>;
+  initialSection?: ConfigSection;
 };
 
 type ConfigSection =
@@ -28,47 +32,57 @@ type ConfigSection =
   | 'supply-consent'
   | 'user-id'
   | 'generator-profiles'
+  | 'legacy-profiles'
   | 'imports';
 
-export default function ConfigPanel({ publisherId, onChanged }: Props) {
-  const [section, setSection] = useState<ConfigSection>('ad-units');
+const CONFIG_GROUPS: Array<{
+  label: string;
+  sections: Array<{ id: ConfigSection; label: string }>;
+}> = [
+  { label: 'Script', sections: [{ id: 'generator-profiles', label: 'Script setup' }] },
+  { label: 'Inventory', sections: [
+    { id: 'ad-units', label: 'Ad units' },
+    { id: 'size-maps', label: 'Size maps' },
+  ] },
+  { label: 'Demand', sections: [
+    { id: 'demand-mode', label: 'Prebid' },
+    { id: 'bidders', label: 'Bidders' },
+    { id: 'supply-consent', label: 'Supply & consent' },
+    { id: 'user-id', label: 'User ID modules' },
+  ] },
+  { label: 'Delivery', sections: [
+    { id: 'advanced-rules', label: 'Refresh' },
+    { id: 'runtime-controls', label: 'Sticky & floors' },
+  ] },
+  { label: 'Advanced', sections: [
+    { id: 'unit-rules', label: 'Unit rules' },
+    { id: 'imports', label: 'CSV import' },
+    { id: 'legacy-profiles', label: 'Imported templates' },
+  ] },
+];
+
+export default function ConfigPanel({ publisherId, onChanged, onOpenPrebid, onGenerate, initialSection = 'generator-profiles' }: Props) {
+  const [section, setSection] = useState<ConfigSection>(initialSection);
+  const group = CONFIG_GROUPS.find((item) => item.sections.some((child) => child.id === section))!;
 
   return (
     <div className="config-workspace">
-      <nav className="config-subnav" aria-label="Configuration sections">
-        <button className={section === 'ad-units' ? 'active' : ''} onClick={() => setSection('ad-units')} type="button">
-          Ad units
-        </button>
-        <button className={section === 'demand-mode' ? 'active' : ''} onClick={() => setSection('demand-mode')} type="button">
-          Demand mode
-        </button>
-        <button className={section === 'bidders' ? 'active' : ''} onClick={() => setSection('bidders')} type="button">
-          Bidders & overrides
-        </button>
-        <button className={section === 'size-maps' ? 'active' : ''} onClick={() => setSection('size-maps')} type="button">
-          Size maps
-        </button>
-        <button className={section === 'unit-rules' ? 'active' : ''} onClick={() => setSection('unit-rules')} type="button">
-          Unit rules
-        </button>
-        <button className={section === 'advanced-rules' ? 'active' : ''} onClick={() => setSection('advanced-rules')} type="button">
-          Advanced schedules
-        </button>
-        <button className={section === 'runtime-controls' ? 'active' : ''} onClick={() => setSection('runtime-controls')} type="button">
-          Runtime controls
-        </button>
-        <button className={section === 'supply-consent' ? 'active' : ''} onClick={() => setSection('supply-consent')} type="button">
-          Supply & consent
-        </button>
-        <button className={section === 'user-id' ? 'active' : ''} onClick={() => setSection('user-id')} type="button">
-          User ID modules
-        </button>
-        <button className={section === 'generator-profiles' ? 'active' : ''} onClick={() => setSection('generator-profiles')} type="button">
-          Generator profiles
-        </button>
-        <button className={section === 'imports' ? 'active' : ''} onClick={() => setSection('imports')} type="button">
-          CSV import
-        </button>
+      <nav className="config-groups" aria-label="Configuration groups">
+        {CONFIG_GROUPS.map((item) => (
+          <button key={item.label} type="button" aria-pressed={group === item}
+            className={group === item ? 'active' : ''}
+            onClick={() => { if (group !== item) setSection(item.sections[0].id); }}>
+            {item.label}
+          </button>
+        ))}
+      </nav>
+      <nav className="config-subnav" aria-label={`${group.label} settings`}>
+        {group.sections.map((item) => (
+          <button key={item.id} type="button" aria-pressed={section === item.id}
+            className={section === item.id ? 'active' : ''} onClick={() => setSection(item.id)}>
+            {item.label}
+          </button>
+        ))}
       </nav>
 
       {section === 'ad-units' ? <AdUnitsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
@@ -80,12 +94,13 @@ export default function ConfigPanel({ publisherId, onChanged }: Props) {
         </>
       ) : null}
       {section === 'size-maps' ? <SizeMapsCompatPanel onChanged={onChanged} publisherId={publisherId} /> : null}
-      {section === 'unit-rules' ? <UnitRulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
-      {section === 'advanced-rules' ? <AdvancedRefreshPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'unit-rules' ? <UnitRulesPanel onOpenRefresh={() => setSection('advanced-rules')} onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'advanced-rules' ? <AdvancedRefreshPanel onOpenUnitRules={() => setSection('unit-rules')} onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'runtime-controls' ? <RuntimeControlsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'supply-consent' ? <SupplyChainConsentPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'user-id' ? <UserIdModulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
-      {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} /> : null}
+      {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} onOpenPrebid={onOpenPrebid} onChanged={onChanged} onContinue={onGenerate} /> : null}
+      {section === 'legacy-profiles' ? <LegacyGeneratorProfilesPanel key={publisherId} publisherId={publisherId} /> : null}
       {section === 'imports' ? (
         <>
           <div className="size-map-import-compat-note">

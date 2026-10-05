@@ -1,3 +1,5 @@
+import { patchWrapperConsentTimer } from './runtime/consent-timer.mjs';
+
 type JsonRecord = Record<string, unknown>;
 
 export type GeneratorEngine = 'legacy-frozen-v1' | 'legacy-advanced-refresh-v1';
@@ -236,14 +238,7 @@ function patchAdvancedRuntime(
   }
   source = source.replace('function resolveConsent(cb){', 'function resolveConsent(cb, timeoutMs){');
 
-  const consentTimerPattern = /}, Math\.min\(8000, 1500\)\);/;
-  if (!consentTimerPattern.test(source)) {
-    throw new Error('Advanced runtime could not find the wrapper consent timer.');
-  }
-  source = source.replace(
-    consentTimerPattern,
-    '}, Math.max(100, Math.min(Number(timeoutMs || window.__PP_CONSENT_TIMEOUT || 1500), 30000)));',
-  );
+  source = patchWrapperConsentTimer(source);
 
   const consentHelper = `function getConsentTimeoutForSlots(slots){
     var maxTimeout = 0;

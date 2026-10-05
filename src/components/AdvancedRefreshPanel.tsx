@@ -5,6 +5,7 @@ import type { AdUnit, UnitRule } from '../shared/types';
 type Props = {
   publisherId: string;
   onChanged?: () => void | Promise<void>;
+  onOpenUnitRules?: () => void;
 };
 
 type RefreshMode = 'fixed' | 'firstThenFixed' | 'percentage' | 'sequence';
@@ -170,7 +171,7 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
   return payload;
 }
 
-export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) {
+export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUnitRules }: Props) {
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
   const [rules, setRules] = useState<UnitRule[]>([]);
   const [advancedRules, setAdvancedRules] = useState<Record<string, AdvancedRule>>({});
@@ -296,14 +297,15 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) 
       <div className="config-toolbar advanced-refresh-toolbar">
         <div>
           <span className="panel-kicker">Per-scope auction, CMP and accumulated view-time control</span>
-          <h2>Advanced schedules</h2>
+          <h2>Refresh</h2>
           <p>
             Configure a fixed cadence, a different first refresh, percentage backoff or an explicit sequence.
             View time can accumulate across viewport exits instead of restarting from zero.
           </p>
         </div>
-        <span className="advanced-profile-note">Requires advanced generator profile for CMP/schedule modes</span>
+        {onOpenUnitRules ? <button className="button secondary" type="button" onClick={onOpenUnitRules}>Unit rules</button> : null}
       </div>
+      <p className="config-section-note">Choose Default, a group or an individual ad unit below. Save your settings, then generate a new release to use them. Previously downloaded ZIPs keep their original settings.</p>
 
       {error ? <div className="form-error config-error">{error}</div> : null}
       {savedMessage ? <div className="advanced-save-message">✓ {savedMessage}</div> : null}

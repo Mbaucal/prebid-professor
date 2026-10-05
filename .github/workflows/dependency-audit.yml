@@ -1,0 +1,45 @@
+name: Dependency audit report
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  audit-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Capture complete and production dependency audit reports
+        run: |
+          mkdir -p dependency-audit
+          node --input-type=module <<'JS'
+          import { spawnSync } from 'node:child_process';
+          import { writeFileSync, appendFileSync } from 'node:fs';
+          const summaries = [];
+          for (const [scope, args] of [['all', []], ['production', ['--omit=dev']]]) {
+            const run = spawnSync('npm', ['audit', '--package-lock-only', '--ignore-scripts', '--json', ...args], { encoding: 'utf8', timeout: 120000, maxBuffer: 20 * 1024 * 1024 });
+            writeFileSync(`dependency-audit/${scope}.json`, run.stdout || '{}');
+            writeFileSync(`dependency-audit/${scope}.stderr.txt`, run.stderr || '');
+            if (run.error || ![0, 1].includes(run.status)) throw new Error(`The ${scope} audit could not be completed.`);
+            const report = JSON.parse(run.stdout);
+            if (report.error || !report.metadata?.vulnerabilities) throw new Error(`The ${scope} audit did not return valid advisory metadata.`);
+            summaries.push({ scope, exitCode: run.status, vulnerabilities: report.metadata.vulnerabilities, packages: Object.keys(report.vulnerabilities ?? {}) });
+          }
+          writeFileSync('dependency-audit/summary.json', JSON.stringify({ note: 'Report only. A successful job means the report was retrieved, NOT that dependencies are clear. No automatic fixes or package changes.', summaries }, null, 2));
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Dependency audit — report only\n\nNo automatic changes. Vulnerabilities require triage before launch.\n\n\`\`\`json\n${JSON.stringify(summaries, null, 2)}\n\`\`\`\n`);
+          console.log(JSON.stringify(summaries, null, 2));
+          JS
+      - name: Retain advisory evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-report
+          path: dependency-audit/
+          retention-days: 14
+          if-no-files-found: error

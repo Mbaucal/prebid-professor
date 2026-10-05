@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 
-const TESSERA_LOGO_URL = '/tessera-logo.png?v=20';
+const TESSERA_LOGO_URL = '/tessera-logo.png?v=21';
+const TESSERA_ICON_URL = '/favicon.ico?v=21';
 
 function ensureIcon(rel: 'icon' | 'apple-touch-icon'): void {
   let link = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
@@ -9,10 +10,11 @@ function ensureIcon(rel: 'icon' | 'apple-touch-icon'): void {
     link.rel = rel;
     document.head.appendChild(link);
   }
-  if (link.getAttribute('href') !== TESSERA_LOGO_URL) link.href = TESSERA_LOGO_URL;
+  const url = rel === 'icon' ? TESSERA_ICON_URL : TESSERA_LOGO_URL;
+  if (link.getAttribute('href') !== url) link.href = url;
   if (rel === 'icon') {
-    link.type = 'image/png';
-    link.sizes = '192x192';
+    link.type = 'image/x-icon';
+    link.sizes = '16x16 32x32 48x48';
   }
 }
 
