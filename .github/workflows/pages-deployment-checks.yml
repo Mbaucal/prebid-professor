@@ -24,6 +24,11 @@ on:
       - package.json
       - package-lock.json
       - scripts/pages-toolchain.mjs
+      - scripts/builtin-toolchain.mjs
+      - scripts/builtin-pages-preflight.mjs
+      - tests/runtime/builtin-toolchain.test.mjs
+      - tests/runtime/builtin-pages-preflight.test.mjs
+      - tests/runtime/builtin-reverification-cli.test.mjs
       - scripts/pages-release-preflight.mjs
       - tests/runtime/pages-release-preflight.test.mjs
       - scripts/verify-pinned-wrangler-action.mjs
@@ -59,6 +64,11 @@ on:
       - package.json
       - package-lock.json
       - scripts/pages-toolchain.mjs
+      - scripts/builtin-toolchain.mjs
+      - scripts/builtin-pages-preflight.mjs
+      - tests/runtime/builtin-toolchain.test.mjs
+      - tests/runtime/builtin-pages-preflight.test.mjs
+      - tests/runtime/builtin-reverification-cli.test.mjs
       - scripts/pages-release-preflight.mjs
       - tests/runtime/pages-release-preflight.test.mjs
       - scripts/verify-pinned-wrangler-action.mjs
@@ -89,7 +99,7 @@ jobs:
       - run: node scripts/isolated-toolchain.mjs prepare
       - run: node scripts/prepare-test-workspace.mjs
       - name: Verify package bytes, target branch, callback retries and existing draft barriers
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/deployment-callback.test.mjs tests/runtime/publisher-delivery.test.mjs tests/runtime/builtin-reverification.test.mjs tests/runtime/pages-deployment.test.mjs tests/runtime/stored-draft-legacy-guards.test.mjs tests/runtime/builtin-test-delivery.test.mjs tests/runtime/pages-release-preflight.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test --test-concurrency=1 tests/runtime/deployment-callback.test.mjs tests/runtime/publisher-delivery.test.mjs tests/runtime/builtin-reverification.test.mjs tests/runtime/pages-deployment.test.mjs tests/runtime/stored-draft-legacy-guards.test.mjs tests/runtime/builtin-test-delivery.test.mjs tests/runtime/pages-release-preflight.test.mjs tests/runtime/builtin-toolchain.test.mjs tests/runtime/builtin-pages-preflight.test.mjs tests/runtime/builtin-reverification-cli.test.mjs
 
       - name: Read the exact retained action for offline contract verification
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

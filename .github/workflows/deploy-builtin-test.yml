@@ -29,8 +29,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
-      - run: npm ci --ignore-scripts
+          node-version: 22.23.3
+      - run: node scripts/builtin-toolchain.mjs bootstrap
       - name: Validate TEST branch, repository, destinations and secret reference
         run: node scripts/builtin-test-delivery.mjs validate
       - name: Claim the saved request once
@@ -50,16 +50,20 @@ jobs:
           path: .generated/builtin-delivery/verification.json
           if-no-files-found: error
           retention-days: 14
+      - name: Recheck original assets and locked action tool resolution
+        run: node scripts/builtin-pages-preflight.mjs
       - name: Deliver verified files to the TEST branch
         id: deploy
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
         with:
           apiToken: ${{ secrets[fromJSON(inputs.deployment_inputs).github_environment] }}
           accountId: ${{ fromJSON(inputs.deployment_inputs).account_id }}
-          wranglerVersion: "4.118.0"
+          workingDirectory: tools
+          packageManager: npm
+          wranglerVersion: "4.131.0"
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           command: >-
-            pages deploy .generated/builtin-delivery/dist
+            pages deploy ../.generated/builtin-delivery/dist
             --project-name=${{ fromJSON(inputs.deployment_inputs).project_name }}
             --branch=${{ fromJSON(inputs.deployment_inputs).branch }}
             --commit-dirty=false
@@ -81,8 +85,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
-      - run: npm ci --ignore-scripts
+          node-version: 22.23.3
+      - run: node scripts/builtin-toolchain.mjs bootstrap
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.deploy.outputs.source_artifact }}
@@ -113,8 +117,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
-      - run: npm ci --ignore-scripts
+          node-version: 22.23.3
+      - run: node scripts/builtin-toolchain.mjs bootstrap
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         if: ${{ needs.verify.result == 'success' }}
         with:
