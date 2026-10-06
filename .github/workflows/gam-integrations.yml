@@ -1,0 +1,41 @@
+name: GAM API integration checks
+on:
+  pull_request:
+    branches: [main, feature/isolated-runtime-workspace-v1]
+    paths: [tests/support/**,shared/gam/**, shared/inventory/**, src/components/SiteSyncCard.tsx, src/shared/inventory-csv-templates.ts, worker/integrations/**, worker/test-workspace/**, src/components/ApiIntegrationsPanel.tsx, src/components/GamLineItemsPanel.tsx, src/api-integrations/**, src/api-integrations.css, src/App.tsx, scripts/**, tests/gam/**, vendor/gam-xml-parser/**, tools/**, package.json, package-lock.json, tsconfig*.json, vite.config.ts, wrangler.jsonc, ops/runtime-test/**, .github/workflows/gam-integrations.yml]
+permissions:
+  contents: read
+jobs:
+  gam:
+    runs-on: ubuntu-latest
+    env:
+      TESSERA_TEST_TOOLCHAIN: isolated
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.3
+      - run: node scripts/bootstrap-toolchain.mjs --profile test
+      - run: node scripts/isolated-toolchain.mjs typecheck --profile test
+      - run: node scripts/check-runtime-release-history.mjs HEAD^
+      - run: node scripts/isolated-toolchain.mjs prepare --profile test && node scripts/prepare-test-workspace.mjs
+      - run: node --experimental-strip-types --test tests/gam/*.test.mjs
+      - name: Compile and exercise real Worker OAuth and SOAP fetches with local Google responses
+        run: |
+          node scripts/isolated-toolchain.mjs test-dry-run --profile test
+          node scripts/verify-gam-workerd.mjs .generated/test-workspace-active-dry-run
+      - run: node scripts/isolated-toolchain.mjs build --profile test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
+      - run: python scripts/verify-gam-ui.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gam-ui-evidence
+          path: .generated/gam-ui-evidence/
+          retention-days: 14

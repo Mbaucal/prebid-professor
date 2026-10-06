@@ -125,7 +125,10 @@ export async function getMonitoringStatus(
     if (!site.current_release_id) {
       messages.push('This legacy site has production version metadata without a release ID; current-channel artifacts are still checked.');
     }
-    const prefix = `publishers/${site.id}/current/`;
+    const builtin = /^builtin-release-[a-f0-9]{64}$/.test(site.current_release_id ?? '');
+    const prefix = builtin
+      ? `publishers/${site.id}/releases/${site.current_release_id}/`
+      : `publishers/${site.id}/current/`;
     const [manifest, config] = await Promise.all([
       readJsonObject(await env.BUILDS.get(`${prefix}manifest.json`)),
       readJsonObject(await env.BUILDS.get(`${prefix}config.json`)),

@@ -1,0 +1,30 @@
+{
+  "checks": [
+    "1440: opening named page does not prepare data",
+    "1440: TEST paths match visible navigation",
+    "1440: fixed positions have no unrelated CRUD",
+    "1440: explicit position On overrides site Off",
+    "1440: Escape returns focus to position",
+    "1440: library guidance matches TEST tabs",
+    "1440: named snapshot explains position choice",
+    "1440: download copy does not direct live activation",
+    "1440: reopening preserves exact ZIP bytes",
+    "1440: layout fits viewport",
+    "390: opening named page does not prepare data",
+    "390: TEST paths match visible navigation",
+    "390: fixed positions have no unrelated CRUD",
+    "390: explicit position On overrides site Off",
+    "390: Escape returns focus to position",
+    "390: library guidance matches TEST tabs",
+    "390: named snapshot explains position choice",
+    "390: download copy does not direct live activation",
+    "390: reopening preserves exact ZIP bytes",
+    "390: layout fits viewport",
+    "Collision is explicit and offers no overwrite",
+    "Collision retry remains read-only",
+    "No unhandled browser error"
+  ],
+  "passed": 23,
+  "failed": 0,
+  "errors": []
+}

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import AdsTxtManagedFilePanel from './AdsTxtManagedFilePanel';
 
 const PORTAL_ID = 'ads-txt-managed-file-portal';
+const VERSIONS_PORTAL_ID = 'ads-txt-versions-portal';
 const CMS_PORTAL_ID = 'ads-txt-cms-connection-portal';
 
 export default function AdsTxtManagedFilePortal() {
@@ -27,10 +28,12 @@ export default function AdsTxtManagedFilePortal() {
         target.className = 'ads-txt-managed-file-portal';
       }
 
+      const versionsPortal = page.querySelector<HTMLElement>(`#${VERSIONS_PORTAL_ID}`);
       const cmsPortal = page.querySelector<HTMLElement>(`#${CMS_PORTAL_ID}`);
-      if (cmsPortal) {
-        if (target.parentElement !== page || target.nextElementSibling !== cmsPortal) {
-          page.insertBefore(target, cmsPortal);
+      const anchor = versionsPortal ?? cmsPortal;
+      if (anchor) {
+        if (target.parentElement !== page || target.nextElementSibling !== anchor) {
+          page.insertBefore(target, anchor);
         }
       } else if (target.parentElement !== page) {
         page.appendChild(target);

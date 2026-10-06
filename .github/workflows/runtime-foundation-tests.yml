@@ -16,5 +16,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check exact version pins and extraction safeguards
-        run: node --test tests/runtime/foundation.test.mjs
+      - name: Check exact version pins, extraction safeguards and site runtime selections
+        run: node --test tests/runtime/foundation.test.mjs tests/runtime/site-runtime-selection.test.mjs

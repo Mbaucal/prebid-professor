@@ -417,7 +417,7 @@ async function buildSizeMaps(db: D1Database, publisherId: string, csv: string): 
 
   parsed.rows.forEach((row) => {
     const name = value(row, 'name', 'sizeMap', 'mapName').trim();
-    const group = groups.get(name) ?? {
+    const group: MapGroup = groups.get(name) ?? {
       firstRow: row.rowNumber,
       breakpoints: new Map(),
       errors: [],

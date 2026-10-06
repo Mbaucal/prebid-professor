@@ -1,9 +1,11 @@
-import { useMemo, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { api } from '../api';
+import { adUnitsTemplateCsv, sizeMapsTemplateCsv } from '../shared/inventory-csv-templates';
 import type { CsvImportKind, CsvImportPreview } from '../shared/types';
 
 type Props = {
   publisherId: string;
+  kinds?: CsvImportKind[];
   onChanged?: () => void | Promise<void>;
 };
 
@@ -20,11 +22,11 @@ const templates: Record<CsvImportKind, Template> = {
     label: 'Ad units',
     description: 'Create or update many ATF, BTF and Draft positions from one spreadsheet.',
     fileName: 'ad-units-template.csv',
-    csv: `code,type,mediaType,sizeMapKey,enabled,sortOrder,notes
-Billboard,ATF,banner,Billboard,true,1,Homepage top billboard
-P1,ATF,banner,P_MAP,true,2,Right rail
-InFeed_1,BTF,banner,InFeed,true,10,First in-feed position`,
+    csv: adUnitsTemplateCsv,
     tips: [
+      '26 starter positions. Remove unused rows and match codes to your page DIV IDs.',
+      'Import the size-map template first; its names match this template.',
+      'Sticky and other display behavior is configured separately under Display & loading.',
       'code is also the div ID used by the generated wrapper.',
       'type must be ATF, BTF or DRAFT.',
       'Existing codes are updated; missing codes are created.',
@@ -35,10 +37,11 @@ InFeed_1,BTF,banner,InFeed,true,10,First in-feed position`,
     description: 'Create or update bidder base params. Empty base params are valid when overrides are used.',
     fileName: 'bidders-template.csv',
     csv: `bidder,paramsJson,enabled
-connectad,"{""networkId"":44,""siteId"":3213233}",true
+connectad,"{""networkId"":123,""siteId"":456}",true
 ogury,{},true
 richaudience,{},true`,
     tips: [
+      'Replace every example partner ID with the values supplied for your site.',
       'paramsJson must be a JSON object, never an array.',
       'Use {} for override-only bidders such as Ogury or RichAudience.',
       'Bidder codes are normalized to lowercase.',
@@ -49,7 +52,7 @@ richaudience,{},true`,
     description: 'Bulk-create slot, device and exact ad-unit overrides, including RichAudience per position.',
     fileName: 'bidder-overrides-template.csv',
     csv: `bidder,scopeType,scopeKey,paramsJson,enabled
-richaudience,adunit,Billboard,"{""pid"":""nfQSGaQIZe"",""supplyType"":""site""}",true
+richaudience,adunit,Billboard_1,"{""pid"":""replace-with-billboard-pid"",""supplyType"":""site""}",true
 richaudience,adunit,P1,"{""pid"":""replace-with-p1-pid"",""supplyType"":""site""}",true
 ogury,device,desktop,"{""assetKey"":""OGY-..."",""adUnitId"":""wd-...""}",true
 ogury,device,mobile,"{""assetKey"":""OGY-..."",""adUnitId"":""wm-...""}",true`,
@@ -63,14 +66,11 @@ ogury,device,mobile,"{""assetKey"":""OGY-..."",""adUnitId"":""wm-...""}",true`,
     label: 'Size maps',
     description: 'Build responsive size maps from breakpoint rows prepared in Excel or Google Sheets.',
     fileName: 'size-maps-template.csv',
-    csv: `name,minWidth,minHeight,sizes
-Billboard,0,0,320x50|320x100|300x50|300x100
-Billboard,469,0,468x60|320x100|300x100
-Billboard,768,0,728x90|750x100|750x200
-Billboard,1024,0,970x90|970x250|728x90
-P_MAP,0,0,300x250|250x250
-P_MAP,768,0,300x250|300x300|300x600|160x600`,
+    csv: sizeMapsTemplateCsv,
     tips: [
+      '7 complete maps / 25 breakpoints: Sticky, Billboard, InFeed, P, InText, Branding_Map and Under_Article.',
+      'Adjust widths and sizes to your layout and GAM inventory; remove maps you do not need.',
+      'An empty sizes cell disables that viewport range. fluid is supported for native inventory.',
       'Use one row per breakpoint. Rows with the same name are grouped into one size map.',
       'Separate sizes with |, for example 970x250|728x90.',
       'Existing map names are replaced with the imported breakpoint definition.',
@@ -90,9 +90,15 @@ function downloadText(fileName: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function BulkImportPanel({ publisherId, onChanged }: Props) {
-  const [kind, setKind] = useState<CsvImportKind>('ad-units');
-  const [csv, setCsv] = useState(templates['ad-units'].csv);
+export default function BulkImportPanel(props: Props) {
+  return <ImportEditor key={`${props.publisherId}:${props.kinds?.join(',') ?? 'all'}`} {...props} />;
+}
+
+function ImportEditor({ publisherId, onChanged, kinds = Object.keys(templates) as CsvImportKind[] }: Props) {
+  const [kind, setKind] = useState<CsvImportKind>(kinds[0]);
+  const [csv, setCsv] = useState(templates[kinds[0]].csv);
+  const revision = useRef(0);
+  useEffect(() => () => { revision.current += 1; }, []);
   const [preview, setPreview] = useState<CsvImportPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -107,25 +113,34 @@ export default function BulkImportPanel({ publisherId, onChanged }: Props) {
     return `${preview.createCount} create · ${preview.updateCount} update · ${preview.errorCount} error`;
   }, [preview]);
 
-  function chooseKind(next: CsvImportKind) {
-    setKind(next);
-    setCsv(templates[next].csv);
+  function replaceCsv(next: string) {
+    revision.current += 1;
+    setCsv(next);
     setPreview(null);
     setError(null);
     setSuccess(null);
+    setCopied(false);
+  }
+
+  function chooseKind(next: CsvImportKind) {
+    setKind(next);
+    replaceCsv(templates[next].csv);
   }
 
   async function loadFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
-      setCsv(await file.text());
+      const pendingRevision = ++revision.current;
       setPreview(null);
-      setError(null);
-      setSuccess(null);
+      setBusy('preview');
+      const content = await file.text();
+      if (revision.current !== pendingRevision) return;
+      replaceCsv(content);
     } catch (fileError) {
       setError(fileError instanceof Error ? fileError.message : 'Could not read the CSV file.');
     } finally {
+      setBusy(null);
       event.target.value = '';
     }
   }
@@ -144,8 +159,10 @@ export default function BulkImportPanel({ publisherId, onChanged }: Props) {
     setBusy('preview');
     setError(null);
     setSuccess(null);
+    const pendingRevision = revision.current;
     try {
-      setPreview(await api.previewCsvImport(publisherId, { kind, csv }));
+      const result = await api.previewCsvImport(publisherId, { kind, csv });
+      if (revision.current === pendingRevision) setPreview(result);
     } catch (requestError) {
       setPreview(null);
       setError(requestError instanceof Error ? requestError.message : 'CSV preview failed.');
@@ -159,8 +176,10 @@ export default function BulkImportPanel({ publisherId, onChanged }: Props) {
     setBusy('apply');
     setError(null);
     setSuccess(null);
+    const pendingRevision = revision.current;
     try {
       const result = await api.applyCsvImport(publisherId, { kind, csv });
+      if (revision.current !== pendingRevision) return;
       setSuccess(
         `Imported ${result.imported} item(s): ${result.created} created and ${result.updated} updated.`,
       );
@@ -178,17 +197,18 @@ export default function BulkImportPanel({ publisherId, onChanged }: Props) {
       <div className="config-toolbar">
         <div>
           <span className="panel-kicker">Spreadsheet workflow</span>
-          <h2>CSV bulk import</h2>
-          <p>Prepare repeated configuration in Excel, preview every change, then merge it into D1.</p>
+          <h2>{kinds.length === 1 ? `${template.label} CSV import` : 'CSV import'}</h2>
+          <p>Download the ready-made template, adjust the rows you need, then preview and apply.</p>
         </div>
         <span className="safe-import-badge">Upsert only · no deletions</span>
       </div>
 
-      <div className="import-kind-grid">
-        {(Object.keys(templates) as CsvImportKind[]).map((item) => (
+      {kinds.length > 1 ? <div className="import-kind-grid">
+        {kinds.map((item) => (
           <button
             className={item === kind ? 'import-kind-card active' : 'import-kind-card'}
             key={item}
+            disabled={Boolean(busy)}
             onClick={() => chooseKind(item)}
             type="button"
           >
@@ -196,7 +216,7 @@ export default function BulkImportPanel({ publisherId, onChanged }: Props) {
             <span>{templates[item].description}</span>
           </button>
         ))}
-      </div>
+      </div> : null}
 
       <div className="bulk-import-layout">
         <article className="panel import-editor-panel">
@@ -214,7 +234,7 @@ export default function BulkImportPanel({ publisherId, onChanged }: Props) {
               </button>
               <label className="button secondary file-button">
                 Upload CSV
-                <input accept=".csv,text/csv" onChange={(event) => void loadFile(event)} type="file" />
+                <input disabled={Boolean(busy)} accept=".csv,text/csv" onChange={(event) => void loadFile(event)} type="file" />
               </label>
             </div>
           </div>
@@ -226,18 +246,15 @@ export default function BulkImportPanel({ publisherId, onChanged }: Props) {
           <textarea
             aria-label={`${template.label} CSV`}
             className="csv-editor"
-            onChange={(event) => {
-              setCsv(event.target.value);
-              setPreview(null);
-              setSuccess(null);
-            }}
+            disabled={Boolean(busy)}
+            onChange={(event) => replaceCsv(event.target.value)}
             spellCheck={false}
             value={csv}
           />
 
           <div className="import-actions">
-            <button className="button secondary" disabled={Boolean(busy)} onClick={() => setCsv(template.csv)} type="button">
-              Reset template
+            <button className="button secondary" disabled={Boolean(busy)} onClick={() => replaceCsv(template.csv)} type="button">
+              Use default template
             </button>
             <button className="button primary" disabled={Boolean(busy) || !csv.trim()} onClick={() => void runPreview()} type="button">
               {busy === 'preview' ? 'Checking…' : 'Preview import'}

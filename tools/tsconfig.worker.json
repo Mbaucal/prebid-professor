@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.worker.json",
+  "compilerOptions": {
+    "baseUrl": "..",
+    "paths": {
+      "@cloudflare/workers-types": [
+        "tools/node_modules/@cloudflare/workers-types/index.d.ts"
+      ]
+    },
+    "typeRoots": [
+      "./node_modules",
+      "./node_modules/@types"
+    ]
+  },
+  "include": [
+    "../worker"
+  ]
+}

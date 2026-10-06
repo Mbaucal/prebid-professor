@@ -424,7 +424,7 @@ export default function AdsTxtPanel({ site, onChanged }: Props) {
     setRequired(requirement.required);
     setMessage(null);
     setError(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    document.querySelector<HTMLElement>('.workspace-content')?.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   async function deleteRequirement(requirement: Requirement): Promise<void> {
