@@ -3,7 +3,7 @@ import {randomBytes} from 'node:crypto';
 import {readFile,mkdir,writeFile,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Miniflare} from 'miniflare';
+import {Miniflare} from './local-miniflare.mjs';
 import {unzipSync} from 'fflate';
 import {buildSavedScript,buildSavedTest} from './saved-script-package.mjs';
 import {seedScriptLibrary} from './script-library-test-db.mjs';

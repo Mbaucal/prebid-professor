@@ -2,20 +2,24 @@ name: Dashboard layout checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [src/**, scripts/prepare-layout-preview.mjs, scripts/layout-ui-fixture.mjs, scripts/verify-app-layout.py, scripts/verify-dashboard-navigation.py, tests/runtime/dashboard-navigation.test.mjs, worker/test-workspace/layout-preview.mjs, .github/workflows/app-layout.yml]
+    paths: [tools/**, package.json, package-lock.json, tsconfig*.json, vite.config.ts, wrangler.jsonc, scripts/**, tests/runtime/local-miniflare.test.mjs, src/**, scripts/prepare-layout-preview.mjs, scripts/layout-ui-fixture.mjs, scripts/verify-app-layout.py, scripts/verify-dashboard-navigation.py, tests/runtime/dashboard-navigation.test.mjs, worker/test-workspace/layout-preview.mjs, .github/workflows/app-layout.yml]
 permissions:
   contents: read
 jobs:
   layout:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TZ: UTC
+      TESSERA_TEST_TOOLCHAIN: isolated
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: npm ci --ignore-scripts
-      - run: npm run build && node scripts/prepare-layout-preview.mjs
+          node-version: 22.23.3
+      - run: node scripts/bootstrap-toolchain.mjs
+      - run: node scripts/isolated-toolchain.mjs typecheck
+      - run: node scripts/isolated-toolchain.mjs build && node scripts/prepare-layout-preview.mjs
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

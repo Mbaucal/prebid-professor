@@ -16,6 +16,17 @@ on:
       - tests/runtime/builtin-test-delivery.test.mjs
       - tests/support/deployment-store.mjs
       - .github/workflows/deploy-builtin-test.yml
+      - tools/**
+      - scripts/bootstrap-toolchain.mjs
+      - scripts/verify-toolchain-isolation.mjs
+      - scripts/isolated-toolchain.mjs
+      - scripts/prepare-*.mjs
+      - package.json
+      - package-lock.json
+      - scripts/pages-toolchain.mjs
+      - scripts/pages-release-preflight.mjs
+      - tests/runtime/pages-release-preflight.test.mjs
+      - scripts/verify-pinned-wrangler-action.mjs
       - scripts/pages-release-verification.mjs
       - worker/deployment-manifest-pin.mjs
       - worker/external-deployments.ts
@@ -40,6 +51,17 @@ on:
       - tests/runtime/builtin-test-delivery.test.mjs
       - tests/support/deployment-store.mjs
       - .github/workflows/deploy-builtin-test.yml
+      - tools/**
+      - scripts/bootstrap-toolchain.mjs
+      - scripts/verify-toolchain-isolation.mjs
+      - scripts/isolated-toolchain.mjs
+      - scripts/prepare-*.mjs
+      - package.json
+      - package-lock.json
+      - scripts/pages-toolchain.mjs
+      - scripts/pages-release-preflight.mjs
+      - tests/runtime/pages-release-preflight.test.mjs
+      - scripts/verify-pinned-wrangler-action.mjs
       - scripts/pages-release-verification.mjs
       - worker/deployment-manifest-pin.mjs
       - worker/external-deployments.ts
@@ -54,15 +76,27 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TZ: UTC
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
-      - run: npm ci --ignore-scripts
-      - run: node scripts/prepare-builtin-runtime.mjs
+          node-version: 22.23.3
+      - run: node scripts/bootstrap-toolchain.mjs
+      - run: node scripts/isolated-toolchain.mjs prepare
       - run: node scripts/prepare-test-workspace.mjs
       - name: Verify package bytes, target branch, callback retries and existing draft barriers
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/deployment-callback.test.mjs tests/runtime/publisher-delivery.test.mjs tests/runtime/builtin-reverification.test.mjs tests/runtime/pages-deployment.test.mjs tests/runtime/stored-draft-legacy-guards.test.mjs tests/runtime/builtin-test-delivery.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/deployment-callback.test.mjs tests/runtime/publisher-delivery.test.mjs tests/runtime/builtin-reverification.test.mjs tests/runtime/pages-deployment.test.mjs tests/runtime/stored-draft-legacy-guards.test.mjs tests/runtime/builtin-test-delivery.test.mjs tests/runtime/pages-release-preflight.test.mjs
+
+      - name: Read the exact retained action for offline contract verification
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: cloudflare/wrangler-action
+          ref: 9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
+          path: .generated/pinned-wrangler-action
+          persist-credentials: false
+      - name: Verify action tool reuse and outputs with synthetic binaries only
+        run: node scripts/verify-pinned-wrangler-action.mjs .generated/pinned-wrangler-action/dist/index.mjs
