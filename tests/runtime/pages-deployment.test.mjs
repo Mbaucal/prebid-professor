@@ -173,5 +173,5 @@ test('workflow separates deployment, verification and status retries and never u
   for(const job of [verify,report]){assert.doesNotMatch(job,/wrangler-action|CLOUDFLARE_API_TOKEN|pages deploy/);}
   assert.equal((yaml.match(/pages-release-verification.mjs callback/g)||[]).length,1);
   assert.doesNotMatch(yaml,/--location|retry-all-errors|dist\/\*/);
-  assert.match(yaml,/manifest_sha256:/);assert.match(yaml,/wranglerVersion: "4\.118\.0"/);
+  assert.match(yaml,/manifest_sha256:/);assert.match(yaml,/wranglerVersion: "4\.131\.0"/);
 });
