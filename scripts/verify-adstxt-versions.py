@@ -1,10 +1,40 @@
 """Actual Ads.txt version portal, synthetic API; no publisher endpoint calls."""
-import json,subprocess
+import json,subprocess,sys
+from collections import deque
 from pathlib import Path
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent;out=root/'.generated/adstxt-version-evidence';out.mkdir(parents=True,exist_ok=True)
 origin='http://127.0.0.1:4182'
+trace_enabled='--trace-note-lifecycle' in sys.argv
+trace_path=out/'note-lifecycle.jsonl'
+trace_events=deque(maxlen=256)
+def trace_record(entry):
+ # Bounded synthetic lifecycle evidence remains available if assertions fail.
+ trace_events.append(entry)
+trace_path.unlink(missing_ok=True)
+note_trace_script=r"""(() => {
+ const ids=new WeakMap();let next=0,last='';
+ const id=node=>{if(!node)return null;if(!ids.has(node))ids.set(node,++next);return ids.get(node)};
+ const snapshot=(event,extra={})=>{
+  const input=document.querySelector('.ads-txt-versions-card input');
+  const state={heading:document.querySelector('.workspace h1')?.textContent??null,
+   panel:document.querySelector('.ads-txt-versions-site')?.textContent??null,
+   input:id(input),value:input?.value??null,focused:document.activeElement===input};
+  const signature=JSON.stringify(state);if(event==='dom'&&signature===last)return;last=signature;
+  console.log('ADSTXT_NOTE_TRACE '+JSON.stringify({document:performance.timeOrigin,time:performance.now(),event,...state,...extra}));
+ };
+ const descriptor=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
+ Object.defineProperty(HTMLInputElement.prototype,'value',{...descriptor,set(value){
+  const tracked=this.closest('.ads-txt-versions-card')||ids.has(this);
+  if(tracked)snapshot('value-write-before',{target:id(this),nextValue:value,connected:this.isConnected,stack:new Error().stack});
+  descriptor.set.call(this,value);
+  if(tracked)snapshot('value-write-after',{target:id(this),connected:this.isConnected});
+ }});
+ document.addEventListener('input',event=>{if(event.target.closest('.ads-txt-versions-card'))snapshot('input',{target:id(event.target)})},true);
+ new MutationObserver(()=>snapshot('dom')).observe(document,{childList:true,subtree:true,characterData:true});
+})()"""
+
 def site(id):return dict(id=id,publisherAccountId='owner',name=id+'.invalid',domain=id+'.invalid',gamPath='/123/',status='draft',currentVersion='draft',adsTxtUrl='',updatedAt='2026-10-01',adUnitsCount=0,biddersCount=0)
 accounts=[dict(id='owner',name='Owner',status='active',sitesCount=2,sites=[site('site-a'),site('site-b')],notes='')]
 def version(id):return dict(id=id,siteId='site-a',versionNumber=1,status='saved',checksum='a'*64,rowCount=1,canonicalCount=1,repeatedRowCount=0,headingCount=0,lineCount=1,byteSize=24,note='Earlier snapshot',createdBy='fixture',generatedAt='2026-10-01',createdAt='2026-10-01')
@@ -15,6 +45,10 @@ try:
   browser=p.chromium.launch()
   for width in [1440,390]:
    page=browser.new_page(viewport={'width':width,'height':900});state={'fault':False,'checksum':'a'*64,'saved':False};pending=[];details=[];lists=[];downloads=[];writes=[];errors=[];external=[]
+   page.add_init_script(note_trace_script)
+   page.on('console',lambda msg:trace_record({'width':width,**json.loads(msg.text.removeprefix('ADSTXT_NOTE_TRACE '))}) if msg.text.startswith('ADSTXT_NOTE_TRACE ') else None)
+   def checkpoint(name):
+    trace_record({'event':'phase','name':name,'width':width})
    page.on('download',lambda download:downloads.append(download.suggested_filename))
    page.on('pageerror',lambda e:errors.append(str(e)))
    def route(r):
@@ -40,7 +74,10 @@ try:
     if menu.is_visible():menu.click()
     page.locator('.site-link').filter(has_text=id+'.invalid').click()
     expect(page.locator('.workspace h1')).to_have_text(id+'.invalid')
+    expect(page.locator('.ads-txt-versions-card .ads-txt-versions-site')).to_contain_text(id+'.invalid')
+    checkpoint('choose-return-'+id)
    def record(name):
+    checkpoint(name)
     assert not errors,errors;assert not external,external
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
     results.append({'case':name,'width':width,'passed':True})
@@ -53,7 +90,7 @@ try:
    state['fault']=True;card.get_by_role('button',name='Refresh status').click();expect(card.locator('.form-error')).to_contain_text('temporarily unavailable');expect(note).to_have_value('Keep reviewed note')
    state['fault']=False;state['checksum']='b'*64;card.get_by_role('button',name='Refresh status').click();expect(card.get_by_role('button',name='Save current version')).to_be_enabled();record('list-error-retry')
    card.get_by_role('button',name='Save current version').click();expect(card.get_by_role('button',name='Saving version…')).to_be_visible();old=pending.pop();assert writes[-1]['expectedChecksum']=='b'*64
-   choose('site-b');expect(card.locator('.ads-txt-versions-site')).to_contain_text('site-b.invalid');choose('site-a');expect(card.get_by_role('button',name='Save current version')).to_be_enabled();note.fill('New visit note')
+   choose('site-b');expect(card.locator('.ads-txt-versions-site')).to_contain_text('site-b.invalid');choose('site-a');expect(card.get_by_role('button',name='Save current version')).to_be_enabled();checkpoint('before-fill-New visit note');note.fill('New visit note');checkpoint('after-fill-New visit note')
    with page.expect_response(lambda response: response.request.method=='POST' and '/ads-txt/versions' in response.url) as complete:old.fulfill(json={'ok':True,'created':True,'message':'STALE SAVED','version':version('v1')})
    complete.value.body();page.evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
    expect(note).to_have_value('New visit note');expect(card).not_to_contain_text('STALE SAVED');record('a-b-a-late-save')
@@ -75,7 +112,7 @@ try:
    page.reload();expect(card.get_by_role('button',name='Already saved as v1')).to_be_disabled()
    card.get_by_role('button',name='Show version history',exact=False).click();state['holdDetail']=True
    card.get_by_role('button',name='Download',exact=True).click();expect(card.get_by_role('button',name='Loading…')).to_be_visible();old=details.pop()
-   choose('site-b');expect(card.locator('.ads-txt-versions-site')).to_contain_text('site-b.invalid');choose('site-a');expect(card.get_by_role('button',name='Already saved as v1')).to_be_disabled();note.fill('Latest input')
+   choose('site-b');expect(card.locator('.ads-txt-versions-site')).to_contain_text('site-b.invalid');choose('site-a');expect(card.get_by_role('button',name='Already saved as v1')).to_be_disabled();checkpoint('before-fill-Latest input');note.fill('Latest input');checkpoint('after-fill-Latest input')
    with page.expect_response(lambda response: response.url.endswith('/versions/v1')) as complete:old.fulfill(json={'ok':True,'version':{**version('v1'),'content':'STALE EXPORT','fileName':'stale.txt'}})
    complete.value.body();page.evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
    assert not downloads;expect(note).to_have_value('Latest input');record('late-export-cancelled')
@@ -87,4 +124,9 @@ try:
    page.close()
   browser.close()
  (out/'results.json').write_text(json.dumps(results,indent=2));print(f'{len(results)} ads.txt UI checks passed')
-finally:server.terminate();server.wait(timeout=10)
+finally:
+ error=sys.exc_info()[1]
+ trace_record({'event':'fixture-exit','passed':len(results),'failed':error is not None,'exception':type(error).__name__ if error else None,'message':str(error)[:1000] if error else None})
+ if error is not None or trace_enabled:
+  trace_path.write_text(''.join(json.dumps(entry)+'\n' for entry in trace_events))
+ server.terminate();server.wait(timeout=10)
