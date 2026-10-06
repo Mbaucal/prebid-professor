@@ -3,12 +3,32 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - tools/**
+      - package.json
+      - package-lock.json
+      - scripts/bootstrap-toolchain.mjs
+      - scripts/verify-toolchain-isolation.mjs
+      - scripts/isolated-toolchain.mjs
+      - scripts/check-test-activation.mjs
+      - scripts/test-toolchain-targets.mjs
+      - ops/runtime-test/wrangler.jsonc
+      - tests/runtime/test-toolchain-targets.test.mjs
       - ops/test-worker/**
       - tests/cloudflare/test-worker-bootstrap.test.mjs
       - .github/workflows/test-worker-bootstrap.yml
   push:
     branches: [main]
     paths:
+      - tools/**
+      - package.json
+      - package-lock.json
+      - scripts/bootstrap-toolchain.mjs
+      - scripts/verify-toolchain-isolation.mjs
+      - scripts/isolated-toolchain.mjs
+      - scripts/check-test-activation.mjs
+      - scripts/test-toolchain-targets.mjs
+      - ops/runtime-test/wrangler.jsonc
+      - tests/runtime/test-toolchain-targets.test.mjs
       - ops/test-worker/**
       - tests/cloudflare/test-worker-bootstrap.test.mjs
       - .github/workflows/test-worker-bootstrap.yml
@@ -24,14 +44,13 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
+          node-version: 22.23.3
       - name: Verify test-only bindings and no application side effects
         run: node --test tests/cloudflare/test-worker-bootstrap.test.mjs
       - name: Install locked tools
-        run: npm ci
+        run: node scripts/bootstrap-toolchain.mjs
       - name: Compile test Worker from its dedicated root without authentication or deployment
-        working-directory: ops/test-worker
         env:
           CI: 'true'
           WRANGLER_SEND_METRICS: 'false'
-        run: npx --no-install wrangler deploy --config wrangler.jsonc --dry-run --outdir ../../.generated/test-worker-dry-run
+        run: node scripts/isolated-toolchain.mjs test-bootstrap-dry-run

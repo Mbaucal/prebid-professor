@@ -3,12 +3,21 @@ import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {verifyIsolation,verifyOutputs,sha} from './verify-toolchain-isolation.mjs';
+import {parseToolchainCommand,testCompilationTargets} from './test-toolchain-targets.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const command=process.argv[2];
-if(!['prepare','build','typecheck','dry-run'].includes(command))throw Error('Usage: node scripts/isolated-toolchain.mjs prepare|build|typecheck|dry-run');
+const command=parseToolchainCommand(process.argv.slice(2));
 const isolation=await verifyIsolation(root);
-function run(args){const result=spawnSync(process.execPath,args,{cwd:root,stdio:'inherit',env:{...process.env,WRANGLER_SEND_METRICS:'false'}});if(result.status!==0)process.exit(result.status??1);}
-if(command==='typecheck'){
+function run(args,cwd=root){const result=spawnSync(process.execPath,args,{cwd,stdio:'inherit',env:{...process.env,WRANGLER_SEND_METRICS:'false'}});if(result.status!==0)process.exit(result.status??1);}
+if(command==='test-dry-run'||command==='test-bootstrap-dry-run'){
+ const targets=await testCompilationTargets(root,command);
+ if(command==='test-dry-run'){
+  run(['scripts/prepare-builtin-runtime.mjs']);
+  run(['--experimental-strip-types','scripts/prepare-site-ab-baseline.mjs']);
+  await verifyOutputs(root);
+  run(['scripts/prepare-test-workspace.mjs']);
+ }
+ for(const target of targets)run(target.args,target.cwd);
+}else if(command==='typecheck'){
  for(const config of ['app','worker','tooling'])run(['tools/node_modules/typescript/bin/tsc','--noEmit','-p',`tools/tsconfig.${config}.json`]);
 }else if(command==='dry-run'){
  run(['tools/node_modules/wrangler/bin/wrangler.js','deploy','--dry-run','--outdir','.generated/toolchain-dry-run']);

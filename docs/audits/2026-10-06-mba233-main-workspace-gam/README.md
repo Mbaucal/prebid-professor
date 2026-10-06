@@ -1,0 +1,24 @@
+# MBA-233: fixed local compilation and MAIN workspace/GAM checks
+
+Base: existing draft PR137 `555cf6f97854c1ed17e053307b7922eae318c07d`. This change adopts the existing implicit MAIN historical profile and local Miniflare adapter for validation. It does not activate TEST or production deployment, alter frozen inputs, locks, defaults, runtime behavior or UI.
+
+The existing runner now rejects unknown commands and all extra arguments (including profiles) before verification or execution. `test-dry-run` prepares the existing generator/workspace and compiles both fixed runtime-test configurations to `.generated/test-workspace-dry-run` and `.generated/test-workspace-active-dry-run`. `test-bootstrap-dry-run` compiles only `ops/test-worker/wrangler.jsonc` to `.generated/test-worker-dry-run`. Each uses the installed tools Wrangler by absolute path, a dedicated fixed cwd, explicit absolute config, `--dry-run` and fixed output path. Config allowlists reject added hooks, target changes and symlink redirection; ambient configuration overrides are rejected. No arbitrary arguments or real deployment command is exposed.
+
+Wrangler 4.131.0's installed `resolveWranglerConfigPath` (`wrangler-dist/cli.js`, around line 3258) returns an explicit config immediately with `redirected:false`. The actual CLI guard test places invalid redirect files at both root and target cwd, then successfully compiles the expected bootstrap Worker using the fixed config. The normal build-generated Vite redirect is retained. The original production `dry-run` behavior is unchanged; runtime-test compilation also passes after the App build with its redirect present.
+
+Both existing workflows retain branches, source/compiled/browser suites and uploaded evidence paths, with locked bootstrap, Node22.23.3, strict typechecks, guarded build and explicit isolated fixture mode. GAM uses the existing active output path through its existing positional harness argument and retains the independent production Worker auth/OAuth/SOAP test. Four fixture imports use the accepted adapter unchanged. Review found a remaining root Miniflare metadata lookup in the workspace fixture: it now follows the same explicit selector for installed and lock metadata, retaining exact-version and major-version assertions without fallback.
+
+## Local evidence
+
+Linux x64, Node24.19.0, `TZ=UTC`. Exact Node22.23.3 CI remains the remote acceptance gate.
+
+- Clean checked-in bootstrap passes; strict App/Worker/tooling and guarded build pass with all 63 historical outputs unchanged.
+- Four focused guard tests pass: strict argument rejection, exact tool/cwd/config/output argv, config/ambient override/symlink rejection, and real locked Wrangler redirect bypass.
+- Both fixed compilation commands pass after clean bootstrap; runtime-test compilation also passes after App build. Disabled and active bundles are byte-identical (`f84ca4dc9eb88d06b7d884908fd14382ed8eadaaac01363c812ea74725627cba`). Existing history guard preserves all five MAIN records.
+- Original workspace source group 219, ads-version source 2 and reporting source 12 pass.
+- Local limitation: the GAM Node source group prints passing assertions from the integrations/line-items files but does not finish its route-test child on Node24. A bounded retry with proxy variables removed reproduces the non-exit; no test was changed or forced to pass. An earlier oversized combined invocation also emitted a host `fatal library error, lookup self`; the original workspace source group passes when run separately. The full GAM Node command must pass in exact-head Node22.23.3 CI before acceptance.
+- Original compiled fixtures pass: workspace 22 including D1/R2 restart, selection 12, delivery 8, GAM 17 TEST and 17 production. All external services remain synthetic/local; existing auth, Origin and outbound guards remain.
+- All original browser commands pass: workspace 25, Tanjug pilot 19, deployment UI 7, reporting 21 cases, and GAM UI desktop/mobile. Evidence remains in `.generated/test-workspace-evidence`, `tanjug-pilot-evidence`, `delivery-evidence`, `reporting-evidence`, and `gam-ui-evidence`.
+- Local browser commands used `/tmp/mba212-py/bin/python` and `/tmp/mba212-browsers`, with inherited proxy variables removed only from synthetic local child environments. Fixture network guards remained unchanged. Port8877 was released before reviewer use.
+
+Reproduction uses `node scripts/bootstrap-toolchain.mjs`, `node scripts/isolated-toolchain.mjs typecheck|build|test-dry-run|test-bootstrap-dry-run` (one command per invocation), and the unchanged workflow checks with `TESSERA_TEST_TOOLCHAIN=isolated` and `TZ=UTC`. No actual workflow dispatch, deployment, hosted test, remote binding mutation or paid traffic occurred. Parent MBA-52 remains open for the remaining default/hosted/deployment scope.
