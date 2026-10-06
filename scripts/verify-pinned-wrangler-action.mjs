@@ -25,16 +25,16 @@ console.log('Synthetic Pages command completed; no network.');
 `,{mode:0o755});
  // Fail any unexpected network side-effect in the action; Github metadata is not invoked without its optional token.
  const block=resolve(dir,'block.cjs');await writeFile(block,"for(const n of ['http','https']){const m=require(n);m.request=m.get=()=>{throw Error('Unexpected network in action contract test');};}global.fetch=()=>{throw Error('Unexpected fetch');};");
- for(const fail of [false,true]){
+ for(const variant of [{directory:'builtin-delivery',message:'Tessera builtin TEST builtin-test-12345678-1234-4123-8123-123456789abc'},{directory:'pages-release',message:'Tessera staging fixture 20260914_010000'},{directory:'pages-release',message:'Tessera production fixture 20260914_010000'}])for(const fail of [false,true]){
   const log=resolve(dir,fail?'fail-calls':'calls'),output=resolve(dir,fail?'fail-output':'output');await writeFile(log,'');await writeFile(output,'');
   const env={PATH:bin+':'+process.env.PATH,RUNNER_TEMP:dir,GITHUB_WORKSPACE:dir,GITHUB_OUTPUT:output,GITHUB_REPOSITORY:'Mbaucal/prebid-professor',GITHUB_REF:'refs/heads/feature/isolated-runtime-workspace-v1',GITHUB_SHA:'a'.repeat(40),CALL_LOG:log,SIMULATE_FAILURE:fail?'1':'0',NODE_OPTIONS:'--require '+block,
-   INPUT_QUIET:'false',INPUT_WORKINGDIRECTORY:cwd,INPUT_PACKAGEMANAGER:'npm',INPUT_WRANGLERVERSION:'4.131.0',INPUT_APITOKEN:'synthetic-only',INPUT_ACCOUNTID:'1'.repeat(32),INPUT_COMMAND:'pages deploy ../.generated/builtin-delivery/dist --project-name=tessera-fixture --branch=test --commit-dirty=false --commit-message="Tessera builtin TEST builtin-test-12345678-1234-4123-8123-123456789abc"'};
+   INPUT_QUIET:'false',INPUT_WORKINGDIRECTORY:cwd,INPUT_PACKAGEMANAGER:'npm',INPUT_WRANGLERVERSION:'4.131.0',INPUT_APITOKEN:'synthetic-only',INPUT_ACCOUNTID:'1'.repeat(32),INPUT_COMMAND:`pages deploy ../.generated/${variant.directory}/dist --project-name=tessera-fixture --branch=test --commit-dirty=false --commit-message="${variant.message}"`};
   const result=spawnSync(process.execPath,[source],{cwd:dir,env,encoding:'utf8',timeout:20000});
   const raw=await readFile(log,'utf8');assert(raw.trim(),result.stdout+'\n'+result.stderr);const calls=raw.trim().split('\n').map(JSON.parse);assert.equal(calls.length,2);assert(calls.every(c=>!c.install&&c.cwd===cwd));assert.deepEqual(calls[0].args,['--no-install','wrangler','--version']);
-  assert.deepEqual(calls[1].args,['wrangler','pages','deploy','../.generated/builtin-delivery/dist','--project-name=tessera-fixture','--branch=test','--commit-dirty=false','--commit-message=Tessera builtin TEST builtin-test-12345678-1234-4123-8123-123456789abc']);
+  assert.deepEqual(calls[1].args,['wrangler','pages','deploy',`../.generated/${variant.directory}/dist`,'--project-name=tessera-fixture','--branch=test','--commit-dirty=false',`--commit-message=${variant.message}`]);
   const published=await readFile(output,'utf8');
   if(fail){assert.notEqual(result.status,0);assert(!published.includes('deployment-url'));}
   else{assert.equal(result.status,0,result.stderr+'\n'+result.stdout);assert.match(published,/deployment-url<<[^\n]+\nhttps:\/\/1234abcd.tessera-fixture.pages.dev/);assert.match(published,/pages-environment<<[^\n]+\npreview/);}
  }
- console.log('PASS exact pinned action: locked version skips install, tools cwd/fixed argv, structured immutable URL, failed command has no success output; no network.');
+ console.log('PASS exact pinned action (builtin and generic argv): locked version skips install, tools cwd/fixed argv, structured immutable URL, failed command has no success output; no network.');
 }finally{await rm(dir,{recursive:true,force:true});}

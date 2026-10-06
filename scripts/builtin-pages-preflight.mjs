@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
-import {readFile,readdir,lstat,realpath} from 'node:fs/promises';
+import {readFile,readdir,lstat} from 'node:fs/promises';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {spawnSync} from 'node:child_process';
-import {verifyIsolation,sha} from './verify-toolchain-isolation.mjs';
+import {sha} from './verify-toolchain-isolation.mjs';
 import {validateRunnerInput,dispatchInputs} from '../worker/test-workspace/deployment-contract.mjs';
 import {describeDelivery,deliveryHeaders} from '../worker/test-workspace/delivery-layout.mjs';
-export const WRANGLER_VERSION='4.131.0';
+import {verifyPagesTools} from './pages-toolchain.mjs';
+export {verifyPagesTools,WRANGLER_VERSION} from './pages-toolchain.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-async function absent(path){try{await lstat(path);return false;}catch(e){if(e.code==='ENOENT')return true;throw e;}}
 export async function verifyPreparedDelivery(repo,env){
  const input=validateRunnerInput(JSON.parse(env.DEPLOY_INPUTS||'null'),env.GITHUB_REF,env.GITHUB_REPOSITORY);
  assert(/^[1-9][0-9]{0,19}$/.test(env.GITHUB_RUN_ID)&&/^[a-f0-9]{40}$/.test(env.GITHUB_SHA),'Invalid workflow identity.');
@@ -34,23 +33,6 @@ export async function verifyPreparedDelivery(repo,env){
   const bytes=await readFile(path);assert.equal(bytes.length,f.byteSize);assert.equal(sha(bytes),f.sha256,'Prepared asset/header changed: '+f.name);
  }
  return {input,delivery};
-}
-export async function verifyPagesTools(repo,execute=spawnSync){
- await verifyIsolation(repo,{profile:'test'});
- const cwd=resolve(repo,'tools');
- assert.equal(await realpath(resolve(cwd,'node_modules/.bin/wrangler')),resolve(cwd,'node_modules/wrangler/bin/wrangler.js'),'Wrangler resolution escaped locked tools.');
- // Pages discovers configuration/functions from cwd. Reject additional implicit inputs;
- // the existing parent Worker config has no Pages output directory and is ignored by Pages.
- for(const base of [repo,cwd])for(const name of ['functions','wrangler.toml','wrangler.json','.wrangler/deploy/config.json'])assert(await absent(resolve(base,name)),'Unexpected Pages configuration/functions.');
- assert(await absent(resolve(cwd,'wrangler.jsonc')),'Unexpected tools Pages configuration.');
- const workerConfig=await readFile(resolve(repo,'wrangler.jsonc'),'utf8');assert(!workerConfig.includes('pages_build_output_dir'),'Parent configuration became a Pages configuration.');
- const result=execute('npx',['--no-install','wrangler','--version'],{cwd,encoding:'utf8',shell:false,env:{...process.env,WRANGLER_SEND_METRICS:'false',CI:'true'}});
- assert.equal(result.status,0,'Locked Wrangler must execute before the action can run.');
- const versions=result.stdout?.match(/\d+\.\d+\.\d+[^\s]*/g)??[];
- assert.deepEqual(versions,[WRANGLER_VERSION],'Ambiguous or nonexact Wrangler version output.');
- const actual=versions[0];
- assert.equal(actual,WRANGLER_VERSION,'Action must reuse the exact installed Wrangler; no fallback installation.');
- return actual;
 }
 export async function preflight(repo,env,execute){await verifyPreparedDelivery(repo,env);return verifyPagesTools(repo,execute);}
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
