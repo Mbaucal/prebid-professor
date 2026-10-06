@@ -2,20 +2,23 @@ name: Agency hierarchy checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [src/**, worker/organization/**, worker/app-builtin-runtime-preview.ts, worker/test-workspace/**, scripts/**, tests/runtime/organization.test.mjs, .github/workflows/agency-hierarchy.yml]
+    paths: [tests/support/**,src/**, worker/organization/**, worker/app-builtin-runtime-preview.ts, worker/test-workspace/**, scripts/**, tests/runtime/organization.test.mjs, tools/**, package.json, package-lock.json, tsconfig*.json, vite.config.ts, wrangler.jsonc, ops/runtime-test/**, .github/workflows/agency-hierarchy.yml]
 permissions:
   contents: read
 jobs:
   agencies:
     runs-on: ubuntu-latest
+    env:
+      TESSERA_TEST_TOOLCHAIN: isolated
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: npm ci --ignore-scripts
-      - run: npm run build && node scripts/prepare-test-workspace.mjs
+          node-version: 22.23.3
+      - run: node scripts/bootstrap-toolchain.mjs --profile test
+      - run: node scripts/isolated-toolchain.mjs typecheck --profile test
+      - run: node scripts/isolated-toolchain.mjs build --profile test && node scripts/prepare-test-workspace.mjs
       - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/organization.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs
       - run: node scripts/verify-organization-workerd.mjs
       - uses: actions/setup-python@v5
