@@ -42,7 +42,7 @@ jobs:
         run: npm run typecheck
 
       - name: Verify default command guards without remote operations
-        run: node --test tests/runtime/local-toolchain.test.mjs tests/runtime/admin-toolchain.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/local-toolchain.test.mjs tests/runtime/admin-toolchain.test.mjs tests/runtime/local-server-response.test.mjs
 
       - name: Build dashboard and Worker
         run: npm run build
