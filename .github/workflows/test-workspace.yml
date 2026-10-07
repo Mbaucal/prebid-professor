@@ -12,6 +12,10 @@ on:
       - tests/**
       - migrations/**
       - vendor/**
+      - tools/**
+      - ops/test-worker/**
+      - vite.config.ts
+      - wrangler.jsonc
       - package.json
       - package-lock.json
       - tsconfig*.json
@@ -24,6 +28,9 @@ jobs:
   workspace:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      TZ: UTC
+      TESSERA_TEST_TOOLCHAIN: isolated
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -31,12 +38,15 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
+          node-version: 22.23.3
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
       - name: Install locked tools without lifecycle scripts
-        run: npm ci --ignore-scripts
+        run: node scripts/bootstrap-toolchain.mjs
+      - run: node scripts/isolated-toolchain.mjs typecheck
+      - run: node scripts/isolated-toolchain.mjs build
+      - run: node --test tests/runtime/test-toolchain-targets.test.mjs
       - name: Check both declared test configurations without credentials or network
         run: node scripts/check-test-activation.mjs
       - name: Preserve runtime versions and their recorded history
@@ -52,13 +62,11 @@ jobs:
       - name: Verify current-auction reporting and GAM-only omission
         run: node --experimental-strip-types --test tests/runtime/gam-reporting.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
-        working-directory: ops/runtime-test
         env:
           CI: 'true'
           WRANGLER_SEND_METRICS: 'false'
         run: |
-          npx --no-install wrangler deploy --config wrangler.jsonc --dry-run --outdir ../../.generated/test-workspace-dry-run
-          npx --no-install wrangler deploy --config wrangler.active.jsonc --dry-run --outdir ../../.generated/test-workspace-active-dry-run
+          node scripts/isolated-toolchain.mjs test-dry-run
       - name: Require the active config to compile to the exact Worker bytes tested below
         run: node scripts/check-test-activation.mjs --compare-bundles
       - name: Verify compiled Worker with LOCAL Miniflare D1 and R2 including restart

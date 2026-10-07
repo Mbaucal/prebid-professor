@@ -19,19 +19,58 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.23.3
 
       - name: Install dependencies
-        run: npm ci
+        run: node scripts/bootstrap-toolchain.mjs
+
+      - name: Verify patched native image dependency
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { createRequire } from 'node:module';
+          const require = createRequire(new URL('./tools/package.json', import.meta.url));
+          const sharp = require('sharp');
+          assert.equal(sharp.versions.sharp, '0.35.5');
+          assert.equal(sharp.versions.rsvg, '2.63.2');
+          const png = await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="red"/></svg>')).png().toBuffer();
+          assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+          console.log(JSON.stringify({ sharp: sharp.versions.sharp, rsvg: sharp.versions.rsvg, pngBytes: png.length }));
+          JS
 
       - name: Check browser, Worker and build-tool types
         run: npm run typecheck
 
+      - name: Verify default command guards without remote operations
+        run: node --experimental-strip-types --test tests/runtime/local-toolchain.test.mjs tests/runtime/admin-toolchain.test.mjs tests/runtime/local-server-response.test.mjs
+
       - name: Build dashboard and Worker
         run: npm run build
+
+      - name: Verify default local servers on loopback
+        run: node scripts/verify-default-local-servers.mjs
 
       - name: Verify read-only A/B and cache console diagnostics
         run: node --test tests/runtime/experiment-inspect.test.mjs
 
       - name: Verify minimum-height CSS export
         run: node --experimental-strip-types --test tests/runtime/min-height-css-export.test.mjs
+
+      - name: Verify isolation rejection guards and compiled artifact parity
+        run: |
+          node --test tests/runtime/toolchain-isolation.test.mjs
+          node --experimental-strip-types tools/verify-compiled-parity.mjs
+      - name: Package locally without deployment
+        run: node scripts/isolated-toolchain.mjs dry-run
+      - name: Verify default deployment package locally
+        run: npm run deploy:dry-run
+      - name: Report historical and active dependency scopes separately
+        run: node scripts/audit-isolated-toolchain.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolated-toolchain-evidence
+          path: |
+            .generated/toolchain-evidence/
+            .generated/toolchain-validation/
+          retention-days: 14

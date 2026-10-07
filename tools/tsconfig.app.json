@@ -1,0 +1,30 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "..",
+    "paths": {
+      "vite/client": [
+        "tools/node_modules/vite/client.d.ts"
+      ],
+      "react": [
+        "tools/node_modules/@types/react"
+      ],
+      "react/*": [
+        "tools/node_modules/@types/react/*"
+      ],
+      "react-dom/*": [
+        "tools/node_modules/@types/react-dom/*"
+      ],
+      "react-dom": [
+        "tools/node_modules/@types/react-dom"
+      ]
+    },
+    "typeRoots": [
+      "./node_modules",
+      "./node_modules/@types"
+    ]
+  },
+  "include": [
+    "../src"
+  ]
+}

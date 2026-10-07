@@ -7,7 +7,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdtemp, readdir, readFile, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { Miniflare } from 'miniflare';
+import { Miniflare, isolatedToolchain } from './local-miniflare.mjs';
 import { unzipSync } from 'fflate';
 
 const root = resolve('.');
@@ -17,8 +17,9 @@ assert.equal(names.length, 1, 'Expected one compiled Worker module from the cred
 const script = await readFile(join(compiled, names[0]), 'utf8');
 const sourceSha256 = createHash('sha256').update(script).digest('hex');
 const config = JSON.parse(await readFile('ops/runtime-test/wrangler.jsonc', 'utf8'));
-const lock = JSON.parse(await readFile('package-lock.json', 'utf8'));
-const installed = JSON.parse(await readFile('node_modules/miniflare/package.json', 'utf8'));
+const dependencyRoot = isolatedToolchain ? 'tools/' : '';
+const lock = JSON.parse(await readFile(dependencyRoot + 'package-lock.json', 'utf8'));
+const installed = JSON.parse(await readFile(dependencyRoot + 'node_modules/miniflare/package.json', 'utf8'));
 assert.equal(installed.version, lock.packages['node_modules/miniflare'].version, 'Use the lockfile Miniflare, not a newly downloaded version');
 assert(installed.version.startsWith('5.'), 'Review persistence options when changing Miniflare major version');
 assert.equal(config.name, 'prebid-professor-test');

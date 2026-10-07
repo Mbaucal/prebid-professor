@@ -1,5 +1,7 @@
 # Tessera test Worker bootstrap — MBA-19
 
+> Historical MAIN-copy setup notes. Live TEST already uses separately accepted isolated hosted settings; do not reapply these old commands or recreate resources. The pending MAIN adoption plan is [documented separately](../main-toolchain-adoption.md).
+
 ## What this is
 
 A separate, temporary Worker shell. It does **not** import Tessera or access a database, bucket, secrets, email, CMS or ad network. `/` displays a setup notice; `/health` states `bootstrap_only` and keeps application/writes/publication flags false. All other routes and mutations are disabled. This allows the deployed Worker bindings to be audited before application initialization.

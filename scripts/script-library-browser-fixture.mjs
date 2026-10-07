@@ -1,6 +1,6 @@
 import {createInterface} from 'node:readline';
 import {build} from 'esbuild';
-import {Miniflare} from 'miniflare';
+import {Miniflare} from './local-miniflare.mjs';
 import {randomBytes} from 'node:crypto';
 import {readFile,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
