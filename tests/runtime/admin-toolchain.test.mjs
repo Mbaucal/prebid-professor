@@ -20,10 +20,11 @@ test('invalid command/flags refuse before prep or executor',async()=>{for(const 
 test('fixed MAIN deployment builds once and uses generated config; local/admin use original config',async()=>{
  const f=await fixture();try{
   await mkdir(resolve(f.root,'.wrangler/deploy'),{recursive:true});await writeFile(resolve(f.root,'.wrangler/deploy/config.json'),'invalid redirect is not used');
+  f.options.env.MINIFLARE_CACHE_DIR=resolve(f.root,'node_modules/.mf');f.options.env.CLOUDFLARE_CF_FETCH_PATH=resolve(f.root,'node_modules/.mf/override.json');
   for(const command of ['deploy','deploy-dry-run','types','db-local','db-remote']){
    f.calls.length=0;await runAdmin([command],f.options);const deploy=command.startsWith('deploy');assert.equal(f.calls.length,deploy?2:1);
    if(deploy)assert.deepEqual(f.calls[0].args,[resolve(f.root,'scripts/isolated-toolchain.mjs'),'build']);
-   const call=f.calls.at(-1);assert.equal(call.file,process.execPath);assert.equal(call.opts.cwd,f.root);assert.equal(call.opts.shell,false);assert.equal(call.opts.env.WRANGLER_SEND_METRICS,'false');
+   const call=f.calls.at(-1);assert.equal(call.file,process.execPath);assert.equal(call.opts.cwd,f.root);assert.equal(call.opts.shell,false);assert.equal(call.opts.env.WRANGLER_SEND_METRICS,'false');assert.equal(call.opts.env.MINIFLARE_CACHE_DIR,resolve(f.root,'.generated/local-miniflare-cache'));assert.equal(call.opts.env.CLOUDFLARE_CF_FETCH_PATH,resolve(f.root,'.generated/local-miniflare-cache/cf.json'));
    const wrangler=resolve(f.root,'tools/node_modules/wrangler/bin/wrangler.js'),config=resolve(f.root,deploy?'dist/prebid_professor/wrangler.json':'wrangler.jsonc');
    const expected=deploy?[wrangler,'deploy','--config',config,...(command==='deploy-dry-run'?['--dry-run','--outdir',resolve(f.root,'.generated/admin-deploy-dry-run')]:[])]:command==='types'?[wrangler,'types','--config',config]:[wrangler,'d1','migrations','apply','prebid-professor-db',command==='db-local'?'--local':'--remote','--config',config];
    assert.deepEqual(call.args,expected);
@@ -59,3 +60,5 @@ test('failed build, source change during build and output symlinks prevent mutat
   await assert.rejects(assertAdminBuild(f.root),/symlink/);
  }finally{await f.close();}
 });
+
+test('cache symlink cannot redirect local metadata into dependency closure',async()=>{const f=await fixture();try{await mkdir(resolve(f.root,'.generated'));await symlink(resolve(f.root,'tools/node_modules'),resolve(f.root,'.generated/local-miniflare-cache'),'dir');await assert.rejects(runAdmin(['db-local'],f.options),/symlink/);assert.equal(f.calls.length,0);}finally{await f.close();}});

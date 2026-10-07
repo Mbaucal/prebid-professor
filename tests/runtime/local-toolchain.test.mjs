@@ -40,11 +40,29 @@ test('locked Vite dotenv resolution rejects named environments and forces local 
  const dir=await mkdtemp(join(tmpdir(),'mba237-dotenv-'));
  try{
   const {mkdir,symlink}=await import('node:fs/promises');await mkdir(join(dir,'tools'));await symlink(join(repo,'tools/node_modules'),join(dir,'tools/node_modules'),'dir');
-  assert.equal((await localViteEnvironment(dir,'dev')).CLOUDFLARE_VITE_FORCE_LOCAL,'true');
+  const local=await localViteEnvironment(dir,'dev');assert.equal(local.CLOUDFLARE_VITE_FORCE_LOCAL,'true');
+  assert.equal(local.MINIFLARE_CACHE_DIR,join(dir,'.generated/local-miniflare-cache'));assert.equal(local.CLOUDFLARE_CF_FETCH_PATH,join(local.MINIFLARE_CACHE_DIR,'cf.json'));
+  await writeFile(join(dir,'.env'),'CLOUDFLARE_CF_FETCH_PATH=node_modules/.mf/cf.json\n');assert.equal((await localViteEnvironment(dir,'dev')).CLOUDFLARE_CF_FETCH_PATH,local.CLOUDFLARE_CF_FETCH_PATH);
   await writeFile(join(dir,'.env.development.local'),'CLOUDFLARE_ENV=unexpected\n');await assert.rejects(localViteEnvironment(dir,'dev'),/Named Cloudflare/);
   await writeFile(join(dir,'.env.production'),'CLOUDFLARE_ENV=unexpected\n');await assert.rejects(localViteEnvironment(dir,'preview'),/Named Cloudflare/);await assert.rejects(localViteEnvironment(dir,'build'),/Named Cloudflare/);
   await rm(join(dir,'.env.development.local'));await rm(join(dir,'.env.production'));
   const original=process.env.CLOUDFLARE_ENV;process.env.CLOUDFLARE_ENV='unexpected';
   try{await assert.rejects(localViteEnvironment(dir,'dev'),/Named Cloudflare/);}finally{if(original===undefined)delete process.env.CLOUDFLARE_ENV;else process.env.CLOUDFLARE_ENV=original;}
  }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('actual locked Miniflare uses the relocated synthetic CF cache without adding a root dependency',async()=>{
+ const {localViteEnvironment}=await import('../../scripts/local-toolchain.mjs');
+ const {Miniflare,convertV4MiniflareOptions}=await import('../../tools/node_modules/miniflare/dist/src/index.js');
+ const {mkdir,lstat}=await import('node:fs/promises');
+ const dir=await mkdtemp(join(tmpdir(),'mba237-cf-cache-')),env=await localViteEnvironment(repo,'dev');
+ const keys=['MINIFLARE_CACHE_DIR','CLOUDFLARE_CF_FETCH_PATH'],previous=Object.fromEntries(keys.map(k=>[k,process.env[k]]));let mf;
+ try{
+  // Use the same fixed relative location in an isolated synthetic repository root.
+  const cache=join(dir,'.generated/local-miniflare-cache');await mkdir(cache,{recursive:true});await writeFile(join(cache,'cf.json'),JSON.stringify({country:'ZZ',colo:'CACHE_PROBE'}));
+  assert.equal(env.MINIFLARE_CACHE_DIR,join(repo,'.generated/local-miniflare-cache'));
+  process.env.MINIFLARE_CACHE_DIR=cache;process.env.CLOUDFLARE_CF_FETCH_PATH=join(cache,'cf.json');
+  mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(request){return Response.json(request.cf)}}',compatibilityDate:'2026-07-15',cf:true,outboundService:()=>{throw Error('No external Worker requests permitted');}}));
+  const response=await mf.dispatchFetch('https://fixture.invalid/');assert.equal((await response.json()).colo,'CACHE_PROBE');
+  await assert.rejects(lstat(join(repo,'node_modules/.mf')),/ENOENT/);
+ }finally{await mf?.dispose();for(const key of keys){if(previous[key]===undefined)delete process.env[key];else process.env[key]=previous[key];}await rm(dir,{recursive:true,force:true});}
 });

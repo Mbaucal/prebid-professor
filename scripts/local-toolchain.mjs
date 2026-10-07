@@ -27,6 +27,8 @@ export async function localViteEnvironment(root,command){
   const values=loadEnv(command==='dev'?'development':'production',root,'CLOUDFLARE_');
   assert(!values.CLOUDFLARE_ENV,'Named Cloudflare environments are not accepted by local npm commands.');
   environment.CLOUDFLARE_VITE_FORCE_LOCAL='true';
+  environment.MINIFLARE_CACHE_DIR=resolve(root,'.generated/local-miniflare-cache');
+  environment.CLOUDFLARE_CF_FETCH_PATH=resolve(environment.MINIFLARE_CACHE_DIR,'cf.json');
  }
  return environment;
 }

@@ -48,7 +48,10 @@ export async function runAdmin(args,{root=ROOT,env=process.env,execute=spawnSync
  const lock=JSON.parse(await readFile(resolve(root,'tools/package-lock.json'),'utf8'));
  const installed=JSON.parse(await readFile(resolve(root,'tools/node_modules/wrangler/package.json'),'utf8'));
  assert.equal(installed.version,lock.packages['node_modules/wrangler'].version,'Installed Wrangler differs from tools lock');
- const childEnv={...env,WRANGLER_SEND_METRICS:'false'};
+ // Local D1/type generation can instantiate Miniflare; keep runtime metadata outside signed dependencies.
+ const cache=resolve(root,'.generated/local-miniflare-cache');
+ await fixedPath(root,'.generated/local-miniflare-cache/cf.json',{optional:true});
+ const childEnv={...env,WRANGLER_SEND_METRICS:'false',MINIFLARE_CACHE_DIR:cache,CLOUDFLARE_CF_FETCH_PATH:resolve(cache,'cf.json')};
  function run(argv){const r=execute(process.execPath,argv,{cwd:root,env:childEnv,shell:false,stdio:'inherit'});assert.equal(r.status,0,'Admin child failed; no later operation was executed');}
  if(command==='deploy'||command==='deploy-dry-run'){
   await fixedPath(root,'dist',{optional:true});await fixedPath(root,'dist/prebid_professor',{optional:true});await fixedPath(root,'dist/client',{optional:true});
