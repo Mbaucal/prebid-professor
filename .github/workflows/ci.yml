@@ -39,10 +39,16 @@ jobs:
           JS
 
       - name: Check browser, Worker and build-tool types
-        run: node scripts/isolated-toolchain.mjs typecheck
+        run: npm run typecheck
+
+      - name: Verify default command guards without remote operations
+        run: node --test tests/runtime/local-toolchain.test.mjs tests/runtime/admin-toolchain.test.mjs
 
       - name: Build dashboard and Worker
-        run: node scripts/isolated-toolchain.mjs build
+        run: npm run build
+
+      - name: Verify default local servers on loopback
+        run: node scripts/verify-default-local-servers.mjs
 
       - name: Verify read-only A/B and cache console diagnostics
         run: node --test tests/runtime/experiment-inspect.test.mjs
@@ -56,6 +62,8 @@ jobs:
           node --experimental-strip-types tools/verify-compiled-parity.mjs
       - name: Package locally without deployment
         run: node scripts/isolated-toolchain.mjs dry-run
+      - name: Verify default deployment package locally
+        run: npm run deploy:dry-run
       - name: Report historical and active dependency scopes separately
         run: node scripts/audit-isolated-toolchain.mjs
       - uses: actions/upload-artifact@v4
