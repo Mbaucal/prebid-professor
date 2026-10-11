@@ -6,7 +6,7 @@ import {generateKeyPairSync, randomBytes, verify} from 'node:crypto';
 import {mkdir, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Miniflare} from 'miniflare';
+import {Miniflare} from './local-miniflare.mjs';
 import {soapTrafficFixture} from '../tests/gam/soap-traffic-fixture.mjs';
 import {prebidPlan} from '../tests/gam/traffic-fixture.mjs';
 const traffic=soapTrafficFixture();let trafficMode=false;

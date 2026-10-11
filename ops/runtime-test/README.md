@@ -1,5 +1,7 @@
 # Isolated test workspace — MBA-53
 
+> Historical MAIN-copy setup notes. Live TEST already uses separately accepted isolated hosted settings; do not reapply these old commands or recreate resources. The pending MAIN adoption plan is [documented separately](../main-toolchain-adoption.md).
+
 This standalone entrypoint is built on PR #26. It reuses the approved generator, authentication primitives with separate test credentials/session namespace, and immutable draft storage. It never imports or delegates to the production application router. This is NOT all of Tessera's screens or a production release.
 
 ## Scope

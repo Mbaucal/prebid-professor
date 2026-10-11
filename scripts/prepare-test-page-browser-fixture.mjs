@@ -1,7 +1,7 @@
 import { mkdir,writeFile,readFile,readdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { Miniflare,Headers as MiniflareHeaders } from 'miniflare';
+import { Miniflare,Headers as MiniflareHeaders } from './local-miniflare.mjs';
 import { positionFixture } from '../tests/support/position-runtime-fixture.mjs';
 import { runtimeCatalog,buildArtifactCandidate,previewInput } from '../worker/test-workspace/runtime-catalog.mjs';
 import { pinRuntime } from '../worker/runtime/version-pin.mjs';

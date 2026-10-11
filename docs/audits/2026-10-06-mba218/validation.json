@@ -1,0 +1,114 @@
+{
+  "base": "d49377ada3b5de03aef9374292da159a5fa798fd",
+  "node": "v24.19.0",
+  "scope": "Local MAIN candidate only; no main merge, hosted deployment or publisher traffic",
+  "build": {
+    "isolation": {
+      "rootLockSha256": "7d9787650ad10fcafee21db223ce2bb76b2e9dc6ac6b943404b260e3b7f47280",
+      "productionPackages": 16,
+      "esbuild": "0.28.1",
+      "platform": "linux-x64"
+    },
+    "outputs": {
+      "verifiedOutputs": 63
+    },
+    "toolsLockSha256": "4849ee2954ed15420ef62d0d8da76cfef6c949a5fa48dd552c8e622e664190d6",
+    "node": "v24.19.0",
+    "command": "build",
+    "consumerTestPageSha256": "38c065b5fd422a96991f58c830d4c70bbe0ac2d32c26130009caca13a16cbdb1"
+  },
+  "audit": {
+    "note": "Historical full lock is retained as inventory, not a zero-findings claim. Active root-production and tools must have zero findings. No automatic fixes or package changes.",
+    "summaries": [
+      {
+        "scope": "all",
+        "role": "historical-full-lock",
+        "exitCode": 1,
+        "vulnerabilities": {
+          "info": 0,
+          "low": 0,
+          "moderate": 0,
+          "high": 7,
+          "critical": 0,
+          "total": 7
+        },
+        "packages": [
+          "@cloudflare/vite-plugin",
+          "miniflare",
+          "nanoid",
+          "sharp",
+          "source-map-js",
+          "undici",
+          "wrangler"
+        ]
+      },
+      {
+        "scope": "production",
+        "role": "active-root-production",
+        "exitCode": 0,
+        "vulnerabilities": {
+          "info": 0,
+          "low": 0,
+          "moderate": 0,
+          "high": 0,
+          "critical": 0,
+          "total": 0
+        },
+        "packages": []
+      },
+      {
+        "scope": "active-tools",
+        "role": "active-tools",
+        "exitCode": 0,
+        "vulnerabilities": {
+          "info": 0,
+          "low": 0,
+          "moderate": 0,
+          "high": 0,
+          "critical": 0,
+          "total": 0
+        },
+        "packages": []
+      }
+    ]
+  },
+  "nativeSharp": {
+    "sharp": "0.35.5",
+    "rsvg": "2.63.2",
+    "vips": "8.18.7",
+    "syntheticPngBytes": 95
+  },
+  "sourceTests": 188,
+  "isolationTests": 9,
+  "compiledParity": {
+    "passed": true,
+    "scope": "Local compiled Worker HTTP generator; same captured timestamp and SQL snapshot supplied to original compiler. No deployment or live ad traffic.",
+    "workerSha256": "fc460844a6943bff2ebc99a9a3350177fc3eb762c26d2c860abb831608a6a8a0",
+    "runtimeSha256": "222569881b377c085f0b5d373523d092d64e2ac5dab05d421c3cc9f371078de9",
+    "buildTimestamp": "20261006_194010",
+    "zipSha256": "49f106b4b6ba83b09686e6b37f6aeaa286fbec78d87d1e2d81e986b6cec3856e",
+    "fileHashes": {
+      "ads.js": "ce84b76e890af9187a5177db3899498776cb5b8c5b655c397599611c7db3012d",
+      "ads.min.js": "8ed807a4ceb86f2cd13a62f567a49a35a84701a8ad7ef0a6f669bb1f90b0b4cb",
+      "sticky.css": "6485c0d25d17fd5aec692d1c175fe3db7e2ea72551d58dde14c2ce3d5483ba3f",
+      "min-height.css": "961d3a9db4262ac4ce1035b27d12fc83a46156c3e8ebd298f9a4f48372cbc3c1",
+      "config.json": "d7abc16d268604a59587d9e8306d006c894677f0b210d22b33ef1d465fab0abc",
+      "implementation.html": "f16c3683a01d9e866aea095392ffd63f02860caceffaef3aaf879acf002a5c03",
+      "div-export.csv": "e0a0eb59f411a891dcb04d3894b248625a5b7f1e2749f4b8ffc7791c66ffce4b",
+      "README.txt": "2e4a87ad563f24be1a19a2607835c7e3af7804eb6728e5f7f9607dce6ceb8d65",
+      "manifest.json": "2602568234955206b0a9fd431f05b1058fc447c8ada2182ed1223976f08ec0c0"
+    },
+    "externalRequests": 0,
+    "authAndOriginEnforced": true
+  },
+  "artifactCases": 12,
+  "storedRestartCases": 12,
+  "browser": {
+    "candidateReadable": 20,
+    "candidateMinified": 20,
+    "candidateLayout": 4,
+    "storedReadable": 20,
+    "storedMinified": 20,
+    "storedLayout": 4
+  }
+}

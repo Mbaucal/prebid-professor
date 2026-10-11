@@ -3,7 +3,7 @@ import {randomBytes} from 'node:crypto';
 import {readFile,mkdir,writeFile,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Miniflare} from 'miniflare';
+import {Miniflare} from './local-miniflare.mjs';
 import {unzipSync} from 'fflate';
 import {buildConfigurableABPackage} from './configurable-ab-package.mjs';
 import {sha256} from './static-aa-package.mjs';

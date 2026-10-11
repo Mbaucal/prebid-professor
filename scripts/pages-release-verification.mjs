@@ -179,6 +179,21 @@ export function callbackResult({deployOutcome,verificationOutcome,runId,runUrl,c
     message:verified?'Cloudflare Pages deployment and every published file were verified.':deployed?'Pages deployment completed, but public file verification failed. Inspect this deployment before retrying.':'No successful Pages deployment was confirmed. Inspect the workflow before retrying.'};
 }
 
+export const PAGES_HEADERS='/*\n  Access-Control-Allow-Origin: *\n  X-Content-Type-Options: nosniff\n  Cache-Control: no-store\n  X-Robots-Tag: noindex\n';
+export function assertPreparedEvidence(input,evidence,env) {
+  requireThat(/^[1-9][0-9]{0,19}$/.test(env.GITHUB_RUN_ID) && /^[a-f0-9]{40}$/.test(env.GITHUB_SHA),'Invalid deployment run identity.');
+  requireThat(evidence.runId===env.GITHUB_RUN_ID && evidence.commit===env.GITHUB_SHA
+    && record(evidence.input) && Object.keys(evidence.input).length===Object.keys(input).length
+    && Object.entries(input).every(([key,value])=>evidence.input[key]===value),'Prepared evidence belongs to another input or workflow run.');
+  const {verified,project}=evidence;
+  requireThat(verified?.manifestSha256===input.manifest_sha256 && verified.siteId===input.site_id
+    && verified.releaseId===input.release_id && verified.version===input.release_version && verified.builtinDraft===false,'Verification evidence belongs to another release.');
+  requireThat(project?.accountId===input.account_id && project.projectName===input.project_name
+    && project.branch===input.branch && project.channel===input.channel && typeof project.productionBranch==='string' && project.productionBranch.length>0
+    && (input.channel==='staging'?project.branch!==project.productionBranch:project.branch===project.productionBranch),'Prepared Pages target differs from the validated channel.');
+  return verified;
+}
+
 async function main() {
   const mode=process.argv[2];
   const input=validateDeploymentInput(JSON.parse(process.env.DEPLOY_INPUTS||'null'),process.env.GITHUB_REF);
@@ -198,14 +213,14 @@ async function main() {
     const delivered=compact?Object.fromEntries(Object.entries(files).filter(([name])=>['ads.js','prebid.js'].includes(name))):files;
     for(const [name,bytes] of Object.entries(delivered))await writeFile(resolve(dist,name),bytes,{flag:'wx'});
     if(compact)verified=scriptsDelivery(verified);
-    const headers='/*\n  Access-Control-Allow-Origin: *\n  X-Content-Type-Options: nosniff\n  Cache-Control: no-store\n  X-Robots-Tag: noindex\n';
+    const headers=PAGES_HEADERS;
     await writeFile(resolve(dist,'_headers'),headers,{flag:'wx'});
-    await writeFile(resolve(root,'verification.json'),JSON.stringify({project,verified},null,2)+'\n');
+    await writeFile(resolve(root,'verification.json'),JSON.stringify({input,runId:process.env.GITHUB_RUN_ID,commit:process.env.GITHUB_SHA,project,verified},null,2)+'\n');
     console.log(`Verified ${verified.files.length} release files and the actual Pages branch.`);return;
   }
   if(mode==='verify-public'){
-    const {verified}=JSON.parse(await readFile(resolve(root,'verification.json'),'utf8'));
-    requireThat(verified.manifestSha256===input.manifest_sha256 && verified.siteId===input.site_id && verified.releaseId===input.release_id && verified.version===input.release_version, 'Verification evidence belongs to another deployment.');
+    const evidence=JSON.parse(await readFile(resolve(root,'verification.json'),'utf8'));
+    const verified=assertPreparedEvidence(input,evidence,process.env);
     const result=await verifyPublicPackage(process.env.PAGES_DEPLOYMENT_URL,input.project_name,verified);
     await writeFile(resolve(root,'public-verification.json'),JSON.stringify(result,null,2)+'\n');
     console.log(`Verified ${result.fileCount} files at the immutable Pages deployment.`);return;

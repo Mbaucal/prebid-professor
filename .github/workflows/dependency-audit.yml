@@ -14,7 +14,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.23.3
+      - name: Install verified historical compiler and locked tools
+        run: node scripts/bootstrap-toolchain.mjs
       - name: Capture complete and production dependency audit reports
         run: |
           mkdir -p dependency-audit
@@ -22,18 +24,19 @@ jobs:
           import { spawnSync } from 'node:child_process';
           import { writeFileSync, appendFileSync } from 'node:fs';
           const summaries = [];
-          for (const [scope, args] of [['all', []], ['production', ['--omit=dev']]]) {
-            const run = spawnSync('npm', ['audit', '--package-lock-only', '--ignore-scripts', '--json', ...args], { encoding: 'utf8', timeout: 120000, maxBuffer: 20 * 1024 * 1024 });
+          for (const [scope, role, cwd, args] of [['all', 'historical-full-lock', '.', []], ['production', 'active-root-production', '.', ['--omit=dev']], ['active-tools', 'active-tools', 'tools', []]]) {
+            const run = spawnSync('npm', ['audit', '--package-lock-only', '--ignore-scripts', '--json', ...args], { cwd, encoding: 'utf8', timeout: 120000, maxBuffer: 20 * 1024 * 1024 });
             writeFileSync(`dependency-audit/${scope}.json`, run.stdout || '{}');
             writeFileSync(`dependency-audit/${scope}.stderr.txt`, run.stderr || '');
             if (run.error || ![0, 1].includes(run.status)) throw new Error(`The ${scope} audit could not be completed.`);
             const report = JSON.parse(run.stdout);
             if (report.error || !report.metadata?.vulnerabilities) throw new Error(`The ${scope} audit did not return valid advisory metadata.`);
-            summaries.push({ scope, exitCode: run.status, vulnerabilities: report.metadata.vulnerabilities, packages: Object.keys(report.vulnerabilities ?? {}) });
+            summaries.push({ scope, role, exitCode: run.status, vulnerabilities: report.metadata.vulnerabilities, packages: Object.keys(report.vulnerabilities ?? {}) });
           }
-          writeFileSync('dependency-audit/summary.json', JSON.stringify({ note: 'Report only. A successful job means the report was retrieved, NOT that dependencies are clear. No automatic fixes or package changes.', summaries }, null, 2));
-          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Dependency audit — report only\n\nNo automatic changes. Vulnerabilities require triage before launch.\n\n\`\`\`json\n${JSON.stringify(summaries, null, 2)}\n\`\`\`\n`);
+          writeFileSync('dependency-audit/summary.json', JSON.stringify({ note: 'Historical full lock is retained as inventory, not a zero-findings claim. Active root-production and tools must have zero findings. No automatic fixes or package changes.', summaries }, null, 2));
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Dependency audit — separate historical and active scopes\n\nHistorical inventory may retain findings; active scopes are gated separately. No automatic changes.\n\n\`\`\`json\n${JSON.stringify(summaries, null, 2)}\n\`\`\`\n`);
           console.log(JSON.stringify(summaries, null, 2));
+          if (summaries.some(row => row.role !== 'historical-full-lock' && row.vulnerabilities.total !== 0)) throw new Error('Active dependency findings require triage.');
           JS
       - name: Retain advisory evidence
         if: always()

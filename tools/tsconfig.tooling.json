@@ -1,0 +1,14 @@
+{
+ "extends":"../tsconfig.node.json",
+ "compilerOptions":{
+  "baseUrl":"..",
+  "types":["node"],
+  "typeRoots":["./node_modules/@types"],
+  "paths":{
+   "vite":["tools/node_modules/vite/dist/node/index.d.ts"],
+   "@cloudflare/vite-plugin":["tools/node_modules/@cloudflare/vite-plugin/dist/index.d.mts"],
+   "@vitejs/plugin-react":["tools/node_modules/@vitejs/plugin-react/dist/index.d.ts"]
+  }
+ },
+ "include":["../vite.config.ts","./vite.config.ts"]
+}

@@ -14,14 +14,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.23.3
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install locked dependencies without lifecycle hooks
-        run: npm ci --ignore-scripts
+        run: node scripts/bootstrap-toolchain.mjs
       - name: Prepare checksum-locked runtime
-        run: node scripts/prepare-builtin-runtime.mjs
+        run: node scripts/isolated-toolchain.mjs prepare
       - name: Real SQLite storage and injected R2 fault tests
         run: node --experimental-strip-types --test tests/runtime/draft-release-store.test.mjs
       - name: Exercise actual legacy promotion, deletion and dispatch guards

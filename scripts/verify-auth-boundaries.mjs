@@ -4,7 +4,7 @@ import { readFile,mkdtemp,rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createInterface } from 'node:readline';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './local-miniflare.mjs';
 const config=JSON.parse(await readFile('dist/prebid_professor/wrangler.json','utf8'));
 const folder=await mkdtemp(join(tmpdir(),'tessera-auth-'));
 const email='admin@example.invalid',password='Synthetic-login-fixture-only-927!';

@@ -4,7 +4,7 @@ import {readFile,mkdtemp,rm,mkdir,writeFile} from 'node:fs/promises';
 import {randomBytes,createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Miniflare} from 'miniflare';
+import {Miniflare} from './local-miniflare.mjs';
 const directory=await mkdtemp(join(tmpdir(),'site-copy-audit-'));
 const origin='https://audit.example.invalid',email='audit@example.invalid',password=randomBytes(24).toString('hex');
 const mf=new Miniflare({modules:true,script:await readFile('dist/prebid_professor/index.js','utf8'),compatibilityDate:'2026-07-15',compatibilityFlags:['nodejs_compat'],cf:false,

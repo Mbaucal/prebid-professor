@@ -4,7 +4,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { mkdtemp, readdir, readFile, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './local-miniflare.mjs';
 import { TARGET } from '../tests/support/deployment-store.mjs';
 import { metadata } from '../.generated/tanjug-pilot.mjs';
 const origin='https://prebid-professor-test.mbaucal.workers.dev';

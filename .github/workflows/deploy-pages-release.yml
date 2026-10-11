@@ -89,10 +89,12 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
+          node-version: 22.23.3
       - name: Validate deployment identity and destinations before credentials
         id: identity
         run: node scripts/pages-release-verification.mjs validate
+      - name: Install locked tools for the reviewed source profile
+        run: node scripts/pages-toolchain.mjs bootstrap
       - name: Verify source package and actual Pages production branch
         id: prepare
         env:
@@ -105,16 +107,20 @@ jobs:
           path: .generated/pages-release/verification.json
           if-no-files-found: error
           retention-days: 14
+      - name: Recheck prepared bytes and exact tool resolution
+        run: node scripts/pages-release-preflight.mjs
       - name: Deploy the verified package with Wrangler
         id: deploy
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
         with:
           apiToken: ${{ secrets[inputs.github_environment] }}
           accountId: ${{ inputs.account_id }}
-          wranglerVersion: "4.118.0"
+          workingDirectory: tools
+          packageManager: npm
+          wranglerVersion: "4.131.0"
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           command: >-
-            pages deploy .generated/pages-release/dist
+            pages deploy ../.generated/pages-release/dist
             --project-name=${{ inputs.project_name }}
             --branch=${{ inputs.branch }}
             --commit-dirty=false
@@ -133,7 +139,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
+          node-version: 22.23.3
+      - name: Check source profile without installing tools
+        run: node scripts/pages-toolchain.mjs check
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.deploy.outputs.evidence_name }}
@@ -165,7 +173,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
+          node-version: 22.23.3
+      - name: Check source profile without installing tools
+        run: node scripts/pages-toolchain.mjs check
       - name: Report the independent deployment and verification outcomes
         env:
           CALLBACK_SECRET: ${{ secrets.PREBID_PROFESSOR_CALLBACK_SECRET }}
