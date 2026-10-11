@@ -33,8 +33,13 @@ try:
    page.route('**/*',route)
    def open_deals():
     page.locator('.tabbar').get_by_role('button',name='Config',exact=True).click()
-    page.get_by_role('navigation',name='Configuration groups').get_by_role('button',name='Demand',exact=True).click()
-    page.get_by_role('navigation',name='Demand settings').get_by_role('button',name='Bidders',exact=True).click()
+    groups=page.get_by_role('navigation',name='Configuration groups',exact=True)
+    sections=page.get_by_role('navigation',name='Configuration sections',exact=True)
+    expect(groups.or_(sections)).to_be_visible()
+    if groups.is_visible():
+     groups.get_by_role('button',name='Demand',exact=True).click()
+     page.get_by_role('navigation',name='Demand settings').get_by_role('button',name='Bidders',exact=True).click()
+    else:sections.get_by_role('button',name='Bidders & overrides',exact=True).click()
     expect(page.get_by_role('heading',name='Deals',exact=True)).to_be_visible()
    def record(name):
     assert not errors,errors;assert not external,external

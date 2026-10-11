@@ -37,7 +37,12 @@ with sync_playwright() as p:
      r.fulfill(status=200,content_type=mimetypes.guess_type(str(file))[0] or 'application/octet-stream',body=file.read_bytes())
    page.route('**/*',route)
    page.goto('https://outstream-ui.test/?section=publishers&publisher=publisher-1&site=site-1&tab=config')
-   page.get_by_role('button',name='Inventory',exact=True).click();page.get_by_role('button',name='Formats',exact=True).click()
+   groups=page.get_by_role('navigation',name='Configuration groups',exact=True)
+   sections=page.get_by_role('navigation',name='Configuration sections',exact=True)
+   expect(groups.or_(sections)).to_be_visible()
+   if groups.is_visible():groups.get_by_role('button',name='Inventory',exact=True).click()
+   else:sections.get_by_role('button',name='Ad units',exact=True).click()
+   page.get_by_role('button',name='Formats',exact=True).click()
    expect(page.get_by_text('Loading format settings…',exact=True)).to_be_visible();assert page.locator('[role=dialog]').evaluate('(e)=>e===document.activeElement')
    deadline=time.monotonic()+5
    while not pending and time.monotonic()<deadline:page.wait_for_timeout(10)
