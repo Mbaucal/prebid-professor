@@ -32,7 +32,7 @@ test('malformed TEST history still fails closed',async()=>changed('worker/runtim
 test('the seven historical records and receipt stay immutable while a new version is prepended',async()=>{
  const receipt=await readReceipt(root,'test'),baseline=await readFile(resolve(root,'tools/test-runtime-history.json'));
  const current=JSON.parse(await readFile(resolve(root,'worker/runtime/runtime-releases.json'))),old=JSON.parse(baseline);
- assert.equal(old.length,7);assert.equal(current.length,8);
+ assert.equal(old.length,7);assert.equal(current.length,9);
  verifyHistoricalHistory(JSON.stringify(current),baseline,receipt);
  for(const change of [
   rows=>{rows.at(-1).title+=' changed';},

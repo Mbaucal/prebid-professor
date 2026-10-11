@@ -1,7 +1,10 @@
+import {descriptor as revenueV2} from '../../.generated/runtime-revenue-v2-manifest.mjs';
+import {buildArtifactCandidate as revenueV2Candidate} from '../runtime-revenue-v2/artifact-candidate.mjs';
+import {previewInput as revenueV2Input} from '../runtime-revenue-v2/snapshot.mjs';
 import {descriptor as revenue} from '../../.generated/runtime-revenue-manifest.mjs';
 import {buildArtifactCandidate as revenueCandidate} from '../runtime-revenue-v1/artifact-candidate.mjs';
 import {previewInput as revenueInput} from '../runtime-revenue-v1/snapshot.mjs';
-import {requireRevenueRuntime} from '../runtime-revenue-v1/settings-guard.mjs';
+import {requireRevenueRuntime} from '../runtime-revenue-v2/settings-guard.mjs';
 import {descriptor as readiness} from '../../.generated/runtime-readiness-manifest.mjs';
 import {buildArtifactCandidate as readinessCandidate} from '../runtime-readiness-v1/artifact-candidate.mjs';
 import {descriptor as demand} from '../../.generated/runtime-demand-manifest.mjs';
@@ -21,7 +24,7 @@ import { buildArtifactCandidate as referenceCandidate } from '../runtime/artifac
 import { buildArtifactCandidate as positionsCandidate } from '../runtime-next/artifact-candidate.mjs';
 import { prepareSiteRuntimeSelection as prepare, readPinnedSiteRuntime as read } from '../runtime/site-runtime-selection.mjs';
 import { takeOverForBuild } from './takeover-settings.mjs';
-export const runtimeCatalog=[validateRuntimeDescriptor(next),reference,validateRuntimeDescriptor(creative),validateRuntimeDescriptor(reporting),validateRuntimeDescriptor(demand),validateRuntimeDescriptor(readiness),validateRuntimeDescriptor(revenue)];
+export const runtimeCatalog=[validateRuntimeDescriptor(next),reference,validateRuntimeDescriptor(creative),validateRuntimeDescriptor(reporting),validateRuntimeDescriptor(demand),validateRuntimeDescriptor(readiness),validateRuntimeDescriptor(revenue),validateRuntimeDescriptor(revenueV2)];
 export const runtimeDescriptor=runtimeCatalog[0];
 export function descriptorForPin(pin){
   const descriptor=runtimeCatalog.find(r=>r.id===pin?.runtimeId&&r.version===pin?.runtimeVersion);
@@ -31,10 +34,10 @@ export function descriptorForPin(pin){
 export function previewInput(snapshot,descriptor,time,takeOver){
   const config=JSON.parse(snapshot.config.config_json);
   requireRevenueRuntime(config,descriptor);
-  if(descriptor.id===revenue.id||descriptor.id===next.id||descriptor.id===creative.id||descriptor.id===reporting.id||descriptor.id===demand.id||descriptor.id===readiness.id){
+  if(descriptor.id===revenueV2.id||descriptor.id===revenue.id||descriptor.id===next.id||descriptor.id===creative.id||descriptor.id===reporting.id||descriptor.id===demand.id||descriptor.id===readiness.id){
     const codes=Object.keys(config.runtimeControls?.adPositions??{});
     if(codes.some(code=>snapshot.units.find(unit=>unit.code===code)?.enabled!==1))throw Error('Enable the TakeOver ad position, or explicitly change its display to Standard before disabling it.');
-    const input=(descriptor.id===revenue.id?revenueInput:descriptor.id===demand.id?demandInput:positionsInput)(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
+    const input=(descriptor.id===revenueV2.id?revenueV2Input:descriptor.id===revenue.id?revenueInput:descriptor.id===demand.id?demandInput:positionsInput)(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
     if(input.overlay?.demand==='site'&&config.enablePrebid!==true)throw Error('This TakeOver uses Prebid + GAM. Enable Prebid or explicitly change its demand to GAM only.');
     if(input.overlay){
       const base=input.overlay.unit.sizeMapName,maps=input.core.sizeMapsRaw;
@@ -50,5 +53,5 @@ export const readPinnedSiteRuntime=(args,bucket)=>read({...args,inputAdapter:pre
 export async function buildArtifactCandidate(args){
   const descriptor=descriptorForPin(args.pin);
   previewInput(args.snapshot,descriptor,args.buildTimestamp,args.takeOver);
-  return descriptor.id===revenue.id?revenueCandidate(args):descriptor.id===readiness.id?readinessCandidate(args):descriptor.id===demand.id?demandCandidate(args):descriptor.id===reporting.id?reportingCandidate(args):descriptor.id===creative.id?creativeCandidate(args):descriptor.id===next.id?positionsCandidate(args):referenceCandidate(args);
+  return descriptor.id===revenueV2.id?revenueV2Candidate(args):descriptor.id===revenue.id?revenueCandidate(args):descriptor.id===readiness.id?readinessCandidate(args):descriptor.id===demand.id?demandCandidate(args):descriptor.id===reporting.id?reportingCandidate(args):descriptor.id===creative.id?creativeCandidate(args):descriptor.id===next.id?positionsCandidate(args):referenceCandidate(args);
 }

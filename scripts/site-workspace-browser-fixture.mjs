@@ -8,7 +8,7 @@ const revenueMode=process.argv.includes('--revenue');
 const f=workspaceStore({prebidFiles:revenueMode});
 globalThis.fetch=()=>{throw Error('External network is forbidden in this fixture');};
 let cookie;
-if(revenueMode){({cookie}=await(await import('../tests/support/revenue-workspace-fixture.mjs')).initializeRevenueWorkspace(f));}
+if(revenueMode){({cookie}=await(await import('../tests/support/revenue-workspace-fixture.mjs')).initializeRevenueWorkspace(f,{runtimeId:'tessera-revenue-preview-2',legacyTakeOver:true}));}
 else {
 const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);
 cookie=login.headers.get('set-cookie').split(';')[0];

@@ -1,5 +1,35 @@
 [
   {
+    "id": "tessera-revenue-preview-2",
+    "version": "3.16.0-revenue.preview.2",
+    "codeSha256": "8c664ce5f92d2d3f070b740659b88aebede2b4703615b089cfbf5554098b5e37",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot"
+    ],
+    "date": "2026-10-11",
+    "title": "Outstream checks the position display",
+    "sourceManifest": "scripts/prepare-revenue-v2-runtime.mjs",
+    "sourceCommit": "e62e9da1ff1914f5a173d58bf5162a53068214a9",
+    "changes": [
+      "Allows Standard Outstream positions alongside a separate legacy TakeOver.",
+      "Respects explicitly disabled Sticky and identifies the actual display in validation errors.",
+      "Keeps Sticky, TakeOver and its Interstitial fallback outside the Outstream pilot. Existing versions and saved packages remain unchanged."
+    ]
+  },
+  {
     "id": "tessera-revenue-preview-1",
     "version": "3.16.0-revenue.preview.1",
     "codeSha256": "4ef15a0ac9e97c6de58a0bd0e1bd9a3428c6f29394c970c99626c09a76f0925c",

@@ -52,7 +52,7 @@ jobs:
       - name: Consent, deadline, reporting and pending-slot regressions
         run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
       - name: Deals and Outstream contracts, routes and exact package integration
-        run: node --experimental-strip-types --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/revenue-integration.test.mjs tests/runtime/test-revenue-settings.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/outstream-position-scope.test.mjs tests/runtime/revenue-integration.test.mjs tests/runtime/test-revenue-settings.test.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0

@@ -3,7 +3,7 @@
  * This is configuration validation only, outside every frozen runtime source.
  */
 import {normalizeDeals,assertManagedDealParams} from '../../shared/deals/contract.mjs';
-import {normalizeOutstream,outstreamContext} from '../../shared/outstream/settings.mjs';
+import {normalizeOutstream,outstreamContext} from '../../shared/outstream/selected-settings.mjs';
 import {WorkspaceError} from './boundary.mjs';
 export function assertRevenueDraftPreserved(before,after){
  const previous=JSON.parse(before.config.config_json),next=JSON.parse(after.config.config_json);
