@@ -6,6 +6,7 @@ import { commitSiteDraft } from './site-draft-store.mjs';
 import { selectedWorkspacePin } from './runtime-selection.mjs';
 import { TEST_SITE, WorkspaceError } from './boundary.mjs';
 import { takeOverForBuild } from './takeover-settings.mjs';
+import { assertRevenueDraftPreserved } from './revenue-draft-guard.mjs';
 const read=(env)=>readPreviewSnapshot(env.DB.withSession('first-primary'),TEST_SITE,{includePrebid:true});
 export async function getSiteDraft(env) {
   const saved=await read(env),draft=readSiteDraft(saved);
@@ -15,6 +16,7 @@ export async function getSiteDraft(env) {
 }
 export async function saveSiteDraft(env,actor,body) {
   const plan=await planSiteDraft(await read(env),body);
+  assertRevenueDraftPreserved(plan.before,plan.after);
   const pin=JSON.parse(plan.after.config.config_json).builtinRuntimeSelection.runtime;
   try{previewInput(plan.after,descriptorForPin(pin),'20260913_000000',takeOverForBuild(plan.after));}
   catch(error){throw new WorkspaceError(422,error.message);}

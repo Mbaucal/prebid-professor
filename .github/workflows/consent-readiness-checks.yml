@@ -11,6 +11,7 @@ on:
       - src/components/AdUnitsPanel.tsx
       - src/components/ScriptSetupPanel.tsx
       - src/components/SiteRuntimePanel.tsx
+      - src/site-workspace/**
       - scripts/**
       - tests/**
       - vendor/**
@@ -52,7 +53,7 @@ jobs:
       - name: Consent, deadline, reporting and pending-slot regressions
         run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
       - name: Deals and Outstream contracts, routes and exact package integration
-        run: node --experimental-strip-types --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/revenue-integration.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/revenue-integration.test.mjs tests/runtime/test-revenue-settings.test.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0
@@ -71,6 +72,7 @@ jobs:
         run: |
           python scripts/verify-deals-ui.py
           python scripts/verify-outstream-ui.py
+          python scripts/verify-revenue-workspace.py
       - name: Save synthetic evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -88,3 +90,5 @@ jobs:
             .generated/outstream-evidence/*.png
             .generated/outstream-ui-evidence/*.json
             .generated/outstream-ui-evidence/*.png
+            .generated/revenue-workspace-evidence/*.json
+            .generated/revenue-workspace-evidence/*.png

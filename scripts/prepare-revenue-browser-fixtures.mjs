@@ -12,6 +12,11 @@ for(const name of ['prebid','gam','outstream','outstream-only']) {
   const snapshot=name.startsWith('outstream')?positionFixture(true):dealsRuntimeFixture(name!=='gam');
   if(name.startsWith('outstream')) {
     const config=JSON.parse(snapshot.config.config_json);
+    // This acceptance fixture exercises the adapter/cache/creative handoff, not
+    // the short-deadline regression. Give intercepted browser I/O the normal
+    // 1500ms auction window; expiry and consent guards remain independently tested.
+    config.timeout=1500;
+    snapshot.rules.forEach(row=>{const rule=JSON.parse(row.rule_json);rule.timeout=1500;row.rule_json=JSON.stringify(rule);});
     delete config.runtimeControls.adPositions;
     snapshot.units=snapshot.units.filter(unit=>unit.code==='Billboard');
     snapshot.overrides=[];

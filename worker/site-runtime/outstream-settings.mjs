@@ -28,7 +28,7 @@ async function handle(request,env,siteId,actor) {
   return Response.json({revision:await digest(saved),outstream:config.runtimeControls?.outstream??{schemaVersion:1,units:{}},
     prebidVersion:ctx.prebidVersion,modules:ctx.modules,bidders:ctx.bidders.map(b=>({bidder:b.bidder,enabled:b.enabled===1})),
     enablePrebid:ctx.enablePrebid===true,units:ctx.units.map(u=>({code:u.code,enabled:u.enabled===1})),
-    runtimeEligible:config.builtinRuntimeSelection?.runtime?.version==='3.16.0-revenue.preview.1',published:false},{headers:{'cache-control':'no-store'}});
+    runtimeEligible:config.builtinRuntimeSelection?.runtime?.runtimeVersion==='3.16.0-revenue.preview.1',published:false},{headers:{'cache-control':'no-store'}});
 }
 
 export async function outstreamSettingsResponse(request,env,siteId,actor) {
