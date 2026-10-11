@@ -4,7 +4,8 @@ type Payload={revision:string;outstream:{schemaVersion:1;units:Record<string,Set
 const defaults:Settings={format:'banner',playerSize:[640,360],minDuration:5,maxDuration:30,playbackMethod:2,placement:3,plcmt:4,partner:{bidder:'pubmatic',adapter:'pubmatic',outstreamAU:'',activationConfirmed:false},cacheUrl:'https://prebid.adnxs.com/pbc/v1/cache'};
 export default function OutstreamSettingsPanel({publisherId,code,onClose,onSaved}:{publisherId:string;code:string;onClose:()=>void;onSaved:()=>void}) {
   const dialog=useRef<HTMLElement>(null),[data,setData]=useState<Payload|null>(null),[draft,setDraft]=useState<Settings>(defaults),[busy,setBusy]=useState(true),[error,setError]=useState(''),[message,setMessage]=useState('');
-  const alive=useRef(true);
+  const alive=useRef(true),feedback=useRef<HTMLParagraphElement>(null);
+  useEffect(()=>{if(error||message){feedback.current?.scrollIntoView({block:'center'});feedback.current?.focus();}},[error,message]);
   useEffect(()=>{alive.current=true;const previous=document.activeElement as HTMLElement|null;dialog.current?.focus();return()=>{alive.current=false;previous?.focus();};},[]);
   async function request(body?:unknown){const response=await fetch(`/api/publishers/${encodeURIComponent(publisherId)}/outstream-settings`,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',...(body?{headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{})});const value=await response.json() as Payload&{error?:string};if(!response.ok)throw Error(value.error||'Could not load format settings.');return value;}
   function accept(value:Payload){setData(value);const saved=value.outstream.units[code];setDraft({...defaults,...saved,partner:{...defaults.partner!,...saved?.partner}});}
@@ -20,7 +21,7 @@ export default function OutstreamSettingsPanel({publisherId,code,onClose,onSaved
     <div className="modal-heading"><div><span className="panel-kicker">Ad position</span><h2 id="outstream-heading">Formats · {code}</h2></div><button className="icon-button" disabled={busy} aria-label="Close format settings" onClick={onClose}>×</button></div>
     <div className="publisher-form" style={{gridTemplateColumns:'minmax(0,1fr)'}}>
       {busy?<p role="status">{data?'Saving format settings…':'Loading format settings…'}</p>:null}
-      {error?<p className="form-error" role="alert">{error}</p>:null}{message?<p role="status">{message}</p>:null}
+      {error?<p ref={feedback} tabIndex={-1} className="form-error" role="alert">{error}</p>:null}{message?<p ref={feedback} tabIndex={-1} role="status">{message}</p>:null}
       {data?<>
         <label><span>Ad format</span><select aria-label="Ad format" value={draft.format} disabled={busy} onChange={e=>update({format:e.target.value as Settings['format']})}><option value="banner">Banner</option><option value="outstream">Outstream</option><option value="banner-outstream">Banner + Outstream</option></select></label>
         <p>Banner sizes, size map and partner parameters remain saved when you change this choice.</p>

@@ -349,6 +349,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
                     <option value="video">video</option>
                     <option value="native">native</option>
                   </select>
+                  <small>For Outstream, save this position as Banner, then choose Formats.</small>
                 </label>
               </div>
 

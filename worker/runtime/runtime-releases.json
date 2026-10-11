@@ -22,7 +22,7 @@
     "date": "2026-10-11",
     "title": "Deals and PubMatic Banner + Outstream pilot",
     "sourceManifest": "scripts/prepare-revenue-runtime.mjs",
-    "sourceCommit": "915e2eb12b5639283097f00ae9204727c2fc2798",
+    "sourceCommit": "2af57b54847f77f9d180a242e76890b93d355064",
     "changes": [
       "Combines completed CMP readiness with native Send All Bids; configured IDs never fabricate bids or consent.",
       "Adds per-partner, per-position deals with dates and a read-only GAM plan. Native targeting exposes one selected bid per bidder; unverified aliases are excluded.",

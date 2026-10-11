@@ -59,7 +59,7 @@ with sync_playwright() as p:
    page.get_by_role('button',name='Close format settings',exact=True).click();expect(page.get_by_role('button',name='Formats',exact=True)).to_be_focused()
    page.get_by_role('button',name='Formats',exact=True).click();expect(page.get_by_label('Ad format',exact=True)).to_have_value('banner-outstream');expect(page.get_by_label('Player width (px)',exact=True)).to_have_value('300')
    mode['fail']=True;page.get_by_label('Ad format',exact=True).select_option('outstream');page.get_by_role('button',name='Save format settings',exact=True).click()
-   expect(page.get_by_role('alert')).to_contain_text('Settings changed');expect(page.get_by_label('Ad format',exact=True)).to_have_value('outstream')
+   expect(page.get_by_role('alert')).to_contain_text('Settings changed');expect(page.get_by_role('alert')).to_be_in_viewport();expect(page.get_by_role('alert')).to_be_focused();expect(page.get_by_label('Ad format',exact=True)).to_have_value('outstream')
    page.screenshot(path=str(out/f'formats-error-{width}.png'),full_page=True)
    mode['fail']=False;page.get_by_role('button',name='Reload format settings',exact=True).click();expect(page.get_by_label('Ad format',exact=True)).to_have_value('banner-outstream')
    page.get_by_label('Ad format',exact=True).select_option('banner');page.get_by_role('button',name='Save format settings',exact=True).click();expect(page.get_by_text('Saved for the next revenue preview release. Existing scripts are unchanged.',exact=True)).to_be_visible()
