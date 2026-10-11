@@ -4,6 +4,7 @@ import {resolve,relative,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
+import {checkRuntimeReleaseHistory} from './check-runtime-release-history.mjs';
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 export function selectedProfile(args=process.argv.slice(2)){const at=args.indexOf('--profile');const profile=at<0?'main':args[at+1];assert(['main','test'].includes(profile),'Use explicit profile main or test.');return profile;}
 export async function readReceipt(root=ROOT,profile='main'){
@@ -14,6 +15,13 @@ export async function readReceipt(root=ROOT,profile='main'){
  return receipt;
 }
 export const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+// Keep the receipt's exact historical bytes while allowing separately pinned
+// new versions before that history. Never recapture the receipt to accept a change.
+export function verifyHistoricalHistory(current,baseline,receipt){
+ assert.equal(sha(baseline),receipt.historySha256,'Historical runtime history baseline changed.');
+ try { checkRuntimeReleaseHistory(JSON.parse(current),JSON.parse(baseline)); }
+ catch(error){assert.fail(`Historical runtime history changed: ${error.message}`);}
+}
 export async function filesUnder(directory,{skipModules=false}={}){
  const files={};
  async function visit(dir){for(const entry of await readdir(dir,{withFileTypes:true})){
@@ -28,7 +36,7 @@ export async function verifyIsolation(root=ROOT,{profile='main'}={}){
  assert.equal(process.platform,'linux','Initial isolated toolchain receipt supports Linux x64 only.');
  assert.equal(process.arch,'x64','Initial isolated toolchain receipt supports Linux x64 only.');
  const receipt=await readReceipt(root,profile);
- if(receipt.historySha256)assert.equal(sha(await readFile(resolve(root,'worker/runtime/runtime-releases.json'))),receipt.historySha256,'Historical runtime history changed.');
+ if(receipt.historySha256)verifyHistoricalHistory(await readFile(resolve(root,'worker/runtime/runtime-releases.json')),await readFile(resolve(root,'tools/test-runtime-history.json')),receipt);
  assert.equal(sha(await readFile(resolve(root,'package-lock.json'))),receipt.lockSha256,'Historical root lock changed.');
  for(const [path,digest] of Object.entries(receipt.sources))assert.equal(sha(await readFile(resolve(root,path))),digest,`Historical source changed: ${path}`);
  for(const [path,expected] of Object.entries(receipt.productionPackages)){
