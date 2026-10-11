@@ -50,7 +50,32 @@ with sync_playwright() as p:
     page.get_by_label('Player width (px)',exact=True).fill('300');page.get_by_label('Player height (px)',exact=True).fill('250')
     page.get_by_label('PubMatic outstream renderer ID',exact=True).fill('fixture_renderer')
     page.get_by_label('PubMatic confirmed this placement is activated for outstream.',exact=True).check()
+    # Real display edits reproduce both the saved Sticky rejection and Standard recovery.
+    display_state=json.loads(base64.b64decode(send('/test-api/site-settings')['body']))
+    display_state['draft']['bottomStickyId']='Billboard'
+    next(x for x in display_state['draft']['units'] if x['code']=='Billboard')['display']='sticky'
+    assert send('/test-api/site-settings','POST',json.dumps({'expectedRevision':display_state['revision'],'acknowledge':True,'draft':display_state['draft']}))['status']==200
+    page.get_by_role('button',name='Close format settings',exact=True).click()
+    page.get_by_role('button',name='Configure formats for Billboard',exact=True).click()
+    page.get_by_label('Ad format',exact=True).select_option('banner-outstream')
+    page.get_by_label('Player width (px)',exact=True).fill('300');page.get_by_label('Player height (px)',exact=True).fill('250')
+    page.get_by_label('PubMatic outstream renderer ID',exact=True).fill('fixture_renderer')
+    page.get_by_label('PubMatic confirmed this placement is activated for outstream.',exact=True).check()
+    page.get_by_role('button',name='Save format settings',exact=True).click()
+    expect(page.get_by_role('alert')).to_contain_text('configured as bottom Sticky')
+    expect(page.get_by_label('Ad format',exact=True)).to_have_value('banner-outstream')
+    page.screenshot(path=str(out/f'formats-actual-sticky-{width}.png'),full_page=True)
+    display_state=json.loads(base64.b64decode(send('/test-api/site-settings')['body']))
+    display_state['draft']['bottomStickyId']=baseline_inventory['bottomStickyId']
+    next(x for x in display_state['draft']['units'] if x['code']=='Billboard')['display']='standard'
+    assert send('/test-api/site-settings','POST',json.dumps({'expectedRevision':display_state['revision'],'acknowledge':True,'draft':display_state['draft']}))['status']==200
+    page.get_by_role('button',name='Reload format settings',exact=True).click()
+    page.get_by_label('Ad format',exact=True).select_option('banner-outstream')
+    page.get_by_label('Player width (px)',exact=True).fill('300');page.get_by_label('Player height (px)',exact=True).fill('250')
+    page.get_by_label('PubMatic outstream renderer ID',exact=True).fill('fixture_renderer')
+    page.get_by_label('PubMatic confirmed this placement is activated for outstream.',exact=True).check()
     page.get_by_role('button',name='Save format settings',exact=True).click();expect(page.get_by_role('status')).to_contain_text('Saved for the next revenue')
+    page.screenshot(path=str(out/f'formats-standard-takeover-{width}.png'),full_page=True)
     page.get_by_role('button',name='Close format settings',exact=True).click();page.reload()
     page.get_by_role('button',name='Formats',exact=True).click();page.get_by_role('button',name='Configure formats for Billboard',exact=True).click()
     expect(page.get_by_label('Ad format',exact=True)).to_have_value('banner-outstream');expect(page.get_by_label('PubMatic outstream renderer ID',exact=True)).to_have_value('fixture_renderer')
