@@ -29,7 +29,9 @@ function databaseMissing(): Response {
 async function positionGuard(db:D1Database,siteId:string,code:string){
   const row=await db.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=? LIMIT 1').bind(siteId).first<{config_json:string}>();
   const config=JSON.parse(row?.config_json??'{}');
-  return { configJson: row?.config_json ?? null, configured: Boolean(config.runtimeControls?.adPositions?.[code])
+  const outstream=config.runtimeControls?.outstream?.units?.[code];
+  const dealScope=config.runtimeControls?.deals?.entries?.some((entry:{positions?:unknown[]})=>entry.positions?.includes(code));
+  return { configJson: row?.config_json ?? null, revenueReferenced: Boolean((outstream&&outstream.format!=='banner')||dealScope), configured: Boolean(config.runtimeControls?.adPositions?.[code])
     || config.runtimeControls?.sticky?.bottomAdUnitId === code
     || config.advancedUnitRules?.[code]?.lazy != null };
 }
@@ -246,6 +248,7 @@ export async function updateAdUnit(
       : Number(input.sortOrder);
   const notes = input.notes === undefined ? current.notes : normalizeNullableString(input.notes);
   const guard = await positionGuard(env.DB,publisherId,current.code);
+  if((code!==current.code||type==='DRAFT'||mediaType!=='banner'||!enabled)&&guard.revenueReferenced)return apiError('Remove this position from Deals and set its format to Banner before renaming, disabling or changing its media/group.',409);
   if((code!==current.code||type==='DRAFT'||mediaType!=='banner'||!enabled)&&guard.configured)return apiError('Set this position to Standard and group loading before renaming, disabling or changing its media/group.',409);
   const actor = getActor(request);
   const now = new Date().toISOString();
@@ -474,6 +477,7 @@ export async function deleteAdUnit(
   const current = await fetchAdUnit(env.DB, publisherId, adUnitId);
   if (!current) return apiError('Ad unit not found.', 404);
   const guard = await positionGuard(env.DB,publisherId,current.code);
+  if(guard.revenueReferenced)return apiError('Remove this position from Deals and set its format to Banner before deleting it.',409);
   if(guard.configured)return apiError('Set this position to Standard and group loading before deleting it.',409);
 
   const actor = getActor(request);

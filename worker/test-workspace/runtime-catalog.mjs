@@ -1,3 +1,7 @@
+import {descriptor as revenue} from '../../.generated/runtime-revenue-manifest.mjs';
+import {buildArtifactCandidate as revenueCandidate} from '../runtime-revenue-v1/artifact-candidate.mjs';
+import {previewInput as revenueInput} from '../runtime-revenue-v1/snapshot.mjs';
+import {requireRevenueRuntime} from '../runtime-revenue-v1/settings-guard.mjs';
 import {descriptor as readiness} from '../../.generated/runtime-readiness-manifest.mjs';
 import {buildArtifactCandidate as readinessCandidate} from '../runtime-readiness-v1/artifact-candidate.mjs';
 /** All listed engines are bundled; selection never upgrades implicitly. */
@@ -13,7 +17,7 @@ import { buildArtifactCandidate as positionsCandidate } from '../runtime-next/ar
 import { prepareSiteRuntimeSelection as prepare, readPinnedSiteRuntime as read } from '../runtime/site-runtime-selection.mjs';
 import {requireSupportedCacheGenerator} from '../site-runtime/prebid-cache-settings.mjs';
 import { takeOverForBuild } from './takeover-settings.mjs';
-export const runtimeCatalog=[validateRuntimeDescriptor(next),reference,validateRuntimeDescriptor(reporting),validateRuntimeDescriptor(readiness)];
+export const runtimeCatalog=[validateRuntimeDescriptor(next),reference,validateRuntimeDescriptor(reporting),validateRuntimeDescriptor(readiness),validateRuntimeDescriptor(revenue)];
 export const runtimeDescriptor=runtimeCatalog[0];
 export function descriptorForPin(pin){
   const descriptor=runtimeCatalog.find(r=>r.id===pin?.runtimeId&&r.version===pin?.runtimeVersion);
@@ -22,10 +26,11 @@ export function descriptorForPin(pin){
 }
 export function previewInput(snapshot,descriptor,time,takeOver){
   const config=JSON.parse(snapshot.config.config_json);
-  if(descriptor.id===next.id||descriptor.id===reporting.id||descriptor.id===readiness.id){
+  requireRevenueRuntime(config,descriptor);
+  if(descriptor.id===revenue.id||descriptor.id===next.id||descriptor.id===reporting.id||descriptor.id===readiness.id){
     const codes=Object.keys(config.runtimeControls?.adPositions??{});
     if(codes.some(code=>snapshot.units.find(unit=>unit.code===code)?.enabled!==1))throw Error('Enable the TakeOver ad position, or explicitly change its display to Standard before disabling it.');
-    const input=positionsInput(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
+    const input=(descriptor.id===revenue.id?revenueInput:positionsInput)(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
     if(input.overlay?.demand==='site'&&config.enablePrebid!==true)throw Error('This TakeOver uses Prebid + GAM. Enable Prebid or explicitly change its demand to GAM only.');
     if(input.overlay){
       const base=input.overlay.unit.sizeMapName,maps=input.core.sizeMapsRaw;
@@ -42,5 +47,5 @@ export async function buildArtifactCandidate(args){
   requireSupportedCacheGenerator(JSON.parse(args.snapshot.config.config_json));
   const descriptor=descriptorForPin(args.pin);
   previewInput(args.snapshot,descriptor,args.buildTimestamp,args.takeOver);
-  return descriptor.id===readiness.id?readinessCandidate(args):descriptor.id===reporting.id?reportingCandidate(args):descriptor.id===next.id?positionsCandidate(args):referenceCandidate(args);
+  return descriptor.id===revenue.id?revenueCandidate(args):descriptor.id===readiness.id?readinessCandidate(args):descriptor.id===reporting.id?reportingCandidate(args):descriptor.id===next.id?positionsCandidate(args):referenceCandidate(args);
 }

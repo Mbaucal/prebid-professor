@@ -4,6 +4,11 @@ on:
     branches: [main, feature/isolated-runtime-workspace-v1]
     paths:
       - worker/**
+      - shared/**
+      - src/components/DealsPanel.tsx
+      - src/components/OutstreamSettingsPanel.tsx
+      - src/components/BiddersPanel.tsx
+      - src/components/AdUnitsPanel.tsx
       - src/components/ScriptSetupPanel.tsx
       - src/components/SiteRuntimePanel.tsx
       - scripts/**
@@ -40,11 +45,14 @@ jobs:
         run: node scripts/bootstrap-toolchain.mjs
       - name: Prepare runtime and local-only fixtures
         run: |
-          node scripts/isolated-toolchain.mjs prepare
+          node scripts/isolated-toolchain.mjs build
           node scripts/prepare-test-workspace.mjs
           node --experimental-strip-types scripts/prepare-readiness-browser-fixtures.mjs
+          node --experimental-strip-types scripts/prepare-revenue-browser-fixtures.mjs
       - name: Consent, deadline, reporting and pending-slot regressions
         run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
+      - name: Deals and Outstream contracts, routes and exact package integration
+        run: node --experimental-strip-types --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/revenue-integration.test.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0
@@ -55,6 +63,14 @@ jobs:
         run: python scripts/verify-consent-boundary.py
       - name: Explicit version selection and desktop/mobile setup
         run: python scripts/verify-readiness-setup.py
+      - name: Native Deals and selected Outstream creative; synthetic demand only
+        run: |
+          python scripts/verify-deals-native.py
+          python scripts/verify-outstream-native.py
+      - name: Revenue settings on desktop and narrow screens
+        run: |
+          python scripts/verify-deals-ui.py
+          python scripts/verify-outstream-ui.py
       - name: Save synthetic evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -65,3 +81,10 @@ jobs:
             .generated/readiness-evidence/boundary-results.json
             .generated/readiness-setup-evidence/*.json
             .generated/readiness-setup-evidence/*.png
+            .generated/revenue-evidence/*.json
+            .generated/deals-ui-evidence/*.json
+            .generated/deals-ui-evidence/*.png
+            .generated/outstream-evidence/*.json
+            .generated/outstream-evidence/*.png
+            .generated/outstream-ui-evidence/*.json
+            .generated/outstream-ui-evidence/*.png

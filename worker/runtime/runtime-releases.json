@@ -1,5 +1,36 @@
 [
   {
+    "id": "tessera-revenue-preview-1",
+    "version": "3.16.0-revenue.preview.1",
+    "codeSha256": "4ef15a0ac9e97c6de58a0bd0e1bd9a3428c6f29394c970c99626c09a76f0925c",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot"
+    ],
+    "date": "2026-10-11",
+    "title": "Deals and PubMatic Banner + Outstream pilot",
+    "sourceManifest": "scripts/prepare-revenue-runtime.mjs",
+    "sourceCommit": "915e2eb12b5639283097f00ae9204727c2fc2798",
+    "changes": [
+      "Combines completed CMP readiness with native Send All Bids; configured IDs never fabricate bids or consent.",
+      "Adds per-partner, per-position deals with dates and a read-only GAM plan. Native targeting exposes one selected bid per bidder; unverified aliases are excluded.",
+      "Adds an explicitly activated PubMatic outstream pilot using checked Prebid 11.34.0, a native renderer and compatible GAM creative. Video positions do not auto-refresh.",
+      "Old runtime selections and saved packages remain unchanged. Hosted renderer lifecycle, revenue and partner activation still require isolated verification."
+    ]
+  },
+  {
     "id": "tessera-readiness-v1",
     "version": "3.14.0",
     "codeSha256": "ddfb7326bef527aafd0f0bceca343287e2ded9dfa8c11095c5ac9378b5a89871",
