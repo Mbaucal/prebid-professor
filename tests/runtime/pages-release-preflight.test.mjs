@@ -80,7 +80,7 @@ globalThis.fetch=async(url,options)=>{appendFileSync(process.env.REQUEST_LOG,url
 });
 for(const profile of ['test','main'])test('clean profile CLI preserves '+profile+' bootstrap API without dependencies',async()=>{
  const f=await fixture({profile});try{
-  for(const path of ['scripts/pages-toolchain.mjs','scripts/verify-toolchain-isolation.mjs','scripts/pages-release-verification.mjs','worker/runtime/draft-release-store.mjs','worker/runtime/prebid-artifact-check.mjs']){await mkdir(resolve(f.root,path,'..'),{recursive:true});await cp(resolve(repo,path),resolve(f.root,path));}
+  for(const path of ['scripts/pages-toolchain.mjs','scripts/verify-toolchain-isolation.mjs','scripts/runtime-release-history-contract.mjs','scripts/pages-release-verification.mjs','worker/runtime/draft-release-store.mjs','worker/runtime/prebid-artifact-check.mjs']){await mkdir(resolve(f.root,path,'..'),{recursive:true});await cp(resolve(repo,path),resolve(f.root,path));}
   await writeFile(resolve(f.root,'scripts/bootstrap-toolchain.mjs'),"import{writeFileSync}from'node:fs';writeFileSync('bootstrap-args.json',JSON.stringify(process.argv.slice(2)));\n");
   const check=spawnSync(process.execPath,['scripts/pages-toolchain.mjs','check'],{cwd:f.root,env:f.env,encoding:'utf8'});assert.equal(check.status,0,check.stderr);
   const boot=spawnSync(process.execPath,['scripts/pages-toolchain.mjs','bootstrap'],{cwd:f.root,env:f.env,encoding:'utf8'});assert.equal(boot.status,0,boot.stderr);

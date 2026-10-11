@@ -4,11 +4,16 @@ import worker from '../worker/test-workspace/index.mjs';
 import { siteRuntimeResponse } from '../worker/site-runtime/service.mjs';
 import { packageResponse } from '../worker/site-runtime/releases.mjs';
 import { workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD } from '../tests/support/test-workspace-store.mjs';
-const f=workspaceStore();
+const revenueMode=process.argv.includes('--revenue');
+const f=workspaceStore({prebidFiles:revenueMode});
 globalThis.fetch=()=>{throw Error('External network is forbidden in this fixture');};
+let cookie;
+if(revenueMode){({cookie}=await(await import('../tests/support/revenue-workspace-fixture.mjs')).initializeRevenueWorkspace(f));}
+else {
 const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);
-const cookie=login.headers.get('set-cookie').split(';')[0];
+cookie=login.headers.get('set-cookie').split(';')[0];
 await worker.fetch(new Request(ORIGIN+'/test-api/setup',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({confirm:'prepare-empty-test-database'})}),f.env);
+}
 // Exercise the main Releases wrapper with the same real site services in an
 // ephemeral fixture. These routes and synthetic data are never deployed.
 const setupMode=process.argv.includes('--release-setup');let harness;

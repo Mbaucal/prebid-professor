@@ -2,6 +2,7 @@ import BulkImportPanel from './BulkImportPanel';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AdUnit, AdUnitType } from '../shared/types';
+import OutstreamSettingsPanel from './OutstreamSettingsPanel';
 import SiteRuntimePanel from './SiteRuntimePanel';
 
 type Props = {
@@ -67,6 +68,8 @@ function formFromAdUnit(adUnit: AdUnit): FormState {
 }
 
 export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
+  const [outstreamUnit,setOutstreamUnit]=useState<string|null>(null);
+  useEffect(()=>setOutstreamUnit(null),[publisherId]);
   const [runtimeUnit,setRuntimeUnit]=useState<string|null>(null);
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -254,6 +257,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
                     {adUnit.notes ? <p>{adUnit.notes}</p> : null}
 
                     <div className="ad-unit-actions">
+                      {adUnit.mediaType==='banner'&&adUnit.type!=='DRAFT'?<button type="button" onClick={()=>setOutstreamUnit(adUnit.code)}>Formats</button>:null}
                       {adUnit.mediaType==='banner'&&adUnit.type!=='DRAFT'?<button onClick={()=>setRuntimeUnit(adUnit.code)} type="button">Display & loading</button>:null}
                       <button onClick={() => openEdit(adUnit)} type="button">Edit</button>
                       <button onClick={() => openDuplicate(adUnit)} type="button">Duplicate</button>
@@ -275,6 +279,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
         </div>
       </section>
 
+      {outstreamUnit?<OutstreamSettingsPanel key={publisherId+outstreamUnit} publisherId={publisherId} code={outstreamUnit} onClose={()=>setOutstreamUnit(null)} onSaved={()=>void onChanged?.()}/>:null}
       {runtimeUnit?<div className="modal-backdrop"><section className="modal-card ad-unit-modal" role="dialog" aria-modal="true" aria-label={`Display settings for ${runtimeUnit}`}><button className="icon-button" type="button" onClick={()=>setRuntimeUnit(null)} aria-label="Close display settings">×</button>
         <SiteRuntimePanel key={publisherId+runtimeUnit} publisherId={publisherId} view="positions" unitCode={runtimeUnit} onChanged={onChanged}/></section></div>:null}
       {mode ? (
@@ -335,6 +340,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
                     <option value="video">video</option>
                     <option value="native">native</option>
                   </select>
+                  <small>For Outstream, save this position as Banner, then choose Formats.</small>
                 </label>
               </div>
 

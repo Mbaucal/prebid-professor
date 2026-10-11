@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir,rm} from 'node:fs/promises';
 import {resolve} from 'node:path';
-import {verifyIsolation,verifyOutputs} from '../../scripts/verify-toolchain-isolation.mjs';
+import {verifyIsolation,verifyOutputs,verifyHistoricalHistory,readReceipt} from '../../scripts/verify-toolchain-isolation.mjs';
 const root=resolve(import.meta.dirname,'../..');
 async function changed(path,run){const target=resolve(root,path),old=await readFile(target);try{await writeFile(target,Buffer.concat([old,Buffer.from('\nchanged\n')]));await run();}finally{await writeFile(target,old);}}
 test('actual historical compiler closure and all fixed artifacts match receipt',async()=>{
@@ -28,5 +28,19 @@ for (const name of ['readiness','reporting']) {
 }
 
 test('main profile cannot be accidentally used for the TEST source tree',async()=>{await assert.rejects(verifyIsolation(root,{profile:'main'}),/Wrong historical profile/);});
-test('TEST history remains the exact seven-record baseline',async()=>changed('worker/runtime/runtime-releases.json',()=>assert.rejects(verifyIsolation(root,{profile:'test'}),/Historical runtime history changed/)));
+test('malformed TEST history still fails closed',async()=>changed('worker/runtime/runtime-releases.json',()=>assert.rejects(verifyIsolation(root,{profile:'test'}),/Historical runtime history changed/)));
+test('the seven historical records and receipt stay immutable while a new version is prepended',async()=>{
+ const receipt=await readReceipt(root,'test'),baseline=await readFile(resolve(root,'tools/test-runtime-history.json'));
+ const current=JSON.parse(await readFile(resolve(root,'worker/runtime/runtime-releases.json'))),old=JSON.parse(baseline);
+ assert.equal(old.length,7);assert.equal(current.length,8);
+ verifyHistoricalHistory(JSON.stringify(current),baseline,receipt);
+ for(const change of [
+  rows=>{rows.at(-1).title+=' changed';},
+  rows=>{rows.pop();},
+  rows=>{[rows[1],rows[2]]=[rows[2],rows[1]];},
+  rows=>{rows.push(rows.shift());},
+  rows=>{rows.unshift({...rows[1],id:'duplicate-version',codeSha256:'a'.repeat(64)});},
+ ]){const rows=structuredClone(current);change(rows);assert.throws(()=>verifyHistoricalHistory(JSON.stringify(rows),baseline,receipt),/Historical runtime history changed/);}
+ assert.throws(()=>verifyHistoricalHistory(JSON.stringify(current),Buffer.concat([baseline,Buffer.from('\n')]),receipt),/Historical runtime history baseline changed/);
+});
 test('signed 3.15 demand preparer remains guarded',async()=>changed('scripts/prepare-demand-runtime.mjs',()=>assert.rejects(verifyIsolation(root,{profile:'test'}),/Historical source changed/)));

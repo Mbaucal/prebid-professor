@@ -32,7 +32,7 @@ jobs:
 
       - name: Verify historical closure, negative guards and installed audits
         run: |
-          node --test tests/runtime/toolchain-isolation.test.mjs
+          node --test tests/runtime/toolchain-isolation.test.mjs tests/runtime/bootstrap-history-import.test.mjs
           node scripts/audit-isolated-toolchain.mjs --profile test
 
       - name: Keep isolated toolchain evidence
