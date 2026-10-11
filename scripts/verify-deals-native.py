@@ -11,8 +11,9 @@ out=root/'.generated/revenue-evidence';out.mkdir(parents=True,exist_ok=True)
 mock=(root/'tests/runtime/mock-ad-libraries.js').read_text();a=mock.index('  window.pbjs = {');b=mock.index('  window.__tcfapi =',a);mock=mock[:a]+mock[b:]
 native=(root/'vendor/prebid/tanjug-11.34.0/prebid.js').read_text()
 hook=r'''
-window.__sent=[];window.__wire=[];window.__noBid=false;window.__cmpCallbacks=[];
+window.__sent=[];window.__rendered=[];window.__wire=[];window.__noBid=false;window.__cmpCallbacks=[];
 const cmp=window.__tcfapi;window.__tcfapi=function(command,version,callback){if(command==='addEventListener')__cmpCallbacks.push(callback);return cmp(command,version,callback);};
+__testAds.service.addEventListener('slotRenderEnded',event=>__rendered.push(event.slot.id));
 const refresh=__testAds.service.refresh;
 __testAds.service.refresh=function(slots,options){for(const slot of slots||[])__sent.push({code:slot.id,targeting:JSON.parse(JSON.stringify(slot.targeting))});return refresh.call(this,slots,options);};
 googletag.apiReady=true;googletag.pubadsReady=true;
@@ -47,7 +48,8 @@ with sync_playwright() as p:
     page.add_script_tag(content=(out/filename).read_text())
     for _ in range(30):
      page.clock.run_for(100);page.wait_for_timeout(15)
-     if page.evaluate('__sent.some(s=>s.code==="Billboard")'):break
+     if page.evaluate('__sent.some(s=>s.code==="Billboard")&&__rendered.includes("Billboard")'):break
+    assert page.evaluate('__rendered.includes("Billboard")'),'Synthetic GPT must finish its placeholder before the selected native creative replaces it'
     captures=page.evaluate('__sent.filter(s=>s.code==="Billboard")');assert captures,captures
     target=captures[-1]['targeting']
     if filename=='gam.js':
@@ -64,7 +66,7 @@ with sync_playwright() as p:
      # Simulated GAM chooses its contracted deal line; native renderAd resolves that exact bid.
      page.evaluate('id=>{const frame=document.createElement("iframe");frame.id="deal-render";document.querySelector("#Billboard").replaceChildren(frame);pbjs.renderAd(frame.contentDocument,id);}',deal_ad)
      page.clock.run_for(100);page.wait_for_timeout(25)
-     assert page.frame_locator('#deal-render').frame_locator('iframe').locator('#creative-pubmatic').count()==1,page.evaluate('({html:document.querySelector("#deal-render").contentDocument.documentElement.outerHTML,events:pbjs.getEvents().filter(e=>e.eventType==="adRenderFailed")})')
+     assert page.frame_locator('#deal-render').frame_locator('iframe').locator('#creative-pubmatic').count()==1,page.evaluate('({html:document.querySelector("#deal-render")?.contentDocument?.documentElement.outerHTML,events:pbjs.getEvents().filter(e=>e.eventType==="adRenderFailed")})')
      assert page.frame_locator('#deal-render').frame_locator('iframe').locator('#creative-pubmatic').text_content()=='Synthetic pubmatic'
      assert page.frame_locator('#deal-render').frame_locator('iframe').locator('#creative-ix').count()==0
      page.screenshot(path=str(out/f'deals-selected-{filename}-{width}.png'))
