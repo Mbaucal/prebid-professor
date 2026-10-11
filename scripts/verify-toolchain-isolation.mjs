@@ -4,7 +4,7 @@ import {resolve,relative,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
-import {checkRuntimeReleaseHistory} from './check-runtime-release-history.mjs';
+import {checkRuntimeReleaseHistory} from './runtime-release-history-contract.mjs';
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 export function selectedProfile(args=process.argv.slice(2)){const at=args.indexOf('--profile');const profile=at<0?'main':args[at+1];assert(['main','test'].includes(profile),'Use explicit profile main or test.');return profile;}
 export async function readReceipt(root=ROOT,profile='main'){
