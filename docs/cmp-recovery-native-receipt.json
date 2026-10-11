@@ -1,0 +1,961 @@
+{
+  "prebidSha256": "384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b",
+  "passed": 11,
+  "total": 14,
+  "cases": [
+    {
+      "case": "no-response",
+      "passed": true,
+      "error": null,
+      "nativeRequests": [],
+      "dispatches": [],
+      "adapter": {
+        "registrations": 1,
+        "removals": 0,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 1,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "pending",
+          "purposeOneGranted": null,
+          "vendor76Granted": null,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "same-accept",
+      "passed": true,
+      "error": null,
+      "nativeRequests": [
+        {
+          "gdprApplies": true,
+          "consent": "accept"
+        }
+      ],
+      "dispatches": [
+        {
+          "epoch": 1,
+          "targetingKeys": [
+            "hb_adid",
+            "hb_adid_pubmatic",
+            "hb_bidder",
+            "hb_bidder_pubmatic",
+            "hb_format",
+            "hb_format_pubmatic",
+            "hb_pb",
+            "hb_pb_pubmatic",
+            "hb_size",
+            "hb_size_pubmatic",
+            "hb_ver"
+          ]
+        }
+      ],
+      "adapter": {
+        "registrations": 1,
+        "removals": 0,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 1,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "accept",
+          "purposeOneGranted": true,
+          "vendor76Granted": true,
+          "live": 2,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "same-reject",
+      "passed": true,
+      "error": null,
+      "nativeRequests": [],
+      "dispatches": [
+        {
+          "epoch": 1,
+          "targetingKeys": []
+        }
+      ],
+      "adapter": {
+        "registrations": 1,
+        "removals": 0,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 1,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "reject",
+          "purposeOneGranted": false,
+          "vendor76Granted": false,
+          "live": 2,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "late-accept",
+      "passed": true,
+      "error": null,
+      "nativeRequests": [
+        {
+          "gdprApplies": true,
+          "consent": "accept"
+        }
+      ],
+      "dispatches": [
+        {
+          "epoch": 1,
+          "targetingKeys": [
+            "hb_adid",
+            "hb_adid_pubmatic",
+            "hb_bidder",
+            "hb_bidder_pubmatic",
+            "hb_format",
+            "hb_format_pubmatic",
+            "hb_pb",
+            "hb_pb_pubmatic",
+            "hb_size",
+            "hb_size_pubmatic",
+            "hb_ver"
+          ]
+        }
+      ],
+      "adapter": {
+        "registrations": 2,
+        "removals": 0,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 2,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "pending",
+          "purposeOneGranted": null,
+          "vendor76Granted": null,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        },
+        {
+          "name": "new",
+          "decision": "accept",
+          "purposeOneGranted": true,
+          "vendor76Granted": true,
+          "live": 2,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "late-reject",
+      "passed": true,
+      "error": null,
+      "nativeRequests": [],
+      "dispatches": [
+        {
+          "epoch": 1,
+          "targetingKeys": []
+        }
+      ],
+      "adapter": {
+        "registrations": 2,
+        "removals": 0,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 2,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "pending",
+          "purposeOneGranted": null,
+          "vendor76Granted": null,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        },
+        {
+          "name": "new",
+          "decision": "reject",
+          "purposeOneGranted": false,
+          "vendor76Granted": false,
+          "live": 2,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "late-outside",
+      "passed": true,
+      "error": null,
+      "nativeRequests": [
+        {
+          "gdprApplies": false,
+          "consent": "absent"
+        }
+      ],
+      "dispatches": [
+        {
+          "epoch": 1,
+          "targetingKeys": [
+            "hb_adid",
+            "hb_adid_pubmatic",
+            "hb_bidder",
+            "hb_bidder_pubmatic",
+            "hb_format",
+            "hb_format_pubmatic",
+            "hb_pb",
+            "hb_pb_pubmatic",
+            "hb_size",
+            "hb_size_pubmatic",
+            "hb_ver"
+          ]
+        }
+      ],
+      "adapter": {
+        "registrations": 2,
+        "removals": 0,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 2,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "pending",
+          "purposeOneGranted": null,
+          "vendor76Granted": null,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        },
+        {
+          "name": "new",
+          "decision": "outside",
+          "purposeOneGranted": null,
+          "vendor76Granted": null,
+          "live": 2,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "immediate-replacement",
+      "passed": true,
+      "error": null,
+      "nativeRequests": [],
+      "dispatches": [
+        {
+          "epoch": 3,
+          "targetingKeys": []
+        }
+      ],
+      "adapter": {
+        "registrations": 2,
+        "removals": 1,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 2,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "accept",
+          "purposeOneGranted": true,
+          "vendor76Granted": true,
+          "live": 0,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "removeEventListener",
+              "id": 1
+            }
+          ]
+        },
+        {
+          "name": "new",
+          "decision": "reject",
+          "purposeOneGranted": false,
+          "vendor76Granted": false,
+          "live": 2,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "queued-replacement",
+      "passed": true,
+      "error": null,
+      "nativeRequests": [],
+      "dispatches": [
+        {
+          "epoch": 3,
+          "targetingKeys": []
+        }
+      ],
+      "adapter": {
+        "registrations": 2,
+        "removals": 1,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 2,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "accept",
+          "purposeOneGranted": true,
+          "vendor76Granted": true,
+          "live": 0,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "removeEventListener",
+              "id": 1
+            }
+          ]
+        },
+        {
+          "name": "new",
+          "decision": "reject",
+          "purposeOneGranted": false,
+          "vendor76Granted": false,
+          "live": 2,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "native-held-response",
+      "passed": true,
+      "error": null,
+      "nativeRequests": [
+        {
+          "gdprApplies": true,
+          "consent": "accept"
+        }
+      ],
+      "dispatches": [
+        {
+          "epoch": 3,
+          "targetingKeys": []
+        }
+      ],
+      "adapter": {
+        "registrations": 2,
+        "removals": 1,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 2,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "accept",
+          "purposeOneGranted": true,
+          "vendor76Granted": true,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "removeEventListener",
+              "id": 1
+            }
+          ]
+        },
+        {
+          "name": "new",
+          "decision": "reject",
+          "purposeOneGranted": false,
+          "vendor76Granted": false,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "native-same-change",
+      "passed": true,
+      "error": null,
+      "nativeRequests": [
+        {
+          "gdprApplies": true,
+          "consent": "accept"
+        }
+      ],
+      "dispatches": [
+        {
+          "epoch": 1,
+          "targetingKeys": [
+            "hb_adid",
+            "hb_adid_pubmatic",
+            "hb_bidder",
+            "hb_bidder_pubmatic",
+            "hb_format",
+            "hb_format_pubmatic",
+            "hb_pb",
+            "hb_pb_pubmatic",
+            "hb_size",
+            "hb_size_pubmatic",
+            "hb_ver"
+          ]
+        },
+        {
+          "epoch": 2,
+          "targetingKeys": []
+        }
+      ],
+      "adapter": {
+        "registrations": 1,
+        "removals": 0,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 1,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "reject",
+          "purposeOneGranted": false,
+          "vendor76Granted": false,
+          "live": 2,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "native-cache-reject",
+      "passed": false,
+      "error": "BLOCKER: native Prebid reused old Accept after current CMP Reject",
+      "nativeRequests": [
+        {
+          "gdprApplies": true,
+          "consent": "accept"
+        },
+        {
+          "gdprApplies": true,
+          "consent": "accept"
+        }
+      ],
+      "dispatches": [
+        {
+          "epoch": 1,
+          "targetingKeys": [
+            "hb_adid",
+            "hb_adid_pubmatic",
+            "hb_bidder",
+            "hb_bidder_pubmatic",
+            "hb_format",
+            "hb_format_pubmatic",
+            "hb_pb",
+            "hb_pb_pubmatic",
+            "hb_size",
+            "hb_size_pubmatic",
+            "hb_ver"
+          ]
+        },
+        {
+          "epoch": 3,
+          "targetingKeys": [
+            "hb_adid",
+            "hb_adid_pubmatic",
+            "hb_bidder",
+            "hb_bidder_pubmatic",
+            "hb_format",
+            "hb_format_pubmatic",
+            "hb_pb",
+            "hb_pb_pubmatic",
+            "hb_size",
+            "hb_size_pubmatic",
+            "hb_ver"
+          ]
+        }
+      ],
+      "adapter": {
+        "registrations": 2,
+        "removals": 1,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 2,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "accept",
+          "purposeOneGranted": true,
+          "vendor76Granted": true,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "removeEventListener",
+              "id": 1
+            }
+          ]
+        },
+        {
+          "name": "new",
+          "decision": "reject",
+          "purposeOneGranted": false,
+          "vendor76Granted": false,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "native-stale-callback",
+      "passed": false,
+      "error": "BLOCKER: native Prebid reused old Accept after current CMP Reject",
+      "nativeRequests": [
+        {
+          "gdprApplies": true,
+          "consent": "accept"
+        },
+        {
+          "gdprApplies": true,
+          "consent": "accept"
+        }
+      ],
+      "dispatches": [
+        {
+          "epoch": 1,
+          "targetingKeys": [
+            "hb_adid",
+            "hb_adid_pubmatic",
+            "hb_bidder",
+            "hb_bidder_pubmatic",
+            "hb_format",
+            "hb_format_pubmatic",
+            "hb_pb",
+            "hb_pb_pubmatic",
+            "hb_size",
+            "hb_size_pubmatic",
+            "hb_ver"
+          ]
+        },
+        {
+          "epoch": 3,
+          "targetingKeys": [
+            "hb_adid",
+            "hb_adid_pubmatic",
+            "hb_bidder",
+            "hb_bidder_pubmatic",
+            "hb_format",
+            "hb_format_pubmatic",
+            "hb_pb",
+            "hb_pb_pubmatic",
+            "hb_size",
+            "hb_size_pubmatic",
+            "hb_ver"
+          ]
+        }
+      ],
+      "adapter": {
+        "registrations": 2,
+        "removals": 1,
+        "staleCallbacks": 1,
+        "registrationErrors": 0,
+        "generation": 2,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "accept",
+          "purposeOneGranted": true,
+          "vendor76Granted": true,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "removeEventListener",
+              "id": 1
+            }
+          ]
+        },
+        {
+          "name": "new",
+          "decision": "reject",
+          "purposeOneGranted": false,
+          "vendor76Granted": false,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "native-reconfigure",
+      "passed": true,
+      "error": null,
+      "nativeRequests": [
+        {
+          "gdprApplies": true,
+          "consent": "accept"
+        }
+      ],
+      "dispatches": [
+        {
+          "epoch": 1,
+          "targetingKeys": [
+            "hb_adid",
+            "hb_adid_pubmatic",
+            "hb_bidder",
+            "hb_bidder_pubmatic",
+            "hb_format",
+            "hb_format_pubmatic",
+            "hb_pb",
+            "hb_pb_pubmatic",
+            "hb_size",
+            "hb_size_pubmatic",
+            "hb_ver"
+          ]
+        },
+        {
+          "epoch": 3,
+          "targetingKeys": []
+        }
+      ],
+      "adapter": {
+        "registrations": 2,
+        "removals": 1,
+        "staleCallbacks": 0,
+        "registrationErrors": 0,
+        "generation": 2,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "accept",
+          "purposeOneGranted": true,
+          "vendor76Granted": true,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "removeEventListener",
+              "id": 1
+            }
+          ]
+        },
+        {
+          "name": "new",
+          "decision": "reject",
+          "purposeOneGranted": false,
+          "vendor76Granted": false,
+          "live": 2,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    },
+    {
+      "case": "native-reconfigure-stale",
+      "passed": false,
+      "error": "BLOCKER: native Prebid reused old Accept after current CMP Reject",
+      "nativeRequests": [
+        {
+          "gdprApplies": true,
+          "consent": "accept"
+        },
+        {
+          "gdprApplies": true,
+          "consent": "accept"
+        }
+      ],
+      "dispatches": [
+        {
+          "epoch": 1,
+          "targetingKeys": [
+            "hb_adid",
+            "hb_adid_pubmatic",
+            "hb_bidder",
+            "hb_bidder_pubmatic",
+            "hb_format",
+            "hb_format_pubmatic",
+            "hb_pb",
+            "hb_pb_pubmatic",
+            "hb_size",
+            "hb_size_pubmatic",
+            "hb_ver"
+          ]
+        },
+        {
+          "epoch": 3,
+          "targetingKeys": [
+            "hb_adid",
+            "hb_adid_pubmatic",
+            "hb_bidder",
+            "hb_bidder_pubmatic",
+            "hb_format",
+            "hb_format_pubmatic",
+            "hb_pb",
+            "hb_pb_pubmatic",
+            "hb_size",
+            "hb_size_pubmatic",
+            "hb_ver"
+          ]
+        }
+      ],
+      "adapter": {
+        "registrations": 2,
+        "removals": 1,
+        "staleCallbacks": 1,
+        "registrationErrors": 0,
+        "generation": 2,
+        "pendingTimer": true,
+        "disposed": false
+      },
+      "cmpSubscriptions": [
+        {
+          "name": "old",
+          "decision": "accept",
+          "purposeOneGranted": true,
+          "vendor76Granted": true,
+          "live": 1,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "removeEventListener",
+              "id": 1
+            }
+          ]
+        },
+        {
+          "name": "new",
+          "decision": "reject",
+          "purposeOneGranted": false,
+          "vendor76Granted": false,
+          "live": 2,
+          "calls": [
+            {
+              "cmd": "addEventListener",
+              "id": null
+            },
+            {
+              "cmd": "addEventListener",
+              "id": null
+            }
+          ]
+        }
+      ],
+      "unexpectedNetwork": [],
+      "browserErrors": []
+    }
+  ]
+}
