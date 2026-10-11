@@ -1,0 +1,575 @@
+{
+  "nativePrebidSha256": "384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b",
+  "gptSources": {
+    "standard.js": {
+      "url": "https://securepubads.g.doubleclick.net/tag/js/gpt.js",
+      "sha256": "2770cddfb3fa669c1324b26ba37b7a35250b8154e5dd1d1272215bba652bf6bf",
+      "bytes": 129645
+    },
+    "standard-impl.js": {
+      "url": "https://securepubads.g.doubleclick.net/pagead/managed/js/gpt/m202609290101/pubads_impl.js",
+      "sha256": "7a5b6434bbe4d5ce04658fc5fee9beabbf5173d8a2f40604aaae2b7477b410d2",
+      "bytes": 706528
+    },
+    "limited.js": {
+      "url": "https://pagead2.googlesyndication.com/tag/js/gpt.js",
+      "sha256": "085c8f35e4fb6fed1c47d4ec641706f73d148cb4d35a11155883784ab854616e",
+      "bytes": 129640
+    },
+    "limited-impl.js": {
+      "url": "https://pagead2.googlesyndication.com/pagead/managed/js/gpt/m202609290101/pubads_impl.js",
+      "sha256": "7a5b6434bbe4d5ce04658fc5fee9beabbf5173d8a2f40604aaae2b7477b410d2",
+      "bytes": 706528
+    }
+  },
+  "native": [
+    {
+      "case": "loading-trusted",
+      "passed": true,
+      "evidence": {
+        "state": {
+          "ready": true,
+          "reason": "regional-scope",
+          "source": "geo",
+          "epoch": 1,
+          "nativeMode": "static"
+        },
+        "nativeCalls": [
+          {
+            "gdprApplies": false,
+            "tcStringPresent": false
+          }
+        ],
+        "simulatedDispatches": [
+          {
+            "epoch": 1,
+            "targetingKeys": [
+              "hb_format",
+              "hb_size",
+              "hb_pb",
+              "hb_adid",
+              "hb_bidder",
+              "hb_format_pubmatic",
+              "hb_size_pubmatic",
+              "hb_pb_pubmatic",
+              "hb_adid_pubmatic",
+              "hb_bidder_pubmatic",
+              "hb_ver"
+            ]
+          }
+        ],
+        "invalidations": [
+          {
+            "epoch": 1,
+            "reason": "regional-scope"
+          }
+        ],
+        "attempts": 2,
+        "completedCallbacks": 1,
+        "cmpApiCalls": [
+          "addEventListener"
+        ],
+        "apiUnchanged": true,
+        "enabled": true,
+        "nativeMode": "static",
+        "syntheticNetworkRequests": 1,
+        "browserErrors": [],
+        "unexpectedNetwork": []
+      }
+    },
+    {
+      "case": "untrusted-scope",
+      "passed": true,
+      "evidence": {
+        "state": {
+          "ready": false,
+          "reason": "country-not-enabled",
+          "source": null,
+          "epoch": 0,
+          "nativeMode": null
+        },
+        "nativeCalls": [],
+        "simulatedDispatches": [],
+        "invalidations": [],
+        "attempts": 2,
+        "completedCallbacks": 0,
+        "cmpApiCalls": [
+          "addEventListener"
+        ],
+        "apiUnchanged": true,
+        "enabled": true,
+        "nativeMode": null,
+        "syntheticNetworkRequests": 0,
+        "browserErrors": [],
+        "unexpectedNetwork": []
+      }
+    },
+    {
+      "case": "loading-scope-true",
+      "passed": true,
+      "evidence": {
+        "state": {
+          "ready": false,
+          "reason": "cmp-scope-conflict",
+          "source": null,
+          "epoch": 0,
+          "nativeMode": null
+        },
+        "nativeCalls": [],
+        "simulatedDispatches": [],
+        "invalidations": [],
+        "attempts": 2,
+        "completedCallbacks": 0,
+        "cmpApiCalls": [
+          "addEventListener"
+        ],
+        "apiUnchanged": true,
+        "enabled": true,
+        "nativeMode": null,
+        "syntheticNetworkRequests": 0,
+        "browserErrors": [],
+        "unexpectedNetwork": []
+      }
+    },
+    {
+      "case": "late-reject",
+      "passed": true,
+      "evidence": {
+        "state": {
+          "ready": false,
+          "reason": "native-scope-conflict",
+          "source": null,
+          "epoch": 2,
+          "nativeMode": "static"
+        },
+        "nativeCalls": [
+          {
+            "gdprApplies": false,
+            "tcStringPresent": false
+          }
+        ],
+        "simulatedDispatches": [
+          {
+            "epoch": 1,
+            "targetingKeys": [
+              "hb_format",
+              "hb_size",
+              "hb_pb",
+              "hb_adid",
+              "hb_bidder",
+              "hb_format_pubmatic",
+              "hb_size_pubmatic",
+              "hb_pb_pubmatic",
+              "hb_adid_pubmatic",
+              "hb_bidder_pubmatic",
+              "hb_ver"
+            ]
+          }
+        ],
+        "invalidations": [
+          {
+            "epoch": 1,
+            "reason": "regional-scope"
+          },
+          {
+            "epoch": 2,
+            "reason": "native-scope-conflict"
+          }
+        ],
+        "attempts": 3,
+        "completedCallbacks": 1,
+        "cmpApiCalls": [
+          "addEventListener"
+        ],
+        "apiUnchanged": true,
+        "enabled": true,
+        "nativeMode": "static",
+        "syntheticNetworkRequests": 1,
+        "browserErrors": [],
+        "unexpectedNetwork": []
+      }
+    },
+    {
+      "case": "late-true-loading",
+      "passed": true,
+      "evidence": {
+        "state": {
+          "ready": false,
+          "reason": "cmp-scope-conflict",
+          "source": null,
+          "epoch": 2,
+          "nativeMode": "static"
+        },
+        "nativeCalls": [
+          {
+            "gdprApplies": false,
+            "tcStringPresent": false
+          }
+        ],
+        "simulatedDispatches": [
+          {
+            "epoch": 1,
+            "targetingKeys": [
+              "hb_format",
+              "hb_size",
+              "hb_pb",
+              "hb_adid",
+              "hb_bidder",
+              "hb_format_pubmatic",
+              "hb_size_pubmatic",
+              "hb_pb_pubmatic",
+              "hb_adid_pubmatic",
+              "hb_bidder_pubmatic",
+              "hb_ver"
+            ]
+          }
+        ],
+        "invalidations": [
+          {
+            "epoch": 1,
+            "reason": "regional-scope"
+          },
+          {
+            "epoch": 2,
+            "reason": "cmp-scope-conflict"
+          }
+        ],
+        "attempts": 3,
+        "completedCallbacks": 1,
+        "cmpApiCalls": [
+          "addEventListener"
+        ],
+        "apiUnchanged": true,
+        "enabled": true,
+        "nativeMode": "static",
+        "syntheticNetworkRequests": 1,
+        "browserErrors": [],
+        "unexpectedNetwork": []
+      }
+    },
+    {
+      "case": "late-reject-held-response",
+      "passed": true,
+      "evidence": {
+        "state": {
+          "ready": false,
+          "reason": "native-scope-conflict",
+          "source": null,
+          "epoch": 2,
+          "nativeMode": "static"
+        },
+        "nativeCalls": [
+          {
+            "gdprApplies": false,
+            "tcStringPresent": false
+          }
+        ],
+        "simulatedDispatches": [],
+        "invalidations": [
+          {
+            "epoch": 1,
+            "reason": "regional-scope"
+          },
+          {
+            "epoch": 2,
+            "reason": "native-scope-conflict"
+          }
+        ],
+        "attempts": 3,
+        "completedCallbacks": 1,
+        "cmpApiCalls": [
+          "addEventListener"
+        ],
+        "apiUnchanged": true,
+        "enabled": true,
+        "nativeMode": "static",
+        "syntheticNetworkRequests": 1,
+        "browserErrors": [],
+        "unexpectedNetwork": []
+      }
+    },
+    {
+      "case": "same-page-refresh",
+      "passed": true,
+      "evidence": {
+        "state": {
+          "ready": true,
+          "reason": "regional-scope",
+          "source": "geo",
+          "epoch": 1,
+          "nativeMode": "static"
+        },
+        "nativeCalls": [
+          {
+            "gdprApplies": false,
+            "tcStringPresent": false
+          },
+          {
+            "gdprApplies": false,
+            "tcStringPresent": false
+          }
+        ],
+        "simulatedDispatches": [
+          {
+            "epoch": 1,
+            "targetingKeys": [
+              "hb_format",
+              "hb_size",
+              "hb_pb",
+              "hb_adid",
+              "hb_bidder",
+              "hb_format_pubmatic",
+              "hb_size_pubmatic",
+              "hb_pb_pubmatic",
+              "hb_adid_pubmatic",
+              "hb_bidder_pubmatic",
+              "hb_ver"
+            ]
+          },
+          {
+            "epoch": 1,
+            "targetingKeys": [
+              "hb_format",
+              "hb_size",
+              "hb_pb",
+              "hb_adid",
+              "hb_bidder",
+              "hb_format_pubmatic",
+              "hb_size_pubmatic",
+              "hb_pb_pubmatic",
+              "hb_adid_pubmatic",
+              "hb_bidder_pubmatic",
+              "hb_ver"
+            ]
+          }
+        ],
+        "invalidations": [
+          {
+            "epoch": 1,
+            "reason": "regional-scope"
+          }
+        ],
+        "attempts": 3,
+        "completedCallbacks": 2,
+        "cmpApiCalls": [
+          "addEventListener"
+        ],
+        "apiUnchanged": true,
+        "enabled": true,
+        "nativeMode": "static",
+        "syntheticNetworkRequests": 2,
+        "browserErrors": [],
+        "unexpectedNetwork": []
+      }
+    }
+  ],
+  "gptCharacterization": [
+    {
+      "case": "early-regional-native-gpt",
+      "passed": true,
+      "fallbackAdRequestPossible": true,
+      "evidence": {
+        "displayInvoked": true,
+        "observationMs": 35000,
+        "gptVersion": "202609290101",
+        "cmpCalls": [],
+        "successfulLoadingCallbacks": 0,
+        "earlyRegional": {
+          "route": "regional",
+          "existingTcfApi": false,
+          "existingPrebidInitialized": false,
+          "existingGptInitialized": false,
+          "nativeCalls": [
+            {
+              "gdprApplies": false,
+              "tcStringPresent": false
+            }
+          ],
+          "tcfApiAbsent": true,
+          "nativeEnabled": true
+        },
+        "requestAttempts": [
+          {
+            "host": "pagead2.googlesyndication.com",
+            "path": "/gampad/ads",
+            "gdpr": "absent",
+            "ltd": "absent",
+            "npa": "absent",
+            "tcStringPresent": false
+          }
+        ],
+        "blockedOtherRequests": [
+          "2f698d13085a8fe6a4434226347f4b78.safeframe.googlesyndication.com/safeframe/1-0-45/html/container.html",
+          "ep1.adtrafficquality.google/getconfig/sodar",
+          "securepubads.g.doubleclick.net/pagead/managed/dict/m202610010101/gpt",
+          "securepubads.g.doubleclick.net/pagead/ppub_config"
+        ],
+        "browserErrors": [],
+        "realNetworkAdRequests": 0
+      }
+    },
+    {
+      "case": "standard-no-cmp",
+      "passed": true,
+      "fallbackAdRequestPossible": true,
+      "evidence": {
+        "displayInvoked": true,
+        "observationMs": 35000,
+        "gptVersion": "202609290101",
+        "cmpCalls": [],
+        "successfulLoadingCallbacks": 0,
+        "earlyRegional": null,
+        "requestAttempts": [
+          {
+            "host": "pagead2.googlesyndication.com",
+            "path": "/gampad/ads",
+            "gdpr": "absent",
+            "ltd": "absent",
+            "npa": "absent",
+            "tcStringPresent": false
+          }
+        ],
+        "blockedOtherRequests": [
+          "22e645ec8bcbc3a2c456d21455652508.safeframe.googlesyndication.com/safeframe/1-0-45/html/container.html",
+          "ep1.adtrafficquality.google/getconfig/sodar",
+          "securepubads.g.doubleclick.net/pagead/managed/dict/m202610010101/gpt",
+          "securepubads.g.doubleclick.net/pagead/ppub_config"
+        ],
+        "browserErrors": [],
+        "realNetworkAdRequests": 0
+      }
+    },
+    {
+      "case": "standard-ready-false",
+      "passed": true,
+      "fallbackAdRequestPossible": true,
+      "evidence": {
+        "displayInvoked": true,
+        "observationMs": 35000,
+        "gptVersion": "202609290101",
+        "cmpCalls": [
+          "addEventListener"
+        ],
+        "successfulLoadingCallbacks": 1,
+        "earlyRegional": null,
+        "requestAttempts": [
+          {
+            "host": "securepubads.g.doubleclick.net",
+            "path": "/gampad/ads",
+            "gdpr": "0",
+            "ltd": "absent",
+            "npa": "absent",
+            "tcStringPresent": false
+          },
+          {
+            "host": "securepubads.g.doubleclick.net",
+            "path": "/gampad/ads",
+            "gdpr": "0",
+            "ltd": "absent",
+            "npa": "absent",
+            "tcStringPresent": false
+          }
+        ],
+        "blockedOtherRequests": [
+          "a7628e89b5864e945341bcbccb6ad522.safeframe.googlesyndication.com/safeframe/1-0-45/html/container.html",
+          "ep1.adtrafficquality.google/getconfig/sodar",
+          "securepubads.g.doubleclick.net/pagead/managed/dict/m202610010101/gpt",
+          "securepubads.g.doubleclick.net/pagead/ppub_config"
+        ],
+        "browserErrors": [],
+        "realNetworkAdRequests": 0
+      }
+    },
+    {
+      "case": "standard-loading-unknown",
+      "passed": true,
+      "fallbackAdRequestPossible": false,
+      "evidence": {
+        "displayInvoked": true,
+        "observationMs": 35000,
+        "gptVersion": "202609290101",
+        "cmpCalls": [
+          "addEventListener"
+        ],
+        "successfulLoadingCallbacks": 37,
+        "earlyRegional": null,
+        "requestAttempts": [],
+        "blockedOtherRequests": [
+          "securepubads.g.doubleclick.net/pagead/managed/dict/m202610010101/gpt",
+          "securepubads.g.doubleclick.net/pagead/ppub_config"
+        ],
+        "browserErrors": [],
+        "realNetworkAdRequests": 0
+      }
+    },
+    {
+      "case": "standard-loading-true",
+      "passed": true,
+      "fallbackAdRequestPossible": false,
+      "evidence": {
+        "displayInvoked": true,
+        "observationMs": 35000,
+        "gptVersion": "202609290101",
+        "cmpCalls": [
+          "addEventListener"
+        ],
+        "successfulLoadingCallbacks": 37,
+        "earlyRegional": null,
+        "requestAttempts": [],
+        "blockedOtherRequests": [
+          "securepubads.g.doubleclick.net/pagead/managed/dict/m202610010101/gpt",
+          "securepubads.g.doubleclick.net/pagead/ppub_config"
+        ],
+        "browserErrors": [],
+        "realNetworkAdRequests": 0
+      }
+    },
+    {
+      "case": "limited-loading-unknown",
+      "passed": true,
+      "fallbackAdRequestPossible": false,
+      "evidence": {
+        "displayInvoked": true,
+        "observationMs": 35000,
+        "gptVersion": "202609290101",
+        "cmpCalls": [
+          "addEventListener"
+        ],
+        "successfulLoadingCallbacks": 37,
+        "earlyRegional": null,
+        "requestAttempts": [],
+        "blockedOtherRequests": [
+          "pagead2.googlesyndication.com/pagead/managed/dict/m202610010101/gpt",
+          "pagead2.googlesyndication.com/pagead/ppub_config"
+        ],
+        "browserErrors": [],
+        "realNetworkAdRequests": 0
+      }
+    },
+    {
+      "case": "limited-loading-true",
+      "passed": true,
+      "fallbackAdRequestPossible": false,
+      "evidence": {
+        "displayInvoked": true,
+        "observationMs": 35000,
+        "gptVersion": "202609290101",
+        "cmpCalls": [
+          "addEventListener"
+        ],
+        "successfulLoadingCallbacks": 37,
+        "earlyRegional": null,
+        "requestAttempts": [],
+        "blockedOtherRequests": [
+          "pagead2.googlesyndication.com/pagead/managed/dict/m202610010101/gpt",
+          "pagead2.googlesyndication.com/pagead/ppub_config"
+        ],
+        "browserErrors": [],
+        "realNetworkAdRequests": 0
+      }
+    }
+  ],
+  "gptSkipped": false,
+  "endToEndFallbackReady": false,
+  "blocker": "Stuck CMP still prevents real GPT request attempts; no supported scope override demonstrated."
+}
