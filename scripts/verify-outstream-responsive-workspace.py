@@ -40,7 +40,10 @@ with sync_playwright() as p:
     data('/test-api/site-settings',{'expectedRevision':inventory['revision'],'acknowledge':True,'draft':inventory['draft']})
     assert data('/test-api/outstream-settings')['responsiveSizing'] is True
     def formats():
-     page.goto('https://tessera.fixture.invalid/site-workspace#formats')
+     destination='https://tessera.fixture.invalid/site-workspace#formats'
+     # Reopening after Save must start a fresh page; same-URL goto keeps the modal.
+     if page.url==destination:page.reload()
+     else:page.goto(destination)
      page.get_by_role('button',name='Configure formats for Billboard',exact=True).click()
      expect(page.get_by_label('Ad format',exact=True)).to_be_visible()
     def save_formats():
