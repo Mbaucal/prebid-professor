@@ -1,5 +1,35 @@
 [
   {
+    "id": "tessera-revenue-preview-3",
+    "version": "3.16.0-revenue.preview.3",
+    "codeSha256": "c257412bbcfa4e004a4e56dd320b4c043bdfc4b755bde7cdfa32b09ce4a189da",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot"
+    ],
+    "date": "2026-10-14",
+    "title": "Responsive Outstream sizes from the position map",
+    "sourceManifest": "scripts/prepare-revenue-v3-runtime.mjs",
+    "sourceCommit": "5bddbca1fca3c0926c44e24c9a1e3aa965772a60",
+    "changes": [
+      "Video uses an eligible size from each enabled width breakpoint in the size map. A single size is automatic; choose from the map when several sizes are eligible. Height breakpoints require minimum height 0 in this pilot.",
+      "Resolves dimensions again when the auction starts, including delayed consent and lazy loading. Pending video with a different active size cannot render.",
+      "Banner sizes, existing fixed video settings, older runtime sources and saved packages remain unchanged. This preview requires explicit selection."
+    ]
+  },
+  {
     "id": "tessera-revenue-preview-2",
     "version": "3.16.0-revenue.preview.2",
     "codeSha256": "8c664ce5f92d2d3f070b740659b88aebede2b4703615b089cfbf5554098b5e37",

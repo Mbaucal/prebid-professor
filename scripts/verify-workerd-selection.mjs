@@ -33,7 +33,7 @@ try{
   assert.equal(logged.status,303);cookie=logged.headers.get('set-cookie').split(';')[0];
   await json('/test-api/setup',{confirm:'prepare-empty-test-database'});
   const state=await json('/test-api/runtime-selection');
-  check('Compiled settings GET preserves existing runtimes and default, adds opt-in readiness and revenue versions and has no implicit saved selection',state.selected===null&&JSON.stringify(state.runtimes.map(r=>r.version))===JSON.stringify(['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.11.0-tessera.preview.1','3.13.0','3.15.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2']));
+  check('Compiled settings GET preserves existing runtimes and default, adds opt-in readiness and revenue versions and has no implicit saved selection',state.selected===null&&JSON.stringify(state.runtimes.map(r=>r.version))===JSON.stringify(['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.11.0-tessera.preview.1','3.13.0','3.15.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3']));
   const input=selection(state);input.selection.allowPreview=false;
   await json('/test-api/runtime-selection',input,422);
   check('Compiled settings writer requires Preview opt-in',true);
