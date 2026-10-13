@@ -20,6 +20,7 @@ export function playerSizeMaps(code,context) {
     return {name:map.name,rows:rows.map(row=>{
       const viewport=row.minViewPort??row.viewport;
       if(!Array.isArray(viewport)||viewport.length!==2||!viewport.every(n=>Number.isInteger(n)&&n>=0)||!Array.isArray(row.sizes))sizingFail(`${code}: repair size map ${map.name} before configuring Outstream.`);
+      if(viewport[1]!==0)sizingFail(`${code}: responsive Outstream currently supports width breakpoints only. Set minimum height to 0 in size map ${map.name} before using map-based video sizes.`);
       const key=map.name+'@'+viewport.join('x');
       if(keys.has(key))sizingFail(`${code}: size map ${map.name} has a duplicate breakpoint.`);keys.add(key);
       const sizes=row.sizes.filter(eligiblePlayerSize).filter((size,i,all)=>all.findIndex(other=>same(size,other))===i).map(size=>size.slice());
