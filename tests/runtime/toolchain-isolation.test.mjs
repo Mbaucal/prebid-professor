@@ -29,15 +29,22 @@ for (const name of ['readiness','reporting']) {
 
 test('main profile cannot be accidentally used for the TEST source tree',async()=>{await assert.rejects(verifyIsolation(root,{profile:'main'}),/Wrong historical profile/);});
 test('malformed TEST history still fails closed',async()=>changed('worker/runtime/runtime-releases.json',()=>assert.rejects(verifyIsolation(root,{profile:'test'}),/Historical runtime history changed/)));
-test('the seven historical records and receipt stay immutable while a new version is prepended',async()=>{
+test('the seven historical records and receipt stay immutable beneath three ordered revenue previews',async()=>{
  const receipt=await readReceipt(root,'test'),baseline=await readFile(resolve(root,'tools/test-runtime-history.json'));
  const current=JSON.parse(await readFile(resolve(root,'worker/runtime/runtime-releases.json'))),old=JSON.parse(baseline);
- assert.equal(old.length,7);assert.equal(current.length,9);
+ const added=[
+  ['tessera-revenue-preview-3','3.16.0-revenue.preview.3'],
+  ['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],
+  ['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],
+ ];
+ assert.equal(old.length,7);assert.equal(current.length,old.length+added.length);
+ assert.deepEqual(current.slice(0,added.length).map(row=>[row.id,row.version]),added);
+ assert.deepEqual(current.slice(added.length),old);
  verifyHistoricalHistory(JSON.stringify(current),baseline,receipt);
  for(const change of [
   rows=>{rows.at(-1).title+=' changed';},
   rows=>{rows.pop();},
-  rows=>{[rows[1],rows[2]]=[rows[2],rows[1]];},
+  rows=>{[rows[added.length],rows[added.length+1]]=[rows[added.length+1],rows[added.length]];},
   rows=>{rows.push(rows.shift());},
   rows=>{rows.unshift({...rows[1],id:'duplicate-version',codeSha256:'a'.repeat(64)});},
  ]){const rows=structuredClone(current);change(rows);assert.throws(()=>verifyHistoricalHistory(JSON.stringify(rows),baseline,receipt),/Historical runtime history changed/);}
