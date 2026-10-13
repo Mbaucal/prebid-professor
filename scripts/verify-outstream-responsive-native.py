@@ -49,9 +49,13 @@ def run(browser,name,scenario):
   page.evaluate('delete window.pbjs');page.add_script_tag(content=pbsource)
   page.evaluate('''scenario=>{
    window.__played=[];window.__bids=[];window.__requests=[];window.__cmpListeners=[];
-   window.__tcfapi=(cmd,version,cb)=>{if(cmd==='addEventListener'){__cmpListeners.push(cb);if(!scenario.startsWith('consent-'))cb({gdprApplies:false,cmpStatus:'loaded',eventStatus:'tcloaded'},true);}};
-   window.__consent=()=>__cmpListeners.forEach(cb=>cb({gdprApplies:false,cmpStatus:'loaded',eventStatus:'tcloaded'},true));
-   window.__changeConsent=()=>__cmpListeners.forEach(cb=>cb({gdprApplies:true,cmpStatus:'loaded',eventStatus:'cmpuishown'},true));
+   // Native Prebid may subscribe after wrapper readiness releases the auction.
+   // A CMP retains its latest state and immediately sends it to new listeners.
+   window.__cmpState=scenario.startsWith('consent-')?null:{gdprApplies:false,cmpStatus:'loaded',eventStatus:'tcloaded'};
+   window.__tcfapi=(cmd,version,cb)=>{if(cmd==='addEventListener'){__cmpListeners.push(cb);if(__cmpState)cb({...__cmpState},true);}};
+   const publishConsent=state=>{window.__cmpState=state;__cmpListeners.slice().forEach(cb=>cb({...state},true));};
+   window.__consent=()=>publishConsent({gdprApplies:false,cmpStatus:'loaded',eventStatus:'tcloaded'});
+   window.__changeConsent=()=>publishConsent({gdprApplies:true,cmpStatus:'loaded',eventStatus:'cmpuishown'});
    if(scenario==='page-type')window.adsKeywords={pageType:'article'};
    pbjs.onEvent('bidRequested',r=>__requests.push(r.bids.map(b=>({code:b.adUnitCode,mediaTypes:b.mediaTypes}))));
    pbjs.onEvent('bidResponse',b=>__bids.push(b));
