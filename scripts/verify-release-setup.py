@@ -1,5 +1,5 @@
 """Reported missing-Prebid state, actual main React components + real services."""
-import base64,json,subprocess,zipfile
+import base64,json,re,subprocess,zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright
@@ -34,11 +34,19 @@ try:
     page.get_by_role('radio',name='GAM / AdX only',exact=False).check()
     assert page.get_by_role('button',name='Save script setup',exact=True).is_enabled()
     assert page.get_by_role('button',name='Open Prebid.js',exact=True).count()==0
-    assert page.get_by_role('combobox',name='Script version',exact=True).count()==0
+    version=page.get_by_role('combobox',name='Script version',exact=True)
+    assert version.count()==1
+    options=version.locator('option').evaluate_all('(items)=>items.map(item=>({label:item.textContent.trim(),value:item.value}))')
+    assert options and all(re.fullmatch(r'\d+\.\d+\.\d+',item['label'].split(' · ')[0]) for item in options),options
+    assert not any('preview' in item['label'].lower() for item in options),options
+    chosen='3.14.0'
+    version.select_option(next(item['value'] for item in options if item['label'].split(' · ')[0]==chosen))
     assert page.get_by_text('Frozen engine',exact=True).count()==0
     assert all(r['method']=='GET' for r in requests)
     page.get_by_role('button',name='Save script setup',exact=True).click()
     page.get_by_role('status').filter(has_text='Script setup saved').wait_for()
+    saves=[json.loads(request['body']) for request in requests if request['method']=='POST']
+    assert len(saves)==1 and saves[0]['action']=='setup' and saves[0]['runtime']['runtimeVersion']==chosen and saves[0]['enablePrebid'] is False,saves
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
     page.screenshot(path=str(out/'simple-adx-mobile.png'),full_page=True)
     # Return to the real Releases wrapper: setup persists, no profile or Prebid required.
@@ -54,6 +62,8 @@ try:
         assert 'prebid.js' not in package.read('implementation.html').decode()
         config=json.loads(package.read('config.json'))
         assert config['prebidBuild'] is None
+        assert config['runtime']['runtimeVersion']==chosen
+        assert json.loads(package.read('manifest.json'))['runtime']==config['runtime']
     page.set_viewport_size({'width':1280,'height':900})
     page.screenshot(path=str(out/'simple-adx-desktop-releases.png'),full_page=True)
     assert not errors,errors
