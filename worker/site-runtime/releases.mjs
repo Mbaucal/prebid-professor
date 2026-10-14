@@ -10,6 +10,7 @@ import { artifactResponseHeaders } from '../artifact-response-headers.ts';
 
 const encode=new TextEncoder(),decode=new TextDecoder('utf-8',{fatal:true});
 const ID=/^builtin-release-[a-f0-9]{64}$/;
+const hasDealsPlan=runtime=>[['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version)&&runtime?.capabilities?.includes('prebid-deals');
 const check=(ok,message,status=409)=>{if(!ok)throw Object.assign(new Error(message),{status});};
 const db=env=>env.DB.withSession('first-primary');
 const snapshot=(env,site)=>readPreviewSnapshot(db(env),site,{includePrebid:true});
@@ -52,10 +53,14 @@ export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
  }
  const {descriptor}=await describeCandidate(site,candidate);
  const id=`builtin-release-${descriptor.packageSha256}`,files={...candidate.files};
+ const stable316=descriptor.runtime.runtimeId==='tessera-3.16.0'&&descriptor.runtime.runtimeVersion==='3.16.0';
  // Store the reviewed output as a complete, immutable release with exact source pins.
  const created=new Date().toISOString();
- files['README.txt']=encode.encode(`Tessera release ${id}\nRuntime ${descriptor.runtime.runtimeVersion}\nGenerated from saved site settings. Stage and review before production. Use ads.js once; Prebid is ${descriptor.prebidBuild?'included':'disabled'}.\n`);
- if(files['gam-reporting.json'])files['README.txt']=encode.encode(decode.decode(files['README.txt'])+'\nGAM request reporting: see gam-reporting.json for all seven keys. GAM-only sends refresh labels without aq_* values. Enable custom key-value reporting in GAM before collecting results; downloading this package does not configure GAM. These labels are not impression, winner or revenue measurements.\n');
+ if(stable316)files['README.txt']=encode.encode(decode.decode(files['README.txt'])+`\nSaved release: ${id}\nUse ads.js once. Stage and review this saved release before production.\n`);
+ else {
+  files['README.txt']=encode.encode(`Tessera release ${id}\nRuntime ${descriptor.runtime.runtimeVersion}\nGenerated from saved site settings. Stage and review before production. Use ads.js once; Prebid is ${descriptor.prebidBuild?'included':'disabled'}.\n`);
+  if(files['gam-reporting.json'])files['README.txt']=encode.encode(decode.decode(files['README.txt'])+'\nGAM request reporting: see gam-reporting.json for all seven keys. GAM-only sends refresh labels without aq_* values. Enable custom key-value reporting in GAM before collecting results; downloading this package does not configure GAM. These labels are not impression, winner or revenue measurements.\n');
+ }
  files['ads.js']=files['ads.min.js'].slice();
  files['implementation.html']=encode.encode(decode.decode(files['implementation.html']).replace('REVIEW CANDIDATE ONLY.','STAGING REVIEW.').replace('Do not deploy to production.','Publish only after staging review.').replace('src="./ads.min.js"','src="./ads.js"'));
  const config={...JSON.parse(decode.decode(files['config.json'])),site:{id:site},version:id,enablePrebid:Boolean(descriptor.prebidBuild),demandMode:descriptor.prebidBuild?'prebid':'gam-adx-only'};
@@ -92,10 +97,11 @@ export async function readPackage(env,site,id,{testOnly=false,requestedFile=null
  check(m.kind==='builtin-runtime-release'&&m.completeRelease===true&&m.siteId===site&&m.releaseId===id&&m.version===id&&m.configHash===row.config_hash,'Release identity differs.');
  check(m.files&&typeof m.files==='object'&&!Array.isArray(m.files),'Invalid file inventory.');
  check(['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','min-height.css','sticky.css'].every(n=>Object.hasOwn(m.files,n))&&Object.hasOwn(m.files,'prebid.js')===Boolean(m.prebidBuild),'Release file set differs.');
+ check(Object.hasOwn(m.files,'deals-plan.json')===Boolean(hasDealsPlan(m.runtime)),'Deals plan differs from the selected runtime.');
  check(!requestedFile||requestedFile==='manifest.json'||Object.hasOwn(m.files,requestedFile),'File not found.',404);
  const files={'manifest.json':bytes};let total=bytes.length;
  for(const [name,entry] of Object.entries(m.files)){
-  check(['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','min-height.css','sticky.css','prebid.js','gam-reporting.json'].includes(name)&&name!=='manifest.json'&&entry.key===key(site,id,name)&&Number.isSafeInteger(entry.byteSize)&&entry.byteSize>0&&entry.byteSize<=8388608,'Invalid file inventory.');
+  check(['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','min-height.css','sticky.css','prebid.js','gam-reporting.json','deals-plan.json'].includes(name)&&name!=='manifest.json'&&entry.key===key(site,id,name)&&Number.isSafeInteger(entry.byteSize)&&entry.byteSize>0&&entry.byteSize<=8388608,'Invalid file inventory.');
   total+=entry.byteSize;check(total<=12582912,'Package exceeds limit.');if(requestedFile&&name!==requestedFile)continue;const object=await env.BUILDS.get(entry.key);check(object&&object.size===entry.byteSize,'Release file is missing.');const data=new Uint8Array(await object.arrayBuffer());check(data.length===entry.byteSize&&await sha256(data)===entry.sha256,'Release checksum differs.');files[name]=data;
  }
  return {files,release:row,manifest:m};

@@ -8,6 +8,7 @@ import { runtimeReleaseHistory, assertRuntimeReleaseSource } from '../worker/run
 import { prepareRevenueV3Runtime } from './prepare-revenue-v3-runtime.mjs';
 import { prepareRevenueV2Runtime } from './prepare-revenue-v2-runtime.mjs';
 import { prepareRevenueRuntime } from './prepare-revenue-runtime.mjs';
+import { prepareRuntime316 } from './prepare-runtime316.mjs';
 import { prepareReadinessRuntime } from './prepare-readiness-runtime.mjs';
 import { prepareCreativeRuntime } from './prepare-creative-runtime.mjs';
 import { prepareDemandRuntime } from './prepare-demand-runtime.mjs';
@@ -80,6 +81,7 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareRevenueRuntime(root);
   await prepareRevenueV2Runtime(root);
   await prepareRevenueV3Runtime(root);
+  await prepareRuntime316(root);
   await prepareTestPageClient(root);
   return descriptor;
 }

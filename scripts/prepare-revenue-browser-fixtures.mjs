@@ -1,12 +1,13 @@
 import {mkdir,writeFile} from 'node:fs/promises';
-import {compileRevenue} from '../worker/runtime-revenue-v1/compiler.mjs';
-import {previewInput} from '../worker/runtime-revenue-v1/snapshot.mjs';
-import {descriptor} from '../.generated/runtime-revenue-manifest.mjs';
 import {dealsRuntimeFixture} from '../tests/support/deals-runtime-fixture.mjs';
 import {positionFixture} from '../tests/support/position-runtime-fixture.mjs';
 import {OUTSTREAM_PILOT} from '../shared/outstream/catalog.mjs';
 import {finalizeJavaScript} from '../worker/runtime/artifact-minifier.mjs';
-const out=new URL('../.generated/revenue-evidence/',import.meta.url);
+const stable=process.argv.includes('--stable');
+const compile=stable?(await import('../worker/runtime-316/compiler.mjs')).compileRuntime316:(await import('../worker/runtime-revenue-v1/compiler.mjs')).compileRevenue;
+const {previewInput}=await import(stable?'../worker/runtime-316/snapshot.mjs':'../worker/runtime-revenue-v1/snapshot.mjs');
+const {descriptor}=await import(stable?'../.generated/runtime-316-manifest.mjs':'../.generated/runtime-revenue-manifest.mjs');
+const out=new URL(stable?'../.generated/stable-revenue-evidence/':'../.generated/revenue-evidence/',import.meta.url);
 await mkdir(out,{recursive:true});
 for(const name of ['prebid','gam','outstream','outstream-only']) {
   const snapshot=name.startsWith('outstream')?positionFixture(true):dealsRuntimeFixture(name!=='gam');
@@ -30,7 +31,7 @@ for(const name of ['prebid','gam','outstream','outstream-only']) {
     snapshot.config.config_json=JSON.stringify(config);
   }
   const input=previewInput(snapshot,descriptor,'20261011_140000');
-  const compiled=compileRevenue(input);
+  const compiled=compile(input);
   const final=await finalizeJavaScript(compiled.adsJs,{cleanComments:true});
   await writeFile(new URL(name+'.js',out),final.adsJs);
   await writeFile(new URL(name+'.min.js',out),final.adsMinJs);

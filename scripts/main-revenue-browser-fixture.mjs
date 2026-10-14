@@ -8,7 +8,8 @@ import {workspaceStore,TEST_EMAIL,TEST_PASSWORD,TEST_SECRET} from '../tests/supp
 import {parsePrebidHeader,sha256} from '../worker/runtime/prebid-artifact-check.mjs';
 const origin='https://main-revenue.fixture.invalid',siteId='main-site';
 const setupScenario=process.argv.find(arg=>arg.startsWith('--script-setup='))?.split('=')[1];
-if(setupScenario)assert(['new','legacy','readiness','current'].includes(setupScenario));
+if(setupScenario)assert(['new','legacy','readiness','preview','current'].includes(setupScenario));
+const stable=process.argv.includes('--stable')||Boolean(setupScenario);
 const f=workspaceStore();
 f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
 f.sqlite.exec(readFileSync('migrations/0003_external_deployments.sql','utf8'));
@@ -33,9 +34,9 @@ const login=await worker.fetch(new Request(origin+'/api/auth/login',{method:'POS
 assert.equal(login.status,303);const cookie=login.headers.get('set-cookie').split(';')[0];
 async function api(path,body){const response=await worker.fetch(new Request(origin+path,{method:body?'POST':'GET',headers:{origin,cookie,...(body?{'content-type':'application/json'}:{})},body:body?JSON.stringify(body):undefined}),f.env,ctx);const value=await response.json();assert.equal(response.status,200,JSON.stringify(value));return value;}
 const selection=await api('/api/publishers/'+siteId+'/builtin-site-settings');
-const runtime=selection.runtimes.find(r=>r.version==='3.16.0-revenue.preview.3');assert(runtime,'MAIN catalog must include revenue preview.3');
-const selectedRuntime=selection.runtimes.find(r=>r.version===(setupScenario==='legacy'?'3.10.0-tessera.preview.1':setupScenario==='readiness'?'3.14.0':runtime.version));
-if(setupScenario!=='new')await api('/api/publishers/'+siteId+'/builtin-site-settings',{action:'version',revision:selection.revision,runtime:selectedRuntime.pin,allowPreview:true});
+const runtime=selection.runtimes.find(r=>r.version===(stable?'3.16.0':'3.16.0-revenue.preview.3'));assert(runtime,'MAIN catalog must include requested frozen runtime');
+const selectedRuntime=selection.runtimes.find(r=>r.version===(setupScenario==='legacy'?'3.10.0-tessera.preview.1':setupScenario==='readiness'?'3.14.0':setupScenario==='preview'?'3.16.0-revenue.preview.3':runtime.version));
+if(setupScenario!=='new')await api('/api/publishers/'+siteId+'/builtin-site-settings',{action:'version',revision:selection.revision,runtime:selectedRuntime.pin,allowPreview:selectedRuntime.version!=='3.16.0'});
 const bundle=await build({stdin:{contents:`
  import {createRoot} from 'react-dom/client';import {useState} from 'react';
  import ConfigPanel from './src/components/ConfigPanel';

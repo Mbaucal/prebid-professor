@@ -5,6 +5,11 @@ import { checkRuntimeReleaseHistory, verifyRuntimeReleaseProvenance } from '../.
 import { createHash } from 'node:crypto';
 const history=()=>structuredClone(runtimeReleaseHistory);
 const next=()=>({...history()[0],sourceManifest:'scripts/prepare-builtin-runtime.mjs',id:'tessera-reference391-preview-3',version:'3.9.1-tessera.preview.3',codeSha256:'a'.repeat(64),title:'A documented upgrade'});
+test('the eight pre-3.16 source records retain every pin, source commit and release note',()=>{
+ const known=new Set(['tessera-revenue-preview-3','tessera-revenue-preview-2','tessera-revenue-preview-1','tessera-readiness-v1','tessera-reporting-v1','tessera-positions-preview-1','tessera-reference391-preview-2']);
+ const retained=history().filter(item=>known.has(item.id));assert.equal(retained.length,8);
+ assert.equal(createHash('sha256').update(JSON.stringify(retained)).digest('hex'),'9a4342a6edd49fd3de3514a924f82fc47385e9611a943e9d435b9ade68527a1e');
+});
 test('historical register can be initialized and retained unchanged',()=>{
   assert.doesNotThrow(()=>checkRuntimeReleaseHistory(history().slice(-2),null));
   assert.doesNotThrow(()=>checkRuntimeReleaseHistory(history(),history()));

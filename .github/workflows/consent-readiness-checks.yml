@@ -31,6 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      TZ: UTC
       TESSERA_TEST_TOOLCHAIN: isolated
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -52,18 +53,25 @@ jobs:
           node --experimental-strip-types scripts/prepare-readiness-browser-fixtures.mjs
           node --experimental-strip-types scripts/prepare-revenue-browser-fixtures.mjs
           node --experimental-strip-types scripts/prepare-outstream-responsive-fixtures.mjs
+          node --experimental-strip-types scripts/prepare-readiness-browser-fixtures.mjs --stable
+          node --experimental-strip-types scripts/prepare-revenue-browser-fixtures.mjs --stable
+          node --experimental-strip-types scripts/prepare-outstream-responsive-fixtures.mjs --stable
       - name: Consent, deadline, reporting and pending-slot regressions
         run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
       - name: Deals and Outstream contracts, routes and exact package integration
-        run: node --experimental-strip-types --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/outstream-position-scope.test.mjs tests/runtime/outstream-responsive.test.mjs tests/runtime/revenue-integration.test.mjs tests/runtime/test-revenue-settings.test.mjs tests/runtime/browser-package-download.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/outstream-position-scope.test.mjs tests/runtime/outstream-responsive.test.mjs tests/runtime/revenue-integration.test.mjs tests/runtime/test-revenue-settings.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/runtime-labels.test.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
       - name: Generated scripts with real Prebid and intercepted CMP/GPT
-        run: python scripts/verify-consent-readiness.py
+        run: |
+          python scripts/verify-consent-readiness.py
+          python scripts/verify-consent-readiness.py --stable
       - name: Atomic consent boundary and failure-detection controls
-        run: python scripts/verify-consent-boundary.py
+        run: |
+          python scripts/verify-consent-boundary.py
+          python scripts/verify-consent-boundary.py --stable
       - name: Explicit version selection and desktop/mobile setup
         run: python scripts/verify-readiness-setup.py
       - name: Native Deals and selected Outstream creative; synthetic demand only
@@ -71,6 +79,9 @@ jobs:
           python scripts/verify-deals-native.py
           python scripts/verify-outstream-native.py
           python scripts/verify-outstream-responsive-native.py
+          python scripts/verify-deals-native.py --stable
+          python scripts/verify-outstream-native.py --stable
+          python scripts/verify-outstream-responsive-native.py --stable
       - name: Revenue settings on desktop and narrow screens
         run: |
           python scripts/verify-deals-ui.py
@@ -106,3 +117,10 @@ jobs:
             .generated/outstream-responsive-evidence/*.png
             .generated/outstream-responsive-workspace-evidence/*.json
             .generated/outstream-responsive-workspace-evidence/*.png
+            .generated/stable-readiness-evidence/*.json
+            .generated/stable-revenue-evidence/*.json
+            .generated/stable-revenue-evidence/*.png
+            .generated/stable-outstream-evidence/*.json
+            .generated/stable-outstream-evidence/*.png
+            .generated/stable-outstream-responsive-evidence/*.json
+            .generated/stable-outstream-responsive-evidence/*.png
