@@ -93,6 +93,18 @@ test('adding a newer stable version never upgrades an already pinned runtime',as
   f.request.catalog.unshift({...clone(f.runtime),version:'2.0.0',codeSha256:'b'.repeat(64)});
   assert.equal((await f.resolve()).pin.runtimeVersion,'1.2.3');
 });
+test('a fixed stable version can be selected explicitly without preview opt-in or changing settings',async()=>{
+  const f=await fixture();f.enable();f.adoptInMemory(await f.prepare());await f.rebase();
+  const original=JSON.parse(f.snapshot.config.config_json),inventory=clone({...f.snapshot,config:undefined});
+  const fixed={...clone(f.runtime),version:'1.2.4',codeSha256:'b'.repeat(64)};f.request.catalog.push(fixed);
+  f.request.selection.runtime=pinRuntime(fixed);assert.equal(f.request.selection.allowPreview,false);
+  const result=await f.prepare(),updated=JSON.parse(result.configJson);
+  assert.equal(updated.builtinRuntimeSelection.runtime.runtimeVersion,'1.2.4');
+  assert.deepEqual(updated.builtinRuntimeSelection.prebid,original.builtinRuntimeSelection.prebid);
+  assert.deepEqual({...updated,builtinRuntimeSelection:undefined},{...original,builtinRuntimeSelection:undefined});
+  assert.deepEqual({...f.snapshot,config:undefined},inventory);
+  f.adoptInMemory(result);assert.equal((await f.resolve()).pin.runtimeVersion,'1.2.4');
+});
 test('missing exact runtime never falls back to a catalog entry',async()=>{
   const f=await fixture();f.adoptInMemory(await f.prepare());f.request.catalog=[{...clone(f.runtime),version:'2.0.0'}];
   await rejects(f.resolve,'runtime_unavailable');

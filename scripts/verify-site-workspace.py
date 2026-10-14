@@ -35,7 +35,7 @@ try:
     assert page.get_by_role('button',name='Generate and save package',exact=True).is_disabled()
     assert all(r['method']=='GET' for r in requests)
     page.get_by_role('radio',name='GAM / AdX only',exact=False).check()
-    assert page.get_by_role('combobox',name='Script version',exact=True).count()==0
+    assert page.get_by_role('combobox',name='Script version',exact=True).count()==1
     expect(page.locator('.script-version-summary')).to_contain_text('3.16.0')
     expect(page.locator('.script-version-summary')).to_contain_text('Current version for new scripts')
     page.screenshot(path=str(out/'desktop-script-setup.png'),full_page=True)
@@ -76,7 +76,7 @@ try:
     setup=page.get_by_role('region',name='Script setup',exact=True)
     expect(setup.locator('.script-version-summary')).to_contain_text('3.16.0')
     expect(setup.get_by_role('button',name='Change version',exact=True)).to_have_count(0)
-    expect(setup.locator('select')).to_have_count(0)
+    expect(setup.locator('select')).to_have_count(1)
     expect(setup.get_by_role('button',name='Use current version',exact=True)).to_have_count(0)
     page.screenshot(path=str(out/'mobile-versions.png'),full_page=True)
     page.get_by_role('button',name='Generate and releases',exact=True).click()
