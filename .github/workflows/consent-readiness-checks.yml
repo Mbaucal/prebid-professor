@@ -73,7 +73,7 @@ jobs:
         run: |
           python scripts/verify-consent-boundary.py
           python scripts/verify-consent-boundary.py --stable
-      - name: Single current version, explicit upgrades and desktop/mobile setup
+      - name: Script version choices, preserved settings and desktop/mobile setup
         run: python scripts/verify-readiness-setup.py
       - name: Native Deals and selected Outstream creative; synthetic demand only
         run: |

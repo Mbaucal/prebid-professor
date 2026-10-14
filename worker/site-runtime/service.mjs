@@ -69,8 +69,8 @@ export async function siteRuntimeSettings(env,siteId){
  const stickyId=Object.hasOwn(sticky??{},'bottomAdUnitId')?sticky.bottomAdUnitId:(saved.units.some(u=>u.code==='Sticky'&&u.enabled===1)?'Sticky':'');
  return {site:saved.site,revision:await digest(saved),selected:pin??null,validationIssue,enablePrebid:config.enablePrebid===true,...siteSetupState(saved),
   loadingSummary:loadingSummary(preview,saved.units,pin,validationIssue),
-  currentRuntime:current?{version:current.version,pin:pinRuntime(current)}:null,
-  runtimes:runtimeCatalog.map(r=>({version:r.version,pin:pinRuntime(r,{allowPreview:true})})),history:describeRuntimeReleases(runtimeCatalog,pin),
+  currentRuntime:current?{version:current.version,channel:current.channel,pin:pinRuntime(current)}:null,
+  runtimes:runtimeCatalog.map(r=>({version:r.version,channel:r.channel,pin:pinRuntime(r,{allowPreview:true})})),history:describeRuntimeReleases(runtimeCatalog,pin),
   positions:saved.units.filter(u=>u.media_type==='banner'&&u.type!=='DRAFT').map(u=>({code:u.code,type:u.type,sizeMap:u.size_map_key,enabled:u.enabled===1,
    display:positions[u.code]?'takeover':stickyId===u.code?'sticky':'standard',overlay:positions[u.code]??null,
    lazy:Object.hasOwn(config.advancedUnitRules?.[u.code]??{},'lazy')?config.advancedUnitRules[u.code].lazy:JSON.parse(saved.rules.find(r=>r.rule_key===u.code)?.rule_json??'{}').lazy??null})),

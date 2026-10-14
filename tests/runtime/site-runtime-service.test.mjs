@@ -58,6 +58,9 @@ test('one current recommendation leaves historical catalog, unconfigured site an
  assert.equal(state.currentRuntime.pin.runtimeId,'tessera-3.16.0');
  assert.notEqual(state.currentRuntime.pin.runtimeSha256,'c257412bbcfa4e004a4e56dd320b4c043bdfc4b755bde7cdfa32b09ce4a189da');
  assert.deepEqual(state.currentRuntime,state.runtimes.find(item=>item.version===state.currentRuntime.version));
+ assert.equal(state.currentRuntime.channel,'stable');
+ assert(state.runtimes.every(item=>['stable','preview'].includes(item.channel)));
+ assert.equal(state.runtimes.find(item=>item.version==='3.16.0-revenue.preview.3').channel,'preview');
  assert.deepEqual(state.runtimes.map(item=>item.version),['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.13.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3','3.16.0']);
  assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,audits);
