@@ -7,6 +7,7 @@ import {sha256} from '../../worker/runtime/prebid-artifact-check.mjs';
 import {deploymentManifestPin} from '../../worker/deployment-manifest-pin.mjs';
 import {parsePrebidHeader} from '../../worker/runtime/prebid-artifact-check.mjs';
 import {outstreamSettingsResponse} from '../../worker/site-runtime/outstream-settings.mjs';
+import {getDealSettings,saveDealSettings} from '../../worker/site-runtime/deal-settings.mjs';
 import {unzipSync} from 'fflate';
 const fixtures=[];test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function fixture(){const f=workspaceStore();fixtures.push(f);f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
@@ -132,6 +133,8 @@ for(const version of ['3.16.0-revenue.preview.3','3.16.0'])test(version+' MAIN p
  const settings=await(await outstreamSettingsResponse(formatsRequest(),f.env,'first','tester')).json();
  const outstream={schemaVersion:1,units:{Billboard:{format:'banner-outstream',playerSizing:'size-map',playerSizes:{},minDuration:5,maxDuration:30,playbackMethod:2,placement:3,plcmt:4,partner:{bidder:'pubmatic',adapter:'pubmatic',outstreamAU:'synthetic-renderer',activationConfirmed:true},cacheUrl:'https://prebid.adnxs.com/pbc/v1/cache'}}};
  const saved=await outstreamSettingsResponse(formatsRequest({revision:settings.revision,outstream}),f.env,'first','tester');assert.equal(saved.status,200,await saved.text());
+ const deals=await getDealSettings(f.env,'first');assert.equal(deals.servingAvailable,true);
+ await saveDealSettings(f.env,'first','tester',{revision:deals.revision,settings:{schemaVersion:1,entries:[{id:'native-stored-deal',name:'Synthetic stored contract',bidder:'pubmatic',dealId:'0000199',positions:['Billboard'],startsAt:'2026-01-01T00:00:00.000Z',endsAt:'2027-01-01T00:00:00.000Z',enabled:true,mode:'price'}]}});
  if(version==='3.16.0'){
   let state=await siteRuntimeSettings(f.env,'first');
   await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:state.revision,runtime:state.runtimes.find(r=>r.version==='3.16.0-revenue.preview.3').pin,allowPreview:true});
@@ -143,6 +146,7 @@ for(const version of ['3.16.0-revenue.preview.3','3.16.0'])test(version+' MAIN p
  const p=await readPackage(f.env,'first',release.id);
  assert.equal(p.manifest.runtime.runtimeVersion,version);assert.equal(Object.keys(p.files).length,12);
  assert.deepEqual(JSON.parse(new TextDecoder().decode(p.files['config.json'])).runtime,p.manifest.runtime);
+ assert.equal(JSON.parse(new TextDecoder().decode(p.files['deals-plan.json'])).entries[0].dealId,'0000199');
  if(version==='3.16.0'){
   assert.equal(p.manifest.runtime.runtimeId,'tessera-3.16.0');
   assert.equal(p.manifest.runtime.runtimeSha256,'624afa6dff60db3f6da1f71ada6d89c55c513d1c72ddbe210b3b2246832c69b9');
