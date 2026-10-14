@@ -21,7 +21,7 @@ function Formats() {
   </section>;
 }
 function Workspace() {
-  const [view,setView]=useState<'versions'|'positions'|'packages'|'test-page'|'deals'|'formats'>(()=>window.location.hash==='#test-page'?'test-page':['#packages','#workflow'].includes(window.location.hash)?'packages':'versions');
+  const [view,setView]=useState<'versions'|'positions'|'packages'|'test-page'|'deals'|'formats'>(()=>window.location.hash==='#formats'?'formats':window.location.hash==='#test-page'?'test-page':['#packages','#workflow'].includes(window.location.hash)?'packages':'versions');
   return <main style={{maxWidth:1000,margin:'24px auto',padding:16}}>
     <h1>Tessera · TEST site workspace</h1><p>This workspace uses your saved TEST copy. Production sites are unchanged.</p>
     <nav className="runtime-actions">
