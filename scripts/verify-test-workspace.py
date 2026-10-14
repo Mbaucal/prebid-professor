@@ -3,6 +3,7 @@ All target traffic INCLUDING redirect chains is resolved to loopback TLS.
 No Cloudflare API, real credentials, external ad libraries or publisher requests.
 """
 import json
+import os
 from position_editor_actions import add_takeover_position
 import pathlib
 import subprocess
@@ -56,9 +57,12 @@ def exercise(page):
         page.locator('#runtime').select_option('0')
         check('Preview opt-in is not preselected',page.locator('#save-selection').is_disabled())
         page.locator('#allow-preview').check()
-        expect(page.locator('#release-history article')).to_have_count(5)
-        expect(page.locator('#release-history article[data-available="true"]')).to_have_count(4)
-        expect(page.locator('#release-history article').first).to_contain_text('3.14.0')
+        expect(page.locator('#release-history article')).to_have_count(8)
+        expect(page.locator('#release-history article[data-available="true"]')).to_have_count(7)
+        expect(page.locator('#release-history article').first).to_contain_text('3.16.0-revenue.preview.3')
+        expect(page.locator('#release-history article').nth(1)).to_contain_text('3.16.0-revenue.preview.2')
+        expect(page.locator('#release-history article').nth(2)).to_contain_text('3.16.0-revenue.preview.1')
+        expect(page.locator('#release-history article').nth(3)).to_contain_text('3.14.0')
         expect(page.locator('#release-history article[data-available="false"]')).to_contain_text('Earlier build')
         writes_before=sum(event['method']=='POST' for event in http_events)
         page.get_by_role('link',name='View version history').click()
@@ -174,7 +178,7 @@ with tempfile.TemporaryDirectory(prefix='tessera-local-tls-') as tls:
         with sync_playwright() as playwright:
             # Interception alone does not capture all redirect hops. Pin DNS at
             # the network layer; every other hostname fails resolution.
-            browser=playwright.chromium.launch(headless=True,args=[
+            browser=playwright.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'),args=[
                 '--no-proxy-server','--disable-quic',
                 '--host-resolver-rules=MAP '+hostname+' 127.0.0.1:8877, MAP * ~NOTFOUND'])
             context=browser.new_context(viewport={'width':1280,'height':900},accept_downloads=True,ignore_https_errors=True,service_workers='block')

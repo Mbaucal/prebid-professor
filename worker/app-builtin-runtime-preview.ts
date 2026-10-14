@@ -1,3 +1,6 @@
+import { dealSettingsResponse } from './site-runtime/deal-settings.mjs';
+import { outstreamSettingsResponse } from './site-runtime/outstream-settings.mjs';
+import { requireRevenueRuntime } from './runtime-revenue-v3/settings-guard.mjs';
 import { organizationResponse } from './organization/service.mjs';
 import { gamResponse } from './integrations/gam-service.mjs';
 import { blockStoredDraftCdn } from './runtime/stored-draft-safety.mjs';
@@ -68,8 +71,18 @@ export default {
     if(oldGenerate){
       if(!await getAuthenticatedUser(request,env))return new Response('Authentication required.',{status:401});
       const row=await env.DB?.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=?').bind(oldGenerate[1]).first<{config_json:string}>();
-      if(row){try{requireSupportedCacheGenerator(JSON.parse(row.config_json));}catch(e){return new Response(JSON.stringify({error:(e as Error).message}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});}}
+      if(row){try{requireSupportedCacheGenerator(JSON.parse(row.config_json));requireRevenueRuntime(JSON.parse(row.config_json),null);}catch(e){return new Response(JSON.stringify({error:(e as Error).message}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});}}
       if(row&&JSON.parse(row.config_json).builtinRuntimeSelection)return new Response(JSON.stringify({error:'Use Generate and releases with the saved built-in script version.'}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});
+    }
+    const revenueMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/(deals|outstream-settings)$/);
+    if(revenueMatch){
+      const fail=(error:string,status:number)=>Response.json({error},{status,headers:{'cache-control':'private, no-store'}});
+      const actor=await getAuthenticatedUser(request,env);
+      if(!actor)return fail('Authentication required.',401);
+      if(url.search)return fail('Unknown query.',400);
+      if(!['GET','POST'].includes(request.method))return fail('Method not allowed.',405);
+      if(!isSameOriginMutation(request)||(request.method==='POST'&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
+      return revenueMatch[2]==='deals'?dealSettingsResponse(request,env,revenueMatch[1],actor.email):outstreamSettingsResponse(request,env,revenueMatch[1],actor.email);
     }
     const settingsMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/builtin-site-settings$/);
     if(settingsMatch){
@@ -92,9 +105,10 @@ export default {
     if (!isSameOriginMutation(request) || (request.method === 'POST' && request.headers.get('origin') !== url.origin)) return fail('Same-origin request required.', 403);
     let siteId: string;
     try { siteId = decodeURIComponent(match[1]); } catch { return fail('Invalid site ID.', 400); }
+    const revenueConfig=await env.DB?.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=?').bind(siteId).first<{config_json:string}>();
+    if(revenueConfig){try{requireRevenueRuntime(JSON.parse(revenueConfig.config_json),null);}catch(e){return fail((e as Error).message,409);}}
     if (bundle) {
-      const row=await env.DB?.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=?').bind(siteId).first<{config_json:string}>();
-      if(row){try{requireSupportedCacheGenerator(JSON.parse(row.config_json));}catch(e){return fail((e as Error).message,409);}}
+      if(revenueConfig){try{requireSupportedCacheGenerator(JSON.parse(revenueConfig.config_json));}catch(e){return fail((e as Error).message,409);}}
       return handleArtifactBundle(request, env, siteId);
     }
     if (prebidCheck) return handlePrebidPreflight(request, env, siteId, {

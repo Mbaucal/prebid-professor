@@ -10,6 +10,7 @@ import { reviewedProjections, SelectionWriteError } from './selection-transactio
 import { listPrebidFiles, readPrebidFile } from './prebid-files.mjs';
 import { fields, normalizePrebidDraft, SUPPORTED_BIDDERS } from './prebid-draft.mjs';
 import { makePrebidPlan, publicPlan, planOptions, USER_IDS } from './prebid-plan.mjs';
+import { assertRevenueDraftPreserved } from './revenue-draft-guard.mjs';
 export const prebidStore = (env) => ({isolation:'explicit-test-store', db:env.DB, bucket:env.BUILDS});
 export async function prebidSnapshot(env) {
   const snapshot = await readPreviewSnapshot(env.DB.withSession('first-primary'), TEST_SITE, {includePrebid:true});
@@ -81,6 +82,7 @@ export async function preparePrebidSettings(env, body) {
   const next={...(buildPlan?buildPlan.config:config),enablePrebid:draft.enablePrebid,testPrebidDraft:{schemaVersion:1,candidateOnly:true}};
   delete next.testPrebidPlan;
   after.config.config_json=JSON.stringify(next);
+  assertRevenueDraftPreserved(before,after);
   const planned=await prepareSiteRuntimeSelection({siteId:TEST_SITE,snapshot:after,catalog:runtimeCatalog,expectedRevision:await digest(after),
     selection:{runtime:config.builtinRuntimeSelection.runtime,allowPreview:true,enablePrebid:draft.enablePrebid,prebidBuildId:draft.enablePrebid?draft.buildId:null}},env.BUILDS);
   after.config.config_json=planned.configJson;

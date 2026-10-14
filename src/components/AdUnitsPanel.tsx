@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AdUnit, AdUnitType } from '../shared/types';
+import OutstreamSettingsPanel from './OutstreamSettingsPanel';
 import SiteRuntimePanel from './SiteRuntimePanel';
 import PositionBidCachePanel,{fetchBidCacheSettings,type BidCachePayload} from './PositionBidCachePanel';
 
 type Props = {
   publisherId: string;
+  onOpenSizeMaps?: () => void;
   onChanged?: () => void | Promise<void>;
 };
 
@@ -66,7 +68,9 @@ function formFromAdUnit(adUnit: AdUnit): FormState {
   };
 }
 
-export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
+export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }: Props) {
+  const [outstreamUnit,setOutstreamUnit]=useState<string|null>(null);
+  useEffect(()=>setOutstreamUnit(null),[publisherId]);
   const [runtimeUnit,setRuntimeUnit]=useState<string|null>(null);
   const [cacheUnit,setCacheUnit]=useState<string|null>(null);
   const [cacheError,setCacheError]=useState(''),[cacheAttempt,setCacheAttempt]=useState(0);
@@ -261,6 +265,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
                     {adUnit.notes ? <p>{adUnit.notes}</p> : null}
 
                     <div className="ad-unit-actions">
+                      {adUnit.mediaType==='banner'&&adUnit.type!=='DRAFT'?<button type="button" onClick={()=>setOutstreamUnit(adUnit.code)}>Formats</button>:null}
                       {cacheSettings?.bidCachePositions?.includes(adUnit.code)?<button type="button" onClick={()=>setCacheUnit(adUnit.code)}>Bid cache: {!cacheSettings.prebidMode.enabled?'Inactive':(cacheSettings.prebidMode.bidCache.positionOverrides?.[adUnit.code]??cacheSettings.prebidMode.bidCache.enabled)?'On':'Off'}</button>:null}
                       {adUnit.mediaType==='banner'&&adUnit.type!=='DRAFT'?<button onClick={()=>setRuntimeUnit(adUnit.code)} type="button">Display & loading</button>:null}
                       <button onClick={() => openEdit(adUnit)} type="button">Edit</button>
@@ -283,6 +288,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
         </div>
       </section>
 
+      {outstreamUnit?<OutstreamSettingsPanel key={publisherId+outstreamUnit} publisherId={publisherId} code={outstreamUnit} onClose={()=>setOutstreamUnit(null)} onSaved={()=>void onChanged?.()} onOpenSizeMaps={onOpenSizeMaps?()=>{setOutstreamUnit(null);onOpenSizeMaps();}:undefined}/>:null}
       {runtimeUnit?<div className="modal-backdrop"><section className="modal-card ad-unit-modal" role="dialog" aria-modal="true" aria-label={`Display settings for ${runtimeUnit}`}><button className="icon-button" type="button" onClick={()=>setRuntimeUnit(null)} aria-label="Close display settings">×</button><SiteRuntimePanel key={publisherId+runtimeUnit} publisherId={publisherId} view="positions" unitCode={runtimeUnit} onChanged={onChanged}/></section></div>:null}
       {cacheError?<p className="form-error" role="alert">{cacheError} <button type="button" onClick={()=>setCacheAttempt(n=>n+1)}>Reload bid cache settings</button></p>:null}
       {cacheUnit?<PositionBidCachePanel key={publisherId+cacheUnit} publisherId={publisherId} code={cacheUnit} onClose={()=>setCacheUnit(null)} onSaved={next=>{setCacheSettings(next);void onChanged?.();}}/>:null}
@@ -344,6 +350,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
                     <option value="video">video</option>
                     <option value="native">native</option>
                   </select>
+                  <small>For Outstream, save this position as Banner, then choose Formats.</small>
                 </label>
               </div>
 
