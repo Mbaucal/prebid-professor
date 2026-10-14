@@ -12,7 +12,8 @@ def site(id,owner):
 initial=[{'id':id,'name':name,'status':'active','sitesCount':len(ids),'sites':[site(s,id) for s in ids],'notes':''} for id,name,ids in [('publisher-a','North Publisher',['site-a1','site-a2']),('publisher-b','South Publisher',['site-b1']),('empty','Empty Publisher',[])]]
 organization={'agencies':[{'id':id,'name':name,'logo':None,'revision':1,'createdAt':'2026-10-01','updatedAt':'2026-10-01'} for id,name in [('north','North agency'),('south','South agency')]],'memberships':[{'publisherId':'publisher-a','agencyId':'north','revision':1},{'publisherId':'publisher-b','agencyId':'south','revision':1}]}
 pin={'runtimeVersion':'3.14.0','runtimeSha256':'a'*64}
-setup={'revision':'synthetic','selected':pin,'enablePrebid':False,'validationIssue':None,'prebid':{'status':'off','message':'Synthetic fixture'},'runtimes':[{'version':'3.14.0','pin':pin}],'history':[]}
+current={'version':'3.16.0-revenue.preview.3','pin':{'runtimeVersion':'3.16.0-revenue.preview.3','runtimeSha256':'c257412bbcfa4e004a4e56dd320b4c043bdfc4b755bde7cdfa32b09ce4a189da'}}
+setup={'revision':'synthetic','selected':pin,'enablePrebid':False,'validationIssue':None,'prebid':{'status':'off','message':'Synthetic fixture'},'currentRuntime':current,'runtimes':[{'version':'3.14.0','pin':pin},current],'history':[]}
 server=subprocess.Popen(['node','scripts/layout-ui-fixture.mjs'],cwd=root,stdout=subprocess.PIPE,text=True)
 results=[]
 try:
@@ -53,6 +54,7 @@ try:
      r.fulfill(status=503 if fault['agency'] else 200,json={'error':'Synthetic agency unavailable'} if fault['agency'] else organization);return
     if path.endswith('/builtin-site-settings'):
      if method=='POST':
+      assert r.request.post_data_json['runtime']==pin,'A mode edit silently changed the saved runtime'
       writes.append({'method':method,'path':path,'synthetic':True});pending_saves.append(r);return
      assert method=='GET'
      r.fulfill(json=setup);return
