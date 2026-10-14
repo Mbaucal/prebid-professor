@@ -33,9 +33,12 @@ automatically promoted to stable or switched by the admin deployment.
 
 ## MAIN operator path
 
-Open the intended publisher/site, then Config → Script → Script setup → Change
-version → 3.16.0-revenue.preview.3 → Save script setup. Formats is under Config →
-Inventory → Ad units. Deals is under Config → Demand → Bidders.
+Open the intended publisher/site, then Config → Script → Script setup. New setups
+offer 3.16.0-revenue.preview.3 as the single current version; click Save script
+setup. An existing saved version stays selected until Use current version and
+Save script setup are explicitly clicked. Previous versions remain in read-only
+history and saved releases. Formats is under Config → Inventory → Ad units.
+Deals is under Config → Demand → Bidders.
 
 For existing video settings, open Formats → Use size map → Save format settings.
 Generate a new package from the saved settings when ready. Selecting a version or
