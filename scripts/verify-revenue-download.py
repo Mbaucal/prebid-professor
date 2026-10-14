@@ -48,9 +48,16 @@ with sync_playwright() as p:
     page.locator('#generate').click();expect(page.locator('#review-summary')).to_contain_text('12 files',timeout=90000)
     page.locator('#note').fill('Synthetic revenue ZIP regression');page.locator('#ack').check();page.locator('#save').click()
     page.get_by_role('button',name='Open saved release',exact=True).click()
-    expect(page.locator('#opened-status')).to_have_text('Verified saved package')
+    # MAIN retains the original TEST homepage; the newer TEST card adds a
+    # status element. Both must display the actual verified saved response.
+    expect(page.locator('#opened')).to_be_visible()
+    if page.locator('#opened-status').count():
+     expect(page.locator('#opened-status')).to_have_text('Verified saved package')
+    else:
+     expect(page.locator('#opened').get_by_role('heading',name='Verified saved package',exact=True)).to_be_visible()
+     expect(page.locator('#message')).to_have_text('Saved files verified. This is the original package, not a new generation.')
     saved=json.loads(page.locator('#opened-details').text_content());release_id=saved['draft']['id']
-    assert saved['verified'] and saved['draft']['fileCount']==12
+    assert saved['verified'] is True and saved['draft']['fileCount']==12
     assert saved['draft']['runtime']['runtimeVersion']=='3.16.0-revenue.preview.2'
     base='/test-api/releases/'+release_id
     descriptor=data(base+'/index')['descriptor'];original={}
