@@ -56,7 +56,7 @@ with sync_playwright() as p:
     def close_formats():page.get_by_role('button',name='Close format settings',exact=True).click()
     def save_success():
      page.get_by_role('button',name='Save format settings',exact=True).click()
-     expect(page.get_by_text('Saved for the next revenue preview release. Existing scripts are unchanged.',exact=True)).to_be_visible()
+     expect(page.get_by_text('Saved for the next generated script. Existing scripts are unchanged.',exact=True)).to_be_visible()
     def screen(name):
      assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),'Horizontal page overflow'
      assert page.get_by_role('dialog').evaluate('(e)=>e.scrollWidth<=e.clientWidth'),'Horizontal modal overflow'
@@ -121,7 +121,7 @@ with sync_playwright() as p:
     save_success();assert writes[-1]['outstream']['units']['P1']['playerSizes']=={'display@1024x0':[300,250]}
     close_formats();state['responsiveSizing']=False;state['outstream']['units']['P1']=copy.deepcopy(fixed);open_formats()
     expect(page.get_by_label('Player width (px)',exact=True)).to_have_value('300');expect(page.get_by_role('button',name='Use size map',exact=True)).to_have_count(0)
-    expect(page.get_by_text('To use different video sizes per breakpoint',exact=False)).to_contain_text('3.16.0-revenue.preview.3')
+    expect(page.get_by_text('To use different video sizes per breakpoint',exact=False)).to_contain_text('Tessera 3.16.0')
     save_success();assert writes[-1]['outstream']['units']['P1']==fixed
     assert not errors,errors
     checks.append({'width':width,'automaticSingleSize':True,'explicitAmbiguousChoice':True,'disabledRows':True,

@@ -73,7 +73,7 @@ test('old selection explains explicit upgrade without saving or changing its pin
   const f=await ready('tessera-revenue-preview-1'),selection=await f.json('/test-api/runtime-selection');
   const before=await f.json('/test-api/outstream-settings');
   const rejected=await f.request('/test-api/outstream-settings',{revision:before.revision,outstream:revenueOutstream});
-  assert.equal(rejected.status,422);assert.match((await rejected.json()).error,/Select 3.16.0-revenue.preview.2 in Script setup/);
+  assert.equal(rejected.status,422);assert.match((await rejected.json()).error,/Use current version.*Script version 3\.16\.0/);
   assert.deepEqual(await f.json('/test-api/outstream-settings'),before);
   assert.deepEqual((await f.json('/test-api/runtime-selection')).selected,selection.selected);
 });

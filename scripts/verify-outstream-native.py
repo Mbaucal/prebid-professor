@@ -1,12 +1,14 @@
 """Pinned native PubMatic adapter + native renderer, synthetic OpenRTB/cache/vendor sink.
 All network is intercepted. This proves dispatch safety, not vendor player lifecycle.
 """
-import os,json,hashlib,gzip
+import os,json,hashlib,gzip,sys
 from pathlib import Path
 from datetime import datetime,timezone
 from playwright.sync_api import sync_playwright
 root=Path(__file__).resolve().parent.parent
-out=root/'.generated/outstream-evidence';out.mkdir(parents=True,exist_ok=True)
+stable='--stable' in sys.argv
+out=root/('.generated/stable-outstream-evidence' if stable else '.generated/outstream-evidence');out.mkdir(parents=True,exist_ok=True)
+generated_dir=root/('.generated/stable-revenue-evidence' if stable else '.generated/revenue-evidence')
 pbsource=(root/'vendor/prebid/tanjug-11.34.0/prebid.js').read_text()
 assert hashlib.sha256(pbsource.encode()).hexdigest()=='384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b','Prebid fixture changed'
 puc=(root/'tests/fixtures/prebid-universal-creative-1.17.2/video.js').read_text()
@@ -118,6 +120,6 @@ with sync_playwright() as p:
    result=run(browser,scenario);results.append(result);print('PASS',scenario)
   for name in ['outstream.js','outstream.min.js','outstream-only.js','outstream-only.min.js']:
    for scenario in ['winner','direct-banner','changed-consent','expired','delayed-consent','no-refresh']:
-    result=run(browser,scenario,root/'.generated/revenue-evidence'/name);results.append(result);print('PASS',name,scenario)
+    result=run(browser,scenario,generated_dir/name);results.append(result);print('PASS',name,scenario)
  finally:
   browser.close();(out/'native-results.json').write_text(json.dumps({'prebidSha256':hashlib.sha256(pbsource.encode()).hexdigest(),'pucSha256':hashlib.sha256(puc.encode()).hexdigest(),'checks':results,'limitation':'Native adapter and renderer code with synthetic vendor bootstrap sink; actual pinned PUC friendly-iframe handoff; no real BlueBillywig player or live GAM selection.'},indent=2))

@@ -48,7 +48,7 @@ with sync_playwright() as p:
      expect(page.get_by_label('Ad format',exact=True)).to_be_visible()
     def save_formats():
      page.get_by_role('button',name='Save format settings',exact=True).click()
-     expect(page.get_by_text('Saved for the next revenue preview release. Existing scripts are unchanged.',exact=True)).to_be_visible()
+     expect(page.get_by_text('Saved for the next generated script. Existing scripts are unchanged.',exact=True)).to_be_visible()
     def screen(name):
      assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),'Horizontal page overflow'
      page.screenshot(path=str(out/f'{name}-{width}.png'),full_page=True)
