@@ -27,7 +27,7 @@ try:
     assert page.get_by_role('button',name='Generate and save package',exact=True).is_disabled()
     assert all(r['method']=='GET' for r in requests)
     page.get_by_role('radio',name='GAM / AdX only',exact=False).check()
-    assert page.get_by_role('combobox',name='Script version',exact=True).count()==0
+    assert page.get_by_role('combobox',name='Script version',exact=True).count()==1
     assert '3.16.0' in page.locator('.script-version-summary').inner_text()
     assert 'Current version for new scripts' in page.locator('.script-version-summary').inner_text()
     page.screenshot(path=str(out/'desktop-script-setup.png'),full_page=True)
@@ -52,7 +52,7 @@ try:
     page.get_by_role('button',name='Continue to Generate',exact=True).wait_for()
     assert '3.16.0' in page.locator('.script-version-summary').inner_text()
     assert 'Current version' in page.locator('.script-version-summary').inner_text()
-    assert page.get_by_role('combobox',name='Script version',exact=True).count()==0
+    assert page.get_by_role('combobox',name='Script version',exact=True).count()==1
     assert page.get_by_role('button',name='Use current version',exact=True).count()==0
     page.screenshot(path=str(out/'mobile-versions.png'),full_page=True)
     page.get_by_role('button',name='Generate and releases',exact=True).click()
