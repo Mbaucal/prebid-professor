@@ -75,13 +75,19 @@ jobs:
           python scripts/verify-outstream-responsive-native.py
       - name: Revenue settings on desktop and narrow screens
         run: |
-          python scripts/verify-deals-ui.py
-          python scripts/verify-outstream-ui.py
-          python scripts/verify-revenue-workspace.py
-          python scripts/verify-revenue-download.py
-          python scripts/verify-outstream-responsive-ui.py
-          python scripts/verify-outstream-responsive-workspace.py
-          python scripts/verify-main-revenue-workspace.py
+          failed=0
+          for script in \
+            scripts/verify-deals-ui.py \
+            scripts/verify-outstream-ui.py \
+            scripts/verify-revenue-workspace.py \
+            scripts/verify-revenue-download.py \
+            scripts/verify-outstream-responsive-ui.py \
+            scripts/verify-outstream-responsive-workspace.py \
+            scripts/verify-main-revenue-workspace.py
+          do
+            python "$script" || failed=1
+          done
+          exit "$failed"
       - name: Save synthetic evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

@@ -36,6 +36,12 @@ with sync_playwright() as p:
     else:fulfill(r,result)
    page.route('**/*',route)
    try:
+    # The shared fixture keeps its original preview.1 default on MAIN. Pin the
+    # preview.2 package under regression explicitly, without changing that fixture.
+    selection=data('/test-api/runtime-selection')
+    runtime=next(r for r in selection['runtimes'] if r['version']=='3.16.0-revenue.preview.2')
+    data('/test-api/runtime-selection',{'expectedRevision':selection['revision'],'selection':{
+     'runtime':runtime['pin'],'allowPreview':True,'enablePrebid':selection['enablePrebid'],'prebidBuildId':selection['prebidBuildId']}})
     # Save a real mixed-format configuration through TEST's checked API before Generate.
     settings=data('/test-api/outstream-settings')
     mixed={'schemaVersion':1,'units':{'Billboard':{'format':'banner-outstream','playerSize':[300,250],
