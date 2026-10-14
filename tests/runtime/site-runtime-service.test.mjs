@@ -48,6 +48,41 @@ test('concurrent position save prevents ad-unit mutation and its audit atomicall
 test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function setup(options){const f=workspaceStore(options);fixtures.push(f);const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);const cookie=login.headers.get('set-cookie').split(';')[0];const r=await worker.fetch(new Request(ORIGIN+'/test-api/setup',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({confirm:'prepare-empty-test-database'})}),f.env);assert.equal(r.status,200);return {f,cookie};}
 async function select(f,siteId='test-site'){const s=await siteRuntimeSettings(f.env,siteId);await changeSiteRuntime(f.env,siteId,TEST_EMAIL,{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});return siteRuntimeSettings(f.env,siteId);}
+test('one current recommendation leaves historical catalog, unconfigured site and saved data unchanged',async()=>{
+ const {f}=await setup();
+ const before=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ const audits=f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n;
+ const state=await siteRuntimeSettings(f.env,'test-site');
+ assert.equal(state.selected,null);
+ assert.equal(state.currentRuntime.version,'3.16.0-revenue.preview.3');
+ assert.equal(state.currentRuntime.pin.runtimeSha256,'c257412bbcfa4e004a4e56dd320b4c043bdfc4b755bde7cdfa32b09ce4a189da');
+ assert.deepEqual(state.currentRuntime,state.runtimes.find(item=>item.version===state.currentRuntime.version));
+ assert.deepEqual(state.runtimes.map(item=>item.version),['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.11.0-tessera.preview.1','3.13.0','3.15.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3']);
+ assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,audits);
+ assert.equal(f.log.gets.length,0);assert.equal(f.log.puts.length,0);
+});
+test('new setup explicitly saves the current pin and generates its exact runtime identity',async()=>{
+ const {f}=await setup();let state=await siteRuntimeSettings(f.env,'test-site');
+ const current=state.currentRuntime;
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:state.revision,runtime:current.pin,allowPreview:true,enablePrebid:false});
+ state=await siteRuntimeSettings(f.env,'test-site');assert.deepEqual(state.selected,current.pin);
+ const zip=unzipSync(new Uint8Array(await(await siteRuntimeBundle(f.env,'test-site',{action:'bundle',revision:state.revision,acknowledge:true})).arrayBuffer()));
+ const manifest=JSON.parse(new TextDecoder().decode(zip['manifest.json']));
+ assert.equal(manifest.runtime.runtimeVersion,current.version);assert.equal(manifest.runtime.runtimeSha256,current.pin.runtimeSha256);
+ assert.equal(zip['prebid.js'],undefined);assert(zip['deals-plan.json']);
+});
+test('editing an older setup preserves its exact pin until an explicit current-version save',async()=>{
+ const {f}=await setup();let state=await select(f);const oldPin=state.selected;
+ assert.notDeepEqual(oldPin,state.currentRuntime.pin);
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:state.revision,runtime:oldPin,allowPreview:true,enablePrebid:false});
+ state=await siteRuntimeSettings(f.env,'test-site');assert.deepEqual(state.selected,oldPin);
+ const oldRevision=state.revision;
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:state.revision,runtime:state.currentRuntime.pin,allowPreview:true,enablePrebid:false});
+ state=await siteRuntimeSettings(f.env,'test-site');assert.deepEqual(state.selected,state.currentRuntime.pin);
+ await assert.rejects(changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:oldRevision,runtime:oldPin,allowPreview:true,enablePrebid:false}),error=>error.status===409);
+ assert.deepEqual((await siteRuntimeSettings(f.env,'test-site')).selected,state.currentRuntime.pin);
+});
 test('loading summary reads saved display overrides and never writes configuration',async()=>{
  const {f}=await setup();let s=await select(f);
  assert.equal(s.loadingSummary.units.find(u=>u.code==='Billboard').label,'Automatic · ATF');
