@@ -107,6 +107,44 @@ test('complete Prebid package keeps the uploaded file and passes Pages source ve
  await verifyPackage(p.files,{site_id:'first',release_id:release.id,release_version:release.id});
 });
 
+test('choosing 3.14, 3.16 and 3.13 reuses all site inputs and exact Prebid bytes while retaining every saved ZIP',async()=>{
+ const f=await fixture();
+ const bytes=new Uint8Array(readFileSync('vendor/prebid/tanjug-11.34.0/prebid.js')),header=parsePrebidHeader(new TextDecoder().decode(bytes));
+ const path='publishers/first/prebid-builds/original/prebid.js';f.objects.set(path,{bytes,meta:{sha256:await sha256(bytes)}});
+ f.sqlite.prepare("INSERT INTO prebid_builds(id,publisher_id,version,file_key,modules_json,status) VALUES('original','first',?,?,?, 'current')").run(header.version,path,JSON.stringify(header.modules));
+ f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,enabled) VALUES('pubmatic','first','pubmatic',?,1)").run(JSON.stringify({publisherId:'synthetic',adSlot:'base'}));
+ f.sqlite.prepare("INSERT INTO bidder_overrides(id,publisher_id,bidder,scope_type,scope_key,params_json,enabled) VALUES('override','first','pubmatic','adunit','Billboard',?,1)").run(JSON.stringify({adSlot:'specific'}));
+ f.sqlite.prepare("INSERT INTO ad_units(id,publisher_id,code,type,size_map_key,sort_order) VALUES('second','first','InText','BTF','display',1)").run();
+ f.sqlite.prepare("UPDATE size_maps SET map_json=?").run(JSON.stringify([{viewport:[0,0],sizes:[[300,250]]},{viewport:[1024,0],sizes:[[640,360],[300,250]]}]));
+ f.sqlite.prepare("UPDATE unit_rules SET rule_json=?").run(JSON.stringify({timeout:1700,refresh:{enabled:false}}));
+ f.sqlite.prepare("INSERT INTO unit_rules(id,publisher_id,rule_key,rule_json) VALUES('second-rule','first','InText',?)").run(JSON.stringify({timeout:1800,refresh:{enabled:false}}));
+ const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);config.enablePrebid=true;
+ config.operatorSettings={mustRemain:['unchanged',17]};config.advancedUnitRules={InText:{lazy:{enabled:true,fetchMarginPx:650,renderMarginPx:100}}};
+ f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+ const rows=()=>JSON.stringify(['ad_units','size_maps','bidders','bidder_overrides','unit_rules','prebid_builds'].map(table=>f.sqlite.prepare(`SELECT * FROM ${table} ORDER BY id`).all()));
+ const inventory=rows(),retained=[];let previousConfig=null,previousAds=null,prebidPin=null;
+ for(const version of ['3.14.0','3.16.0','3.13.0']){
+  const state=await siteRuntimeSettings(f.env,'first'),runtime=state.runtimes.find(item=>item.version===version);assert(runtime);
+  const before=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+  await changeSiteRuntime(f.env,'first','tester',{action:'setup',revision:state.revision,runtime:runtime.pin,allowPreview:runtime.channel!=='stable',enablePrebid:true});
+  const after=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+  assert.deepEqual({...after,builtinRuntimeSelection:undefined},{...before,builtinRuntimeSelection:undefined},'Version choice must preserve every saved configuration field');
+  assert.equal(rows(),inventory,'Version choice must not mutate maps, bidders, units, overrides, rules or build rows');
+  prebidPin??=after.builtinRuntimeSelection.prebid;assert.deepEqual(after.builtinRuntimeSelection.prebid,prebidPin);
+  const release=await generate(f,'Only script version '+version),stored=await readPackage(f.env,'first',release.id);
+  const publicConfig=JSON.parse(new TextDecoder().decode(stored.files['config.json']));assert.equal(publicConfig.runtime.runtimeVersion,version);
+  assert.deepEqual(stored.files['prebid.js'],bytes);assert.deepEqual(publicConfig.prebidBuild,prebidPin);
+  const comparable={core:{...publicConfig.core,buildVersion:undefined,generatorProfileId:undefined},options:{...publicConfig.options,buildTimestamp:undefined},adPosition:publicConfig.adPosition,lazyRules:publicConfig.lazyRules};
+  if(previousConfig)assert.deepEqual(comparable,previousConfig,'Different script versions consume identical normalized setup');
+  if(previousAds)assert.notDeepEqual(stored.files['ads.js'],previousAds,'Selecting another engine must generate different ads.js');
+  previousConfig=comparable;previousAds=stored.files['ads.js'];
+  assert(!retained.some(old=>old.id===release.id));
+  for(const old of retained){assert.deepEqual((await readPackage(f.env,'first',old.id)).files,old.files);assert.deepEqual(new Uint8Array(await(await packageDownload(f.env,'first',old.id)).arrayBuffer()),old.zip);}
+  retained.push({id:release.id,files:stored.files,zip:new Uint8Array(await(await packageDownload(f.env,'first',release.id)).arrayBuffer())});
+ }
+ assert.equal(f.sqlite.prepare('SELECT current_release_id FROM publishers').get().current_release_id,null,'Generating must not publish or switch served packages');
+});
+
 for(const version of ['3.16.0-revenue.preview.3','3.16.0'])test(version+' MAIN package keeps twelve exact files, old packages and damaged-plan guards',async()=>{
  const f=await fixture();
  const before=await generate(f,'Existing package before revenue');
@@ -135,6 +173,15 @@ for(const version of ['3.16.0-revenue.preview.3','3.16.0'])test(version+' MAIN p
  const deals=await getDealSettings(f.env,'first');assert.equal(deals.servingAvailable,true);
  await saveDealSettings(f.env,'first','tester',{revision:deals.revision,settings:{schemaVersion:1,entries:[{id:'native-stored-deal',name:'Synthetic stored contract',bidder:'pubmatic',dealId:'0000199',positions:['Billboard'],startsAt:'2026-01-01T00:00:00.000Z',endsAt:'2027-01-01T00:00:00.000Z',enabled:true,mode:'price'}]}});
  if(version==='3.16.0'){
+  const configBefore=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+  const auditsBefore=f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,objectsBefore=[...f.objects.keys()];
+  for(const target of ['3.14.0','3.13.0']){
+   const review=await siteRuntimeSettings(f.env,'first'),older=review.runtimes.find(item=>item.version===target);
+   await assert.rejects(changeSiteRuntime(f.env,'first','tester',{action:'setup',revision:review.revision,runtime:older.pin,allowPreview:true,enablePrebid:true}),error=>error.status===422&&/Deals|Outstream|outstream|deals|settings|supported/i.test(error.message));
+   assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,configBefore,'Unsupported runtime must leave all selected settings unchanged');
+   assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,auditsBefore);assert.deepEqual([...f.objects.keys()],objectsBefore);
+   assert.equal((await siteRuntimeSettings(f.env,'first')).selected.runtimeVersion,'3.16.0');
+  }
   let state=await siteRuntimeSettings(f.env,'first');
   await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:state.revision,runtime:state.runtimes.find(r=>r.version==='3.16.0-revenue.preview.3').pin,allowPreview:true});
   const old=await generate(f,'Saved preview.3 package');retained.push({id:old.id,files:(await readPackage(f.env,'first',old.id)).files,zip:new Uint8Array(await(await packageDownload(f.env,'first',old.id)).arrayBuffer())});

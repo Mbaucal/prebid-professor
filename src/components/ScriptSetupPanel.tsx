@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { publicRuntimeHistory, runtimeLabel } from '../site-workspace/runtime-labels';
+import { publicRuntimeChoices, publicRuntimeHistory, runtimeLabel } from '../site-workspace/runtime-labels';
 import '../site-workspace/runtime.css';
 
 type Pin = { runtimeSha256: string; runtimeVersion: string; capabilities: readonly string[] };
-type Runtime = { version: string; pin: Pin };
+type Runtime = { version: string; channel?: string; pin: Pin };
 type State = {
   revision: string; selected: Pin | null; enablePrebid: boolean; validationIssue: string | null;
   prebid: { status: string; message: string };
@@ -14,6 +14,10 @@ type State = {
 
 function samePin(left: Pin | null, right: Pin | null) {
   return left === right || Boolean(left && right && left.runtimeSha256 === right.runtimeSha256 && left.runtimeVersion === right.runtimeVersion);
+}
+
+function pinKey(pin: Pin) {
+  return `${pin.runtimeVersion}:${pin.runtimeSha256}`;
 }
 
 function currentRuntime(state: State) {
@@ -61,6 +65,13 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
     return () => { active = false; };
   }, [url]);
   const current = state ? currentRuntime(state) : undefined;
+  const choices = state ? publicRuntimeChoices(state.runtimes) : [];
+  const savedRuntime = state?.selected && state.runtimes.find(item => samePin(item.pin, state.selected));
+  const savedEarlierBuild = Boolean(state?.selected && !choices.some(item => samePin(item.pin, state.selected)));
+  const savedOption = state?.selected && savedEarlierBuild
+    ? savedRuntime ?? { version: state.selected.runtimeVersion, pin: state.selected }
+    : undefined;
+  const versionOptions = savedOption ? [savedOption, ...choices] : choices;
   const selected = state?.runtimes.find(item => samePin(item.pin, selection));
   const unavailable = Boolean(state && !current);
   const isCurrent = Boolean(current && samePin(selection, current.pin));
@@ -72,7 +83,9 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
     if (!state || !selected || unavailable || busy) return;
     setBusy(true); setError(''); setMessage('');
     try {
-      await request({ action: 'setup', revision: state.revision, runtime: selected.pin, allowPreview: selected.version !== '3.16.0', enablePrebid: prebid });
+      // Older servers may omit channel even for numeric preview versions.
+      const allowPreview = selected.channel !== 'stable';
+      await request({ action: 'setup', revision: state.revision, runtime: selected.pin, allowPreview, enablePrebid: prebid });
       accept(await request());
       setMessage('Script setup saved. You can now generate your script.');
       await onChanged?.();
@@ -87,7 +100,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
   return <section className="site-runtime-panel script-setup" aria-label="Script setup">
     <span className="script-setup-kicker">1. Choose your script</span>
     <h2>Script setup</h2>
-    <p>Choose how ads are requested. Tessera uses your saved ad units and size maps.</p>
+    <p>Choose your script version and how ads are requested. Tessera uses your saved site settings.</p>
     {error ? <p role="alert" className="runtime-error">{error}</p> : null}
     {message ? <p role="status" className="runtime-message">{message}</p> : null}
     {!state && !error ? <p>Loading script setup…</p> : null}
@@ -103,10 +116,22 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
           <span><strong>GAM + Prebid</strong><span>Google ads plus your configured bidders. Requires a Prebid.js build.</span></span>
         </label>
       </div>
+      <label>Script version
+        <select aria-label="Script version" value={selection ? pinKey(selection) : ''} disabled={busy || stale || unavailable} onChange={event => {
+          const next = versionOptions.find(item => pinKey(item.pin) === event.target.value);
+          if (next) { setSelection(next.pin); setMessage(''); }
+        }}>
+          {!selection ? <option value="">Unavailable</option> : null}
+          {versionOptions.map(item => <option key={pinKey(item.pin)} value={pinKey(item.pin)} disabled={item === savedOption && !savedRuntime}>
+            {runtimeLabel(item.version)}{samePin(item.pin, current?.pin ?? null) ? ' · Current version' : item === savedOption ? savedRuntime ? ' · Saved earlier build' : ' · Saved version unavailable' : samePin(item.pin, state.selected) ? ' · Saved version' : ''}
+          </option>)}
+        </select>
+      </label>
       <div className="script-version-summary">
-        <span>Script version <strong>{selection ? runtimeLabel(selected?.version ?? selection.runtimeVersion) : 'Unavailable'}</strong>{!selection ? '' : !state.selected ? ' · Current version for new scripts' : changedVersion ? ' · Unsaved version change' : isCurrent ? ' · Current version' : earlierBuild ? ' · Saved earlier build' : ' · Saved version'}</span>
+        <span>Script version <strong>{selection ? runtimeLabel(selected?.version ?? selection.runtimeVersion) : 'Unavailable'}</strong>{!selection ? '' : !state.selected && isCurrent ? ' · Current version for new scripts' : changedVersion ? ' · Unsaved version change' : isCurrent ? ' · Current version' : earlierBuild ? ' · Saved earlier build' : ' · Saved version'}</span>
         {current && !isCurrent ? <button type="button" disabled={busy || stale} onClick={() => { setSelection(current.pin); setMessage(''); }}>Use current version</button> : null}
       </div>
+      <p className="script-prebid-note">Changing the script version keeps your ad units, size maps, bidders and other site settings. Save the setup, then generate a new package to apply it.</p>
       {selected?.pin.capabilities?.includes('consent-readiness') ? <p className="script-prebid-note">
         Waits for your CMP decision before requesting ads. If Prebid fails to load, Google ads are requested only after consent is resolved.
       </p> : null}
@@ -124,7 +149,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
         {onContinue && state.selected && !dirty && !state.validationIssue ? <button type="button" disabled={busy || unavailable} onClick={onContinue}>Continue to Generate</button> : null}
         {stale || error || unavailable ? <button type="button" disabled={busy} onClick={() => void reload()}>Reload script setup</button> : null}
       </div>
-      <p className="script-setup-footnote">Applies to your next generated script. Existing settings and published versions are kept.</p>
+      <p className="script-setup-footnote">Applies to your next generated script. Existing settings, generated packages and published versions are kept.</p>
       <details className="script-history"><summary>Version history</summary>
         {publicRuntimeHistory(state.history).map(item => <article className="runtime-release" key={item.codeSha256}><strong>{runtimeLabel(item.version)} · {item.date}</strong><p>{item.title}</p><ul>{item.changes.map(change => <li key={change}>{change}</li>)}</ul></article>)}
       </details>
