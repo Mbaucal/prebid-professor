@@ -43,7 +43,7 @@ test('old fixed intent and old pins remain fixed; new intent needs the explicit 
  const ctx=context();ctx.maps[0].map_json=JSON.stringify([{viewport:[0,0],sizes:[[300,250]]}]);
  assert.deepEqual(normalizeOutstream(value(fixed),ctx),value(fixed));
  const s=snapshot(),config=JSON.parse(s.config.config_json);config.builtinRuntimeSelection={runtime:{runtimeId:'tessera-revenue-preview-2',runtimeVersion:'3.16.0-revenue.preview.2'}};s.config.config_json=JSON.stringify(config);
- assert.throws(()=>normalizeSelected(value(responsive),outstreamContext(s)),/explicitly selected 3.16.0-revenue.preview.3/);
+ assert.throws(()=>normalizeSelected(value(responsive),outstreamContext(s)),/Script version 3\.16\.0.*Use current version/);
 });
 test('active viewport chooses concrete video size, preserves banner params and disables empty rows',()=>{
  const settings=buildOutstreamInput(snapshot()).units.Billboard;

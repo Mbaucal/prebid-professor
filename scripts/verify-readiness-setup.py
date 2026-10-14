@@ -2,14 +2,14 @@
 
 Includes the older 3.14 CMP/reporting regression. No hosted or paid traffic.
 """
-import base64,json,os,subprocess
+import base64,json,os,subprocess,re
 from pathlib import Path
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/readiness-setup-evidence';out.mkdir(parents=True,exist_ok=True)
 origin='https://main-revenue.fixture.invalid';endpoint='/api/publishers/main-site/builtin-site-settings'
-current='3.16.0-revenue.preview.3';checks=[]
+current='3.16.0';checks=[]
 with sync_playwright() as playwright:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
  executable=os.environ.get('CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROMIUM_PATH')
@@ -17,7 +17,7 @@ with sync_playwright() as playwright:
  browser=playwright.chromium.launch(**launch)
  try:
   for width in [1440,390]:
-   for scenario in ['new','legacy','readiness']:
+   for scenario in ['new','legacy','readiness','preview']:
     process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/main-revenue-browser-fixture.mjs','--script-setup='+scenario],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
     ready=json.loads(process.stdout.readline());assert ready['ready'] and ready['setupScenario']==scenario
     errors,requests,pending=[],[],[]
@@ -38,7 +38,9 @@ with sync_playwright() as playwright:
       if url.path==endpoint and request.method=='GET' and faults['invalidCurrent']:
        faults['invalidCurrent']=False;payload=json.loads(base64.b64decode(value['body']));payload.pop('currentRuntime')
        value['body']=base64.b64encode(json.dumps(payload).encode()).decode()
-     requests.append({'path':url.path,'method':request.method,'status':value['status'],'body':json.loads(request.post_data) if request.post_data else None})
+     body=json.loads(request.post_data) if request.post_data else None
+     if url.path==endpoint and request.method=='POST':assert body['allowPreview'] is (body['runtime']['runtimeVersion']!='3.16.0'),'Wrong explicit preview opt-in contract'
+     requests.append({'path':url.path,'method':request.method,'status':value['status'],'body':body})
      route.fulfill(status=value['status'],headers=value['headers'],body=base64.b64decode(value['body']))
     def route(request):
      url=urlsplit(request.request.url);assert url.netloc=='main-revenue.fixture.invalid','External request blocked'
@@ -59,6 +61,7 @@ with sync_playwright() as playwright:
      save.click();expect(panel.get_by_role('status')).to_contain_text('Script setup saved')
     def no_picker():
      expect(panel.locator('select')).to_have_count(0);expect(panel.get_by_role('button',name='Change version',exact=True)).to_have_count(0)
+     expect(panel).not_to_contain_text('revenue.preview');expect(panel).not_to_contain_text('tessera-revenue-preview')
     try:
      page.goto(origin+'/',wait_until='domcontentloaded')
      expect(page.get_by_role('navigation',name='Configuration groups',exact=True)).to_be_visible()
@@ -68,8 +71,10 @@ with sync_playwright() as playwright:
       expect(panel.get_by_role('alert')).to_contain_text('Synthetic setup unavailable');assert data()['selected'] is None;screen('load-error')
       reload.click();expect(summary).to_contain_text(current);expect(summary).to_contain_text('Current version for new scripts');expect(upgrade).to_have_count(0);no_picker()
       history=panel.locator('details.script-history');history.locator('summary').click()
-      expect(history.locator('article')).to_have_count(len(data()['history']));expect(history.get_by_role('button')).to_have_count(0);expect(history.locator('select,input')).to_have_count(0)
+      expect(history.locator('article')).to_have_count(len({re.sub(r'-(?:tessera|revenue)\.preview\.\d+$','',row['version']) for row in data()['history']}));expect(history.locator('article').filter(has_text='3.16.0')).to_have_count(1);expect(history).not_to_contain_text('revenue.preview');expect(history.get_by_role('button')).to_have_count(0);expect(history.locator('select,input')).to_have_count(0)
+      screen('public-history')
       history.locator('summary').click();gam.check()
+      expect(panel.get_by_text('Waits for your CMP decision',exact=False)).to_be_visible();expect(panel.get_by_text('No Prebid auction values are sent',exact=False)).to_be_visible()
       screen('offered-current')
       assert data()['selected'] is None,'Opening or editing setup silently selected a runtime'
       faults['failPost']=True;save.click();expect(panel.get_by_role('alert')).to_contain_text('Synthetic save unavailable');expect(save).to_be_disabled()
@@ -80,11 +85,11 @@ with sync_playwright() as playwright:
       page.reload();expect(prebid).to_be_checked();expect(summary).to_contain_text(current)
       faults['invalidCurrent']=True;page.reload();expect(panel.get_by_role('alert')).to_contain_text('The current script version is unavailable');expect(save).to_be_disabled();screen('invalid-current')
       reload.click();expect(panel.get_by_role('alert')).to_have_count(0);expect(summary).to_contain_text(current)
-     elif scenario=='legacy':
-      old_pin=data()['selected'];assert old_pin['runtimeVersion']=='3.10.0-tessera.preview.1'
-      expect(summary).to_contain_text('3.10.0');expect(summary).to_contain_text('Saved version');expect(upgrade).to_be_visible();no_picker()
+     elif scenario in ['legacy','preview']:
+      old_pin=data()['selected'];old_version='3.10.0-tessera.preview.1' if scenario=='legacy' else '3.16.0-revenue.preview.3';old_label='3.10.0' if scenario=='legacy' else '3.16.0';assert old_pin['runtimeVersion']==old_version
+      expect(summary).to_contain_text(old_label);expect(summary).to_contain_text('Saved version' if scenario=='legacy' else 'Saved earlier build');expect(upgrade).to_be_visible();no_picker()
       gam.check();saved();assert data()['selected']==old_pin and data()['enablePrebid'] is False
-      page.reload();expect(summary).to_contain_text('3.10.0');posts=len([r for r in requests if r['method']=='POST'])
+      page.reload();expect(summary).to_contain_text(old_label);posts=len([r for r in requests if r['method']=='POST'])
       screen('saved-legacy')
       upgrade.click();expect(summary).to_contain_text(current);expect(summary).to_contain_text('Unsaved version change')
       assert len([r for r in requests if r['method']=='POST'])==posts and data()['selected']==old_pin
@@ -92,7 +97,7 @@ with sync_playwright() as playwright:
       concurrent=data();data(body={'action':'setup','revision':concurrent['revision'],'runtime':old_pin,'allowPreview':True,'enablePrebid':True})
       save.click();expect(panel.get_by_role('alert')).to_contain_text('Site settings changed');expect(save).to_be_disabled();expect(upgrade).to_have_count(0)
       assert data()['selected']==old_pin and data()['enablePrebid'] is True;screen('stale-save')
-      reload.click();expect(summary).to_contain_text('3.10.0');expect(prebid).to_be_checked();upgrade.click();gam.check();saved()
+      reload.click();expect(summary).to_contain_text(old_label);expect(prebid).to_be_checked();upgrade.click();gam.check();saved()
       page.reload();expect(summary).to_contain_text(current);expect(upgrade).to_have_count(0);assert data()['selected']==data()['currentRuntime']['pin'];expect(gam).to_be_checked();screen('upgraded-saved')
      else:
       old_pin=data()['selected'];expect(summary).to_contain_text('3.14.0');expect(panel.get_by_text('Waits for your CMP decision',exact=False)).to_be_visible()

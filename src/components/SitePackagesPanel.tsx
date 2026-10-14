@@ -33,17 +33,18 @@ export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint
  }
  function deleteButton(r:Release){return <ReleaseDeleteButton publisherId={publisherId} release={{...r,displayName:r.notes||r.version||r.id,manifest:null}} disabled={busy} onError={text=>{setFailed(true);setMessage(text);}} onDeleted={async text=>{await reload();await onChanged?.();setFailed(false);setMessage(text);}}/>;}
  async function channel(id:string,action:string){if(!window.confirm(`${action==='staging'?'Stage':action==='rollback'?'Restore':'Publish'} this complete saved package?`))return;await request({action,releaseId:id,channelRevision:state!.channelRevision,acknowledge:true});await reload();await onChanged?.();setMessage('Release channel updated. Cloudflare site delivery is managed below.');}
+ const earlierBuild=/^3\.16\.0-(?:tessera|revenue)\.preview\.\d+$/.test(state?.runtime?.runtimeVersion??'');
  return <section className="site-runtime-panel" aria-label="Saved packages"><h2>Generate and releases</h2>
  {message?<p role="status" className={failed?'runtime-error':'runtime-message'}>{message}</p>:null}
  {!state?<p>Loading saved packages…</p>:<>
- <p>{state.site.name} · {state.runtime?runtimeLabel(state.runtime.runtimeVersion):'Setup needed'}</p>
+ <p>{state.site.name} · {state.runtime?runtimeLabel(state.runtime.runtimeVersion):'Setup needed'}{earlierBuild?' · Saved earlier build':''}</p>
  {(!state.ready && state.nextStep) || editingSetup ? <ScriptSetupPanel
    publisherId={publisherId} endpoint={settingsEndpoint}
    onOpenPrebid={onNavigate?()=>onNavigate('prebid'):undefined}
    onChanged={async()=>{await reload();setEditingSetup(false);await onChanged?.();}}
  /> : <>
    {state.error?<p role="alert" className="runtime-error">{state.error}</p>:null}
-   <div className="script-version-summary"><span><strong>{state.enablePrebid?'GAM + Prebid':'GAM / AdX only'}</strong> · {state.runtime?runtimeLabel(state.runtime.runtimeVersion):'Setup needed'}</span><button disabled={busy} onClick={()=>setEditingSetup(true)}>Change script setup</button></div>
+   <div className="script-version-summary"><span><strong>{state.enablePrebid?'GAM + Prebid':'GAM / AdX only'}</strong> · {state.runtime?runtimeLabel(state.runtime.runtimeVersion):'Setup needed'}{earlierBuild?' · Saved earlier build':''}</span><button disabled={busy} onClick={()=>setEditingSetup(true)}>Change script setup</button></div>
  </>}
  {editingSetup && state.ready ? <button disabled={busy} onClick={()=>setEditingSetup(false)}>Cancel setup changes</button> : null}
  <h3>2. Generate your script</h3>

@@ -54,7 +54,7 @@ with sync_playwright() as p:
    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),'Horizontal overflow'
    page.get_by_role('button',name='Save format settings',exact=True).scroll_into_view_if_needed()
    page.screenshot(path=str(out/f'formats-footer-{width}.png'),full_page=True)
-   page.get_by_role('button',name='Save format settings',exact=True).click();expect(page.get_by_text('Saved for the next revenue preview release. Existing scripts are unchanged.',exact=True)).to_be_visible()
+   page.get_by_role('button',name='Save format settings',exact=True).click();expect(page.get_by_text('Saved for the next generated script. Existing scripts are unchanged.',exact=True)).to_be_visible()
    assert writes[-1]['outstream']['units']['P1']['partner']['outstreamAU']=='fixture_renderer'
    page.get_by_role('button',name='Close format settings',exact=True).click();expect(page.get_by_role('button',name='Formats',exact=True)).to_be_focused()
    page.get_by_role('button',name='Formats',exact=True).click();expect(page.get_by_label('Ad format',exact=True)).to_have_value('banner-outstream');expect(page.get_by_label('Player width (px)',exact=True)).to_have_value('300')
@@ -62,7 +62,7 @@ with sync_playwright() as p:
    expect(page.get_by_role('alert')).to_contain_text('Settings changed');expect(page.get_by_role('alert')).to_be_in_viewport();expect(page.get_by_role('alert')).to_be_focused();expect(page.get_by_label('Ad format',exact=True)).to_have_value('outstream')
    page.screenshot(path=str(out/f'formats-error-{width}.png'),full_page=True)
    mode['fail']=False;page.get_by_role('button',name='Reload format settings',exact=True).click();expect(page.get_by_label('Ad format',exact=True)).to_have_value('banner-outstream')
-   page.get_by_label('Ad format',exact=True).select_option('banner');page.get_by_role('button',name='Save format settings',exact=True).click();expect(page.get_by_text('Saved for the next revenue preview release. Existing scripts are unchanged.',exact=True)).to_be_visible()
+   page.get_by_label('Ad format',exact=True).select_option('banner');page.get_by_role('button',name='Save format settings',exact=True).click();expect(page.get_by_text('Saved for the next generated script. Existing scripts are unchanged.',exact=True)).to_be_visible()
    assert writes[-1]['outstream']['units']['P1']=={'format':'banner'}
    assert not errors,errors
    checks.append({'width':width,'loadingFocusSaveReopenErrorRecoveryBannerRestore':True,'writesOnlyOutstreamSettings':len(writes)});page.close();print('PASS UI',width)

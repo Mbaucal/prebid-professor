@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { runtimeLabel } from '../site-workspace/runtime-labels';
+import { publicRuntimeHistory, runtimeLabel } from '../site-workspace/runtime-labels';
 import '../site-workspace/runtime.css';
 
-type Pin = { runtimeSha256: string; runtimeVersion: string };
+type Pin = { runtimeSha256: string; runtimeVersion: string; capabilities?: readonly string[] };
 type Runtime = { version: string; pin: Pin };
 type State = {
   revision: string; selected: Pin | null; enablePrebid: boolean; validationIssue: string | null;
@@ -64,6 +64,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
   const selected = state?.runtimes.find(item => samePin(item.pin, selection));
   const unavailable = Boolean(state && !current);
   const isCurrent = Boolean(current && samePin(selection, current.pin));
+  const earlierBuild = Boolean(selection && current && !isCurrent && runtimeLabel(selection.runtimeVersion) === runtimeLabel(current.version));
   const changedVersion = Boolean(state && !samePin(selection, state.selected));
   const blockedBuild = prebid && (state?.prebid.status === 'missing' || state?.prebid.status === 'ambiguous');
   const dirty = state && (prebid !== state.enablePrebid || changedVersion);
@@ -71,7 +72,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
     if (!state || !selected || unavailable || busy) return;
     setBusy(true); setError(''); setMessage('');
     try {
-      await request({ action: 'setup', revision: state.revision, runtime: selected.pin, allowPreview: true, enablePrebid: prebid });
+      await request({ action: 'setup', revision: state.revision, runtime: selected.pin, allowPreview: selected.version !== '3.16.0', enablePrebid: prebid });
       accept(await request());
       setMessage('Script setup saved. You can now generate your script.');
       await onChanged?.();
@@ -103,13 +104,13 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
         </label>
       </div>
       <div className="script-version-summary">
-        <span>Script version <strong>{selection ? runtimeLabel(selected?.version ?? selection.runtimeVersion) : 'Unavailable'}</strong>{!selection ? '' : !state.selected ? ' · Current version for new scripts' : changedVersion ? ' · Unsaved version change' : isCurrent ? ' · Current version' : ' · Saved version'}</span>
+        <span>Script version <strong>{selection ? runtimeLabel(selected?.version ?? selection.runtimeVersion) : 'Unavailable'}</strong>{!selection ? '' : !state.selected ? ' · Current version for new scripts' : changedVersion ? ' · Unsaved version change' : isCurrent ? ' · Current version' : earlierBuild ? ' · Saved earlier build' : ' · Saved version'}</span>
         {current && !isCurrent ? <button type="button" disabled={busy || stale} onClick={() => { setSelection(current.pin); setMessage(''); }}>Use current version</button> : null}
       </div>
-      {selected?.version.startsWith('3.14.0') ? <p className="script-prebid-note">
+      {selected?.pin.capabilities?.includes('consent-readiness') ? <p className="script-prebid-note">
         Waits for your CMP decision before requesting ads. If Prebid fails to load, Google ads are requested only after consent is resolved.
       </p> : null}
-      {selected?.version.startsWith('3.13.0') || selected?.version.startsWith('3.14.0') ? <p className="script-prebid-note">
+      {selected?.pin.capabilities?.includes('gam-request-reporting') ? <p className="script-prebid-note">
         GAM reporting: refresh count, bucket, interval and policy. {prebid ? 'Also includes current-auction bid counts and timeout.' : 'No Prebid auction values are sent in GAM / AdX only mode.'} Key definitions are included in the downloaded package. Enable key-value reporting in GAM to use them in reports.
       </p> : null}
       {prebid ? <div className={blockedBuild ? 'runtime-error' : 'script-prebid-note'}>
@@ -124,7 +125,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
       </div>
       <p className="script-setup-footnote">Applies to your next generated script. Existing settings and published versions are kept.</p>
       <details className="script-history"><summary>Version history</summary>
-        {state.history.map(item => <article className="runtime-release" key={item.codeSha256}><strong>{runtimeLabel(item.version)} · {item.date}</strong><p>{item.title}</p><ul>{item.changes.map(change => <li key={change}>{change}</li>)}</ul></article>)}
+        {publicRuntimeHistory(state.history).map(item => <article className="runtime-release" key={item.codeSha256}><strong>{runtimeLabel(item.version)} · {item.date}</strong><p>{item.title}</p><ul>{item.changes.map(change => <li key={change}>{change}</li>)}</ul></article>)}
       </details>
     </> : error ? <button disabled={busy} onClick={() => void reload()}>Reload script setup</button> : null}
   </section>;
