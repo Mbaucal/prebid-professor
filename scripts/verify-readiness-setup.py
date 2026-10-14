@@ -73,6 +73,7 @@ with sync_playwright() as playwright:
       history=panel.locator('details.script-history');history.locator('summary').click()
       expect(history.locator('article')).to_have_count(len({re.sub(r'-(?:tessera|revenue)\.preview\.\d+$','',row['version']) for row in data()['history']}));expect(history.locator('article').filter(has_text='3.16.0')).to_have_count(1);expect(history).not_to_contain_text('revenue.preview');expect(history.get_by_role('button')).to_have_count(0);expect(history.locator('select,input')).to_have_count(0)
       screen('public-history')
+      history.screenshot(path=str(out/f'new-public-history-details-{width}.png'))
       history.locator('summary').click();gam.check()
       expect(panel.get_by_text('Waits for your CMP decision',exact=False)).to_be_visible();expect(panel.get_by_text('No Prebid auction values are sent',exact=False)).to_be_visible()
       screen('offered-current')
