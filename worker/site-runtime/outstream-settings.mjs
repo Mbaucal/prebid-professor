@@ -1,7 +1,8 @@
 import {readPreviewSnapshot} from '../runtime/builtin-preview-service.mjs';
 import {digest} from '../runtime/preview-snapshot.mjs';
 import {commitSiteConfiguration} from './service.mjs';
-import {normalizeOutstream,hasEnabledOutstream,outstreamContext} from '../../shared/outstream/settings.mjs';
+import {normalizeOutstream,hasEnabledOutstream,outstreamContext} from '../../shared/outstream/selected-settings.mjs';
+import {playerSizeMaps,outstreamSizingReview} from '../../shared/outstream/settings-v3.mjs';
 export {hasEnabledOutstream};
 async function handle(request,env,siteId,actor) {
   const fail=(message,status=422)=>{throw Object.assign(Error(message),{status});};
@@ -28,7 +29,10 @@ async function handle(request,env,siteId,actor) {
   return Response.json({revision:await digest(saved),outstream:config.runtimeControls?.outstream??{schemaVersion:1,units:{}},
     prebidVersion:ctx.prebidVersion,modules:ctx.modules,bidders:ctx.bidders.map(b=>({bidder:b.bidder,enabled:b.enabled===1})),
     enablePrebid:ctx.enablePrebid===true,units:ctx.units.map(u=>({code:u.code,enabled:u.enabled===1})),
-    runtimeEligible:config.builtinRuntimeSelection?.runtime?.runtimeVersion==='3.16.0-revenue.preview.1',published:false},{headers:{'cache-control':'no-store'}});
+    formatReviewRequired:outstreamSizingReview(config.runtimeControls?.outstream,ctx),
+    responsiveSizing:ctx.responsiveSizing===true,
+    sizeMaps:Object.fromEntries(ctx.units.map(unit=>{try{return [unit.code,{maps:playerSizeMaps(unit.code,ctx)}];}catch(error){return [unit.code,{error:error.message}];}})),
+    runtimeEligible:['3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3'].includes(config.builtinRuntimeSelection?.runtime?.runtimeVersion),published:false},{headers:{'cache-control':'no-store'}});
 }
 
 export async function outstreamSettingsResponse(request,env,siteId,actor) {

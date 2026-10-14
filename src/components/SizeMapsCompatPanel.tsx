@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import BulkImportPanel from './BulkImportPanel';
+import OutstreamSettingsPanel from './OutstreamSettingsPanel';
 import type { AdUnit, SizeMap } from '../shared/types';
 
 type Props = {
@@ -135,12 +136,26 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
   const [name, setName] = useState('');
   const [rows, setRows] = useState<BreakpointForm[]>([emptyBreakpoint()]);
   const [formError, setFormError] = useState<string | null>(null);
+  const [formatReview, setFormatReview] = useState<Array<{code:string;message:string}>>([]);
+  const [formatReviewError, setFormatReviewError] = useState('');
+  const [reviewingFormat, setReviewingFormat] = useState<string | null>(null);
+  const reviewNotice = useRef<HTMLDivElement>(null);
+  const loadFormatReview = useCallback(async () => {
+    setFormatReviewError('');
+    try {
+      const response = await fetch(`/api/publishers/${encodeURIComponent(publisherId)}/outstream-settings`, {credentials:'same-origin',cache:'no-store'});
+      const result = await response.json() as {formatReviewRequired?:Array<{code:string;message:string}>;error?:string};
+      if(!response.ok)throw Error(result.error || 'Could not check Outstream size settings.');
+      setFormatReview(result.formatReviewRequired ?? []);
+    } catch (error) {setFormatReviewError(error instanceof Error ? error.message : 'Could not check Outstream size settings.');}
+  }, [publisherId]);
+  useEffect(() => {if(formatReview.length && !mode && !reviewingFormat){reviewNotice.current?.scrollIntoView({block:'center'});reviewNotice.current?.focus();}}, [formatReview,mode,reviewingFormat]);
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [maps, units] = await Promise.all([api.listSizeMaps(publisherId), api.listAdUnits(publisherId)]);
+      const [maps, units] = await Promise.all([api.listSizeMaps(publisherId), api.listAdUnits(publisherId), loadFormatReview()]);
       setSizeMaps(maps.map(asFlexible));
       setAdUnits(units);
       setError(null);
@@ -149,7 +164,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [publisherId]);
+  }, [publisherId,loadFormatReview]);
 
   useEffect(() => {
     void load();
@@ -278,6 +293,12 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
           <button className="button primary" onClick={openCreate} type="button">＋ New size map</button>
         </div>
 
+        {formatReview.length ? <div ref={reviewNotice} tabIndex={-1} role="status" className="size-map-compat-note" style={{display:'block'}}>
+          <strong>Review Outstream sizes before Generate</strong>
+          <p>The size map is saved. Review the video size choices for these positions before generating a new package.</p>
+          {formatReview.map(item=><div key={item.code}><p>{item.message}</p><button className="button secondary" type="button" onClick={()=>setReviewingFormat(item.code)}>Review formats for {item.code}</button></div>)}
+        </div> : null}
+        {formatReviewError ? <div role="alert" className="form-error"><p>{formatReviewError}</p><button className="button secondary" type="button" onClick={()=>void loadFormatReview()}>Retry Outstream review</button></div> : null}
         <div className="size-map-compat-note">
           <strong>Special values:</strong>
           <span><code>fluid</code> is valid for GPT/native inventory. Leave Sizes empty to create <code>[]</code> and disable the slot at that viewport.</span>
@@ -347,6 +368,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
         </div>
       </section>
 
+      {reviewingFormat ? <OutstreamSettingsPanel key={publisherId+reviewingFormat} publisherId={publisherId} code={reviewingFormat} onClose={()=>setReviewingFormat(null)} onOpenSizeMaps={()=>setReviewingFormat(null)} onSaved={()=>{void loadFormatReview();void onChanged?.();}}/> : null}
       {mode ? (
         <div className="modal-backdrop" onMouseDown={closeForm} role="presentation">
           <section className="modal-card size-map-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">

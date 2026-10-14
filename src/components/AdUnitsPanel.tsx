@@ -7,6 +7,7 @@ import PositionBidCachePanel,{fetchBidCacheSettings,type BidCachePayload} from '
 
 type Props = {
   publisherId: string;
+  onOpenSizeMaps?: () => void;
   onChanged?: () => void | Promise<void>;
 };
 
@@ -67,7 +68,7 @@ function formFromAdUnit(adUnit: AdUnit): FormState {
   };
 }
 
-export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
+export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }: Props) {
   const [outstreamUnit,setOutstreamUnit]=useState<string|null>(null);
   useEffect(()=>setOutstreamUnit(null),[publisherId]);
   const [runtimeUnit,setRuntimeUnit]=useState<string|null>(null);
@@ -287,7 +288,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
         </div>
       </section>
 
-      {outstreamUnit?<OutstreamSettingsPanel key={publisherId+outstreamUnit} publisherId={publisherId} code={outstreamUnit} onClose={()=>setOutstreamUnit(null)} onSaved={()=>void onChanged?.()}/>:null}
+      {outstreamUnit?<OutstreamSettingsPanel key={publisherId+outstreamUnit} publisherId={publisherId} code={outstreamUnit} onClose={()=>setOutstreamUnit(null)} onSaved={()=>void onChanged?.()} onOpenSizeMaps={onOpenSizeMaps?()=>{setOutstreamUnit(null);onOpenSizeMaps();}:undefined}/>:null}
       {runtimeUnit?<div className="modal-backdrop"><section className="modal-card ad-unit-modal" role="dialog" aria-modal="true" aria-label={`Display settings for ${runtimeUnit}`}><button className="icon-button" type="button" onClick={()=>setRuntimeUnit(null)} aria-label="Close display settings">×</button><SiteRuntimePanel key={publisherId+runtimeUnit} publisherId={publisherId} view="positions" unitCode={runtimeUnit} onChanged={onChanged}/></section></div>:null}
       {cacheError?<p className="form-error" role="alert">{cacheError} <button type="button" onClick={()=>setCacheAttempt(n=>n+1)}>Reload bid cache settings</button></p>:null}
       {cacheUnit?<PositionBidCachePanel key={publisherId+cacheUnit} publisherId={publisherId} code={cacheUnit} onClose={()=>setCacheUnit(null)} onSaved={next=>{setCacheSettings(next);void onChanged?.();}}/>:null}

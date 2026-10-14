@@ -85,7 +85,7 @@ export default function ConfigPanel({ publisherId, onChanged, onOpenPrebid, onGe
         ))}
       </nav>
 
-      {section === 'ad-units' ? <AdUnitsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'ad-units' ? <AdUnitsPanel onChanged={onChanged} publisherId={publisherId} onOpenSizeMaps={() => setSection('size-maps')} /> : null}
       {section === 'demand-mode' ? <PrebidModePanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'bidders' ? (
         <>

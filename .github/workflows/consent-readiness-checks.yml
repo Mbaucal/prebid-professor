@@ -9,6 +9,9 @@ on:
       - src/components/OutstreamSettingsPanel.tsx
       - src/components/BiddersPanel.tsx
       - src/components/AdUnitsPanel.tsx
+      - src/components/ConfigPanel.tsx
+      - src/components/SizeMapsCompatPanel.tsx
+      - src/download/**
       - src/components/ScriptSetupPanel.tsx
       - src/components/SiteRuntimePanel.tsx
       - src/site-workspace/**
@@ -50,10 +53,11 @@ jobs:
           node scripts/prepare-test-workspace.mjs
           node --experimental-strip-types scripts/prepare-readiness-browser-fixtures.mjs
           node --experimental-strip-types scripts/prepare-revenue-browser-fixtures.mjs
+          node scripts/prepare-outstream-responsive-fixtures.mjs
       - name: Consent, deadline, reporting and pending-slot regressions
         run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
       - name: Deals and Outstream contracts, routes and exact package integration
-        run: node --experimental-strip-types --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/revenue-integration.test.mjs tests/runtime/test-revenue-settings.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/revenue-integration.test.mjs tests/runtime/test-revenue-settings.test.mjs tests/runtime/outstream-position-scope.test.mjs tests/runtime/outstream-responsive.test.mjs tests/runtime/browser-package-download.test.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0
@@ -68,11 +72,16 @@ jobs:
         run: |
           python scripts/verify-deals-native.py
           python scripts/verify-outstream-native.py
+          python scripts/verify-outstream-responsive-native.py
       - name: Revenue settings on desktop and narrow screens
         run: |
           python scripts/verify-deals-ui.py
           python scripts/verify-outstream-ui.py
           python scripts/verify-revenue-workspace.py
+          python scripts/verify-revenue-download.py
+          python scripts/verify-outstream-responsive-ui.py
+          python scripts/verify-outstream-responsive-workspace.py
+          python scripts/verify-main-revenue-workspace.py
       - name: Save synthetic evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -92,3 +101,13 @@ jobs:
             .generated/outstream-ui-evidence/*.png
             .generated/revenue-workspace-evidence/*.json
             .generated/revenue-workspace-evidence/*.png
+            .generated/revenue-download-evidence/*.json
+            .generated/revenue-download-evidence/*.png
+            .generated/outstream-responsive-ui-evidence/*.json
+            .generated/outstream-responsive-ui-evidence/*.png
+            .generated/outstream-responsive-evidence/*.json
+            .generated/outstream-responsive-evidence/*.png
+            .generated/outstream-responsive-workspace-evidence/*.json
+            .generated/outstream-responsive-workspace-evidence/*.png
+            .generated/main-revenue-workspace-evidence/*.json
+            .generated/main-revenue-workspace-evidence/*.png

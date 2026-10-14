@@ -5,6 +5,9 @@ import {generatePackage,packageDownload,readPackage,changePackageChannel,channel
 import {verifyPackage,verifyPublicPackage,scriptsDelivery} from '../../scripts/pages-release-verification.mjs';
 import {sha256} from '../../worker/runtime/prebid-artifact-check.mjs';
 import {deploymentManifestPin} from '../../worker/deployment-manifest-pin.mjs';
+import {parsePrebidHeader} from '../../worker/runtime/prebid-artifact-check.mjs';
+import {outstreamSettingsResponse} from '../../worker/site-runtime/outstream-settings.mjs';
+import {unzipSync} from 'fflate';
 const fixtures=[];test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function fixture(){const f=workspaceStore();fixtures.push(f);f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
  f.sqlite.prepare("INSERT INTO publishers(id,name,domain,gam_path) VALUES('first','First','first.invalid','/123/first/')").run();
@@ -102,6 +105,46 @@ test('complete Prebid package keeps the uploaded file and passes Pages source ve
  const s=await siteRuntimeSettings(f.env,'first');await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});
  const release=await generate(f),p=await readPackage(f.env,'first',release.id);assert.deepEqual(p.files['prebid.js'],bytes);
  await verifyPackage(p.files,{site_id:'first',release_id:release.id,release_version:release.id});
+});
+
+test('MAIN revenue package keeps all twelve files through native index/download and rejects damaged or omitted deal plans',async()=>{
+ const f=await fixture();
+ const before=await generate(f,'Existing package before revenue');
+ const original=await readPackage(f.env,'first',before.id);
+ const bytes=new Uint8Array(readFileSync('vendor/prebid/tanjug-11.34.0/prebid.js'));
+ const header=parsePrebidHeader(new TextDecoder().decode(bytes));
+ const path='publishers/first/prebid-builds/revenue/prebid.js';
+ f.objects.set(path,{bytes,meta:{sha256:await sha256(bytes)}});
+ f.sqlite.prepare("INSERT INTO prebid_builds(id,publisher_id,version,file_key,modules_json,status) VALUES('revenue','first',?,?,?, 'current')").run(header.version,path,JSON.stringify(header.modules));
+ f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,enabled) VALUES('pubmatic','first','pubmatic','{\"publisherId\":\"fixture\",\"adSlot\":\"fixture\"}',1)").run();
+ const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);config.enablePrebid=true;
+ f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+ let state=await siteRuntimeSettings(f.env,'first');
+ const selected=state.runtimes.find(r=>r.version==='3.16.0-revenue.preview.3');assert(selected);
+ await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:state.revision,runtime:selected.pin,allowPreview:true});
+ const formatsRequest=body=>new Request('https://tessera.invalid/api/publishers/first/outstream-settings',{method:body?'POST':'GET',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+ const settings=await(await outstreamSettingsResponse(formatsRequest(),f.env,'first','tester')).json();
+ const outstream={schemaVersion:1,units:{Billboard:{format:'banner-outstream',playerSizing:'size-map',playerSizes:{},minDuration:5,maxDuration:30,playbackMethod:2,placement:3,plcmt:4,partner:{bidder:'pubmatic',adapter:'pubmatic',outstreamAU:'synthetic-renderer',activationConfirmed:true},cacheUrl:'https://prebid.adnxs.com/pbc/v1/cache'}}};
+ const saved=await outstreamSettingsResponse(formatsRequest({revision:settings.revision,outstream}),f.env,'first','tester');assert.equal(saved.status,200,await saved.text());
+ const release=await generate(f,'Responsive revenue MAIN package');
+ const p=await readPackage(f.env,'first',release.id);
+ assert.equal(p.manifest.runtime.runtimeVersion,'3.16.0-revenue.preview.3');assert.equal(Object.keys(p.files).length,12);
+ assert.match(new TextDecoder().decode(p.files['README.txt']),/Deals and Outstream/);
+ const index=await packageAssetResponse(new Request('https://tessera.invalid/artifact/index'),f.env,'first',release.id,null);
+ assert.equal(index.status,200);const descriptor=(await index.json()).descriptor;assert.equal(descriptor.siteId,'first');assert.equal(descriptor.files.length,12);
+ assert(descriptor.files.some(file=>file.name==='deals-plan.json'));
+ const download=await packageDownload(f.env,'first',release.id);assert.equal(download.status,200);
+ const downloaded=unzipSync(new Uint8Array(await download.arrayBuffer()));assert.deepEqual(Object.keys(downloaded).sort(),Object.keys(p.files).sort());
+ for(const [name,value] of Object.entries(p.files))assert.deepEqual(downloaded[name],value,name);
+ const dealKey=`publishers/first/releases/${release.id}/deals-plan.json`,stored=f.objects.get(dealKey),correct=stored.bytes;
+ stored.bytes=new TextEncoder().encode('damaged');await assert.rejects(readPackage(f.env,'first',release.id),/missing|checksum/);stored.bytes=correct;
+ const manifestKey=`publishers/first/releases/${release.id}/manifest.json`,manifestObject=f.objects.get(manifestKey),manifestBytes=manifestObject.bytes,manifestMeta=manifestObject.meta;
+ const changed=JSON.parse(new TextDecoder().decode(manifestBytes));delete changed.files['deals-plan.json'];
+ manifestObject.bytes=new TextEncoder().encode(JSON.stringify(changed));manifestObject.meta={...manifestMeta,sha256:await sha256(manifestObject.bytes)};
+ await assert.rejects(readPackage(f.env,'first',release.id),/Deals plan differs/);
+ manifestObject.bytes=manifestBytes;manifestObject.meta=manifestMeta;
+ assert.deepEqual((await readPackage(f.env,'first',before.id)).files,original.files);
+ assert.equal(f.sqlite.prepare('SELECT current_release_id FROM publishers').get().current_release_id,null);
 });
 
 test('download errors keep the JSON API contract',async()=>{
