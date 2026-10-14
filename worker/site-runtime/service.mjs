@@ -62,14 +62,14 @@ export async function siteRuntimeSettings(env,siteId){
  const saved=await read(env,siteId),config=JSON.parse(saved.config.config_json);
  // Operator recommendation only. Historical pins and catalog order remain
  // available to the checked readers; saving a new pin is still explicit.
- const current=runtimeCatalog.find(r=>r.id==='tessera-revenue-preview-3'&&r.version==='3.16.0-revenue.preview.3');
+ const current=runtimeCatalog.find(r=>r.id==='tessera-3.16.0'&&r.version==='3.16.0'&&r.channel==='stable');
  const pin=config.builtinRuntimeSelection?.runtime;let validationIssue=null,preview=null;
  try{if(pin)preview=previewInput(saved,descriptorForPin(pin),'20000101_000000');}catch(e){validationIssue=e.message;}
  const positions=readPositions(config,saved.units),sticky=config.runtimeControls?.sticky;
  const stickyId=Object.hasOwn(sticky??{},'bottomAdUnitId')?sticky.bottomAdUnitId:(saved.units.some(u=>u.code==='Sticky'&&u.enabled===1)?'Sticky':'');
  return {site:saved.site,revision:await digest(saved),selected:pin??null,validationIssue,enablePrebid:config.enablePrebid===true,...siteSetupState(saved),
   loadingSummary:loadingSummary(preview,saved.units,pin,validationIssue),
-  currentRuntime:current?{version:current.version,pin:pinRuntime(current,{allowPreview:true})}:null,
+  currentRuntime:current?{version:current.version,pin:pinRuntime(current)}:null,
   runtimes:runtimeCatalog.map(r=>({version:r.version,pin:pinRuntime(r,{allowPreview:true})})),history:describeRuntimeReleases(runtimeCatalog,pin),
   positions:saved.units.filter(u=>u.media_type==='banner'&&u.type!=='DRAFT').map(u=>({code:u.code,type:u.type,sizeMap:u.size_map_key,enabled:u.enabled===1,
    display:positions[u.code]?'takeover':stickyId===u.code?'sticky':'standard',overlay:positions[u.code]??null,

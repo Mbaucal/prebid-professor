@@ -1,18 +1,19 @@
 """Real MAIN configuration/release components -> authenticated MAIN Worker -> SQLite/R2.
 All traffic is synthetic and routed into the local stdin fixture; no hosted access.
 """
-import base64,hashlib,io,json,os,subprocess,zipfile
+import base64,hashlib,io,json,os,subprocess,zipfile,sys
 from pathlib import Path
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
-out=root/'.generated/main-revenue-workspace-evidence';out.mkdir(parents=True,exist_ok=True)
+stable='--stable' in sys.argv
+out=root/('.generated/stable-main-revenue-workspace-evidence' if stable else '.generated/main-revenue-workspace-evidence');out.mkdir(parents=True,exist_ok=True)
 checks=[]
 with sync_playwright() as p:
  browser=p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH'),headless=True,args=['--no-sandbox'])
  try:
   for width in [1440,390]:
-   process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/main-revenue-browser-fixture.mjs'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+   process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/main-revenue-browser-fixture.mjs']+(['--stable'] if stable else []),cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
    ready=json.loads(process.stdout.readline());assert ready['ready'] and ready['siteId']=='main-site'
    page=browser.new_page(viewport={'width':width,'height':900},accept_downloads=True);errors=[];requests=[]
    page.on('pageerror',lambda error:errors.append(str(error)))
@@ -33,7 +34,7 @@ with sync_playwright() as p:
     page.screenshot(path=str(out/f'{name}-{width}.png'),full_page=True)
    def save_formats():
     page.get_by_role('button',name='Save format settings',exact=True).click()
-    expect(page.get_by_text('Saved for the next revenue preview release. Existing scripts are unchanged.',exact=True)).to_be_visible()
+    expect(page.get_by_text('Saved for the next generated script. Existing scripts are unchanged.',exact=True)).to_be_visible()
    def edit_desktop(value):
     page.locator('.size-map-card').filter(has=page.get_by_role('heading',name='display',exact=True)).get_by_role('button',name='Edit',exact=True).click()
     page.get_by_role('dialog').get_by_label('Sizes',exact=True).nth(1).fill(value)
@@ -62,6 +63,14 @@ with sync_playwright() as p:
      response=send(base+'/builtin-releases/'+release_id+'/files/'+entry['name']);assert response['status']==200
      raw=base64.b64decode(response['body']);assert len(raw)==entry['byteSize'] and hashlib.sha256(raw).hexdigest()==entry['sha256'];original[entry['name']]=raw
     assert 'deals-plan.json' in original
+    expected_version='3.16.0' if stable else '3.16.0-revenue.preview.3'
+    manifest=json.loads(original['manifest.json']);config=json.loads(original['config.json'])
+    assert manifest['runtime']['runtimeVersion']==expected_version and config['runtime']==manifest['runtime']
+    if stable:
+     assert manifest['runtime']['runtimeId']=='tessera-3.16.0'
+     assert 'Runtime: 3.16.0\n' in original['README.txt'].decode()
+     for name in ['README.txt','ads.js','ads.min.js']:
+      assert 'revenue.preview' not in original[name].decode() and 'tessera-revenue-preview' not in original[name].decode(),name
     writes_before=len([r for r in requests if r['method']!='GET'])
     with page.expect_download() as download:page.get_by_role('button',name='Download saved ZIP',exact=True).click()
     assert download.value.failure() is None and download.value.suggested_filename==release_id+'.zip'

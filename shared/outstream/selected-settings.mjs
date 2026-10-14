@@ -7,7 +7,7 @@ export {hasEnabledOutstream} from './settings.mjs';
 export function outstreamContext(snapshot) {
   const pin=JSON.parse(snapshot.config.config_json).builtinRuntimeSelection?.runtime;
   const next=contextV2(snapshot);
-  if(pin?.runtimeId==='tessera-revenue-preview-3'&&pin.runtimeVersion==='3.16.0-revenue.preview.3')return {...next,positionScoped:true,responsiveSizing:true};
+  if((pin?.runtimeId==='tessera-3.16.0'&&pin.runtimeVersion==='3.16.0')||(pin?.runtimeId==='tessera-revenue-preview-3'&&pin.runtimeVersion==='3.16.0-revenue.preview.3'))return {...next,positionScoped:true,responsiveSizing:true};
   if(pin?.runtimeId==='tessera-revenue-preview-2'&&pin.runtimeVersion==='3.16.0-revenue.preview.2')return {...next,positionScoped:true};
   const previous=contextV1(snapshot);
   return {...previous,blockedReasons:next.blockedReasons,
@@ -15,10 +15,10 @@ export function outstreamContext(snapshot) {
 }
 export function normalizeOutstream(value,context,options) {
   if(context.responsiveSizing)return normalizeV3(value,context,options);
-  if(Object.values(value?.units??{}).some(raw=>raw?.playerSizing==='size-map'))throw Object.assign(Error('Responsive video sizes require explicitly selected 3.16.0-revenue.preview.3 in Script setup. Existing saved packages are unchanged.'),{status:422});
+  if(Object.values(value?.units??{}).some(raw=>raw?.playerSizing==='size-map'))throw Object.assign(Error('Responsive video sizes require Script version 3.16.0. Choose Use current version in Script setup and save. Existing saved packages are unchanged.'),{status:422});
   if(context.positionScoped)return normalizeV2(value,context);
   if(Object.entries(value?.units??{}).some(([code,raw])=>raw?.format!=='banner'&&context.upgradeCodes?.includes(code)))
-    throw Object.assign(Error('Select 3.16.0-revenue.preview.2 in Script setup to use Outstream on a Standard position with these site display settings. The saved script version has a broader Sticky/TakeOver restriction.'),{status:422});
+    throw Object.assign(Error('Choose Use current version in Script setup and save Script version 3.16.0 to use Outstream on a Standard position with these site display settings. The saved script version has a broader Sticky/TakeOver restriction.'),{status:422});
   // Report the actual display, while preserving the older generator's acceptance rules.
   normalizeV2(value,context);
   return normalizeV1(value,context);

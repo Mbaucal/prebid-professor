@@ -1,12 +1,12 @@
 """Generated preview.3 + pinned native Prebid/PUC, all network intercepted.
 The vendor bootstrap sink verifies dispatch, not real BlueBillywig player layout.
 """
-import os,json,hashlib,gzip
+import os,json,hashlib,gzip,sys
 from pathlib import Path
 from datetime import datetime,timezone
 from playwright.sync_api import sync_playwright
 root=Path(__file__).resolve().parent.parent
-out=root/'.generated/outstream-responsive-evidence';out.mkdir(parents=True,exist_ok=True)
+out=root/('.generated/stable-outstream-responsive-evidence' if '--stable' in sys.argv else '.generated/outstream-responsive-evidence');out.mkdir(parents=True,exist_ok=True)
 pbsource=(root/'vendor/prebid/tanjug-11.34.0/prebid.js').read_text()
 puc=(root/'tests/fixtures/prebid-universal-creative-1.17.2/video.js').read_text()
 assert hashlib.sha256(pbsource.encode()).hexdigest()=='384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b'

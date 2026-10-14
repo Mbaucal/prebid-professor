@@ -28,7 +28,7 @@ try:
     assert all(r['method']=='GET' for r in requests)
     page.get_by_role('radio',name='GAM / AdX only',exact=False).check()
     assert page.get_by_role('combobox',name='Script version',exact=True).count()==0
-    assert '3.16.0-revenue.preview.3' in page.locator('.script-version-summary').inner_text()
+    assert '3.16.0' in page.locator('.script-version-summary').inner_text()
     assert 'Current version for new scripts' in page.locator('.script-version-summary').inner_text()
     page.screenshot(path=str(out/'desktop-script-setup.png'),full_page=True)
     page.get_by_role('button',name='Save script setup',exact=True).click()
@@ -50,7 +50,7 @@ try:
     page.get_by_role('button',name='Cancel',exact=True).click()
     page.get_by_role('button',name='Script setup',exact=True).click()
     page.get_by_role('button',name='Continue to Generate',exact=True).wait_for()
-    assert '3.16.0-revenue.preview.3' in page.locator('.script-version-summary').inner_text()
+    assert '3.16.0' in page.locator('.script-version-summary').inner_text()
     assert 'Current version' in page.locator('.script-version-summary').inner_text()
     assert page.get_by_role('combobox',name='Script version',exact=True).count()==0
     assert page.get_by_role('button',name='Use current version',exact=True).count()==0
@@ -67,8 +67,8 @@ try:
     assert stored_download.value.suggested_filename.startswith('builtin-draft-')
     with zipfile.ZipFile(stored_download.value.path()) as archive:
         manifest=json.loads(archive.read('manifest.json'))
-        assert manifest['runtime']['runtimeVersion']=='3.16.0-revenue.preview.3'
-        assert manifest['runtime']['runtimeSha256']=='c257412bbcfa4e004a4e56dd320b4c043bdfc4b755bde7cdfa32b09ce4a189da'
+        assert manifest['runtime']['runtimeVersion']=='3.16.0'
+        assert manifest['runtime']['runtimeSha256']=='624afa6dff60db3f6da1f71ada6d89c55c513d1c72ddbe210b3b2246832c69b9'
         assert 'deals-plan.json' in archive.namelist()
         assert 'prebid.js' not in archive.namelist()
     assert page.get_by_role('link',name='TEST deployments',exact=True).get_attribute('href')=='/deployments'

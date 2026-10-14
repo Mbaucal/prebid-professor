@@ -1,13 +1,13 @@
 """Offline generated 3.14 + original vendored Prebid; every network route is intercepted.
 Run after prepare-readiness-browser-fixtures.mjs. No real GPT or paid ad traffic.
 """
-import json,os
+import json,os,sys
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse,parse_qs
 from playwright.sync_api import sync_playwright
 root=Path(__file__).resolve().parent.parent
-out=root/'.generated/readiness-evidence'
+out=root/('.generated/stable-readiness-evidence' if '--stable' in sys.argv else '.generated/readiness-evidence')
 mock=(root/'tests/runtime/mock-ad-libraries.js').read_text()
 pbsource=(root/'vendor/prebid/tanjug-11.34.0/prebid.js').read_text()
 adapter=(root/'tests/runtime/full-cache-browser-fixture.js').read_text()

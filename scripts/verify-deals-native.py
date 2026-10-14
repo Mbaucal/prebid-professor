@@ -1,13 +1,13 @@
 """Generated revenue wrapper + locked native Prebid, synthetic SSP/GAM decision.
 No real GAM line item, SSP deal activation or paid ad request is exercised.
 """
-import json,os
+import json,os,sys
 from datetime import datetime,timezone
 from pathlib import Path
 from urllib.parse import urlparse,parse_qs
 from playwright.sync_api import sync_playwright
 root=Path(__file__).resolve().parent.parent
-out=root/'.generated/revenue-evidence';out.mkdir(parents=True,exist_ok=True)
+out=root/('.generated/stable-revenue-evidence' if '--stable' in sys.argv else '.generated/revenue-evidence');out.mkdir(parents=True,exist_ok=True)
 mock=(root/'tests/runtime/mock-ad-libraries.js').read_text();a=mock.index('  window.pbjs = {');b=mock.index('  window.__tcfapi =',a);mock=mock[:a]+mock[b:]
 native=(root/'vendor/prebid/tanjug-11.34.0/prebid.js').read_text()
 hook=r'''

@@ -1,5 +1,35 @@
 [
   {
+    "id": "tessera-3.16.0",
+    "version": "3.16.0",
+    "codeSha256": "624afa6dff60db3f6da1f71ada6d89c55c513d1c72ddbe210b3b2246832c69b9",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot"
+    ],
+    "date": "2026-10-14",
+    "title": "Tessera 3.16.0",
+    "sourceManifest": "scripts/prepare-runtime316.mjs",
+    "sourceCommit": "1427580b80b28c19d5cc01e5f7e68b9cb18db74b",
+    "changes": [
+      "Independent Tessera runtime for GAM / AdX only or GAM + Prebid, with CMP decision readiness, responsive inventory, per-position lazy loading, TakeOver and GAM request reporting.",
+      "Native Send All Bids, Deals and responsive PubMatic Outstream. Video uses verified Prebid 11.34.0, supported VAST cache and a compatible selected creative on standard in-page positions, with automatic refresh disabled.",
+      "Exact stable source identity and Tessera package documentation. Previous runtime sources, saved selections and packages remain unchanged; upgrades require an explicit save."
+    ]
+  },
+  {
     "id": "tessera-revenue-preview-3",
     "version": "3.16.0-revenue.preview.3",
     "codeSha256": "c257412bbcfa4e004a4e56dd320b4c043bdfc4b755bde7cdfa32b09ce4a189da",

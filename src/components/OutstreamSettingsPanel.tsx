@@ -28,7 +28,7 @@ export default function OutstreamSettingsPanel({publisherId,code,onClose,onSaved
     const choices=Object.fromEntries((data?.sizeMaps?.[code]?.maps??[]).flatMap(map=>map.rows).filter(row=>!row.disabled&&row.sizes.length>1).map(row=>[row.key,draft.playerSizes?.[row.key]]).filter((entry):entry is [string,number[]]=>Array.isArray(entry[1])));
     return {...settings,playerSizes:choices};
   }
-  async function save(){if(!data)return;setBusy(true);setError('');setMessage('');try{const units={...data.outstream.units,[code]:draft.format==='banner'?{format:'banner' as const}:videoSettings()};const value=await request({revision:data.revision,outstream:{schemaVersion:1,units}});if(alive.current){accept(value);setMessage('Saved for the next revenue preview release. Existing scripts are unchanged.');onSaved();}}catch(e){if(alive.current)setError((e as Error).message);}finally{if(alive.current)setBusy(false);}}
+  async function save(){if(!data)return;setBusy(true);setError('');setMessage('');try{const units={...data.outstream.units,[code]:draft.format==='banner'?{format:'banner' as const}:videoSettings()};const value=await request({revision:data.revision,outstream:{schemaVersion:1,units}});if(alive.current){accept(value);setMessage('Saved for the next generated script. Existing scripts are unchanged.');onSaved();}}catch(e){if(alive.current)setError((e as Error).message);}finally{if(alive.current)setBusy(false);}}
   const video=draft.format!=='banner',available=data?.enablePrebid&&data.prebidVersion==='11.34.0'&&data.modules.includes('pubmaticBidAdapter')&&data.bidders.some(b=>b.bidder==='pubmatic'&&b.enabled);
   const responsive=draft.playerSizing==='size-map',sizeMap=data?.sizeMaps?.[code],maps=sizeMap?.maps??[];
   const rows=maps.flatMap(map=>map.rows),enabledRows=rows.filter(row=>!row.disabled);
@@ -50,7 +50,7 @@ export default function OutstreamSettingsPanel({publisherId,code,onClose,onSaved
       {data?<>
         <label><span>Ad format</span><select aria-label="Ad format" value={draft.format} disabled={busy} onChange={e=>update({format:e.target.value as Settings['format']})}><option value="banner">Banner</option><option value="outstream">Outstream</option><option value="banner-outstream">Banner + Outstream</option></select></label>
         <p>Banner sizes, size map and partner parameters remain saved when you change this choice.</p>
-        {!data.runtimeEligible?<p>Serving requires the explicitly selected 3.16 revenue preview runtime. Older generators cannot apply enabled video settings.</p>:null}
+        {!data.runtimeEligible?<p>To apply video settings, select Tessera 3.16.0 in Script setup and generate a new script.</p>:null}
         {video?<>
           {!available?<p className="form-error" role="alert">Enable PubMatic and the checked Prebid 11.34.0 build before saving video settings.</p>:null}
           {responsive?<>
@@ -65,7 +65,7 @@ export default function OutstreamSettingsPanel({publisherId,code,onClose,onSaved
             <label><span>Player width (px)</span><input type="number" min={144} max={1920} disabled={busy} value={draft.playerSize?.[0]??640} onChange={e=>update({playerSize:[Number(e.target.value),draft.playerSize?.[1]??360]})}/></label>
             <label><span>Player height (px)</span><input type="number" min={144} max={1920} disabled={busy} value={draft.playerSize?.[1]??360} onChange={e=>update({playerSize:[draft.playerSize?.[0]??640,Number(e.target.value)]})}/></label>
             <p>This fixed player size must appear in the size map at every enabled breakpoint.</p>
-            {data.responsiveSizing?<div className="form-options"><p>This position has a saved fixed player size. Use its size map to choose different video sizes for mobile and desktop. The change applies when you save.</p><button className="button secondary" disabled={busy} onClick={useSizeMap}>Use size map</button></div>:<p>To use different video sizes per breakpoint, select script version 3.16.0-revenue.preview.3 in Script setup.</p>}
+            {data.responsiveSizing?<div className="form-options"><p>This position has a saved fixed player size. Use its size map to choose different video sizes for mobile and desktop. The change applies when you save.</p><button className="button secondary" disabled={busy} onClick={useSizeMap}>Use size map</button></div>:<p>To use different video sizes per breakpoint, select Tessera 3.16.0 in Script setup.</p>}
           </>}
           <label><span>Minimum duration (seconds)</span><input type="number" min={1} max={120} disabled={busy} value={draft.minDuration??5} onChange={e=>update({minDuration:Number(e.target.value)})}/></label>
           <label><span>Maximum duration (seconds)</span><input type="number" min={1} max={120} disabled={busy} value={draft.maxDuration??30} onChange={e=>update({maxDuration:Number(e.target.value)})}/></label>
