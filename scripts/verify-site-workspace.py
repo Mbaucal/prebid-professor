@@ -1,5 +1,5 @@
 """Shared React controls + real Worker/SQLite, all browser requests intercepted."""
-import base64,json,subprocess
+import base64,json,subprocess,zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright,expect
@@ -36,6 +36,8 @@ try:
     assert all(r['method']=='GET' for r in requests)
     page.get_by_role('radio',name='GAM / AdX only',exact=False).check()
     assert page.get_by_role('combobox',name='Script version',exact=True).count()==0
+    expect(page.locator('.script-version-summary')).to_contain_text('3.16.0-revenue.preview.3')
+    expect(page.locator('.script-version-summary')).to_contain_text('Current version for new scripts')
     page.screenshot(path=str(out/'desktop-script-setup.png'),full_page=True)
     page.get_by_role('button',name='Save script setup',exact=True).click()
     page.get_by_role('button',name='Generate and save package',exact=True).wait_for(state='visible')
@@ -71,8 +73,11 @@ try:
 
     page.get_by_role('button',name='Script setup',exact=True).click()
     page.get_by_role('button',name='Continue to Generate',exact=True).wait_for()
-    page.get_by_role('button',name='Change version',exact=True).click()
-    assert page.get_by_label('Script version',exact=True).locator('option:checked').inner_text()=='3.10.0'
+    setup=page.get_by_role('region',name='Script setup',exact=True)
+    expect(setup.locator('.script-version-summary')).to_contain_text('3.16.0-revenue.preview.3')
+    expect(setup.get_by_role('button',name='Change version',exact=True)).to_have_count(0)
+    expect(setup.locator('select')).to_have_count(0)
+    expect(setup.get_by_role('button',name='Use current version',exact=True)).to_have_count(0)
     page.screenshot(path=str(out/'mobile-versions.png'),full_page=True)
     page.get_by_role('button',name='Generate and releases',exact=True).click()
     page.get_by_label('What changed?',exact=True).fill('Browser package check')
@@ -95,6 +100,12 @@ try:
     with page.expect_download() as stored_download:
         page.get_by_role('button',name='Download saved ZIP',exact=True).click()
     assert stored_download.value.suggested_filename.startswith('builtin-draft-')
+    with zipfile.ZipFile(stored_download.value.path()) as archive:
+        manifest=json.loads(archive.read('manifest.json'))
+        assert manifest['runtime']['runtimeVersion']=='3.16.0-revenue.preview.3'
+        assert manifest['runtime']['runtimeSha256']=='c257412bbcfa4e004a4e56dd320b4c043bdfc4b755bde7cdfa32b09ce4a189da'
+        assert 'deals-plan.json' in archive.namelist()
+        assert 'prebid.js' not in archive.namelist()
     assert page.get_by_role('link',name='TEST deployments',exact=True).get_attribute('href')=='/deployments'
     assert page.get_by_role('button',name='Publish package',exact=True).count()==0
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
