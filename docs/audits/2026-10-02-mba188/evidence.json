@@ -1,0 +1,208 @@
+{
+  "baseCommit": "68e738b61b46637db1001c194d52852302a43dbf",
+  "playwright": "1.55.0",
+  "chromium": "140.0.7339.16",
+  "checks": {
+    "originalBrowserMatrix": "34/34",
+    "focusedBoundaryControls": "8/8",
+    "existingReadinessNode": "12/12",
+    "strictTypecheck": "app + worker + tooling PASS",
+    "productionBuild": "PASS"
+  },
+  "generatedFixtureSha256": {
+    "prebid.js": "6081e723656b0620b13bc40ef86ff1dc9f8254510aeb22a61da2e018708c093e",
+    "prebid.min.js": "004e044594bf9a0dac16c2b4d5219d773cbf1086fcf43e4ffc89344a9c4c83f1"
+  },
+  "originalBrowserCases": [
+    "fast.js",
+    "slow-existing.js",
+    "slow-decision.js",
+    "reject.js",
+    "changed-decision.js",
+    "unknown.js",
+    "no-response.js",
+    "missing.js",
+    "late.js",
+    "late-after-fallback.js",
+    "late-bid.js",
+    "throw.js",
+    "empty.js",
+    "pre-auction.js",
+    "gam.js",
+    "sticky.js",
+    "legacy-lazy.js",
+    "fast.min.js",
+    "slow-existing.min.js",
+    "slow-decision.min.js",
+    "reject.min.js",
+    "changed-decision.min.js",
+    "unknown.min.js",
+    "no-response.min.js",
+    "missing.min.js",
+    "late.min.js",
+    "late-after-fallback.min.js",
+    "late-bid.min.js",
+    "throw.min.js",
+    "empty.min.js",
+    "pre-auction.min.js",
+    "gam.min.js",
+    "sticky.min.js",
+    "legacy-lazy.min.js"
+  ],
+  "controls": [
+    {
+      "case": "split-before.js",
+      "passed": true,
+      "observed": "expected rejection",
+      "assertion": "Pending decision allowed a request",
+      "billboardGateSeq": 3,
+      "dispatchHeldSeq": 4,
+      "billboardReleaseSeq": 5,
+      "baselineSeq": 6,
+      "cmpBeforeSeq": 8,
+      "cmpAfterSeq": 9,
+      "dispatchSeq": 7,
+      "dispatchConsent": {
+        "ready": true,
+        "phase": "decision-ready",
+        "epoch": 1
+      }
+    },
+    {
+      "case": "atomic-after.js",
+      "passed": true,
+      "observed": "full verifier passed",
+      "assertion": null,
+      "billboardGateSeq": 3,
+      "dispatchHeldSeq": 4,
+      "billboardReleaseSeq": 5,
+      "baselineSeq": 7,
+      "cmpBeforeSeq": 8,
+      "cmpAfterSeq": 9,
+      "dispatchSeq": 6,
+      "dispatchConsent": {
+        "ready": true,
+        "phase": "decision-ready",
+        "epoch": 1
+      }
+    },
+    {
+      "case": "pending-negative.js",
+      "passed": true,
+      "observed": "expected rejection",
+      "assertion": "Pending decision allowed a request",
+      "billboardGateSeq": 3,
+      "dispatchHeldSeq": 4,
+      "billboardReleaseSeq": 5,
+      "baselineSeq": 6,
+      "cmpBeforeSeq": 7,
+      "cmpAfterSeq": 8,
+      "dispatchSeq": 9,
+      "dispatchConsent": {
+        "ready": false,
+        "phase": "user-decision",
+        "epoch": 2
+      }
+    },
+    {
+      "case": "pending-sync-negative.js",
+      "passed": true,
+      "observed": "expected rejection",
+      "assertion": "Pending decision allowed a request",
+      "billboardGateSeq": 3,
+      "dispatchHeldSeq": 4,
+      "billboardReleaseSeq": 5,
+      "baselineSeq": 6,
+      "cmpBeforeSeq": 7,
+      "cmpAfterSeq": 9,
+      "dispatchSeq": 8,
+      "dispatchConsent": {
+        "ready": false,
+        "phase": "user-decision",
+        "epoch": 2
+      }
+    },
+    {
+      "case": "split-before.min.js",
+      "passed": true,
+      "observed": "expected rejection",
+      "assertion": "Pending decision allowed a request",
+      "billboardGateSeq": 3,
+      "dispatchHeldSeq": 4,
+      "billboardReleaseSeq": 5,
+      "baselineSeq": 6,
+      "cmpBeforeSeq": 8,
+      "cmpAfterSeq": 9,
+      "dispatchSeq": 7,
+      "dispatchConsent": {
+        "ready": true,
+        "phase": "decision-ready",
+        "epoch": 1
+      }
+    },
+    {
+      "case": "atomic-after.min.js",
+      "passed": true,
+      "observed": "full verifier passed",
+      "assertion": null,
+      "billboardGateSeq": 3,
+      "dispatchHeldSeq": 4,
+      "billboardReleaseSeq": 5,
+      "baselineSeq": 7,
+      "cmpBeforeSeq": 8,
+      "cmpAfterSeq": 9,
+      "dispatchSeq": 6,
+      "dispatchConsent": {
+        "ready": true,
+        "phase": "decision-ready",
+        "epoch": 1
+      }
+    },
+    {
+      "case": "pending-negative.min.js",
+      "passed": true,
+      "observed": "expected rejection",
+      "assertion": "Pending decision allowed a request",
+      "billboardGateSeq": 3,
+      "dispatchHeldSeq": 4,
+      "billboardReleaseSeq": 5,
+      "baselineSeq": 6,
+      "cmpBeforeSeq": 7,
+      "cmpAfterSeq": 8,
+      "dispatchSeq": 9,
+      "dispatchConsent": {
+        "ready": false,
+        "phase": "user-decision",
+        "epoch": 2
+      }
+    },
+    {
+      "case": "pending-sync-negative.min.js",
+      "passed": true,
+      "observed": "expected rejection",
+      "assertion": "Pending decision allowed a request",
+      "billboardGateSeq": 3,
+      "dispatchHeldSeq": 4,
+      "billboardReleaseSeq": 5,
+      "baselineSeq": 6,
+      "cmpBeforeSeq": 7,
+      "cmpAfterSeq": 9,
+      "dispatchSeq": 8,
+      "dispatchConsent": {
+        "ready": false,
+        "phase": "user-decision",
+        "epoch": 2
+      }
+    }
+  ],
+  "controlPreparation": "Billboard pre-auction continuation waits for actual ready TakeOver dispatch capture; one event-driven release; normal matrix has no control hook.",
+  "initialTestCarry": {
+    "controls": "7/8",
+    "failedCase": "atomic-after.js",
+    "error": "Control did not capture an actual ready TakeOver dispatch",
+    "observation": "Billboard auction started and Overlay auction completed; deferred TakeOver dispatch was not yet captured.",
+    "correction": "Replaced the fixed 20ms preparation step with an event barrier.",
+    "preservedReport": "boundary-before-barrier-results.json (PM TEST workspace)",
+    "interpretation": "Control preparation failure; no observed pending-consent runtime request in this failure."
+  }
+}

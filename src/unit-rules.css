@@ -213,6 +213,10 @@
   background: #ffffff;
 }
 
+.loading-summary-help { color: var(--muted, #64748b); font-size: 13px; line-height: 1.5; }
+.effective-rule-table .effective-loading-cell { min-width: 220px; max-width: 330px; white-space: normal; }
+.effective-rule-table .effective-loading-cell small { line-height: 1.45; margin-top: 4px; }
+
 .effective-rule-table {
   width: 100%;
   min-width: 900px;

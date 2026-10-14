@@ -1,0 +1,43 @@
+name: Dashboard layout checks
+on:
+  pull_request:
+    branches: [main, feature/isolated-runtime-workspace-v1]
+    paths: [scripts/**, tests/support/**, worker/test-workspace/**, src/**, scripts/prepare-layout-preview.mjs, scripts/layout-ui-fixture.mjs, scripts/verify-app-layout.py, scripts/verify-dashboard-navigation.py, scripts/verify-release-actions.py, scripts/verify-app-dialogs.py, scripts/verify-adstxt-versions.py, worker/ads-txt-versions.ts, worker/ads-txt-version-intents.ts, migrations/0007_ads_txt_versions.sql, migrations/0008_ads_txt_version_intents.sql, worker/app-ads-txt-versions.ts, worker/publishers.ts, tests/runtime/ads-txt-versions.test.mjs, tests/runtime/dashboard-navigation.test.mjs, worker/test-workspace/layout-preview.mjs, tools/**, package.json, package-lock.json, tsconfig*.json, vite.config.ts, wrangler.jsonc, ops/runtime-test/**, .github/workflows/app-layout.yml]
+permissions:
+  contents: read
+jobs:
+  layout:
+    runs-on: ubuntu-latest
+    env:
+      TESSERA_TEST_TOOLCHAIN: isolated
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.3
+      - run: node scripts/bootstrap-toolchain.mjs --profile test
+      - run: node scripts/isolated-toolchain.mjs typecheck --profile test
+      - run: node scripts/isolated-toolchain.mjs build --profile test && node scripts/prepare-layout-preview.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
+      - run: node --experimental-strip-types --test tests/runtime/dashboard-navigation.test.mjs
+      - run: python scripts/verify-app-layout.py
+      - run: python scripts/verify-dashboard-navigation.py --test-integrations
+      - run: python scripts/verify-release-actions.py
+      - run: python scripts/verify-app-dialogs.py
+      - run: node --experimental-strip-types --loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ads-txt-versions.test.mjs
+      - run: python scripts/verify-adstxt-versions.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: layout-evidence
+          path: |
+            .generated/layout-evidence/
+            .generated/navigation-evidence/
+            .generated/release-action-evidence/
+            .generated/app-dialog-evidence/
+            .generated/adstxt-version-evidence/
+          retention-days: 14

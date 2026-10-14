@@ -1,0 +1,5 @@
+.release-action-navigation [data-release-target]:focus,
+.release-action-navigation [data-release-retry]:focus {
+  outline: 2px solid #ef722d;
+  outline-offset: 3px;
+}

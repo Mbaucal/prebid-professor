@@ -1,0 +1,71 @@
+(node:12) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:
+--import 'data:text/javascript,import { register } from "node:module"; import { pathToFileURL } from "node:url"; register("./tests/support/ts-extension-loader.mjs", pathToFileURL("./")); register("./tests/support/ts-extension-loader.mjs", pathToFileURL("./"));'
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ real snapshot reader stays seven SELECTs by default (11.279117ms)
+✔ real optional snapshot adds only a scoped current-build SELECT (3.225791ms)
+✔ real generator adapter + snapshot reader verify artifact without writes (13.003118ms)
+✔ real GPT-only normalization skips the artifact entirely (7.603158ms)
+✔ real snapshot reader rejects a build change during R2 inspection (5.243552ms)
+(node:13) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:
+--import 'data:text/javascript,import { register } from "node:module"; import { pathToFileURL } from "node:url"; register("./tests/support/ts-extension-loader.mjs", pathToFileURL("./")); register("./tests/support/ts-extension-loader.mjs", pathToFileURL("./"));'
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ duplicate owns verified Prebid bytes and pin; generates; deleting its build keeps original usable (654.616535ms)
+✔ without a Prebid copy, retain script version and demand but clear foreign pin and require setup (12.263629ms)
+✔ GAM-only duplicate needs no Prebid file and generates with the same runtime (395.466342ms)
+✔ duplicate failure: corrupt source (8.139587ms)
+✔ duplicate failure: R2 put failure (10.549754ms)
+✔ duplicate failure: SQL rollback (9.733174ms)
+✔ duplicate failure: source change during copy (15.595387ms)
+✔ duplicate failure: lost SQL response (11.651981ms)
+✔ legacy shared object cannot be deleted from source (12.182403ms)
+✔ legacy shared object cannot be deleted from copy (12.680614ms)
+✔ concurrent activation prevents deletion of its R2 bytes and delete audit (10.176595ms)
+✔ unconfirmed delete transaction never removes R2 bytes (6.094013ms)
+(node:19) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:
+--import 'data:text/javascript,import { register } from "node:module"; import { pathToFileURL } from "node:url"; register("./tests/support/ts-extension-loader.mjs", pathToFileURL("./")); register("./tests/support/ts-extension-loader.mjs", pathToFileURL("./"));'
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ release setup explains the missing file before version selection and keeps saved packages accessible (637.892992ms)
+✔ built-in Generate stores original package; channels and rollback reuse its exact bytes (810.241485ms)
+✔ corrupt files and cross-site IDs cannot publish; concurrent channel changes are rejected (326.515865ms)
+✔ snapshot change during upload cannot register a release or audit (417.623649ms)
+✔ complete Prebid package keeps the uploaded file and passes Pages source verification (415.30539ms)
+✔ download errors keep the JSON API contract (7.571599ms)
+✔ compact delivery verifies one or two public scripts and keeps the source manifest pin (291.402324ms)
+✔ registered draft source URLs support preview jobs and read only the requested artifact (291.858285ms)
+✔ channel lookup failure preserves legacy fallback but immutable built-in failures remain closed (0.721999ms)
+✔ monitoring follows the immutable production package after publishing and rollback (663.754529ms)
+✔ main browser ZIP uses scoped artifact reads, preserves stored bytes and refuses wrong-site/corrupt packages (493.072116ms)
+✔ saved site-demand TakeOver cannot generate after Prebid is disabled, and can be explicitly repaired (12.92642ms)
+✔ first built-in publication retains the prior legacy release and its existing rollback route (363.005488ms)
+✔ main demand-mode API rejects TakeOver conflicts, synchronizes the exact Prebid pin and preserves concurrent settings (34.402288ms)
+✔ legacy demand-mode writer cannot discard a concurrently saved built-in runtime selection (6.051281ms)
+✔ main Prebid activation updates the runtime pin atomically and rejects corrupt or concurrent replacements (597.900598ms)
+✔ disabled TakeOver and unsupported page-type maps stop generation without changing saved files or settings (383.659037ms)
+(node:20) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:
+--import 'data:text/javascript,import { register } from "node:module"; import { pathToFileURL } from "node:url"; register("./tests/support/ts-extension-loader.mjs", pathToFileURL("./")); register("./tests/support/ts-extension-loader.mjs", pathToFileURL("./"));'
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ saved bottom Sticky with group loading cannot be renamed or deleted (86.007128ms)
+✔ concurrent position save prevents ad-unit mutation and its audit atomically (52.690485ms)
+✔ loading summary reads saved display overrides and never writes configuration (11.885289ms)
+✔ one explicit setup saves GAM-only mode and a built-in version without a template or Prebid file (603.821002ms)
+✔ setup keeps the exact selected version and rejects enabling Prebid without a build (19.508328ms)
+✔ unconfigured site uses the built-in workflow and gives one actionable missing-Prebid step without writing (21.281895ms)
+✔ configured legacy profiles retain their workflow; a saved built-in choice takes precedence (8.481935ms)
+✔ malformed saved runtime remains displayable and can be explicitly repaired (10.385443ms)
+✔ site API saves runtime, position and lazy choices then builds selected version without template or row loss (468.794598ms)
+✔ CAS compares all referenced rows and never saves or audits a stale snapshot (9.494336ms)
+✔ different site saves preserve every other site and unrelated configuration (9.814722ms)
+✔ new TEST routes retain auth, same origin, schema and site scope guards (15.686253ms)
+✔ runtime selection repairs an archived Prebid pin using the activated current file (44.871711ms)
+✔ disabled banner cannot save TakeOver (17.056345ms)
+✔ older runtime-control form preserves position-owned Sticky and rejects concurrent config changes (28.710613ms)
+✔ Prebid demand is rejected when the site has Prebid disabled (14.653175ms)
+✔ simple setup gives an actionable missing-inventory error without saving partial choices (7.488936ms)
+ℹ tests 51
+ℹ suites 0
+ℹ pass 51
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6305.219287

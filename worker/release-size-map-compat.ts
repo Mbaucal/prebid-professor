@@ -1,3 +1,4 @@
+import { cloneAuthenticatedRequest } from './http';
 import { apiError, json } from './http';
 import {
   generateRelease as generateBaseRelease,
@@ -257,7 +258,7 @@ export async function generateReleaseWithFlexibleSizes(
   env: ReleaseEnv,
   siteId: string,
 ): Promise<Response> {
-  const baseResponse = await generateBaseRelease(request.clone(), env, siteId);
+  const baseResponse = await generateBaseRelease(cloneAuthenticatedRequest(request), env, siteId);
   const responseText = await baseResponse.text();
   let payload: JsonRecord;
   try {

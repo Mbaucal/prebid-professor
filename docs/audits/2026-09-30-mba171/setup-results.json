@@ -1,0 +1,82 @@
+{
+  "passed": true,
+  "pageErrors": [],
+  "requests": [
+    {
+      "path": "/setup",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/setup.css",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/setup.js",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/publishers/test-site/builtin-site-settings",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/publishers/test-site/builtin-releases",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/publishers/test-site/builtin-site-settings",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/publishers/test-site/builtin-site-settings",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/publishers/test-site/builtin-site-settings",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "path": "/api/publishers/test-site/builtin-site-settings",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/setup",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/setup.css",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/setup.js",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/publishers/test-site/builtin-site-settings",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/publishers/test-site/builtin-releases",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/publishers/test-site/builtin-site-settings",
+      "method": "GET",
+      "status": 200
+    }
+  ],
+  "externalRequests": 0
+}

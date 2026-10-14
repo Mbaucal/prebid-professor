@@ -10,6 +10,7 @@ const SITE = /^[a-z0-9][a-z0-9-]{0,97}$/;
 const ID = /^builtin-draft-[a-f0-9]{64}$/;
 const REQUIRED = ['README.txt','ads.js','ads.min.js','config.json','div-export.csv',
   'implementation.html','manifest.json','min-height.css','sticky.css'];
+const hasDealsPlan = runtime => [['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version) && runtime?.capabilities?.includes('prebid-deals');
 const MAX_FILE = 8 * 1024 * 1024;
 const MAX_PACKAGE = 12 * 1024 * 1024;
 const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -41,7 +42,7 @@ export async function describeCandidate(siteId, candidate) {
   scope(siteId);
   requireThat(record(candidate?.files), 'A server-generated candidate is required.');
   const names = Object.keys(candidate.files).sort();
-  requireThat(same(names, REQUIRED) || same(names, [...REQUIRED, 'prebid.js'].sort()), 'Unexpected candidate file set.');
+  requireThat(same(names.filter(n=>n!=='prebid.js'&&n!=='gam-reporting.json'&&n!=='deals-plan.json'), REQUIRED), 'Unexpected candidate file set.');
   const files = Object.create(null); let byteSize = 0;
   for (const name of names) {
     const bytes = candidate.files[name];
@@ -61,6 +62,8 @@ export async function describeCandidate(siteId, candidate) {
     && /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(runtime.runtimeVersion)
     && HASH.test(runtime.runtimeSha256) && Array.isArray(runtime.capabilities), 'Missing exact runtime pin.');
   requireThat(config?.schemaVersion === 1 && config.siteId === siteId && same(config.runtime,runtime), 'Configuration/runtime identity mismatch.');
+  requireThat(Boolean(files['gam-reporting.json']) === runtime.capabilities.includes('gam-request-reporting'), 'Reporting contract differs from runtime capabilities.');
+  requireThat(Boolean(files['deals-plan.json']) === Boolean(hasDealsPlan(runtime)), 'Deals plan differs from exact runtime contract.');
   requireThat(typeof config.options?.enablePrebid === 'boolean', 'Explicit Prebid mode is required.');
   const enabled = config.options.enablePrebid;
   requireThat(Boolean(files['prebid.js']) === enabled && same(config.prebidBuild,manifest.prebidBuild), 'Prebid mode/pin mismatch.');
@@ -181,7 +184,7 @@ export async function saveDraftRelease(store, { siteId, candidate, actor, note =
 /** Does not regenerate anything or require that the historical runtime is current.
  * Read every stored byte and recheck its package identity before returning files.
  */
-export async function readDraftRelease(store, { siteId, releaseId }) {
+export async function readDraftReleaseIndex(store, { siteId, releaseId }) {
   scope(siteId,releaseId);
   const { db, bucket } = bindings(store);
   const row = await intent(db,siteId,releaseId);
@@ -191,8 +194,9 @@ export async function readDraftRelease(store, { siteId, releaseId }) {
     && descriptor.version === releaseId && descriptor.kind === 'builtin-stored-draft' && descriptor.completeRelease === false
     && HASH.test(descriptor.packageSha256) && record(descriptor.runtime), 'Stored draft identity mismatch.');
   const inventory = descriptor.files;
-  requireThat(Array.isArray(inventory) && inventory.length >= 9 && inventory.length <= 10, 'Invalid stored inventory.');
-  const expectedNames = descriptor.prebidBuild ? [...REQUIRED,'prebid.js'].sort() : REQUIRED;
+  requireThat(Array.isArray(inventory) && inventory.length >= 9 && inventory.length <= 12, 'Invalid stored inventory.');
+  const expectedNames = [...REQUIRED, ...(descriptor.prebidBuild ? ['prebid.js'] : []),
+    ...(descriptor.runtime?.capabilities?.includes('gam-request-reporting') ? ['gam-reporting.json'] : []), ...(hasDealsPlan(descriptor.runtime)?['deals-plan.json']:[])].sort();
   requireThat(same(inventory.map((e) => e.name),expectedNames), 'Invalid stored file names.');
   requireThat(inventory.every((entry) => Number.isSafeInteger(entry.byteSize) && entry.byteSize > 0
     && entry.byteSize <= MAX_FILE && HASH.test(entry.sha256)) && inventory.reduce((n,e) => n + e.byteSize,0) <= MAX_PACKAGE,
@@ -205,6 +209,25 @@ export async function readDraftRelease(store, { siteId, releaseId }) {
     config_key: fileKey(siteId,releaseId,'config.json'),manifest_key: fileKey(siteId,releaseId,'manifest.json'),
     notes: row.note,created_by: row.created_by,created_at: row.created_at,published_at: null };
   requireThat(registered && Object.entries(expected).every(([key,value]) => registered[key] === value), 'Registered draft metadata mismatch.');
+  requireThat(await sha256(encoder.encode(JSON.stringify({siteId,inventory}))) === descriptor.packageSha256
+    && releaseId === `builtin-draft-${descriptor.packageSha256}` && row.package_sha256 === descriptor.packageSha256,
+    'Stored package identity mismatch.');
+  return {draft:publicDraft(row,descriptor),descriptor};
+}
+export async function readDraftReleaseFile(store,{siteId,releaseId,name}) {
+  const index=await readDraftReleaseIndex(store,{siteId,releaseId});
+  if(!index)return null;
+  const entry=index.descriptor.files.find(e=>e.name===name);
+  requireThat(entry,'Unknown stored file.');
+  const {bucket}=bindings(store);
+  const bytes=await verifiedObject(bucket,fileKey(siteId,releaseId,name),entry);
+  requireThat(bytes,'Stored draft file is missing.');
+  return {bytes,entry};
+}
+export async function readDraftRelease(store,{siteId,releaseId}) {
+  const index=await readDraftReleaseIndex(store,{siteId,releaseId});
+  if(!index)return null;
+  const {bucket}=bindings(store),descriptor=index.descriptor,inventory=descriptor.files;
   const files = Object.create(null);
   for (const entry of inventory) {
     files[entry.name] = await verifiedObject(bucket,fileKey(siteId,releaseId,entry.name),entry);
@@ -212,5 +235,5 @@ export async function readDraftRelease(store, { siteId, releaseId }) {
   }
   const checked = await describeCandidate(siteId,{ files });
   requireThat(same(checked.descriptor,descriptor), 'Stored package identity mismatch.');
-  return { draft: publicDraft(row,descriptor), files: checked.files };
+  return { draft: index.draft, files: checked.files };
 }

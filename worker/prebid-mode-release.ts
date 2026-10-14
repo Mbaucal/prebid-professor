@@ -1,3 +1,4 @@
+import { cloneAuthenticatedRequest } from './http';
 import { apiError, json } from './http';
 import {
   generateReleaseWithFluidPreflight,
@@ -99,7 +100,7 @@ function wrapStatement(statement: D1PreparedStatement, query: string): D1Prepare
   return new Proxy(statement, {
     get(target, property) {
       if (property === 'bind') {
-        return (...values: D1Value[]) => wrapStatement(target.bind(...values), query);
+        return (...values: Parameters<D1PreparedStatement['bind']>) => wrapStatement(target.bind(...values), query);
       }
       if (property === 'first') {
         return async () => {
@@ -364,7 +365,7 @@ export async function generateReleaseForDemandMode(
     return apiError('The selected generator template does not contain ENABLE_PREBID.', 422);
   }
 
-  const base = await generateReleaseWithFluidPreflight(request.clone(), withAdxOnlyEnvironment(env), siteId);
+  const base = await generateReleaseWithFluidPreflight(cloneAuthenticatedRequest(request), withAdxOnlyEnvironment(env), siteId);
   const responseText = await base.text();
   let payload: JsonRecord;
   try {

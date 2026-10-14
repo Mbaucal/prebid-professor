@@ -1,0 +1,630 @@
+[
+  {
+    "case": "fast.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400688
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726400689
+      },
+      {
+        "id": "P1",
+        "at": 1790726404612
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "slow-existing.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726408686
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726408687
+      },
+      {
+        "id": "P1",
+        "at": 1790726412618
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "slow-decision.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726408700
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726408701
+      },
+      {
+        "id": "P1",
+        "at": 1790726412642
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "reject.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726408359
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726408381
+      },
+      {
+        "id": "P1",
+        "at": 1790726412597
+      }
+    ],
+    "auctions": 0,
+    "networkIntercepted": 1
+  },
+  {
+    "case": "changed-decision.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400663
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726404719
+      },
+      {
+        "id": "P1",
+        "at": 1790726409183
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "unknown.js",
+    "passed": true,
+    "blocked": true
+  },
+  {
+    "case": "no-response.js",
+    "passed": true,
+    "blocked": true
+  },
+  {
+    "case": "missing.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726403169
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726403170
+      },
+      {
+        "id": "P1",
+        "at": 1790726407400
+      }
+    ],
+    "auctions": 0,
+    "networkIntercepted": 0
+  },
+  {
+    "case": "late.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726402669
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726402670
+      },
+      {
+        "id": "P1",
+        "at": 1790726406666
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "late-after-fallback.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726403180
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726403196
+      },
+      {
+        "id": "P1",
+        "at": 1790726408600
+      }
+    ],
+    "auctions": 1,
+    "networkIntercepted": 2
+  },
+  {
+    "case": "late-bid.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400712
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726401012
+      },
+      {
+        "id": "P1",
+        "at": 1790726404835
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "throw.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400358
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726400660
+      },
+      {
+        "id": "P1",
+        "at": 1790726404604
+      }
+    ],
+    "auctions": 0,
+    "networkIntercepted": 1
+  },
+  {
+    "case": "empty.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400715
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726400716
+      },
+      {
+        "id": "P1",
+        "at": 1790726404643
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "pre-auction.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726406742
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726406743
+      },
+      {
+        "id": "P1",
+        "at": 1790726425988
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "gam.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400169
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726400171
+      },
+      {
+        "id": "P1",
+        "at": 1790726404366
+      }
+    ],
+    "auctions": 0,
+    "networkIntercepted": 0
+  },
+  {
+    "case": "sticky.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400669
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726400670
+      },
+      {
+        "id": "Sticky",
+        "at": 1790726400670
+      },
+      {
+        "id": "P1",
+        "at": 1790726404602
+      }
+    ],
+    "auctions": 4,
+    "networkIntercepted": 5
+  },
+  {
+    "case": "legacy-lazy.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726401292
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726401292
+      },
+      {
+        "id": "P1",
+        "at": 1790726404611
+      }
+    ],
+    "auctions": 4,
+    "networkIntercepted": 5
+  },
+  {
+    "case": "fast.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400640
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726400641
+      },
+      {
+        "id": "P1",
+        "at": 1790726404579
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "slow-existing.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726408635
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726408636
+      },
+      {
+        "id": "P1",
+        "at": 1790726412605
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "slow-decision.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726408640
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726408641
+      },
+      {
+        "id": "P1",
+        "at": 1790726412613
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "reject.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726408343
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726408365
+      },
+      {
+        "id": "P1",
+        "at": 1790726412575
+      }
+    ],
+    "auctions": 0,
+    "networkIntercepted": 1
+  },
+  {
+    "case": "changed-decision.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "Billboard",
+        "at": 1790726404665
+      },
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726404667
+      },
+      {
+        "id": "P1",
+        "at": 1790726409094
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "unknown.min.js",
+    "passed": true,
+    "blocked": true
+  },
+  {
+    "case": "no-response.min.js",
+    "passed": true,
+    "blocked": true
+  },
+  {
+    "case": "missing.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726403162
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726403163
+      },
+      {
+        "id": "P1",
+        "at": 1790726407395
+      }
+    ],
+    "auctions": 0,
+    "networkIntercepted": 0
+  },
+  {
+    "case": "late.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726402609
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726402610
+      },
+      {
+        "id": "P1",
+        "at": 1790726406547
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "late-after-fallback.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726403146
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726403147
+      },
+      {
+        "id": "P1",
+        "at": 1790726408593
+      }
+    ],
+    "auctions": 1,
+    "networkIntercepted": 2
+  },
+  {
+    "case": "late-bid.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400641
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726400941
+      },
+      {
+        "id": "P1",
+        "at": 1790726404748
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "throw.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400327
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726400628
+      },
+      {
+        "id": "P1",
+        "at": 1790726404526
+      }
+    ],
+    "auctions": 0,
+    "networkIntercepted": 1
+  },
+  {
+    "case": "empty.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400642
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726400643
+      },
+      {
+        "id": "P1",
+        "at": 1790726404572
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "pre-auction.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726406630
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726406631
+      },
+      {
+        "id": "P1",
+        "at": 1790726425862
+      }
+    ],
+    "auctions": 3,
+    "networkIntercepted": 4
+  },
+  {
+    "case": "gam.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400150
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726400152
+      },
+      {
+        "id": "P1",
+        "at": 1790726404358
+      }
+    ],
+    "auctions": 0,
+    "networkIntercepted": 0
+  },
+  {
+    "case": "sticky.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726400641
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726400642
+      },
+      {
+        "id": "Sticky",
+        "at": 1790726400642
+      },
+      {
+        "id": "P1",
+        "at": 1790726404556
+      }
+    ],
+    "auctions": 4,
+    "networkIntercepted": 5
+  },
+  {
+    "case": "legacy-lazy.min.js",
+    "passed": true,
+    "requests": [
+      {
+        "id": "adsx-takeover-slot",
+        "at": 1790726401276
+      },
+      {
+        "id": "Billboard",
+        "at": 1790726401276
+      },
+      {
+        "id": "P1",
+        "at": 1790726404606
+      }
+    ],
+    "auctions": 4,
+    "networkIntercepted": 5
+  }
+]

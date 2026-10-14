@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "scope": "Local compiled Worker HTTP generator; same captured timestamp and SQL snapshot supplied to original compiler. No deployment or live ad traffic.",
+  "workerSha256": "065e2b9907bdbc98b5631f393f6d52c30984c1d60ac4f9c071f540e6bb5b1e0c",
+  "runtimeSha256": "222569881b377c085f0b5d373523d092d64e2ac5dab05d421c3cc9f371078de9",
+  "buildTimestamp": "20261005_162417",
+  "zipSha256": "b123bb54cfcdf0a8ff24822760614c54b0d53662e8019c91c99d138539bf40c7",
+  "fileHashes": {
+    "ads.js": "59b80de7bea49c5b23d38362a105d5ce03a1b787246faecdee6b5a1408e053c5",
+    "ads.min.js": "2f7c93ba7e0d27050f8bbb67fc4004a9554f7dfc0b866094afc0bd0c0d4525fb",
+    "sticky.css": "6485c0d25d17fd5aec692d1c175fe3db7e2ea72551d58dde14c2ce3d5483ba3f",
+    "min-height.css": "961d3a9db4262ac4ce1035b27d12fc83a46156c3e8ebd298f9a4f48372cbc3c1",
+    "config.json": "1bb0b7bdd04580658f8c8fa89a3c2dc5842e8abdac85f60d53c14174ef6fbd20",
+    "implementation.html": "f16c3683a01d9e866aea095392ffd63f02860caceffaef3aaf879acf002a5c03",
+    "div-export.csv": "e0a0eb59f411a891dcb04d3894b248625a5b7f1e2749f4b8ffc7791c66ffce4b",
+    "README.txt": "2e4a87ad563f24be1a19a2607835c7e3af7804eb6728e5f7f9607dce6ceb8d65",
+    "manifest.json": "c0208c0d9c8edcbac5f5f4547abd00274a2f2d51a5d93b20baeecf02cbae494e"
+  },
+  "externalRequests": 0,
+  "authAndOriginEnforced": true
+}

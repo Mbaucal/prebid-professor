@@ -1,0 +1,27 @@
+{
+  "observedAt": "2026-09-14",
+  "scope": "Read-only public production CDN baseline before compact TEST delivery; no production mutation",
+  "files": [
+    {
+      "url": "https://tanjug.pages.dev/ads.js",
+      "byteSize": 122756,
+      "sha256": "62fc33c7ece330d87cc3e684b7f3eba5009e36d74e43cc426b636eb956a6d2c4"
+    },
+    {
+      "url": "https://tanjug.pages.dev/prebid.js",
+      "byteSize": 288642,
+      "sha256": "c201f89c622fe33ff5131741750b2d07cf089414b01b8b609efee3ad8ba745b4"
+    }
+  ],
+  "adsMatchesAcceptedMinifiedSource": true,
+  "livePrebidVersion": "10.10.0",
+  "acceptedTestPrebidVersion": "11.34.0",
+  "siteHtmlRead": "https://www.tanjug.rs/ returned HTTP 403; no live browser auction was attempted",
+  "productionProject": "tanjug",
+  "previewBranch": "tessera-test",
+  "intendedPublicNames": [
+    "ads.js",
+    "prebid.js"
+  ],
+  "headersPolicy": "public, max-age=0, must-revalidate"
+}
