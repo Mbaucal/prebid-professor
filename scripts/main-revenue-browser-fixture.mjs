@@ -7,6 +7,8 @@ import worker from '../worker/app-builtin-runtime-preview.ts';
 import {workspaceStore,TEST_EMAIL,TEST_PASSWORD,TEST_SECRET} from '../tests/support/test-workspace-store.mjs';
 import {parsePrebidHeader,sha256} from '../worker/runtime/prebid-artifact-check.mjs';
 const origin='https://main-revenue.fixture.invalid',siteId='main-site';
+const setupScenario=process.argv.find(arg=>arg.startsWith('--script-setup='))?.split('=')[1];
+if(setupScenario)assert(['new','legacy','readiness','current'].includes(setupScenario));
 const f=workspaceStore();
 f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
 f.sqlite.exec(readFileSync('migrations/0003_external_deployments.sql','utf8'));
@@ -32,7 +34,8 @@ assert.equal(login.status,303);const cookie=login.headers.get('set-cookie').spli
 async function api(path,body){const response=await worker.fetch(new Request(origin+path,{method:body?'POST':'GET',headers:{origin,cookie,...(body?{'content-type':'application/json'}:{})},body:body?JSON.stringify(body):undefined}),f.env,ctx);const value=await response.json();assert.equal(response.status,200,JSON.stringify(value));return value;}
 const selection=await api('/api/publishers/'+siteId+'/builtin-site-settings');
 const runtime=selection.runtimes.find(r=>r.version==='3.16.0-revenue.preview.3');assert(runtime,'MAIN catalog must include revenue preview.3');
-await api('/api/publishers/'+siteId+'/builtin-site-settings',{action:'version',revision:selection.revision,runtime:runtime.pin,allowPreview:true});
+const selectedRuntime=selection.runtimes.find(r=>r.version===(setupScenario==='legacy'?'3.10.0-tessera.preview.1':setupScenario==='readiness'?'3.14.0':runtime.version));
+if(setupScenario!=='new')await api('/api/publishers/'+siteId+'/builtin-site-settings',{action:'version',revision:selection.revision,runtime:selectedRuntime.pin,allowPreview:true});
 const bundle=await build({stdin:{contents:`
  import {createRoot} from 'react-dom/client';import {useState} from 'react';
  import ConfigPanel from './src/components/ConfigPanel';
@@ -40,9 +43,9 @@ const bundle=await build({stdin:{contents:`
  import './src/dashboard-styles';
  function Fixture(){const[view,setView]=useState('config');return <main style={{maxWidth:1200,margin:'24px auto',padding:16}}>
  <h1>Synthetic MAIN site</h1><nav className="runtime-actions"><button onClick={()=>setView('config')}>Configuration</button><button onClick={()=>setView('packages')}>Generate and releases</button></nav>
- {view==='config'?<ConfigPanel publisherId="main-site" initialSection="ad-units"/>:<SitePackagesPanel publisherId="main-site"/>}</main>}
+ {view==='config'?<ConfigPanel publisherId="main-site" initialSection="${setupScenario?'generator-profiles':'ad-units'}" onOpenPrebid={()=>setView('prebid')}/>:view==='prebid'?<h2>Prebid.js destination</h2>:<SitePackagesPanel publisherId="main-site"/>}</main>}
  createRoot(document.getElementById('root')).render(<Fixture/>);`,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,outdir:'.generated/main-revenue-fixture',jsx:'automatic',format:'iife',minify:true,define:{'process.env.NODE_ENV':'"production"'}});
-console.log(JSON.stringify({ready:true,siteId,runtimeVersion:runtime.version}));
+console.log(JSON.stringify({ready:true,siteId,runtimeVersion:runtime.version,setupScenario:setupScenario??null}));
 for await(const line of createInterface({input:process.stdin})){
  try{
   const input=JSON.parse(line);let response;

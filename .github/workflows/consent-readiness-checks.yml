@@ -66,7 +66,7 @@ jobs:
         run: python scripts/verify-consent-readiness.py
       - name: Atomic consent boundary and failure-detection controls
         run: python scripts/verify-consent-boundary.py
-      - name: Explicit version selection and desktop/mobile setup
+      - name: Single current version, explicit upgrades and desktop/mobile setup
         run: python scripts/verify-readiness-setup.py
       - name: Native Deals and selected Outstream creative; synthetic demand only
         run: |

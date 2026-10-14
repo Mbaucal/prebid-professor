@@ -3,12 +3,24 @@ import { runtimeLabel } from '../site-workspace/runtime-labels';
 import '../site-workspace/runtime.css';
 
 type Pin = { runtimeSha256: string; runtimeVersion: string };
+type Runtime = { version: string; pin: Pin };
 type State = {
   revision: string; selected: Pin | null; enablePrebid: boolean; validationIssue: string | null;
   prebid: { status: string; message: string };
-  runtimes: Array<{ version: string; pin: Pin }>;
+  currentRuntime?: Runtime | null;
+  runtimes: Runtime[];
   history: Array<{ version: string; title: string; date: string; codeSha256: string; changes: string[] }>;
 };
+
+function samePin(left: Pin | null, right: Pin | null) {
+  return left === right || Boolean(left && right && left.runtimeSha256 === right.runtimeSha256 && left.runtimeVersion === right.runtimeVersion);
+}
+
+function currentRuntime(state: State) {
+  const current = state.currentRuntime;
+  if (!current?.pin || !current.version || current.pin.runtimeVersion !== current.version) return undefined;
+  return state.runtimes.find(item => item.version === current.version && samePin(item.pin, current.pin));
+}
 type Props = {
   publisherId: string; endpoint?: string; onChanged?: () => void | Promise<void>;
   onOpenPrebid?: () => void; onContinue?: () => void;
@@ -22,8 +34,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
   const url = endpoint ?? `/api/publishers/${encodeURIComponent(publisherId)}/builtin-site-settings`;
   const [state, setState] = useState<State | null>(null);
   const [prebid, setPrebid] = useState(false);
-  const [version, setVersion] = useState('');
-  const [showVersions, setShowVersions] = useState(false);
+  const [selection, setSelection] = useState<Pin | null>(null);
   const [busy, setBusy] = useState(false);
   const [stale, setStale] = useState(false);
   const [error, setError] = useState('');
@@ -41,7 +52,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
   }
   function accept(next: State) {
     setState(next); setPrebid(next.enablePrebid);
-    setVersion(next.selected?.runtimeSha256 ?? next.runtimes[0]?.pin.runtimeSha256 ?? '');
+    setSelection(next.selected ?? currentRuntime(next)?.pin ?? null);
     setStale(false);
   }
   useEffect(() => {
@@ -49,11 +60,15 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
     request().then(next => { if (active) accept(next); }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
   }, [url]);
-  const selected = state?.runtimes.find(item => item.pin.runtimeSha256 === version);
+  const current = state ? currentRuntime(state) : undefined;
+  const selected = state?.runtimes.find(item => samePin(item.pin, selection));
+  const unavailable = Boolean(state && !current);
+  const isCurrent = Boolean(current && samePin(selection, current.pin));
+  const changedVersion = Boolean(state && !samePin(selection, state.selected));
   const blockedBuild = prebid && (state?.prebid.status === 'missing' || state?.prebid.status === 'ambiguous');
-  const dirty = state && (prebid !== state.enablePrebid || version !== state.selected?.runtimeSha256);
+  const dirty = state && (prebid !== state.enablePrebid || changedVersion);
   async function save() {
-    if (!state || !selected || busy) return;
+    if (!state || !selected || unavailable || busy) return;
     setBusy(true); setError(''); setMessage('');
     try {
       await request({ action: 'setup', revision: state.revision, runtime: selected.pin, allowPreview: true, enablePrebid: prebid });
@@ -76,6 +91,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
     {message ? <p role="status" className="runtime-message">{message}</p> : null}
     {!state && !error ? <p>Loading script setup…</p> : null}
     {state ? <>
+      {unavailable ? <p role="alert" className="runtime-error">The current script version is unavailable. Reload script setup before saving.</p> : null}
       <div className="script-mode-options" role="radiogroup" aria-label="Script mode">
         <label className={!prebid ? 'selected' : ''}>
           <input type="radio" name={`script-mode-${publisherId}`} checked={!prebid} disabled={busy} onChange={() => setPrebid(false)} />
@@ -87,13 +103,9 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
         </label>
       </div>
       <div className="script-version-summary">
-        <span>Script version <strong>{runtimeLabel(selected?.version ?? state.selected?.runtimeVersion ?? '')}</strong>{!state.selected && version === state.runtimes[0]?.pin.runtimeSha256 ? ' · Default for new scripts' : dirty ? ' · Unsaved selection' : ''}</span>
-        <button type="button" disabled={busy} aria-expanded={showVersions} onClick={() => setShowVersions(!showVersions)}>{showVersions ? 'Hide versions' : 'Change version'}</button>
+        <span>Script version <strong>{selection ? runtimeLabel(selected?.version ?? selection.runtimeVersion) : 'Unavailable'}</strong>{!selection ? '' : !state.selected ? ' · Current version for new scripts' : changedVersion ? ' · Unsaved version change' : isCurrent ? ' · Current version' : ' · Saved version'}</span>
+        {current && !isCurrent ? <button type="button" disabled={busy || stale} onClick={() => { setSelection(current.pin); setMessage(''); }}>Use current version</button> : null}
       </div>
-      {showVersions ? <label>Script version<select aria-label="Script version" value={version} disabled={busy} onChange={e => setVersion(e.target.value)}>
-        {!selected ? <option value={version}>Choose an available version</option> : null}
-        {state.runtimes.map(item => <option key={item.pin.runtimeSha256} value={item.pin.runtimeSha256}>{runtimeLabel(item.version)}</option>)}
-      </select></label> : null}
       {selected?.version.startsWith('3.14.0') ? <p className="script-prebid-note">
         Waits for your CMP decision before requesting ads. If Prebid fails to load, Google ads are requested only after consent is resolved.
       </p> : null}
@@ -106,9 +118,9 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
       </div> : null}
       {state.validationIssue && !dirty ? <p className="runtime-error">{state.validationIssue}</p> : null}
       <div className="runtime-actions">
-        <button type="button" disabled={busy || stale || !selected || blockedBuild || (!dirty && !state.validationIssue)} onClick={() => void save()}>{busy ? 'Saving…' : 'Save script setup'}</button>
-        {onContinue && state.selected && !dirty && !state.validationIssue ? <button type="button" disabled={busy} onClick={onContinue}>Continue to Generate</button> : null}
-        {stale || error ? <button type="button" disabled={busy} onClick={() => void reload()}>Reload script setup</button> : null}
+        <button type="button" disabled={busy || stale || unavailable || !selected || blockedBuild || (!dirty && !state.validationIssue)} onClick={() => void save()}>{busy ? 'Saving…' : 'Save script setup'}</button>
+        {onContinue && state.selected && !dirty && !state.validationIssue ? <button type="button" disabled={busy || unavailable} onClick={onContinue}>Continue to Generate</button> : null}
+        {stale || error || unavailable ? <button type="button" disabled={busy} onClick={() => void reload()}>Reload script setup</button> : null}
       </div>
       <p className="script-setup-footnote">Applies to your next generated script. Existing settings and published versions are kept.</p>
       <details className="script-history"><summary>Version history</summary>
