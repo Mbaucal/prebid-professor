@@ -50,7 +50,12 @@ def run(browser,version,name,extension,fn,width=1440,html=normal,native_mode=Non
   else:external.append(url);r.abort()
  page.route('**/*',route)
  try:
-  page.clock.install(time=datetime(2026,10,24,12,tzinfo=timezone.utc));page.goto('https://audit-fixture.invalid/fixture');page.evaluate('window.__testOptions={}')
+  page.clock.install(time=datetime(2026,10,24,12,tzinfo=timezone.utc))
+  # Native TTL checks advance time explicitly. Playwright 1.55's running clock
+  # can finish an older real-time tick after run_for and roll that advance back.
+  # Pause before navigation or application timers exist, not after an auction.
+  if native_mode:page.clock.pause_at(datetime(2026,10,24,12,0,1,tzinfo=timezone.utc))
+  page.goto('https://audit-fixture.invalid/fixture');page.evaluate('window.__testOptions={}')
   if native_mode:
    a=mock.index('  window.pbjs = {');b=mock.index('  window.__tcfapi =',a);page.add_script_tag(content=mock[:a]+mock[b:]);page.evaluate('(v)=>window.__scenario=v',native_mode);page.add_script_tag(content=native_hook);page.add_script_tag(content=native)
   else:page.add_script_tag(content=mock)
@@ -60,8 +65,9 @@ def run(browser,version,name,extension,fn,width=1440,html=normal,native_mode=Non
   assert not errors,errors;assert not external,external
   results.append({'version':version,'name':name,'file':extension,'width':width,'passed':True,'externalRequests':0,'details':details})
  except Exception as e:
-  evidence=page.evaluate('({sent:window.__sent,wire:window.__wire,adapter:window.__adapterInstalled,events:window.pbjs?.getEvents?.().slice(-10),readiness:window.__tesseraReadiness?.snapshot()})')
+  evidence=page.evaluate('({now:Date.now(),performanceNow:performance.now(),ttlTrace:window.__ttlTrace,sent:window.__sent,wire:window.__wire,adapter:window.__adapterInstalled,events:window.pbjs?.getEvents?.(),readiness:window.__tesseraReadiness?.snapshot()})')
   results.append({'version':version,'name':name,'file':extension,'width':width,'passed':False,'error':str(e),'errors':errors,'external':external,'evidence':evidence})
+  (out/'browser-results.json').write_text(json.dumps({'passed':False,'checks':results},indent=2)+'\n')
   print(json.dumps(results[-1])[:6000]);raise
  finally:page.close()
 def advance(page,ms):
@@ -96,16 +102,36 @@ def effective_refresh(version,per_unit=False):
  return check
 def ttl_check(version,scenario):
  def check(page):
+  def state(label):
+   return page.evaluate('''label=>{
+    const auctions=__auctions.filter(a=>a.codes.includes('P1')),auction=auctions[auctions.length-1];
+    const value={label,at:Date.now(),performanceNow:performance.now(),auctionId:auction?.id,
+      complete:!!auction&&pbjs.getEvents().some(e=>e.eventType==='auctionEnd'&&e.args.auctionId===auction.id),
+      bids:(pbjs.getBidResponses().P1?.bids||[]).map(b=>({bidder:b.bidder,adId:b.adId,auctionId:b.auctionId,responseTimestamp:b.responseTimestamp,ttl:b.ttl}))};
+    (window.__ttlTrace||(window.__ttlTrace=[])).push(value);return value;
+   }''',label)
   for _ in range(40):
    advance(page,100)
    if page.evaluate('__sent.some(s=>s.code==="Billboard")'):break
   page.evaluate('scrollTo(0,600)');page.wait_for_timeout(50)
   for _ in range(40):
    advance(page,100)
-   if page.evaluate('window.pbjs.getBidResponses().P1?.bids.length>0'):break
+   prefetched=state('prefetch')
+   if prefetched['complete'] and len(prefetched['bids'])==2:break
+  assert prefetched['complete'] and len(prefetched['bids'])==2,prefetched
+  assert {b['bidder'] for b in prefetched['bids']}=={'pubmatic','ix'},prefetched
+  assert all(b['auctionId']==prefetched['auctionId'] for b in prefetched['bids']),prefetched
   assert page.evaluate('__sent.filter(s=>s.code==="P1").length')==0,'Prefetch sent before display'
   assert page.locator('#P1').evaluate('el=>el.getBoundingClientRect().top>innerHeight'),'TTL fixture must remain outside the render viewport'
-  advance(page,200000 if scenario=='valid' else 45000 if scenario in ['mixed','secondary'] else 90000)
+  age_ms=200000 if scenario=='valid' else 45000 if scenario in ['mixed','secondary'] else 90000
+  before_age=state('before-aging');advance(page,age_ms);aged=state('after-aging')
+  assert aged['at']-before_age['at']==age_ms and aged['performanceNow']-before_age['performanceNow']==age_ms,{'before':before_age,'after':aged,'expectedElapsedMs':age_ms}
+  assert aged['bids']==prefetched['bids'],{'prefetched':prefetched,'aged':aged}
+  for bid in aged['bids']:
+   age=aged['at']-bid['responseTimestamp']
+   assert age>=age_ms,{'bid':bid,'ageMs':age,'expectedElapsedMs':age_ms}
+   should_expire=scenario=='expired' or scenario=='mixed' and bid['bidder']=='pubmatic' or scenario=='secondary' and bid['bidder']=='ix'
+   assert age>=bid['ttl']*1000 if should_expire else age<(bid['ttl']-1)*1000,{'bid':bid,'ageMs':age,'shouldExpire':should_expire}
   assert page.evaluate('__sent.filter(s=>s.code==="P1").length')==0,'TTL aging must not render the prefetched slot'
   page.evaluate('scrollTo(0,1200)');page.wait_for_timeout(50)
   for _ in range(60):
@@ -113,6 +139,7 @@ def ttl_check(version,scenario):
    if page.evaluate('__sent.some(s=>s.code==="P1")'):break
   data=page.evaluate('({sent:__sent.filter(s=>s.code==="P1"),wire:__wire.filter(s=>s.code==="P1"),auctions:__auctions.filter(a=>a.codes.includes("P1"))})')
   assert len(data['sent'])==1,data
+  assert data['sent'][0]['at']>=aged['at'],{'aged':aged,'dispatch':data['sent'][0]}
   target=data['sent'][0]['targeting'];scalar=lambda v:v[0] if isinstance(v,list) else v
   expected=2 if version=='fixed' and scenario=='expired' else 1
   assert len(data['auctions'])==expected,data
@@ -120,7 +147,7 @@ def ttl_check(version,scenario):
   if version=='fixed' and scenario=='secondary':assert scalar(target['hb_bidder'])=='pubmatic' and not target.get('hb_adid_ix') and not target.get('hb_pb_ix'),target
   if version=='before' and scenario=='secondary':assert target.get('hb_adid_ix') and target.get('hb_pb_ix'),target
   if version=='fixed' and scenario=='expired':assert target.get('hb_adid') and all(w['round']==2 for w in data['wire'][-2:]),data
-  return {'scenario':scenario,'auctionCount':len(data['auctions']),'bidder':scalar(target.get('hb_bidder')),'requestCount':len(data['sent'])}
+  return {'scenario':scenario,'auctionCount':len(data['auctions']),'bidder':scalar(target.get('hb_bidder')),'requestCount':len(data['sent']),'beforeAging':before_age,'afterAging':aged,'dispatch':data['sent'][0]}
  return check
 with sync_playwright() as p:
  browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox'])
