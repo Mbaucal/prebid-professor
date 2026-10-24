@@ -22,7 +22,7 @@ jobs:
       - run: node scripts/isolated-toolchain.mjs typecheck --profile test
       - run: node scripts/check-runtime-release-history.mjs HEAD^
       - run: node scripts/isolated-toolchain.mjs prepare --profile test && node scripts/prepare-test-workspace.mjs
-      - run: node --experimental-strip-types --test tests/gam/*.test.mjs
+      - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/gam/*.test.mjs
       - name: Compile and exercise real Worker OAuth and SOAP fetches with local Google responses
         run: |
           node scripts/isolated-toolchain.mjs test-dry-run --profile test

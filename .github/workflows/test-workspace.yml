@@ -57,15 +57,15 @@ jobs:
           node ../../scripts/prepare-builtin-runtime.mjs
           node ../../scripts/prepare-test-workspace.mjs
       - name: Keep named baseline output independent of the caller working directory
-        run: node --experimental-strip-types --test tests/runtime/test-build-cwd.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/test-build-cwd.test.mjs
       - name: Exercise real authentication, compiler, SQL schema and stored-draft HTTP workflow
-        run: node --experimental-strip-types --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs tests/runtime/standalone-bundle-guard.test.mjs tests/runtime/site-runtime-selection.test.mjs tests/runtime/runtime-selection-cas.test.mjs tests/runtime/test-runtime-selection.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/tanjug-pilot.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/test-workspace.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/draft-release-store.test.mjs tests/runtime/test-workspace-activation.test.mjs tests/runtime/standalone-bundle-guard.test.mjs tests/runtime/site-runtime-selection.test.mjs tests/runtime/runtime-selection-cas.test.mjs tests/runtime/test-runtime-selection.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/tanjug-pilot.test.mjs
       - name: Verify read-only ads version UI routes
-        run: node --experimental-strip-types --test tests/runtime/ads-versions-preview.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ads-versions-preview.test.mjs
       - name: Named-script TEST setup and isolated method boundaries
-        run: node --experimental-strip-types --test tests/runtime/named-script-test.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/named-script-test.test.mjs
       - name: Verify current-auction reporting and GAM-only omission
-        run: node --experimental-strip-types --test tests/runtime/gam-reporting.test.mjs tests/runtime/demand-signals.test.mjs tests/runtime/identity-inspect.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/test-prebid-plan.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/gam-reporting.test.mjs tests/runtime/demand-signals.test.mjs tests/runtime/identity-inspect.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/test-prebid-plan.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying
         working-directory: ops/runtime-test
         env:

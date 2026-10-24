@@ -56,15 +56,9 @@ def exercise(page):
         page.locator('#runtime').select_option('0')
         check('Preview opt-in is not preselected',page.locator('#save-selection').is_disabled())
         page.locator('#allow-preview').check()
-        expect(page.locator('#release-history article')).to_have_count(11)
-        expect(page.locator('#release-history article[data-available="true"]')).to_have_count(10)
-        expect(page.locator('#release-history article').first).to_contain_text('3.16.0')
-        expect(page.locator('#release-history article').first).not_to_contain_text('revenue.preview')
-        expect(page.locator('#release-history article').nth(1)).to_contain_text('3.16.0-revenue.preview.3')
-        expect(page.locator('#release-history article').nth(2)).to_contain_text('3.16.0-revenue.preview.2')
-        expect(page.locator('#release-history article').nth(3)).to_contain_text('3.16.0-revenue.preview.1')
-        expect(page.locator('#release-history article').nth(4)).to_contain_text('3.14.0')
-        expect(page.locator('#release-history article')).to_contain_text(['3.16.0','3.16.0-revenue.preview.3','3.16.0-revenue.preview.2','3.16.0-revenue.preview.1','3.14.0','3.15.0','3.13.0','3.11.0-tessera.preview.1','3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.9.1-tessera.preview.2'])
+        expect(page.locator('#release-history article')).to_have_count(12)
+        expect(page.locator('#release-history article[data-available="true"]')).to_have_count(11)
+        expect(page.locator('#release-history article > h3')).to_contain_text(['3.16.1','3.16.0','3.16.0-revenue.preview.3','3.16.0-revenue.preview.2','3.16.0-revenue.preview.1','3.14.0','3.15.0','3.13.0','3.11.0-tessera.preview.1','3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.9.1-tessera.preview.2'])
         expect(page.locator('#release-history article[data-available="false"]')).to_contain_text('Earlier build')
         writes_before=sum(event['method']=='POST' for event in http_events)
         page.get_by_role('link',name='View version history').click()
@@ -214,7 +208,7 @@ with tempfile.TemporaryDirectory(prefix='tessera-local-tls-') as tls:
     subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1',
                     '-keyout',str(key),'-out',str(cert),'-subj','/CN='+hostname,
                     '-addext','subjectAltName=DNS:'+hostname],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-    process=subprocess.Popen(['node','--experimental-strip-types','scripts/test-workspace-server.mjs',str(key),str(cert)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/test-workspace-server.mjs',str(key),str(cert)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
         for attempt in range(80):
             if process.poll() is not None:

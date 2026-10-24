@@ -43,3 +43,9 @@ B10/B12 describe older consent behavior already superseded in 3.14+. E1 (waiting
 - Independent review found and corrected a candidate defect for late data-attribute wrappers. Separate actual-send gap checks caught an interaction between consent delay and refresh timing.
 - Existing runtime sources, release history entries, saved pins and packages remain immutable. Only explicit selection of 3.16.1 changes newly generated runtime behavior. Admin saves are explicit; no publisher settings are migrated in the background.
 - Local, CI, TEST deployment and production promotion are distinct gates. Delivery status and exact commits are recorded in the PR and Linear checkpoint.
+
+## CI follow-up
+
+The first published candidates reproduced the new runtime evidence on GitHub (84/84 native runtime, 34/34 independent TakeOver/viewport, consent negative controls and the actual-send CMP gap). CI also exposed stale version/count expectations and native TypeScript fixture launchers missing the repository's existing extension loader. These checks are corrected without relaxing the production boundaries or runtime assertions. Success-status browser assertions are scoped to their actual completion message so the legitimate User ID advisory remains visible.
+
+Active build tools separately acquired upstream advisories: Vite 8.2.0 and Undici 7.29.1. Only the active `tools` manifest/lock were patched to Vite 8.2.4 and Undici 7.30.1. A fresh locked install, zero active-scope audit findings, strict typechecks/build and historical output parity passed. The frozen root compiler lock, sources and receipts were not changed. Local default-dev-server verification is blocked by the container's `uv_interface_addresses` restriction; GitHub must confirm that check. This is distinct from the generated publisher runtime, and does not change the findings table.
