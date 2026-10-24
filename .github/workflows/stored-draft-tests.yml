@@ -25,7 +25,7 @@ jobs:
       - name: Real SQLite storage and injected R2 fault tests
         run: node --experimental-strip-types --test tests/runtime/draft-release-store.test.mjs
       - name: Exercise actual legacy promotion, deletion and dispatch guards
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/stored-draft-legacy-guards.test.mjs tests/runtime/stored-draft-cdn.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/stored-draft-legacy-guards.test.mjs tests/runtime/stored-draft-cdn.test.mjs tests/runtime/legacy-release-audit.test.mjs tests/runtime/legacy-placeholder-css.test.mjs tests/runtime/legacy-sticky-portal.test.mjs
       - name: Save fixtures, restart in a separate process and read exact packages
         run: |
           node --experimental-strip-types scripts/verify-artifact-candidate.mjs .generated/artifact-candidate-verification
@@ -42,6 +42,10 @@ jobs:
           python scripts/verify-runtime-browser.py .generated/stored-draft-verification/reopened/readable
           python scripts/verify-runtime-browser.py .generated/stored-draft-verification/reopened/minified
           python scripts/verify-artifact-layout.py .generated/stored-draft-verification/reopened
+      - name: Verify imported Sticky close portal with synthetic ads on desktop and mobile
+        run: |
+          node --experimental-strip-types scripts/prepare-legacy-portal-fixtures.mjs
+          python scripts/verify-legacy-portal.py
       - name: Keep synthetic evidence, not local databases or publisher credentials
         if: always()
         uses: actions/upload-artifact@v4
@@ -55,5 +59,7 @@ jobs:
             .generated/stored-draft-verification/reopened/readable/*.png
             .generated/stored-draft-verification/reopened/minified/*-report.json
             .generated/stored-draft-verification/reopened/minified/*.png
+            .generated/legacy-portal-evidence/*.json
+            .generated/legacy-portal-evidence/*.png
           retention-days: 14
           if-no-files-found: error

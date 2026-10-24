@@ -197,7 +197,7 @@ async function normalizeRuleConfig(
   const normalized: UnitRuleConfig = {};
 
   if (Object.prototype.hasOwnProperty.call(value, 'timeout') && value.timeout !== null) {
-    normalized.timeout = integerInRange(value.timeout, 'timeout', 100, 60000);
+    normalized.timeout = integerInRange(value.timeout, 'timeout', 100, 30000);
   }
 
   if (Object.prototype.hasOwnProperty.call(value, 'lazy') && value.lazy !== null) {
@@ -264,47 +264,62 @@ async function fetchUnitRule(
   return row ? toUnitRule(row) : null;
 }
 
-async function syncConfigJson(db: D1Database, siteId: string): Promise<void> {
-  const [configRow, rulesResult] = await Promise.all([
-    db
-      .prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1')
-      .bind(siteId)
-      .first<{ config_json: string }>(),
-    db
-      .prepare(
-        `SELECT rule_key, rule_json
-         FROM unit_rules
-         WHERE publisher_id = ?
-         ORDER BY rule_key COLLATE NOCASE`,
-      )
-      .bind(siteId)
-      .all<{ rule_key: string; rule_json: string }>(),
+class RuleConflict extends Error {}
+
+async function prepareConfigUpdate(
+  db: D1Database, siteId: string, ruleKey: string, rule: UnitRuleConfig | null,
+  now: string, sourceRuleKey?: string,
+): Promise<D1PreparedStatement> {
+  const [row, rows] = await Promise.all([
+    db.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1').bind(siteId).first<{config_json: string}>(),
+    db.prepare('SELECT rule_key, rule_json FROM unit_rules WHERE publisher_id = ? ORDER BY rule_key COLLATE NOCASE').bind(siteId).all<{rule_key: string; rule_json: string}>(),
   ]);
-
-  if (!configRow) return;
-
-  let config: JsonRecord = {};
-  try {
-    const parsed = JSON.parse(configRow.config_json) as unknown;
-    if (isRecord(parsed)) config = parsed;
-  } catch {
-    config = {};
-  }
-
+  if (!row) throw new Error('Publisher config was not found.');
+  const config = JSON.parse(row.config_json) as JsonRecord;
   const unitRules: Record<string, UnitRuleConfig> = {};
-  (rulesResult.results ?? []).forEach((row) => {
-    unitRules[row.rule_key] = parseStoredRule(row.rule_json);
-  });
+  for (const item of rows.results ?? []) unitRules[item.rule_key] = parseStoredRule(item.rule_json);
+  const previous = unitRules[ruleKey];
+  if (rule) unitRules[ruleKey] = rule; else delete unitRules[ruleKey];
   config.unitRules = unitRules;
+  const advanced = isRecord(config.advancedUnitRules) ? config.advancedUnitRules : {};
+  const current = isRecord(advanced[ruleKey]) ? { ...advanced[ruleKey] } : null;
+  if (!rule && current) {
+    // Display/loading owns lazy, so deleting refresh must retain that setting.
+    for (const field of ['timeout', 'cmpTimeout', 'refresh']) delete current[field];
+  } else if (sourceRuleKey && isRecord(advanced[sourceRuleKey])) {
+    const source = advanced[sourceRuleKey];
+    const target = current ?? {};
+    for (const field of ['timeout', 'cmpTimeout', 'refresh']) {
+      if (Object.hasOwn(source, field)) target[field] = structuredClone(source[field]);
+      else delete target[field];
+    }
+    advanced[ruleKey] = target;
+  } else if (rule && current) {
+    if (rule.timeout === undefined) delete current.timeout; else current.timeout = rule.timeout;
+    const refresh = isRecord(current.refresh) ? current.refresh : {};
+    const schedule = isRecord(refresh.schedule) ? refresh.schedule : null;
+    const nonFixed = schedule && schedule.mode !== 'fixed';
+    if (nonFixed && JSON.stringify(previous?.refresh) !== JSON.stringify(rule.refresh)) {
+      throw new RuleConflict('This rule uses a sequence or percentage refresh schedule. Open Refresh schedules to change its refresh settings.');
+    }
+    if (!nonFixed) {
+      if (!rule.refresh) delete current.refresh;
+      else current.refresh = {
+        ...refresh, ...rule.refresh,
+        ...(schedule ? {schedule: {...schedule, fixedSeconds: rule.refresh.minSeconds, firstSeconds: rule.refresh.minSeconds, nextSeconds: rule.refresh.minSeconds}} : {}),
+      };
+    }
+  }
+  if (current) {
+    if (Object.keys(current).length) advanced[ruleKey] = current; else delete advanced[ruleKey];
+  }
+  if (isRecord(config.advancedUnitRules) || Object.keys(advanced).length) config.advancedUnitRules = advanced;
+  return db.prepare('UPDATE publisher_configs SET config_json = ?, config_hash = NULL, updated_at = ? WHERE publisher_id = ? AND config_json = ?')
+    .bind(JSON.stringify(config), now, siteId, row.config_json);
+}
 
-  await db
-    .prepare(
-      `UPDATE publisher_configs
-       SET config_json = ?, updated_at = ?
-       WHERE publisher_id = ?`,
-    )
-    .bind(JSON.stringify(config), new Date().toISOString(), siteId)
-    .run();
+function ruleSaveConflict(results: D1Result[]): boolean {
+  return results[0]?.meta.changes !== 1;
 }
 
 export async function listUnitRules(env: DatabaseEnv, siteId: string): Promise<Response> {
@@ -360,18 +375,20 @@ export async function createUnitRule(
   const actor = getActor(request);
 
   try {
-    await env.DB.batch([
+    const configUpdate = await prepareConfigUpdate(env.DB, siteId, ruleKey, rule, now);
+    const results = await env.DB.batch([
+      configUpdate,
       env.DB
         .prepare(
           `INSERT INTO unit_rules (id, publisher_id, rule_key, rule_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+           SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
         )
         .bind(id, siteId, ruleKey, JSON.stringify(rule), now, now),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'unit_rule.created', ?, 'unit_rule', ?, ?, ?)`,
+           ) SELECT ?, ?, 'unit_rule.created', ?, 'unit_rule', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
@@ -382,8 +399,9 @@ export async function createUnitRule(
           now,
         ),
     ]);
-    await syncConfigJson(env.DB, siteId);
+    if (ruleSaveConflict(results)) return apiError('Unit rules changed in another tab. Reload before saving.', 409);
   } catch (error) {
+    if (error instanceof RuleConflict) return apiError(error.message, 409);
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);
     return apiError(
@@ -424,19 +442,21 @@ export async function updateUnitRule(
   const actor = getActor(request);
 
   try {
-    await env.DB.batch([
+    const configUpdate = await prepareConfigUpdate(env.DB, siteId, current.ruleKey, rule, now);
+    const results = await env.DB.batch([
+      configUpdate,
       env.DB
         .prepare(
           `UPDATE unit_rules
            SET rule_json = ?, updated_at = ?
-           WHERE publisher_id = ? AND id = ?`,
+           WHERE publisher_id = ? AND id = ? AND changes() = 1`,
         )
         .bind(JSON.stringify(rule), now, siteId, unitRuleId),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'unit_rule.updated', ?, 'unit_rule', ?, ?, ?)`,
+           ) SELECT ?, ?, 'unit_rule.updated', ?, 'unit_rule', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
@@ -447,8 +467,9 @@ export async function updateUnitRule(
           now,
         ),
     ]);
-    await syncConfigJson(env.DB, siteId);
+    if (ruleSaveConflict(results)) return apiError('Unit rules changed in another tab. Reload before saving.', 409);
   } catch (error) {
+    if (error instanceof RuleConflict) return apiError(error.message, 409);
     return apiError(
       'Unit rule update failed.',
       500,
@@ -488,18 +509,20 @@ export async function duplicateUnitRule(
   const actor = getActor(request);
 
   try {
-    await env.DB.batch([
+    const configUpdate = await prepareConfigUpdate(env.DB, siteId, ruleKey, source.rule, now, source.ruleKey);
+    const results = await env.DB.batch([
+      configUpdate,
       env.DB
         .prepare(
           `INSERT INTO unit_rules (id, publisher_id, rule_key, rule_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+           SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
         )
         .bind(id, siteId, ruleKey, JSON.stringify(source.rule), now, now),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'unit_rule.duplicated', ?, 'unit_rule', ?, ?, ?)`,
+           ) SELECT ?, ?, 'unit_rule.duplicated', ?, 'unit_rule', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
@@ -510,8 +533,9 @@ export async function duplicateUnitRule(
           now,
         ),
     ]);
-    await syncConfigJson(env.DB, siteId);
+    if (ruleSaveConflict(results)) return apiError('Unit rules changed in another tab. Reload before saving.', 409);
   } catch (error) {
+    if (error instanceof RuleConflict) return apiError(error.message, 409);
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);
     return apiError(
@@ -538,13 +562,15 @@ export async function deleteUnitRule(
   const now = new Date().toISOString();
 
   try {
-    await env.DB.batch([
-      env.DB.prepare('DELETE FROM unit_rules WHERE publisher_id = ? AND id = ?').bind(siteId, unitRuleId),
+    const configUpdate = await prepareConfigUpdate(env.DB, siteId, current.ruleKey, null, now);
+    const results = await env.DB.batch([
+      configUpdate,
+      env.DB.prepare('DELETE FROM unit_rules WHERE publisher_id = ? AND id = ? AND changes() = 1').bind(siteId, unitRuleId),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'unit_rule.deleted', ?, 'unit_rule', ?, ?, ?)`,
+           ) SELECT ?, ?, 'unit_rule.deleted', ?, 'unit_rule', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
@@ -555,8 +581,9 @@ export async function deleteUnitRule(
           now,
         ),
     ]);
-    await syncConfigJson(env.DB, siteId);
+    if (ruleSaveConflict(results)) return apiError('Unit rules changed in another tab. Reload before saving.', 409);
   } catch (error) {
+    if (error instanceof RuleConflict) return apiError(error.message, 409);
     return apiError(
       'Unit rule could not be deleted.',
       500,

@@ -55,7 +55,7 @@ for(const change of ['asset','headers','extra','symlink','run','commit','input',
 test('public verification proof refuses a different run without network',async()=>{const f=await fixture();try{assertPreparedEvidence(f.input,f.proof,f.env);assert.throws(()=>assertPreparedEvidence(f.input,f.proof,{...f.env,GITHUB_RUN_ID:'999'}));}finally{await f.close();}});
 test('clean checkout validate has no install dependency (original hypothesis disproved)',async()=>{
  const f=await fixture();try{
- for(const path of ['scripts/pages-release-verification.mjs','worker/runtime/draft-release-store.mjs','worker/runtime/prebid-artifact-check.mjs']){await mkdir(resolve(f.root,path,'..'),{recursive:true});await cp(resolve(repo,path),resolve(f.root,path));}
+ for(const path of ['scripts/pages-release-verification.mjs','worker/runtime/draft-release-store.mjs','worker/runtime/prebid-artifact-check.mjs','worker/runtime/prebid-artifact-check-v2.mjs']){await mkdir(resolve(f.root,path,'..'),{recursive:true});await cp(resolve(repo,path),resolve(f.root,path));}
  const r=spawnSync(process.execPath,['scripts/pages-release-verification.mjs','validate'],{cwd:f.root,env:f.env,encoding:'utf8'});assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/identity.*validated/);
  }finally{await f.close();}
 });
@@ -80,7 +80,7 @@ globalThis.fetch=async(url,options)=>{appendFileSync(process.env.REQUEST_LOG,url
 });
 for(const profile of ['test','main'])test('MAIN CLI accepts main and refuses foreign profile: '+profile,async()=>{
  const f=await fixture({profile});try{
-  for(const path of ['scripts/pages-toolchain.mjs','scripts/verify-toolchain-isolation.mjs','scripts/pages-release-verification.mjs','worker/runtime/draft-release-store.mjs','worker/runtime/prebid-artifact-check.mjs']){await mkdir(resolve(f.root,path,'..'),{recursive:true});await cp(resolve(repo,path),resolve(f.root,path));}
+  for(const path of ['scripts/pages-toolchain.mjs','scripts/verify-toolchain-isolation.mjs','scripts/pages-release-verification.mjs','worker/runtime/draft-release-store.mjs','worker/runtime/prebid-artifact-check.mjs','worker/runtime/prebid-artifact-check-v2.mjs']){await mkdir(resolve(f.root,path,'..'),{recursive:true});await cp(resolve(repo,path),resolve(f.root,path));}
   await writeFile(resolve(f.root,'scripts/bootstrap-toolchain.mjs'),"import{writeFileSync}from'node:fs';writeFileSync('bootstrap-args.json',JSON.stringify(process.argv.slice(2)));\n");
   const check=spawnSync(process.execPath,['scripts/pages-toolchain.mjs','check'],{cwd:f.root,env:f.env,encoding:'utf8'});if(profile==='test'){assert.notEqual(check.status,0);assert.match(check.stderr,/only the MAIN bootstrap/);const boot=spawnSync(process.execPath,['scripts/pages-toolchain.mjs','bootstrap'],{cwd:f.root,env:f.env,encoding:'utf8'});assert.notEqual(boot.status,0);await assert.rejects(readFile(resolve(f.root,'bootstrap-args.json')),/ENOENT/);return;}assert.equal(check.status,0,check.stderr);
   const boot=spawnSync(process.execPath,['scripts/pages-toolchain.mjs','bootstrap'],{cwd:f.root,env:f.env,encoding:'utf8'});assert.equal(boot.status,0,boot.stderr);

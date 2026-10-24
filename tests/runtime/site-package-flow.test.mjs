@@ -356,7 +356,7 @@ test('first built-in publication retains the prior legacy release and its existi
  }
  const legacyFiles={};
  for(const name of ['ads.js','ads.min.js','prebid.js','config.json','manifest.json','min-height.css','sticky.css','div-export.csv','implementation.html']){
-  const bytes=new TextEncoder().encode(name==='manifest.json'?JSON.stringify({version,siteId:'first'}):'saved legacy '+name);
+  const bytes=new TextEncoder().encode(name==='manifest.json'?JSON.stringify({version,siteId:'first'}):name.endsWith('.js')?'/* saved legacy '+name+' */\nvoid 0;':'saved legacy '+name);
   legacyFiles[name]=bytes;f.objects.set(prefix+name,{bytes,meta:{sha256:await sha256(bytes)}});
  }
  const settings=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;

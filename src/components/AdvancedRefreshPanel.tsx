@@ -338,7 +338,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
             <div className="advanced-field-grid two">
               <label>
                 <span>Prebid auction timeout</span>
-                <div className="number-with-unit"><input min="100" max="60000" onChange={(event) => update('timeout', Number(event.target.value))} type="number" value={form.timeout} /><b>ms</b></div>
+                <div className="number-with-unit"><input min="100" max="30000" onChange={(event) => update('timeout', Number(event.target.value))} type="number" value={form.timeout} /><b>ms</b></div>
                 <small>Already supported by the frozen runtime per position.</small>
               </label>
               <label>

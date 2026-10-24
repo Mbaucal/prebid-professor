@@ -1,6 +1,6 @@
 /** TEST-only immutable Prebid upload library. Uploaded code is never executed,
  * rewritten, fetched from a URL, selected or published by uploading it. */
-import { parsePrebidHeader, sha256 } from '../runtime/prebid-artifact-check.mjs';
+import { parsePrebidHeader, sha256 } from '../runtime/prebid-artifact-check-v2.mjs';
 import { WorkspaceError, TEST_SITE } from './boundary.mjs';
 export const MAX_PREBID_UPLOAD = 8 * 1024 * 1024;
 export const PREBID_ID = /^test-pb-[a-f0-9]{64}$/;
@@ -59,7 +59,7 @@ function validRecord(row) {
       || !['archived', 'current'].includes(row.status) || typeof row.uploaded_at !== 'string') fail(409, 'The stored Prebid file record needs review.');
   let modules;
   try { modules = JSON.parse(row.modules_json); } catch { fail(409, 'Stored Prebid module metadata needs review.'); }
-  if (!Array.isArray(modules) || !modules.length || modules.length > 1000 || modules.some((s) => typeof s !== 'string' || s.length>120 || !/^[A-Za-z][A-Za-z0-9_]*$/.test(s))
+  if (!Array.isArray(modules) || !modules.length || modules.length > 1000 || modules.some((s) => typeof s !== 'string' || s.length>120 || !/^[A-Za-z0-9][A-Za-z0-9_]{0,119}$/.test(s))
       || JSON.stringify([...new Set(modules)].sort()) !== row.modules_json || (row.version.length>64||!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$/.test(row.version))) fail(409, 'Stored Prebid version or module metadata needs review.');
   return modules;
 }

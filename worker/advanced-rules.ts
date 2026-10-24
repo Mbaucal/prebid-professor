@@ -275,7 +275,7 @@ export async function updateAdvancedRule(
 
   try {
     if (Object.prototype.hasOwnProperty.call(input, 'timeout')) {
-      advanced.timeout = integerInRange(input.timeout, 'timeout', 100, 60000, Number(current.timeout ?? 2500));
+      advanced.timeout = integerInRange(input.timeout, 'timeout', 100, 30000, Number(current.timeout ?? 2500));
     }
     if (Object.prototype.hasOwnProperty.call(input, 'cmpTimeout')) {
       advanced.cmpTimeout = integerInRange(

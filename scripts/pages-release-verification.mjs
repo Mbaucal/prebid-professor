@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describeCandidate } from '../worker/runtime/draft-release-store.mjs';
-import { parsePrebidHeader } from '../worker/runtime/prebid-artifact-check.mjs';
+import { parsePrebidHeader } from '../worker/runtime/prebid-artifact-check-v2.mjs';
 
 const SOURCE_ORIGIN = 'https://prebid-professor.mbaucal.workers.dev';
 const HASH = /^[a-f0-9]{64}$/;

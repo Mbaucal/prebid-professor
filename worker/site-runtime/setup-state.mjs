@@ -12,6 +12,8 @@ export function siteSetupState(saved) {
  const needsPrebid=prebid.status==='missing'||prebid.status==='ambiguous';
  return {
   prebid,
+  userSyncWarning:config.enablePrebid===true&&!Object.hasOwn(config,'userSync')
+   ? 'User ID settings have not been saved. This script will use cookie sync off. Open User ID modules, review the settings and save before generating a new package.' : null,
   releaseWorkflow:config.builtinRuntimeSelection?.runtime||!(typeof config.generatorProfileId==='string'&&config.generatorProfileId.trim())?'builtin':'legacy',
   nextStep:needsPrebid?'prebid':!config.builtinRuntimeSelection?.runtime?'versions':null,
   setupMessage:needsPrebid?prebid.message:!config.builtinRuntimeSelection?.runtime?'Choose and save an ads.js version. Tessera generates the script from your saved settings; no template is needed.':null,

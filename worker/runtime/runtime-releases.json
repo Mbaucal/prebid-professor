@@ -1,5 +1,39 @@
 [
   {
+    "id": "tessera-3.16.1",
+    "version": "3.16.1",
+    "codeSha256": "2a7feef5b88968d756bb60421c714ba9e47f782aec90c42b402029c65eb7c25b",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot"
+    ],
+    "date": "2026-10-24",
+    "title": "Tessera 3.16.1 — verified refresh and delivery corrections",
+    "sourceManifest": "scripts/prepare-runtime3161.mjs",
+    "sourceCommit": "b8466a6d582f5085fbb8a03f29b88b42af5770e8",
+    "changes": [
+      "Content refresh follows effective position rules, including the inherited 30-second baseline after explicit selection. Explicitly disabled rules stay disabled. Sticky follows inherited schedules, retries empty responses and resumes after duplicate tab-pause events.",
+      "Minimum wall-clock gap applies from actual GPT dispatch, including the initial request. Automatic-refresh counts advance only for actual allowed requests; request reporting keeps interval and gap semantics explicit.",
+      "Empty, invalid or timed-out TakeOver releases one consent-gated Interstitial fallback. Viewport-disabled TakeOver skips safely and reports current map dimensions.",
+      "Late configured wrappers are discovered for a bounded 20-second window using id, data-ad, data-slot and data-gpt. Configured lazy rules retain request ownership; this is not general infinite-scroll support.",
+      "Lazy targeting is rechecked against current-auction, unexpired native Prebid bids, including Send All Bids keys. One replacement auction is allowed when all prior bids expire; safe GAM-only fallback remains after a consent change.",
+      "Late window.adsKeywords is polled for 2.5 seconds. SChain replacement-sensitive values remain exact, Sticky CSS names are valid, duplicate render reads are removed and generated wrapper syntax is checked as ES2015.",
+      "Existing 3.16.0 sources, saved configurations and package bytes remain unchanged. Selecting this version is explicit; CMP authority, original Outstream restrictions and historical catalog defaults remain intact."
+    ]
+  },
+  {
     "id": "tessera-3.16.0",
     "version": "3.16.0",
     "codeSha256": "624afa6dff60db3f6da1f71ada6d89c55c513d1c72ddbe210b3b2246832c69b9",

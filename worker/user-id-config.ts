@@ -1,5 +1,6 @@
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
+import { assertCompilerStrings } from './compiler-input-compatibility.mjs';
 
 type JsonRecord = Record<string, unknown>;
 type StorageType = 'cookie' | 'html5' | 'cookie&html5';
@@ -48,7 +49,7 @@ type CatalogItem = {
   defaultStorage: JsonRecord | null;
 };
 
-const USER_ID_CATALOG: CatalogItem[] = [
+export const USER_ID_CATALOG: CatalogItem[] = [
   {
     name: 'sharedId',
     moduleCode: 'sharedIdSystem',
@@ -213,6 +214,7 @@ function validateKnownModule(module: UserIdModuleConfig, warnings: string[]): vo
     if (!Number.isInteger(partner) || partner <= 0) {
       throw new Error('id5Id.params.partner must be a positive ID5 Partner Number.');
     }
+    module.params.partner = partner;
     const refresh = Number(module.storage?.refreshInSeconds ?? 0);
     if (module.storage && (!Number.isFinite(refresh) || refresh <= 0 || refresh > 7200)) {
       warnings.push('ID5 recommends storage.refreshInSeconds of 7200 seconds or less.');
@@ -259,6 +261,10 @@ function normalizeModule(value: unknown, index: number, warnings: string[]): Use
     value: normalizeObject(value.value, `${name}.value`, true),
     notes: nullableString(value.notes),
   };
+
+  assertCompilerStrings(module.params, `${name}.params`);
+  assertCompilerStrings(module.storage, `${name}.storage`);
+  assertCompilerStrings(module.value, `${name}.value`);
 
   validateKnownModule(module, warnings);
   return module;
@@ -374,6 +380,18 @@ export function compileUserSync(config: UserIdConfig): JsonRecord {
   return userSync;
 }
 
+export function defaultUserIdSettings(): {userIdConfig: UserIdConfig; userSync: JsonRecord} {
+  const userIdConfig = cloneDefault();
+  return { userIdConfig, userSync: compileUserSync(userIdConfig) };
+}
+
+/** Called only on an explicit setup/mode save; never backfill existing sites on read. */
+export function initializeMissingUserSync<T extends JsonRecord>(config: T): T {
+  if (Object.prototype.hasOwnProperty.call(config, 'userSync')) return config;
+  const userIdConfig = isRecord(config.userIdConfig) ? normalizeConfig(config.userIdConfig).config : cloneDefault();
+  return { ...config, userIdConfig, userSync: compileUserSync(userIdConfig) };
+}
+
 function requiredModules(config: UserIdConfig): string[] {
   if (!config.enabled) return [];
   const enabled = config.modules.filter((module) => module.enabled);
@@ -412,11 +430,13 @@ export async function getUserIdConfig(env: DatabaseEnv, siteId: string): Promise
 
   return json({
     ok: true,
+    saved: isRecord(row.config.userSync),
     userIdConfig: config,
     userSyncPreview: compileUserSync(config),
     requiredModules: requiredModules(config),
     catalog: USER_ID_CATALOG,
-    warnings: normalizeConfig(config).warnings,
+    warnings: [...normalizeConfig(config).warnings, ...(!isRecord(row.config.userSync) && row.config.enablePrebid !== false
+      ? ['User ID settings have not been saved. Existing generated scripts use cookie sync off. Review these defaults and save before generating a new package.'] : [])],
   });
 }
 

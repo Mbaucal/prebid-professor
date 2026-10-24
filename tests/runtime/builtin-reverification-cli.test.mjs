@@ -5,7 +5,7 @@ import {resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 const repo=resolve(import.meta.dirname,'../..');
-const closure=['scripts/reverify-builtin-test.mjs','scripts/builtin-test-delivery.mjs','scripts/pages-release-verification.mjs','scripts/publisher-delivery-verification.mjs','worker/test-workspace/deployment-contract.mjs','worker/test-workspace/delivery-layout.mjs','worker/runtime/draft-release-store.mjs','worker/runtime/prebid-artifact-check.mjs'];
+const closure=['scripts/reverify-builtin-test.mjs','scripts/builtin-test-delivery.mjs','scripts/pages-release-verification.mjs','scripts/publisher-delivery-verification.mjs','worker/test-workspace/deployment-contract.mjs','worker/test-workspace/delivery-layout.mjs','worker/runtime/draft-release-store.mjs','worker/runtime/prebid-artifact-check.mjs','worker/runtime/prebid-artifact-check-v2.mjs'];
 
 test('clean reverify CLI needs locked production fflate; report retry only waits and confirms existing receipt',async()=>{
  const root=await mkdtemp(resolve(tmpdir(),'mba236-'));

@@ -21,7 +21,7 @@ jobs:
           node scripts/isolated-toolchain.mjs prepare
           node --experimental-strip-types --test tests/runtime/builtin-preview.test.mjs
       - name: Verify read-only Prebid artifact inspection and integration
-        run: node --experimental-strip-types --test tests/runtime/prebid-artifact-check.test.mjs tests/runtime/prebid-preflight-service.test.mjs tests/runtime/builtin-prebid-integration.test.mjs
+        run: node --experimental-strip-types --test tests/runtime/prebid-artifact-check.test.mjs tests/runtime/prebid-artifact-check-v2.test.mjs tests/runtime/prebid-preflight-service.test.mjs tests/runtime/builtin-prebid-integration.test.mjs
       - name: Archive tracked sources for reproducible offline verification
         run: |
           mkdir -p verification-artifacts
