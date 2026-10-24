@@ -1,4 +1,4 @@
-import { prebidRequirements, inspectPrebidArtifact } from './prebid-artifact-check.mjs';
+import { prebidRequirements, inspectPrebidArtifact } from './prebid-artifact-check-v2.mjs';
 const HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' };
 const reply = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: HEADERS });
 

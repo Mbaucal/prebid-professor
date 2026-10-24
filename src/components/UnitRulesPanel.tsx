@@ -24,6 +24,7 @@ type LoadingSummary = {
   runtimeVersion: string | null;
   issue: string | null;
   units: Array<{ code: string; label: string; detail: string; source: string }>;
+  refresh?: {units: Array<{code: string; label: string; detail: string; timeout: number}>; warnings: string[]};
 };
 
 async function loadLoadingSummary(publisherId: string): Promise<LoadingSummary> {
@@ -31,9 +32,9 @@ async function loadLoadingSummary(publisherId: string): Promise<LoadingSummary> 
     credentials: 'same-origin', cache: 'no-store',
   });
   if (!response.ok) throw new Error('Loading behavior is unavailable. Reload to try again.');
-  const data = await response.json() as { loadingSummary: LoadingSummary };
+  const data = await response.json() as { loadingSummary: LoadingSummary; refreshSummary?: LoadingSummary['refresh'] };
   if (!Array.isArray(data.loadingSummary?.units)) throw new Error('Loading behavior is unavailable. Reload to try again.');
-  return data.loadingSummary;
+  return {...data.loadingSummary, refresh: data.refreshSummary};
 }
 
 type RuleForm = {
@@ -634,6 +635,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
         </div>
         <p className="loading-summary-help">Loading follows the selected script’s ATF/BTF defaults, group rules and Display &amp; loading overrides. These are saved settings for the next generated package.</p>
         {loadingSummary?.issue ? <p role="status" className="form-error">{loadingSummary.issue}</p> : null}
+        {loadingSummary?.refresh?.warnings.map(warning => <p role="status" className="loading-summary-help" key={warning}>{warning}</p>)}
 
         <div className="effective-rule-table-wrap">
           <table className="effective-rule-table">
@@ -652,16 +654,17 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 <tr key={unit.id}>
                   <td><strong>{unit.code}</strong><small>{unit.type}</small></td>
                   <td>{exact ? 'Exact override' : `${unit.type} inherited`}</td>
-                  <td>{effective.timeout} ms</td>
+                  <td>{loadingSummary?.refresh?.units.find(item => item.code === unit.code)?.timeout ?? effective.timeout} ms</td>
                   <td className="effective-loading-cell">{(() => {
                     const summary = loadingSummary?.units.find(item => item.code === unit.code);
                     return summary ? <><strong>{summary.label}</strong><small>{summary.source}</small><small>{summary.detail}</small></>
                       : <span>{loading ? 'Loading settings…' : 'Loading behavior unavailable'}</span>;
                   })()}</td>
                   <td>
-                    {effective.refresh?.enabled
-                      ? `${effective.refresh.minSeconds}s · ${effective.refresh.minViewPct}%`
-                      : 'Disabled'}
+                    {(() => {
+                      const refresh = loadingSummary?.refresh?.units.find(item => item.code === unit.code);
+                      return refresh ? <><strong>{refresh.label}</strong><small>{refresh.detail}</small></> : 'Refresh behavior unavailable';
+                    })()}
                   </td>
                   <td>{effective.conditionalMappings?.filter((mapping) => mapping.enabled).length ?? 0}</td>
                 </tr>
@@ -734,7 +737,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 {form.overrideTimeout ? (
                   <label className="compact-number-field">
                     <span>Timeout</span>
-                    <div><input min="100" max="60000" onChange={(event) => updateForm('timeout', Number(event.target.value))} type="number" value={form.timeout} /><b>ms</b></div>
+                    <div><input min="100" max="30000" onChange={(event) => updateForm('timeout', Number(event.target.value))} type="number" value={form.timeout} /><b>ms</b></div>
                   </label>
                 ) : <div className="inherit-note">This scope inherits timeout from its parent rule.</div>}
               </section>

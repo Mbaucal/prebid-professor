@@ -7,6 +7,8 @@ type Runtime = { version: string; channel?: string; pin: Pin };
 type State = {
   revision: string; selected: Pin | null; enablePrebid: boolean; validationIssue: string | null;
   prebid: { status: string; message: string };
+  userSyncWarning?: string | null;
+  refreshSummary?: {warnings: string[]};
   currentRuntime?: Runtime | null;
   runtimes: Runtime[];
   history: Array<{ version: string; title: string; date: string; codeSha256: string; changes: string[] }>;
@@ -144,6 +146,8 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
         {onOpenPrebid ? <button type="button" onClick={onOpenPrebid}>Open Prebid.js</button> : null}
       </div> : null}
       {state.validationIssue && !dirty ? <p className="runtime-error">{state.validationIssue}</p> : null}
+      {prebid && state.userSyncWarning ? <p role="status" className="script-prebid-note">{state.userSyncWarning}</p> : null}
+      {state.refreshSummary?.warnings.map(warning => <p role="status" className="script-prebid-note" key={warning}>{warning}</p>)}
       <div className="runtime-actions">
         <button type="button" disabled={busy || stale || unavailable || !selected || blockedBuild || (!dirty && !state.validationIssue)} onClick={() => void save()}>{busy ? 'Saving…' : 'Save script setup'}</button>
         {onContinue && state.selected && !dirty && !state.validationIssue ? <button type="button" disabled={busy || unavailable} onClick={onContinue}>Continue to Generate</button> : null}

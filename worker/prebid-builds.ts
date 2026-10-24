@@ -94,6 +94,9 @@ function parseBuildHeader(text: string): ParsedBuild {
   let error: string | null = null;
   if (!versionMatch?.[1]) error = 'Prebid version could not be read from the file header.';
   else if (!modules.length) error = 'Installed modules could not be read from the file header.';
+  else if (modules.length > 1000 || modulesMatch?.[1].split(',').some((module) => !/^[A-Za-z0-9][A-Za-z0-9_]{0,119}$/.test(module.trim()))) {
+    error = 'A module name in the Prebid header could not be read.';
+  }
 
   return {
     version: versionMatch?.[1] ?? null,

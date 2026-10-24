@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { unzipSync } from 'fflate';
 import worker from '../../worker/test-workspace/index.mjs';
 import { workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD } from '../support/test-workspace-store.mjs';
+import { verifyDeliveryZip } from '../../worker/test-workspace/deployment-contract.mjs';
 const active=[],originalFetch=globalThis.fetch;
 const bytes=new TextEncoder().encode('/* prebid.js v11.11.0\nModules: adformBidAdapter, consentManagementTcf, tcfControl, currency */\nwindow.fixtureOnly=true;');
 test.before(()=>{globalThis.fetch=()=>assert.fail('No actual ad or publisher network calls');});test.after(()=>{globalThis.fetch=originalFetch;});test.afterEach(()=>{while(active.length)active.pop().close();});
@@ -21,3 +22,12 @@ test('turn off retains bidders/file and generates GPT-only nine-file package',as
 test('tampered selected file stops generation without resetting settings or repairing bytes',async()=>{const{f,cookie}=await ready();await enable(f,cookie);const key=[...f.objects.keys()][0];f.objects.get(key)[0]^=1;const g=await request(f,'/test-api/generate',cookie,{acknowledge:true,takeOverEnabled:false});assert.equal(g.r.status,422);assert.equal(JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json).enablePrebid,true);});
 test('extra raw source/config/site/URL fields and query routes are rejected',async()=>{const{f,cookie}=await ready(),s=await state(f,cookie);for(const extra of [{siteId:'politika'},{source:'javascript'},{configJson:'{}'},{url:'https://example.invalid/prebid.js'}])assert.equal((await request(f,'/test-api/prebid-settings',cookie,{expectedRevision:s.revision,acknowledge:true,draft:s.draft,...extra})).r.status,422);assert.equal((await request(f,'/test-api/prebid/upload?site=politika',cookie,bytes,true)).r.status,404);assert.equal((await request(f,'/test-api/prebid-settings?site=politika',cookie)).r.status,404);});
 test('large and malformed uploads fail without registration',async()=>{const{f,cookie}=await ready();assert.equal((await request(f,'/test-api/prebid/upload',cookie,new Uint8Array(8*1024*1024+1),true)).r.status,413);assert.equal((await request(f,'/test-api/prebid/upload',cookie,new TextEncoder().encode('<html>Error</html>'),true)).r.status,422);assert.equal((await state(f,cookie)).files.length,0);});
+test('TEST upload, selection, Generate, saved download and delivery accept digit-leading extra modules without rewriting bytes',async()=>{
+ const{f,cookie}=await ready();
+ const original=new TextEncoder().encode(new TextDecoder().decode(bytes).replace('currency */','currency, 33acrossBidAdapter, 33acrossIdSystem, 51DegreesRtdProvider, 1plusXRtdProvider */'));
+ await enable(f,cookie,original);const g=await generate(f,cookie);
+ const saved=await request(f,'/test-api/save',cookie,{receipt:g.receipt,acknowledge:true,note:'Digit-leading modules'});assert.equal(saved.r.status,200,JSON.stringify(saved.data));
+ const r=await request(f,'/test-api/releases/'+saved.data.draft.id+'/download',cookie);const zip=new Uint8Array(await r.r.arrayBuffer());
+ assert.deepEqual(unzipSync(zip)['prebid.js'],original);
+ await verifyDeliveryZip(zip,{siteId:'test-site',packageSha256:saved.data.draft.packageSha256});
+});

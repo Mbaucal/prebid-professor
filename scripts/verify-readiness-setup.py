@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/readiness-setup-evidence';out.mkdir(parents=True,exist_ok=True)
 origin='https://main-revenue.fixture.invalid';endpoint='/api/publishers/main-site/builtin-site-settings'
-current='3.16.0';checks=[]
+current='3.16.1';checks=[]
 with sync_playwright() as playwright:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
  executable=os.environ.get('CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROMIUM_PATH')
@@ -39,12 +39,12 @@ with sync_playwright() as playwright:
        faults['invalidCurrent']=False;payload=json.loads(base64.b64decode(value['body']));payload.pop('currentRuntime')
        value['body']=base64.b64encode(json.dumps(payload).encode()).decode()
       if url.path==endpoint and request.method=='GET' and faults['futureStable']:
-       payload=json.loads(base64.b64decode(value['body']));fixed=json.loads(json.dumps(payload['currentRuntime']));fixed.update(version='3.16.1',channel='stable');fixed['pin'].update(runtimeVersion='3.16.1',runtimeSha256='f'*64);payload['runtimes'].append(fixed)
+       payload=json.loads(base64.b64decode(value['body']));fixed=json.loads(json.dumps(payload['currentRuntime']));fixed.update(version='3.16.2',channel='stable');fixed['pin'].update(runtimeVersion='3.16.2',runtimeSha256='f'*64);payload['runtimes'].append(fixed)
        value['body']=base64.b64encode(json.dumps(payload).encode()).decode()
      body=json.loads(request.post_data) if request.post_data else None
      if url.path==endpoint and request.method=='POST':
       version=body['runtime']['runtimeVersion']
-      expected=False if version=='3.16.1' else next(item['channel']!='stable' for item in data()['runtimes'] if item['pin']['runtimeVersion']==version)
+      expected=False if version=='3.16.2' else next(item['channel']!='stable' for item in data()['runtimes'] if item['pin']['runtimeVersion']==version)
       assert body['allowPreview'] is expected,'Wrong explicit preview opt-in contract'
      requests.append({'path':url.path,'method':request.method,'status':value['status'],'body':body})
      route.fulfill(status=value['status'],headers=value['headers'],body=base64.b64decode(value['body']))
@@ -70,7 +70,7 @@ with sync_playwright() as playwright:
      expect(panel.locator('select')).to_have_count(1);expect(selector).to_be_visible()
      labels=selector.locator('option').all_text_contents()
      fresh=[label.split(' · ')[0] for label in labels if 'Saved earlier build' not in label]
-     assert fresh==['3.16.0','3.15.0','3.14.0','3.13.0'],labels
+     assert fresh==['3.16.1','3.16.0','3.15.0','3.14.0','3.13.0'],labels
      expect(panel).not_to_contain_text('revenue.preview');expect(panel).not_to_contain_text('tessera-revenue-preview')
     def choose(version):
      expect(selector).to_be_visible()
@@ -86,7 +86,7 @@ with sync_playwright() as playwright:
       expect(panel.get_by_role('alert')).to_contain_text('Synthetic setup unavailable');assert data()['selected'] is None;screen('load-error')
       reload.click();expect(summary).to_contain_text(current);expect(summary).to_contain_text('Current version for new scripts');expect(upgrade).to_have_count(0);picker()
       history=panel.locator('details.script-history');history.locator('summary').click()
-      expect(history.locator('article')).to_have_count(len({re.sub(r'-(?:tessera|revenue)\.preview\.\d+$','',row['version']) for row in data()['history']}));expect(history.locator('article').filter(has_text='3.16.0')).to_have_count(1);expect(history).not_to_contain_text('revenue.preview');expect(history.get_by_role('button')).to_have_count(0);expect(history.locator('select,input')).to_have_count(0)
+      expect(history.locator('article')).to_have_count(len({re.sub(r'-(?:tessera|revenue)\.preview\.\d+$','',row['version']) for row in data()['history']}));expect(history.locator('article').filter(has=page.locator('strong').filter(has_text=re.compile(r'^3\.16\.0 ·')))).to_have_count(1);expect(history).not_to_contain_text('revenue.preview');expect(history.get_by_role('button')).to_have_count(0);expect(history.locator('select,input')).to_have_count(0)
       screen('public-history')
       history.screenshot(path=str(out/f'new-public-history-details-{width}.png'))
       history.locator('summary').click();gam.check()
@@ -102,12 +102,12 @@ with sync_playwright() as playwright:
       faults['invalidCurrent']=True;page.reload();expect(panel.get_by_role('alert')).to_contain_text('The current script version is unavailable');expect(save).to_be_disabled();expect(selector).to_be_disabled();screen('invalid-current')
       reload.click();expect(panel.get_by_role('alert')).to_have_count(0);expect(summary).to_contain_text(current)
       # A synthetic metadata-only next stable release proves the UI sends allowPreview:false without a version literal.
-      saved_pin=data()['selected'];faults['futureStable']=True;page.reload();choose('3.16.1');expect(summary).to_contain_text('3.16.1');faults['failPost']=True
+      saved_pin=data()['selected'];faults['futureStable']=True;page.reload();choose('3.16.2');expect(summary).to_contain_text('3.16.2');faults['failPost']=True
       save.click();expect(panel.get_by_role('alert')).to_contain_text('Synthetic save unavailable');assert requests[-1]['body']['allowPreview'] is False;assert data()['selected']==saved_pin
       screen('future-stable-metadata');faults['futureStable']=False;reload.click();expect(summary).to_contain_text(current)
      elif scenario in ['legacy','preview']:
       old_pin=data()['selected'];old_version='3.10.0-tessera.preview.1' if scenario=='legacy' else '3.16.0-revenue.preview.3';old_label='3.10.0' if scenario=='legacy' else '3.16.0';assert old_pin['runtimeVersion']==old_version
-      expect(summary).to_contain_text(old_label);expect(summary).to_contain_text('Saved version' if scenario=='legacy' else 'Saved earlier build');expect(upgrade).to_be_visible();picker()
+      expect(summary).to_contain_text(old_label);expect(summary).to_contain_text('Saved version');expect(upgrade).to_be_visible();picker()
       gam.check();saved();assert data()['selected']==old_pin and data()['enablePrebid'] is False
       page.reload();expect(summary).to_contain_text(old_label);posts=len([r for r in requests if r['method']=='POST'])
       screen('saved-legacy')
@@ -126,7 +126,8 @@ with sync_playwright() as playwright:
       prebid.check();expect(panel.get_by_text('Also includes current-auction bid counts and timeout.',exact=False)).to_be_visible();screen('cmp-reporting')
       saved();original=data();choose('3.13.0');expect(summary).to_contain_text('Unsaved version change');assert data()['selected']==old_pin;screen('selected-supported-older')
       saved();page.reload();expect(summary).to_contain_text('3.13.0');assert data()['selected']['runtimeVersion']=='3.13.0'
-      choose('3.16.0');saved();page.reload();expect(summary).to_contain_text(current);updated=data();assert updated['enablePrebid']==original['enablePrebid'] and updated['positions']==original['positions'];assert updated['prebid']==original['prebid'];screen('selected-current-saved')
+      choose('3.16.0');saved();page.reload();expect(summary).to_contain_text('3.16.0');assert data()['selected']['runtimeVersion']=='3.16.0'
+      choose(current);saved();page.reload();expect(summary).to_contain_text(current);updated=data();assert updated['enablePrebid']==original['enablePrebid'] and updated['positions']==original['positions'];assert updated['prebid']==original['prebid'];screen('selected-current-saved')
       # Continue through the real complete MAIN package writer and browser ZIP downloader.
       page.get_by_role('button',name='Generate and releases',exact=True).click()
       page.get_by_label('What changed?',exact=True).fill('Existing setup, selected fixed script')
@@ -135,7 +136,7 @@ with sync_playwright() as playwright:
        page.get_by_role('button',name='Download saved ZIP',exact=True).click()
       with zipfile.ZipFile(downloaded.value.path()) as archive:
        manifest=json.loads(archive.read('manifest.json'));config=json.loads(archive.read('config.json'))
-       assert manifest['runtime']['runtimeVersion']=='3.16.0' and config['runtime']==manifest['runtime']
+       assert manifest['runtime']['runtimeVersion']==current and config['runtime']==manifest['runtime']
        assert archive.read('prebid.js')==(root/'vendor/prebid/tanjug-11.34.0/prebid.js').read_bytes()
       screen('generated-new-version');page.get_by_role('button',name='Configuration',exact=True).click();prebid.check()
       panel.get_by_role('button',name='Open Prebid.js',exact=True).click();expect(page.get_by_role('heading',name='Prebid.js destination',exact=True)).to_be_visible()

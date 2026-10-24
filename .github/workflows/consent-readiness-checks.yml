@@ -56,8 +56,13 @@ jobs:
           node --experimental-strip-types scripts/prepare-readiness-browser-fixtures.mjs --stable
           node --experimental-strip-types scripts/prepare-revenue-browser-fixtures.mjs --stable
           node --experimental-strip-types scripts/prepare-outstream-responsive-fixtures.mjs --stable
+          node --experimental-strip-types scripts/prepare-runtime3161-browser-fixtures.mjs
       - name: Consent, deadline, reporting and pending-slot regressions
         run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
+      - name: Verified 3.16.1 corrections, preserved history and saved-package contracts
+        run: |
+          node scripts/check-runtime-release-history.mjs HEAD^
+          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3161-fixes.test.mjs tests/runtime/runtime3161-readiness.test.mjs tests/runtime/runtime3161-artifact.test.mjs tests/runtime/refresh-counting.test.mjs
       - name: Deals and Outstream contracts, routes and exact package integration
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/outstream-position-scope.test.mjs tests/runtime/outstream-responsive.test.mjs tests/runtime/revenue-integration.test.mjs tests/runtime/test-revenue-settings.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/runtime-labels.test.mjs
       - name: Install pinned Chromium verification tools
@@ -68,6 +73,12 @@ jobs:
         run: |
           python scripts/verify-consent-readiness.py
           python scripts/verify-consent-readiness.py --stable
+          python scripts/verify-consent-readiness.py --fixtures-dir .generated/runtime3161-evidence/fixed
+      - name: Native 3.16.1 before/after and delayed-consent dispatch boundaries
+        run: |
+          python scripts/verify-runtime3161-browser.py
+          python scripts/audit-native-observe-20261024.py --fixtures-dir .generated/runtime3161-evidence/fixed --expect-fixed --resize-checks
+          python scripts/audit-native-cmp-gap-20261024.py --script .generated/runtime3161-evidence/fixed/cmp-gap.js --expect-fixed
       - name: Atomic consent boundary and failure-detection controls
         run: |
           python scripts/verify-consent-boundary.py
@@ -124,3 +135,7 @@ jobs:
             .generated/stable-outstream-evidence/*.png
             .generated/stable-outstream-responsive-evidence/*.json
             .generated/stable-outstream-responsive-evidence/*.png
+            .generated/runtime3161-evidence/browser-results.json
+            .generated/runtime3161-evidence/fixed/browser-results.json
+            .generated/audit-independent-review/native-working-candidate.json
+            .generated/audit-independent-review/native-cmp-min-gap.json

@@ -34,6 +34,7 @@ const faults = [
   ['missing storage', (c) => { delete c.r2_buckets; }],
   ['production origin', (c) => { c.vars.TEST_PUBLIC_ORIGIN = 'https://prebid-professor.mbaucal.workers.dev'; }],
   ['version-preview hosts', (c) => { c.preview_urls = true; }],
+  ['Worker-only function-name helpers', (c) => { c.keep_names = true; }],
   ['public routes', (c) => { c.routes = ['example.invalid/*']; }],
   ['scheduled events', (c) => { c.triggers.crons = ['0 * * * *']; }],
   ['extra service binding', (c) => { c.services = [{ binding: 'PROD', service: 'prebid-professor' }]; }],

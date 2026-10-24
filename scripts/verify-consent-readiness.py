@@ -1,13 +1,17 @@
 """Offline generated 3.14 + original vendored Prebid; every network route is intercepted.
 Run after prepare-readiness-browser-fixtures.mjs. No real GPT or paid ad traffic.
 """
-import json,os,sys
+import argparse,json,os,sys
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse,parse_qs
 from playwright.sync_api import sync_playwright
 root=Path(__file__).resolve().parent.parent
-out=root/('.generated/stable-readiness-evidence' if '--stable' in sys.argv else '.generated/readiness-evidence')
+parser=argparse.ArgumentParser()
+parser.add_argument('--stable',action='store_true')
+parser.add_argument('--fixtures-dir',help='Generated candidate fixtures; existing default suites remain unchanged')
+args=parser.parse_args()
+out=root/(args.fixtures_dir or ('.generated/stable-readiness-evidence' if args.stable else '.generated/readiness-evidence'))
 mock=(root/'tests/runtime/mock-ad-libraries.js').read_text()
 pbsource=(root/'vendor/prebid/tanjug-11.34.0/prebid.js').read_text()
 adapter=(root/'tests/runtime/full-cache-browser-fixture.js').read_text()
@@ -47,6 +51,11 @@ pbjs.onEvent('auctionEnd',event=>__completed.push(event.auctionId));
 '''
 def require(value,message):
  if not value:raise AssertionError(message)
+
+def has_bid_targeting(targeting):
+ # hb_ver and hb_version identify software, not a bid or a consent epoch.
+ # T24 preserves both on clean fallback; all other hb_* keys stay forbidden.
+ return any(key.startswith('hb_') and key not in ('hb_ver','hb_version') for key in targeting)
 
 def begin_pending_choice(page):
  # All three operations belong to one browser task. The installed clock keeps
@@ -132,13 +141,16 @@ def run(browser,name,extension='.js',change_boundary=begin_pending_choice,setup_
   billboard=[r for r in data['sent'] if r['id']=='Billboard'];require(len(billboard)==1,'Initial Billboard count '+str(len(billboard)))
   require(not data['privacy'],'Wrapper must not force NPA')
   require(not errors,'Browser errors '+str(errors));require(not unexpected,'Unexpected network '+str(unexpected))
+  for request in data['sent']:
+   version=request['targeting'].get('hb_version')
+   if version is not None:require(version=='v11.34.0' or version==['v11.34.0'],'Incorrect preserved Prebid version metadata')
   if name not in ['gam','missing','throw','reject']:
    require(data['auctions'],'No real Prebid auction')
    require(all(a['consent'].get('gdpr',{}).get('defaultGdprScope') is True for a in data['auctions']),'Auction ran before TCF configuration')
   if name in ['missing','throw','reject']:
-   require(all(not any(k.startswith('hb_') and k!='hb_ver' for k in r['targeting']) for r in data['sent']),'Fallback/reject got bidder targeting')
+   require(all(not has_bid_targeting(r['targeting']) for r in data['sent']),'Fallback/reject got bidder targeting')
   if name in ['late-bid','changed-decision']:
-   require(not any(k.startswith('hb_') and k!='hb_ver' for k in billboard[0]['targeting']),'Late/canceled bid leaked into initial targeting')
+   require(not has_bid_targeting(billboard[0]['targeting']),'Late/canceled bid leaked into initial targeting')
   if name=='changed-decision':
    require(not any(k.startswith('aq_') for k in billboard[0]['targeting']),'Canceled consent epoch leaked auction reporting: '+json.dumps({'targeting':billboard[0]['targeting'],'readiness':data['phase']}))
   require(len([r for r in data['sent'] if r['id']=='P1'])==1,'BTF must dispatch exactly once')
@@ -168,6 +180,24 @@ def main():
    for name in os.environ.get('READINESS_CASES','fast,slow-existing,slow-decision,reject,changed-decision,unknown,no-response,missing,late,late-after-fallback,late-bid,throw,empty,pre-auction,gam,sticky,legacy-lazy').split(','):
     try:detail=run(browser,name,extension);results.append({'case':name+extension,'passed':True,**detail});print('PASS',name+extension,flush=True)
     except Exception as error:results.append({'case':name+extension,'passed':False,'error':str(error),'evidence':getattr(error,'evidence',{})});print('FAIL',name+extension,str(error),flush=True)
+   # Prove that preserving software metadata does not weaken stale-bid checks.
+   def inject_stale_bid(page):
+    page.evaluate('''() => {
+     const refresh=__testAds.service.refresh;
+     __testAds.service.refresh=function(slots,opts){
+      for(const slot of slots||[])slot.targeting.hb_adid_fixture='stale-negative-control';
+      return refresh.call(this,slots,opts);
+     };
+    }''')
+   control='fallback-bid-rejection-control'+extension
+   try:
+    run(browser,'missing',extension,setup_control=inject_stale_bid)
+    results.append({'case':control,'passed':False,'error':'A synthetic stale bidder key was accepted'})
+    print('FAIL',control,'Stale bidder key accepted',flush=True)
+   except ReadinessFailure as error:
+    passed=str(error)=='Fallback/reject got bidder targeting'
+    results.append({'case':control,'passed':passed,'expectedRejection':str(error)})
+    print('PASS' if passed else 'FAIL',control,str(error),flush=True)
   browser.close()
  (out/'browser-results.json').write_text(json.dumps(results,indent=2)+'\n')
  return 0 if all(r['passed'] for r in results) else 1

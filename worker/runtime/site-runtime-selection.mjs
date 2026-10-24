@@ -7,8 +7,9 @@
 import { validateRuntimeDescriptor, pinRuntime, assertPinnedRuntime } from './version-pin.mjs';
 import { previewInput, digest } from './preview-snapshot.mjs';
 import { prebidRequirements } from '../runtime-demand-v1/requirements.mjs';
-import { inspectPrebidArtifact } from './prebid-artifact-check.mjs';
+import { inspectPrebidArtifact } from './prebid-artifact-check-v2.mjs';
 import { prebidFailureMessage } from '../runtime-demand-v1/requirements.mjs';
+import { assertSnapshotCompilerCompatibility } from '../compiler-input-compatibility.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const SITE = /^[a-z0-9][a-z0-9-]{0,97}$/;
@@ -95,6 +96,8 @@ function resolveRuntime(pin, runtimes) {
 function normalizedRequirements(saved, config, runtime, inputAdapter) {
   const { prebidBuilds, ...snapshot } = saved;
   snapshot.config = { ...snapshot.config, config_json:JSON.stringify(config) };
+  try { assertSnapshotCompilerCompatibility(snapshot, runtime); }
+  catch (error) { fail('unsupported_configuration', error.message); }
   let requirements;
   try { requirements = prebidRequirements(inputAdapter(snapshot,runtime,'20000101_000000'),config); }
   catch { fail('unsupported_configuration','The saved settings are not supported by this built-in runtime. Resolve configuration validation first.'); }
