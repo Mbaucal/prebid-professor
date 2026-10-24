@@ -11,6 +11,15 @@ import type {
 } from '../src/shared/types';
 import { apiError, getActor, json, readJson } from './http';
 import type { DatabaseEnv } from './publishers';
+import { keepUnitRuleIntervals } from './refresh-inheritance';
+import {
+  UNIT_RULE_ROWS_UNCHANGED_SQL,
+  everyStatementChangedOneRow,
+  nextRowVersion,
+  readUnitRuleRows,
+  unitRuleRowsUnchangedArgs,
+} from './unit-rule-rows';
+import type { UnitRuleRowState } from './unit-rule-rows';
 
 type UnitRuleRow = {
   id: string;
@@ -264,20 +273,70 @@ async function fetchUnitRule(
   return row ? toUnitRule(row) : null;
 }
 
+// The committed row, returned without a second read that a later write could race.
+function writtenRule(
+  id: string, siteId: string, ruleKey: string, rule: UnitRuleConfig, createdAt: string, updatedAt: string,
+): UnitRule {
+  return toUnitRule({
+    id, publisher_id: siteId, rule_key: ruleKey, rule_json: JSON.stringify(rule),
+    created_at: createdAt, updated_at: updatedAt,
+  });
+}
+
 class RuleConflict extends Error {}
+class RuleGone extends Error {}
+
+const CHANGED_ELSEWHERE = 'Unit rules changed in another tab. Reload before saving.';
+const UPDATE_TARGET_GONE = 'This unit rule no longer exists; it may have been deleted in another tab. Your changes were not saved.';
+const DELETE_TARGET_GONE = 'This unit rule no longer exists; it may have been deleted in another tab.';
+const DUPLICATE_SOURCE_GONE = 'The source rule no longer exists; it may have been deleted in another tab. Nothing was copied.';
+
+// What must still be true when the batch commits; checked on the read snapshot and,
+// through the row guard, again inside the batch that writes config_json.
+type RowExpectation = {
+  // The row this request was built from: same id, rule key, version (updated_at) and content.
+  present?: { rule: UnitRule; goneMessage: string };
+  // A rule key that must not exist yet (create or duplicate target).
+  absentKey?: string;
+};
+
+function checkExpectation(rows: UnitRuleRowState[], expectation: RowExpectation): void {
+  const { present, absentKey } = expectation;
+  if (present) {
+    const row = rows.find((item) => item.id === present.rule.id);
+    if (!row) throw new RuleGone(present.goneMessage);
+    if (row.rule_key !== present.rule.ruleKey || row.updated_at !== present.rule.updatedAt
+      || JSON.stringify(parseStoredRule(row.rule_json)) !== JSON.stringify(present.rule.rule)) {
+      throw new RuleConflict(CHANGED_ELSEWHERE);
+    }
+  }
+  if (absentKey !== undefined && rows.some((item) => item.rule_key === absentKey)) {
+    throw new RuleConflict(`Rule "${absentKey}" already exists on this site.`);
+  }
+}
+
+function ruleErrorResponse(error: unknown): Response | null {
+  if (error instanceof RuleGone) return apiError(error.message, 404);
+  if (error instanceof RuleConflict) return apiError(error.message, 409);
+  return null;
+}
 
 async function prepareConfigUpdate(
   db: D1Database, siteId: string, ruleKey: string, rule: UnitRuleConfig | null,
-  now: string, sourceRuleKey?: string,
-): Promise<D1PreparedStatement> {
-  const [row, rows] = await Promise.all([
+  now: string, sourceRuleKey: string | undefined, expectation: RowExpectation,
+  followInheritedSchedule = false,
+): Promise<{ statement: D1PreparedStatement; kept: string[] }> {
+  const [row, rows, units] = await Promise.all([
     db.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1').bind(siteId).first<{config_json: string}>(),
-    db.prepare('SELECT rule_key, rule_json FROM unit_rules WHERE publisher_id = ? ORDER BY rule_key COLLATE NOCASE').bind(siteId).all<{rule_key: string; rule_json: string}>(),
+    readUnitRuleRows(db, siteId),
+    db.prepare('SELECT code, type FROM ad_units WHERE publisher_id = ?').bind(siteId).all<{code: string; type: string}>(),
   ]);
   if (!row) throw new Error('Publisher config was not found.');
+  checkExpectation(rows, expectation);
   const config = JSON.parse(row.config_json) as JsonRecord;
-  const unitRules: Record<string, UnitRuleConfig> = {};
-  for (const item of rows.results ?? []) unitRules[item.rule_key] = parseStoredRule(item.rule_json);
+  const savedRules: Record<string, UnitRuleConfig> = {};
+  for (const item of rows) savedRules[item.rule_key] = parseStoredRule(item.rule_json);
+  const unitRules: Record<string, UnitRuleConfig> = { ...savedRules };
   const previous = unitRules[ruleKey];
   if (rule) unitRules[ruleKey] = rule; else delete unitRules[ruleKey];
   config.unitRules = unitRules;
@@ -313,13 +372,55 @@ async function prepareConfigUpdate(
   if (current) {
     if (Object.keys(current).length) advanced[ruleKey] = current; else delete advanced[ruleKey];
   }
+  // An inherited Refresh schedule would otherwise replace this rule's (or a
+  // child rule's) chosen Unit rules interval in every generated script.
+  const saved = JSON.parse(row.config_json) as JsonRecord;
+  const kept = keepUnitRuleIntervals(advanced, unitRules, Object.fromEntries((units.results ?? []).map((unit) => [unit.code, unit.type])), ruleKey, {
+    savedRule: Boolean(rule),
+    followInherited: followInheritedSchedule,
+    before: { advanced: isRecord(saved.advancedUnitRules) ? saved.advancedUnitRules : {}, basic: savedRules },
+  });
   if (isRecord(config.advancedUnitRules) || Object.keys(advanced).length) config.advancedUnitRules = advanced;
-  return db.prepare('UPDATE publisher_configs SET config_json = ?, config_hash = NULL, updated_at = ? WHERE publisher_id = ? AND config_json = ?')
-    .bind(JSON.stringify(config), now, siteId, row.config_json);
+  // config_json is derived from this config snapshot and these rows, so it may only be
+  // written while both are unchanged; the row statements that follow are gated on changes().
+  // The kept intervals are part of this same guarded config write.
+  const statement = db.prepare(
+    `UPDATE publisher_configs SET config_json = ?, config_hash = NULL, updated_at = ?
+     WHERE publisher_id = ? AND config_json = ? AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}`,
+  ).bind(JSON.stringify(config), now, siteId, row.config_json, ...unitRuleRowsUnchangedArgs(siteId, rows));
+  return { statement, kept };
 }
 
-function ruleSaveConflict(results: D1Result[]): boolean {
-  return results[0]?.meta.changes !== 1;
+/** Audit detail for rules given their own fixed schedule by this save. */
+function keptDetails(kept: string[]): { keptUnitRuleIntervals?: string[] } {
+  return kept.length ? { keptUnitRuleIntervals: kept } : {};
+}
+
+// Runs the guarded config write plus its dependent row and audit statements in one batch.
+// Returns null when every statement applied, otherwise the 404/409 response to send.
+async function applyRuleSave(
+  db: D1Database,
+  siteId: string,
+  statements: D1PreparedStatement[],
+  expectation: RowExpectation,
+): Promise<Response | null> {
+  const results = await db.batch(statements);
+  if (results[0]?.meta.changes !== 1) {
+    // Nothing was written: the guarded config statement matched no row, and every
+    // following statement requires changes() = 1. Explain why from the current rows.
+    try {
+      checkExpectation(await readUnitRuleRows(db, siteId), expectation);
+    } catch (error) {
+      const response = ruleErrorResponse(error);
+      if (response) return response;
+      throw error;
+    }
+    return apiError(CHANGED_ELSEWHERE, 409);
+  }
+  if (!everyStatementChangedOneRow(results, statements.length)) {
+    return apiError('Unit rule save was not fully applied. Reload unit rules before saving again.', 500);
+  }
+  return null;
 }
 
 export async function listUnitRules(env: DatabaseEnv, siteId: string): Promise<Response> {
@@ -374,9 +475,14 @@ export async function createUnitRule(
   const now = new Date().toISOString();
   const actor = getActor(request);
 
+  const expectation: RowExpectation = { absentKey: ruleKey };
+  let kept: string[] = [];
+
   try {
-    const configUpdate = await prepareConfigUpdate(env.DB, siteId, ruleKey, rule, now);
-    const results = await env.DB.batch([
+    const prepared = await prepareConfigUpdate(env.DB, siteId, ruleKey, rule, now, undefined, expectation, input.followInheritedSchedule === true);
+    const configUpdate = prepared.statement;
+    kept = prepared.kept;
+    const refused = await applyRuleSave(env.DB, siteId, [
       configUpdate,
       env.DB
         .prepare(
@@ -395,13 +501,14 @@ export async function createUnitRule(
           actor,
           siteId,
           id,
-          JSON.stringify({ ruleKey, sections: Object.keys(rule) }),
+          JSON.stringify({ ruleKey, sections: Object.keys(rule), ...keptDetails(kept) }),
           now,
         ),
-    ]);
-    if (ruleSaveConflict(results)) return apiError('Unit rules changed in another tab. Reload before saving.', 409);
+    ], expectation);
+    if (refused) return refused;
   } catch (error) {
-    if (error instanceof RuleConflict) return apiError(error.message, 409);
+    const ruleError = ruleErrorResponse(error);
+    if (ruleError) return ruleError;
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);
     return apiError(
@@ -411,7 +518,7 @@ export async function createUnitRule(
     );
   }
 
-  return json({ ok: true, unitRule: await fetchUnitRule(env.DB, siteId, id) }, { status: 201 });
+  return json({ ok: true, unitRule: writtenRule(id, siteId, ruleKey, rule, now, now), keptUnitRuleIntervals: kept }, { status: 201 });
 }
 
 export async function updateUnitRule(
@@ -422,7 +529,7 @@ export async function updateUnitRule(
 ): Promise<Response> {
   if (!env.DB) return databaseMissing();
   const current = await fetchUnitRule(env.DB, siteId, unitRuleId);
-  if (!current) return apiError('Unit rule not found.', 404);
+  if (!current) return apiError(UPDATE_TARGET_GONE, 404);
 
   let input: UpdateUnitRuleInput;
   try {
@@ -441,17 +548,25 @@ export async function updateUnitRule(
   const now = new Date().toISOString();
   const actor = getActor(request);
 
+  const version = nextRowVersion(current.updatedAt, now);
+  const expectation: RowExpectation = {
+    present: { rule: current, goneMessage: UPDATE_TARGET_GONE },
+  };
+  let kept: string[] = [];
+
   try {
-    const configUpdate = await prepareConfigUpdate(env.DB, siteId, current.ruleKey, rule, now);
-    const results = await env.DB.batch([
+    const prepared = await prepareConfigUpdate(env.DB, siteId, current.ruleKey, rule, now, undefined, expectation);
+    const configUpdate = prepared.statement;
+    kept = prepared.kept;
+    const refused = await applyRuleSave(env.DB, siteId, [
       configUpdate,
       env.DB
         .prepare(
           `UPDATE unit_rules
            SET rule_json = ?, updated_at = ?
-           WHERE publisher_id = ? AND id = ? AND changes() = 1`,
+           WHERE publisher_id = ? AND id = ? AND rule_key = ? AND updated_at = ? AND changes() = 1`,
         )
-        .bind(JSON.stringify(rule), now, siteId, unitRuleId),
+        .bind(JSON.stringify(rule), version, siteId, unitRuleId, current.ruleKey, current.updatedAt),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
@@ -463,13 +578,14 @@ export async function updateUnitRule(
           actor,
           siteId,
           unitRuleId,
-          JSON.stringify({ ruleKey: current.ruleKey, sections: Object.keys(rule) }),
+          JSON.stringify({ ruleKey: current.ruleKey, sections: Object.keys(rule), ...keptDetails(kept) }),
           now,
         ),
-    ]);
-    if (ruleSaveConflict(results)) return apiError('Unit rules changed in another tab. Reload before saving.', 409);
+    ], expectation);
+    if (refused) return refused;
   } catch (error) {
-    if (error instanceof RuleConflict) return apiError(error.message, 409);
+    const ruleError = ruleErrorResponse(error);
+    if (ruleError) return ruleError;
     return apiError(
       'Unit rule update failed.',
       500,
@@ -477,7 +593,7 @@ export async function updateUnitRule(
     );
   }
 
-  return json({ ok: true, unitRule: await fetchUnitRule(env.DB, siteId, unitRuleId) });
+  return json({ ok: true, unitRule: writtenRule(current.id, siteId, current.ruleKey, rule, current.createdAt, version), keptUnitRuleIntervals: kept });
 }
 
 export async function duplicateUnitRule(
@@ -488,7 +604,7 @@ export async function duplicateUnitRule(
 ): Promise<Response> {
   if (!env.DB) return databaseMissing();
   const source = await fetchUnitRule(env.DB, siteId, sourceUnitRuleId);
-  if (!source) return apiError('Source unit rule not found.', 404);
+  if (!source) return apiError(DUPLICATE_SOURCE_GONE, 404);
 
   let input: DuplicateUnitRuleInput;
   try {
@@ -508,9 +624,17 @@ export async function duplicateUnitRule(
   const now = new Date().toISOString();
   const actor = getActor(request);
 
+  const expectation: RowExpectation = {
+    present: { rule: source, goneMessage: DUPLICATE_SOURCE_GONE },
+    absentKey: ruleKey,
+  };
+  let kept: string[] = [];
+
   try {
-    const configUpdate = await prepareConfigUpdate(env.DB, siteId, ruleKey, source.rule, now, source.ruleKey);
-    const results = await env.DB.batch([
+    const prepared = await prepareConfigUpdate(env.DB, siteId, ruleKey, source.rule, now, source.ruleKey, expectation);
+    const configUpdate = prepared.statement;
+    kept = prepared.kept;
+    const refused = await applyRuleSave(env.DB, siteId, [
       configUpdate,
       env.DB
         .prepare(
@@ -529,13 +653,14 @@ export async function duplicateUnitRule(
           actor,
           siteId,
           id,
-          JSON.stringify({ sourceRuleId: source.id, sourceRuleKey: source.ruleKey, ruleKey }),
+          JSON.stringify({ sourceRuleId: source.id, sourceRuleKey: source.ruleKey, ruleKey, ...keptDetails(kept) }),
           now,
         ),
-    ]);
-    if (ruleSaveConflict(results)) return apiError('Unit rules changed in another tab. Reload before saving.', 409);
+    ], expectation);
+    if (refused) return refused;
   } catch (error) {
-    if (error instanceof RuleConflict) return apiError(error.message, 409);
+    const ruleError = ruleErrorResponse(error);
+    if (ruleError) return ruleError;
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);
     return apiError(
@@ -545,7 +670,7 @@ export async function duplicateUnitRule(
     );
   }
 
-  return json({ ok: true, unitRule: await fetchUnitRule(env.DB, siteId, id) }, { status: 201 });
+  return json({ ok: true, unitRule: writtenRule(id, siteId, ruleKey, source.rule, now, now), keptUnitRuleIntervals: kept }, { status: 201 });
 }
 
 export async function deleteUnitRule(
@@ -556,16 +681,25 @@ export async function deleteUnitRule(
 ): Promise<Response> {
   if (!env.DB) return databaseMissing();
   const current = await fetchUnitRule(env.DB, siteId, unitRuleId);
-  if (!current) return apiError('Unit rule not found.', 404);
+  if (!current) return apiError(DELETE_TARGET_GONE, 404);
 
   const actor = getActor(request);
   const now = new Date().toISOString();
 
+  const expectation: RowExpectation = {
+    present: { rule: current, goneMessage: DELETE_TARGET_GONE },
+  };
+  let kept: string[] = [];
+
   try {
-    const configUpdate = await prepareConfigUpdate(env.DB, siteId, current.ruleKey, null, now);
-    const results = await env.DB.batch([
+    const prepared = await prepareConfigUpdate(env.DB, siteId, current.ruleKey, null, now, undefined, expectation);
+    const configUpdate = prepared.statement;
+    kept = prepared.kept;
+    const refused = await applyRuleSave(env.DB, siteId, [
       configUpdate,
-      env.DB.prepare('DELETE FROM unit_rules WHERE publisher_id = ? AND id = ? AND changes() = 1').bind(siteId, unitRuleId),
+      env.DB
+        .prepare('DELETE FROM unit_rules WHERE publisher_id = ? AND id = ? AND rule_key = ? AND updated_at = ? AND changes() = 1')
+        .bind(siteId, unitRuleId, current.ruleKey, current.updatedAt),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
@@ -577,13 +711,14 @@ export async function deleteUnitRule(
           actor,
           siteId,
           unitRuleId,
-          JSON.stringify({ ruleKey: current.ruleKey }),
+          JSON.stringify({ ruleKey: current.ruleKey, ...keptDetails(kept) }),
           now,
         ),
-    ]);
-    if (ruleSaveConflict(results)) return apiError('Unit rules changed in another tab. Reload before saving.', 409);
+    ], expectation);
+    if (refused) return refused;
   } catch (error) {
-    if (error instanceof RuleConflict) return apiError(error.message, 409);
+    const ruleError = ruleErrorResponse(error);
+    if (ruleError) return ruleError;
     return apiError(
       'Unit rule could not be deleted.',
       500,
@@ -591,5 +726,5 @@ export async function deleteUnitRule(
     );
   }
 
-  return json({ ok: true, deletedId: unitRuleId });
+  return json({ ok: true, deletedId: unitRuleId, keptUnitRuleIntervals: kept });
 }

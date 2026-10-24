@@ -9,6 +9,12 @@ import {previewInput} from '../../worker/runtime/preview-snapshot.mjs';
 import {previewInput as catalogPreviewInput,runtimeCatalog} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {readPreviewSnapshot} from '../../worker/runtime/builtin-preview-service.mjs';
 import {siteSetupState} from '../../worker/site-runtime/setup-state.mjs';
+import vm from 'node:vm';
+import {parse} from 'acorn';
+import {updateAdvancedRule} from '../../worker/advanced-rules.ts';
+import {compileRuntime316} from '../../worker/runtime-316/compiler.mjs';
+import {compileRuntime3161} from '../../worker/runtime-3161/compiler.mjs';
+import {refreshSummary} from '../../worker/site-runtime/refresh-summary.mjs';
 const request=(body,method='POST')=>new Request('https://test.invalid/api/settings',{method,headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 const fixtures=[];const setup=options=>{const f=adminAuditStore(options);fixtures.push(f);return f;};test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 const refresh=n=>({enabled:true,minSeconds:n,minViewPct:50,requirePreviousViewable:false,checkEveryMs:5000});
@@ -55,4 +61,158 @@ test('missing old sync config warns on read without backfill; explicit save remo
 test('explicit mode enable initializes absent sync but preserves an intentional disabled sync',async()=>{
  for(const explicitOff of [false,true]){const f=setup();const c=f.readConfig();c.enablePrebid=false;if(explicitOff)c.userSync={syncEnabled:false,userIds:[],privateSetting:'retained'};f.writeConfig(c);const r=await updatePrebidMode(request({enabled:true},'PUT'),f.env,'audit-site');assert.equal(r.status,200,await r.clone().text());const next=f.readConfig();if(explicitOff)assert.deepEqual(next.userSync,c.userSync);else assert.deepEqual(next.userSync,defaultUserIdSettings().userSync);}
  const intentional={userSync:{syncEnabled:false,userIds:[]},userIdConfig:{enabled:false,modules:[]}};assert.equal(initializeMissingUserSync(intentional),intentional);
+});
+
+// R2-03: an inherited Refresh schedule must not replace a Unit rules interval in generated scripts.
+const schedules={fixed:{mode:'fixed',fixedSeconds:30},firstThenFixed:{mode:'firstThenFixed',firstSeconds:20,nextSeconds:45},percentage:{mode:'percentage',firstSeconds:20,growthPercent:50,maxSeconds:120},sequence:{mode:'sequence',sequenceSeconds:[20,40,80]}};
+const scripts=['3.16.0','3.16.1'];
+function addUnit(f,code,type){f.sqlite.prepare('INSERT INTO ad_units(id,publisher_id,code,type,size_map_key) VALUES(?,?,?,?,?)').run('unit-'+code,'audit-site',code,type,'display');}
+async function saveSchedule(f,key,schedule){const r=await updateAdvancedRule(request({refresh:{enabled:true,schedule}},'PUT'),f.env,'audit-site',key);assert.equal(r.status,200,await r.clone().text());return r.json();}
+async function saveInterval(f,key,minSeconds){const r=await createUnitRule(request({ruleKey:key,rule:{refresh:{enabled:true,minSeconds}}}),f.env,'audit-site');assert.equal(r.status,201,await r.clone().text());return (await r.json()).unitRule;}
+/** Intervals from the real generated scheduler of each script version, after 0..3 refreshes. */
+async function generatedIntervals(f,codes){
+ const saved=await readPreviewSnapshot(f.env.DB,'audit-site'),out={};
+ for(const version of scripts){
+  const runtime=runtimeCatalog.find(r=>r.version===version),input=catalogPreviewInput(saved,runtime,'20261024_120000');
+  const source=(version==='3.16.0'?compileRuntime316:compileRuntime3161)(input).adsJs,functions=[];
+  const scan=node=>{if(!node||typeof node!=='object')return;if(node.type==='FunctionDeclaration'&&['_plainMerge','getAdUnitRuntimeRule','getAdUnitRefreshRule'].includes(node.id.name))functions.push(source.slice(node.start,node.end));for(const value of Object.values(node))if(Array.isArray(value))value.forEach(scan);else if(value&&typeof value==='object')scan(value);};
+  scan(parse(source,{ecmaVersion:'latest'}));assert.equal(functions.length,3);
+  const units=Object.fromEntries(saved.units.map(u=>[u.code,u.type]));
+  for(const code of codes){out[version+' '+code]=[0,1,2,3].map(completed=>{const context={AD_UNIT_RULES:input.core.adUnitRules,getUnitConfigById:id=>({type:units[id]}),isMobile:()=>false,_refreshCounts:{[code]:completed},MIN_SECONDS_BETWEEN_REFRESHES:30,MOBILE_MIN_SECONDS_BETWEEN_REFRESHES:30,DWELL_MIN_VIEW_SEC:30,REFRESH_EXIT_PCT:10,MAX_REFRESHES_PER_SLOT:20,REFRESH_MAX_INTERVAL_SEC:120,TESSERA_OUTSTREAM:{disabledRefreshCodes:[]}};vm.createContext(context);vm.runInContext(functions.join('\n'),context);return vm.runInContext(`getAdUnitRefreshRule(${JSON.stringify(code)}).minSeconds`,context);});}
+  out['summary '+version]=refreshSummary(input,saved.units,runtime,saved.rules);out['sticky '+version]=input.options.sticky.refreshSeconds;
+ }
+ return out;
+}
+const every=(values,seconds)=>values.every(v=>v===seconds);
+test('a new Unit rules interval is used instead of an inherited Refresh schedule in every mode and script',async()=>{
+ for(const [mode,schedule] of Object.entries(schedules))for(const [parent,key,code,type] of [['__DEFAULT__','P1','P1','BTF'],['__BTF__','P1','P1','BTF'],['__ATF__','A1','A1','ATF'],['__DEFAULT__','__BTF__','P1','BTF']]){
+  const f=setup({config:{enablePrebid:false}});addUnit(f,'A1','ATF');
+  await saveSchedule(f,parent,schedule);const saved=await saveInterval(f,key,60);assert.equal(saved.rule.refresh.minSeconds,60);
+  const c=f.readConfig();assert.deepEqual(c.advancedUnitRules[key].refresh.schedule,{mode:'fixed',fixedSeconds:60,firstSeconds:60,nextSeconds:60},`${mode} ${parent}->${key}`);assert.equal(c.advancedUnitRules[key].refresh.minSeconds,60);assert.equal(c.advancedUnitRules[key].timeout,undefined);
+  assert.equal(c.advancedUnitRules[parent].refresh.schedule.mode,mode,'the parent schedule is unchanged');
+  const result=await generatedIntervals(f,[code]);for(const version of scripts){assert(every(result[version+' '+code],60),`${mode} ${parent}->${key} ${version}: ${result[version+' '+code]}`);assert.deepEqual(result['summary '+version].warnings.filter(w=>w.includes('Unit rules is not used')),[]);}
+  assert.equal(result['summary 3.16.1'].units.find(u=>u.code===code).label,'60s · 50%');
+ }
+});
+// The "Create base rules" presets (UnitRulesPanel presetForKey); lazy is display-only and not part of refresh.
+const preset={__DEFAULT__:{timeout:2500,refresh:refresh(30),conditionalMappings:[]},__ATF__:{timeout:2200,refresh:{...refresh(30),minViewPct:60},conditionalMappings:[]},__BTF__:{timeout:2500,refresh:refresh(30),conditionalMappings:[]}};
+async function createBaseRules(f,extra={}){const kept=[];for(const key of ['__DEFAULT__','__ATF__','__BTF__']){if(f.sqlite.prepare('SELECT 1 FROM unit_rules WHERE rule_key=?').get(key))continue;const r=await createUnitRule(request({ruleKey:key,rule:preset[key],...extra}),f.env,'audit-site');assert.equal(r.status,201,await r.clone().text());kept.push(...(await r.json()).keptUnitRuleIntervals);}return kept;}
+const ruleId=(f,key)=>f.sqlite.prepare('SELECT id FROM unit_rules WHERE rule_key=?').get(key).id;
+async function editRule(f,key,rule){const r=await updateUnitRule(request({rule},'PATCH'),f.env,'audit-site',ruleId(f,key));assert.equal(r.status,200,await r.clone().text());return r.json();}
+const intervalWarnings=summary=>summary.warnings.filter(w=>w.includes('Unit rules is not used'));
+const advice='If the inherited schedule is intended, remove the refresh override from that rule in Unit rules. To use the saved interval, edit and save the rule in Unit rules, or set “Same every time” for it in Refresh schedules.';
+test('Refresh schedules saved later keep chosen child intervals and name them; inheriting positions follow the schedule',async()=>{
+ const f=setup({config:{enablePrebid:false}});addUnit(f,'A1','ATF');addUnit(f,'P2','BTF');
+ await saveInterval(f,'__BTF__',45);await saveInterval(f,'P1',60);const before=f.readConfig();assert.equal(before.advancedUnitRules,undefined,'no schedule exists, so nothing is added');
+ const saved=await saveSchedule(f,'__DEFAULT__',schedules.sequence);assert.deepEqual(saved.keptUnitRuleIntervals,['__BTF__','P1']);assert.deepEqual(saved.appliesToAdUnits,['A1']);
+ const c=f.readConfig();assert.equal(c.advancedUnitRules.__BTF__.refresh.schedule.fixedSeconds,45);assert.equal(c.advancedUnitRules.P1.refresh.schedule.fixedSeconds,60);assert.equal(c.advancedUnitRules.P2,undefined);assert.equal(c.advancedUnitRules.A1,undefined);
+ const audit=JSON.parse(f.sqlite.prepare("SELECT details_json FROM audit_log WHERE action='unit_rule.advanced_updated'").get().details_json);assert.deepEqual(audit.keptUnitRuleIntervals,['__BTF__','P1']);
+ const result=await generatedIntervals(f,['P1','P2','A1']);
+ for(const version of scripts){assert(every(result[version+' P1'],60));assert(every(result[version+' P2'],45));assert.deepEqual(result[version+' A1'],[20,40,80,80]);}
+ // Editing the parent again only changes positions that inherit it.
+ const again=await saveSchedule(f,'__DEFAULT__',{mode:'fixed',fixedSeconds:90});assert.deepEqual(again.keptUnitRuleIntervals,[]);const next=await generatedIntervals(f,['P1','P2','A1']);for(const version of scripts){assert(every(next[version+' P1'],60));assert(every(next[version+' P2'],45));assert(every(next[version+' A1'],90));}
+});
+test('base-rule presets follow a Default schedule saved later in Refresh schedules or Unit rules',async()=>{
+ const f=setup({config:{enablePrebid:false}});addUnit(f,'Billboard','ATF');addUnit(f,'P2','BTF');const codes=['P1','Billboard','P2'];
+ assert.deepEqual(await createBaseRules(f),[]);assert.equal(f.readConfig().advancedUnitRules,undefined);
+ const saved=await saveSchedule(f,'__DEFAULT__',schedules.sequence);assert.deepEqual(saved.keptUnitRuleIntervals,[]);assert.deepEqual(saved.appliesToAdUnits,codes);
+ assert.deepEqual(Object.keys(f.readConfig().advancedUnitRules),['__DEFAULT__'],'the 30s presets only repeated Default, so they are not pinned');
+ let result=await generatedIntervals(f,codes);
+ for(const version of scripts){for(const code of codes)assert.deepEqual(result[version+' '+code],[20,40,80,80],`${version} ${code}`);
+  const summary=result['summary '+version];assert.deepEqual(intervalWarnings(summary),[],'presets that follow the site schedule are not a warning');
+  assert.equal(summary.units.find(u=>u.code==='Billboard').detail,'Uses the inherited Default schedule (20s, 40s, 80s…); the 30s interval saved for ATF group in Unit rules is not used.');}
+ // A site-wide change of the fixed interval applies to every position.
+ await saveSchedule(f,'__DEFAULT__',schedules.fixed);const slower=await saveSchedule(f,'__DEFAULT__',{mode:'fixed',fixedSeconds:45});assert.deepEqual(slower.keptUnitRuleIntervals,[]);assert.deepEqual(slower.appliesToAdUnits,codes);
+ result=await generatedIntervals(f,codes);for(const version of scripts)for(const code of codes)assert(every(result[version+' '+code],45),`${version} ${code} ${result[version+' '+code]}`);
+ // The same change made on the Default rule in Unit rules.
+ const edited=await editRule(f,'__DEFAULT__',{...preset.__DEFAULT__,refresh:refresh(60)});assert.deepEqual(edited.keptUnitRuleIntervals,[]);
+ result=await generatedIntervals(f,codes);for(const version of scripts)for(const code of codes)assert(every(result[version+' '+code],60));
+ assert.deepEqual(Object.keys(f.readConfig().advancedUnitRules),['__DEFAULT__']);
+});
+test('Create base rules keeps an earlier Refresh schedule; only an interval set in the editor is used over it',async()=>{
+ const f=setup({config:{enablePrebid:false}});addUnit(f,'Billboard','ATF');
+ await saveSchedule(f,'__DEFAULT__',schedules.sequence);
+ assert.deepEqual(await createBaseRules(f,{followInheritedSchedule:true}),[]);assert.deepEqual(Object.keys(f.readConfig().advancedUnitRules),['__DEFAULT__']);
+ let result=await generatedIntervals(f,['P1','Billboard']);for(const version of scripts){assert.deepEqual(result[version+' P1'],[20,40,80,80]);assert.deepEqual(result[version+' Billboard'],[20,40,80,80]);}
+ // An unrelated edit of a group rule never retimes its positions.
+ const timeoutOnly=await editRule(f,'__ATF__',{...preset.__ATF__,timeout:2000});assert.deepEqual(timeoutOnly.keptUnitRuleIntervals,[]);assert.equal(f.readConfig().advancedUnitRules.__ATF__,undefined);
+ result=await generatedIntervals(f,['Billboard']);for(const version of scripts)assert.deepEqual(result[version+' Billboard'],[20,40,80,80]);
+ // Changing the group interval is a choice: it is used and named.
+ const changed=await editRule(f,'__ATF__',{...preset.__ATF__,refresh:{...preset.__ATF__.refresh,minSeconds:45}});assert.deepEqual(changed.keptUnitRuleIntervals,['__ATF__']);
+ const audit=JSON.parse(f.sqlite.prepare("SELECT details_json FROM audit_log WHERE action='unit_rule.updated' ORDER BY rowid DESC LIMIT 1").get().details_json);assert.deepEqual(audit.keptUnitRuleIntervals,['__ATF__']);
+ result=await generatedIntervals(f,['P1','Billboard']);for(const version of scripts){assert(every(result[version+' Billboard'],45));assert.deepEqual(result[version+' P1'],[20,40,80,80]);}
+ // A group rule created in the editor under the schedule is used too.
+ const g=setup({config:{enablePrebid:false}});await saveSchedule(g,'__DEFAULT__',schedules.sequence);
+ const r=await createUnitRule(request({ruleKey:'__BTF__',rule:preset.__BTF__}),g.env,'audit-site');assert.equal(r.status,201);assert.deepEqual((await r.json()).keptUnitRuleIntervals,['__BTF__']);
+ result=await generatedIntervals(g,['P1']);for(const version of scripts)assert(every(result[version+' P1'],30));
+});
+test('an exact interval equal to its parent keeps its value when the parent changes; an equal group interval follows the parent',async()=>{
+ const f=setup({config:{enablePrebid:false}});addUnit(f,'P2','BTF');addUnit(f,'A1','ATF');
+ await saveSchedule(f,'__DEFAULT__',schedules.fixed);await saveInterval(f,'P1',30);await saveInterval(f,'__ATF__',30);assert.equal(f.readConfig().advancedUnitRules.P1,undefined,'already consistent: generated rules stay byte-identical');assert.equal(f.readConfig().advancedUnitRules.__ATF__,undefined);
+ const r=await editRule(f,'__DEFAULT__',{refresh:refresh(45)});assert.deepEqual(r.keptUnitRuleIntervals,['P1']);
+ let c=f.readConfig();assert.equal(c.advancedUnitRules.__DEFAULT__.refresh.schedule.fixedSeconds,45);assert.equal(c.advancedUnitRules.P1.refresh.schedule.fixedSeconds,30);assert.equal(c.advancedUnitRules.__ATF__,undefined);
+ let result=await generatedIntervals(f,['P1','P2','A1']);for(const version of scripts){assert(every(result[version+' P1'],30));assert(every(result[version+' P2'],45));assert(every(result[version+' A1'],45));}
+ // A group interval set in the editor keeps exact children that matched it when it is deleted.
+ await saveInterval(f,'__BTF__',50);await saveInterval(f,'P2',50);c=f.readConfig();assert.equal(c.advancedUnitRules.__BTF__.refresh.schedule.fixedSeconds,50);assert.equal(c.advancedUnitRules.P2,undefined);
+ const group=ruleId(f,'__BTF__');const removed=await deleteUnitRule(request({},'DELETE'),f.env,'audit-site',group);assert.equal(removed.status,200);assert.deepEqual((await removed.json()).keptUnitRuleIntervals,['P2']);
+ c=f.readConfig();assert.equal(c.advancedUnitRules.__BTF__,undefined);assert.equal(c.advancedUnitRules.P2.refresh.schedule.fixedSeconds,50);
+ result=await generatedIntervals(f,['P1','P2']);for(const version of scripts){assert(every(result[version+' P1'],30));assert(every(result[version+' P2'],50));}
+ // Deleting the exact rule returns the position to the inherited schedule, as Unit rules shows.
+ assert.equal((await deleteUnitRule(request({},'DELETE'),f.env,'audit-site',ruleId(f,'P1'))).status,200);assert.equal(f.readConfig().advancedUnitRules.P1,undefined);
+ result=await generatedIntervals(f,['P1']);for(const version of scripts)assert(every(result[version+' P1'],45));
+});
+test('update and copy apply the saved interval; Refresh-owned schedules and disabled refresh are untouched',async()=>{
+ const f=setup({config:{enablePrebid:false}});addUnit(f,'A1','ATF');addUnit(f,'P2','BTF');
+ await saveSchedule(f,'__DEFAULT__',schedules.sequence);const p1=await saveInterval(f,'P1',60);
+ assert.equal((await updateUnitRule(request({rule:{timeout:1200,refresh:refresh(90)}},'PATCH'),f.env,'audit-site',p1.id)).status,200);
+ assert.equal(f.readConfig().advancedUnitRules.P1.refresh.schedule.fixedSeconds,90);
+ const copy=await duplicateUnitRule(request({ruleKey:'A1'}),f.env,'audit-site',p1.id);assert.equal(copy.status,201);
+ assert.equal(f.readConfig().advancedUnitRules.A1.refresh.schedule.fixedSeconds,90);
+ const p2=await createUnitRule(request({ruleKey:'P2',rule:{refresh:{...refresh(60),enabled:false}}}),f.env,'audit-site');assert.equal(p2.status,201);assert.equal(f.readConfig().advancedUnitRules.P2,undefined,'disabled refresh has no interval to keep');
+ await saveSchedule(f,'P1',schedules.percentage);const owned=structuredClone(f.readConfig().advancedUnitRules.P1);
+ assert.deepEqual((await saveSchedule(f,'__DEFAULT__',schedules.firstThenFixed)).keptUnitRuleIntervals,[]);assert.deepEqual(f.readConfig().advancedUnitRules.P1,owned);
+ const result=await generatedIntervals(f,['P1','A1']);for(const version of scripts){assert.deepEqual(result[version+' P1'],[20,30,45,68]);assert(every(result[version+' A1'],90));}
+});
+test('Sticky uses the Unit rules interval in 3.16.0 and 3.16.1 under an inherited schedule',async()=>{
+ const f=setup({config:{enablePrebid:false,runtimeControls:{sticky:{bottomAdUnitId:'Sticky'}}}});addUnit(f,'Sticky','ATF');
+ await saveSchedule(f,'__DEFAULT__',schedules.fixed);await saveInterval(f,'Sticky',60);
+ const result=await generatedIntervals(f,['Sticky']);for(const version of scripts){assert.equal(result['sticky '+version],60);assert(every(result[version+' Sticky'],60));}
+});
+test('existing exact-rule data that follows an inherited schedule is reported with the used value until the rule is saved again',async()=>{
+ const f=setup({config:{enablePrebid:false}});addUnit(f,'A1','ATF');
+ seedRule(f,'__DEFAULT__',{refresh:refresh(30)},{refresh:{...refresh(20),schedule:{mode:'firstThenFixed',fixedSeconds:30,firstSeconds:20,nextSeconds:45}}});seedRule(f,'P1',{refresh:refresh(60)},undefined);
+ const c=f.readConfig();delete c.advancedUnitRules.P1;f.writeConfig(c);const before=JSON.stringify(f.readConfig());
+ let result=await generatedIntervals(f,['P1']);for(const version of scripts){assert.deepEqual(result[version+' P1'],[20,45,45,45]);
+  assert.deepEqual(intervalWarnings(result['summary '+version]),[`The refresh interval saved in Unit rules is not used for: P1 (60s; the script uses the inherited Default schedule: 20s, then 45s). ${advice}`]);
+  const row=result['summary '+version].units.find(u=>u.code==='P1');assert.equal(row.label,'20s, then 45s · 50%');assert.equal(row.detail,'Uses the inherited Default schedule (20s, then 45s); the 60s interval saved for P1 in Unit rules is not used.');}
+ assert.equal(JSON.stringify(f.readConfig()),before,'reading settings never writes');
+ assert.deepEqual((await editRule(f,'P1',{refresh:refresh(60)})).keptUnitRuleIntervals,['P1']);
+ result=await generatedIntervals(f,['P1']);for(const version of scripts){assert(every(result[version+' P1'],60));assert.deepEqual(intervalWarnings(result['summary '+version]),[]);}
+});
+test('a group interval that already followed the inherited schedule keeps following it until its interval is changed',async()=>{
+ const f=setup({config:{enablePrebid:false}});
+ seedRule(f,'__DEFAULT__',{refresh:refresh(20)},{refresh:{...refresh(20),schedule:{mode:'sequence',sequenceSeconds:[20,40,80]}}});seedRule(f,'__BTF__',{refresh:refresh(30)},undefined);
+ const c=f.readConfig();delete c.advancedUnitRules.__BTF__;f.writeConfig(c);
+ assert.deepEqual((await saveSchedule(f,'__DEFAULT__',{mode:'sequence',sequenceSeconds:[25,50]})).keptUnitRuleIntervals,[]);assert.equal(f.readConfig().advancedUnitRules.__BTF__,undefined);
+ let result=await generatedIntervals(f,['P1']);for(const version of scripts){assert.deepEqual(result[version+' P1'],[25,50,50,50]);assert.deepEqual(intervalWarnings(result['summary '+version]),[]);
+  assert.equal(result['summary '+version].units.find(u=>u.code==='P1').detail,'Uses the inherited Default schedule (25s, 50s…); the 30s interval saved for BTF group in Unit rules is not used.');}
+ assert.deepEqual((await editRule(f,'__BTF__',{refresh:refresh(30)})).keptUnitRuleIntervals,[],'saving the same value is not a new choice');
+ result=await generatedIntervals(f,['P1']);for(const version of scripts)assert.deepEqual(result[version+' P1'],[25,50,50,50]);
+ assert.deepEqual((await editRule(f,'__BTF__',{refresh:refresh(40)})).keptUnitRuleIntervals,['__BTF__']);
+ result=await generatedIntervals(f,['P1']);for(const version of scripts)assert(every(result[version+' P1'],40));
+});
+test('a Refresh schedules save that races a Unit rules save is refused with no partial write',async()=>{
+ for(const injectAt of [1,2]){
+  const f=setup({config:{enablePrebid:false}});const base=f.env.DB;let reads=0,created=null;
+  const wrap=statement=>({...statement,bind:(...values)=>wrap(statement.bind(...values)),async all(){const result=await statement.all();if(/FROM unit_rules/.test(statement.sql)&&++reads===injectAt&&!created)created=await createUnitRule(request({ruleKey:'P1',rule:{refresh:refresh(60)}}),f.env,'audit-site');return result;}});
+  const DB={...base,prepare:sql=>wrap(base.prepare(sql))};
+  const r=await updateAdvancedRule(request({refresh:{enabled:true,schedule:schedules.fixed}},'PUT'),{...f.env,DB},'audit-site','__DEFAULT__');
+  assert.equal(created.status,201);assert.equal(r.status,409,await r.clone().text());assert.match((await r.json()).error,/changed in another tab/);
+  assert.equal(f.readConfig().advancedUnitRules?.__DEFAULT__,undefined,`${injectAt}: no Refresh schedule was written`);
+  assert.equal(f.sqlite.prepare("SELECT count(*) n FROM unit_rules WHERE rule_key='__DEFAULT__'").get().n,0,'nor its Unit rules mirror');
+  assert.equal(f.sqlite.prepare("SELECT count(*) n FROM audit_log WHERE action='unit_rule.advanced_updated'").get().n,0);
+  // Saving again after a reload keeps the interval the other save chose.
+  assert.deepEqual((await saveSchedule(f,'__DEFAULT__',schedules.fixed)).keptUnitRuleIntervals,['P1']);
+  const result=await generatedIntervals(f,['P1']);for(const version of scripts)assert(every(result[version+' P1'],60));
+ }
 });

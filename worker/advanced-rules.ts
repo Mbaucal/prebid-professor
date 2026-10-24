@@ -1,11 +1,20 @@
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
+import { keepUnitRuleIntervals, scheduleSource } from './refresh-inheritance';
+import {
+  UNIT_RULE_ROWS_UNCHANGED_SQL,
+  everyStatementChangedOneRow,
+  nextRowVersion,
+  readUnitRuleRows,
+  unitRuleRowsUnchangedArgs,
+} from './unit-rule-rows';
 
 type JsonRecord = Record<string, unknown>;
 type RefreshMode = 'fixed' | 'firstThenFixed' | 'percentage' | 'sequence';
 
 const RESERVED_RULE_KEYS = new Set(['__DEFAULT__', '__ATF__', '__BTF__']);
 const REFRESH_MODES = new Set<RefreshMode>(['fixed', 'firstThenFixed', 'percentage', 'sequence']);
+const REFRESH_CHANGED_ELSEWHERE = 'Unit rules or refresh settings changed in another tab. Reload before saving.';
 
 function databaseMissing(): Response {
   return apiError('D1 database binding is not configured yet.', 503);
@@ -173,13 +182,16 @@ function normalizeRefresh(value: unknown, current: JsonRecord): JsonRecord {
   };
 }
 
-async function readConfig(db: D1Database, siteId: string): Promise<{ raw: JsonRecord; rowId: string } | null> {
+async function readConfig(
+  db: D1Database,
+  siteId: string,
+): Promise<{ raw: JsonRecord; rowId: string; configJson: string } | null> {
   const row = await db
     .prepare('SELECT id, config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1')
     .bind(siteId)
     .first<{ id: string; config_json: string }>();
   if (!row) return null;
-  return { raw: parseRecord(row.config_json), rowId: row.id };
+  return { raw: parseRecord(row.config_json), rowId: row.id, configJson: row.config_json };
 }
 
 function advancedMap(config: JsonRecord): Record<string, JsonRecord> {
@@ -192,19 +204,9 @@ function advancedMap(config: JsonRecord): Record<string, JsonRecord> {
   return result;
 }
 
-async function mirrorLegacyRule(
-  db: D1Database,
-  siteId: string,
-  ruleKey: string,
-  advanced: JsonRecord,
-  now: string,
-): Promise<{ id: string; rule: JsonRecord }> {
-  const row = await db
-    .prepare('SELECT id, rule_json FROM unit_rules WHERE publisher_id = ? AND rule_key = ? LIMIT 1')
-    .bind(siteId, ruleKey)
-    .first<{ id: string; rule_json: string }>();
-
-  const rule = parseRecord(row?.rule_json);
+/** The Unit rules row a Refresh schedules save keeps in step (legacy mirror of the editable fields), from the row read in the snapshot. */
+function mirroredLegacyRule(saved: JsonRecord, advanced: JsonRecord): JsonRecord {
+  const rule = { ...saved };
   const advancedRefresh = isRecord(advanced.refresh) ? advanced.refresh : {};
   const currentRefresh = isRecord(rule.refresh) ? rule.refresh : {};
   rule.timeout = advanced.timeout;
@@ -216,28 +218,7 @@ async function mirrorLegacyRule(
     requirePreviousViewable: advancedRefresh.requirePreviousViewable,
     checkEveryMs: advancedRefresh.checkEveryMs,
   };
-
-  const id = row?.id ?? crypto.randomUUID();
-  await db
-    .prepare(
-      `INSERT INTO unit_rules (id, publisher_id, rule_key, rule_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(publisher_id, rule_key)
-       DO UPDATE SET rule_json = excluded.rule_json, updated_at = excluded.updated_at`,
-    )
-    .bind(id, siteId, ruleKey, JSON.stringify(rule), now, now)
-    .run();
-  return { id, rule };
-}
-
-async function syncConfigUnitRules(db: D1Database, siteId: string, config: JsonRecord): Promise<void> {
-  const rulesResult = await db
-    .prepare('SELECT rule_key, rule_json FROM unit_rules WHERE publisher_id = ? ORDER BY rule_key COLLATE NOCASE')
-    .bind(siteId)
-    .all<{ rule_key: string; rule_json: string }>();
-  const unitRules: Record<string, JsonRecord> = {};
-  for (const row of rulesResult.results ?? []) unitRules[row.rule_key] = parseRecord(row.rule_json);
-  config.unitRules = unitRules;
+  return rule;
 }
 
 export async function listAdvancedRules(env: DatabaseEnv, siteId: string): Promise<Response> {
@@ -295,35 +276,105 @@ export async function updateAdvancedRule(
 
   const now = new Date().toISOString();
   const actor = getActor(request);
+  let kept: string[] = [];
+  let appliesTo: string[] = [];
 
   try {
-    const mirrored = await mirrorLegacyRule(env.DB, siteId, ruleKey, advanced, now);
+    // The mirrored row, config.unitRules and the advanced record are written in one
+    // batch that applies only while config_json and every unit_rules row still match
+    // what was read here, so a concurrent unit-rule save or delete cannot be
+    // overwritten or resurrected and cannot leave an advanced override without its row.
+    const [rows, unitRows] = await Promise.all([
+      readUnitRuleRows(env.DB, siteId),
+      env.DB
+        .prepare('SELECT code, type, enabled FROM ad_units WHERE publisher_id = ?')
+        .bind(siteId)
+        .all<{ code: string; type: string; enabled: number }>(),
+    ]);
+    const existing = rows.find((row) => row.rule_key === ruleKey);
+    const mirroredId = existing?.id ?? crypto.randomUUID();
+    const mirroredJson = JSON.stringify(mirroredLegacyRule(parseRecord(existing?.rule_json), advanced));
+    // Unit rules as the table will hold them after this save, in the table's order
+    // (SQLite's own NOCASE sort, as before). Only the order is taken from this read:
+    // it must hold exactly the rows of the guarded snapshot above, or another save
+    // landed in between and this one is refused before anything is written.
+    const nextRows = await env.DB
+      .prepare(
+        `SELECT rule_key, rule_json FROM unit_rules WHERE publisher_id = ? AND rule_key <> ?
+         UNION ALL SELECT ?, ? ORDER BY rule_key COLLATE NOCASE`,
+      )
+      .bind(siteId, ruleKey, ruleKey, mirroredJson)
+      .all<{ rule_key: string; rule_json: string }>();
+    const snapshot = new Map(rows.map((row) => [row.rule_key, row.rule_json]));
+    snapshot.set(ruleKey, mirroredJson);
+    const ordered = nextRows.results ?? [];
+    if (ordered.length !== snapshot.size || ordered.some((row) => snapshot.get(row.rule_key) !== row.rule_json)) {
+      return apiError(REFRESH_CHANGED_ELSEWHERE, 409);
+    }
+    const before = {
+      advanced: structuredClone(allAdvanced) as Record<string, unknown>,
+      basic: Object.fromEntries(rows.map((row) => [row.rule_key, parseRecord(row.rule_json)])) as Record<string, unknown>,
+    };
+    const unitRules: Record<string, JsonRecord> = {};
+    for (const row of ordered) unitRules[row.rule_key] = parseRecord(row.rule_json);
     allAdvanced[ruleKey] = advanced;
     config.advancedUnitRules = allAdvanced;
-    await syncConfigUnitRules(env.DB, siteId, config);
+    config.unitRules = unitRules;
+    // A chosen child Unit rules interval in effect before this save stays in
+    // effect instead of silently following this schedule; the response names them.
+    // The kept schedules are part of the same guarded config write below.
+    const types = Object.fromEntries((unitRows.results ?? []).map((unit) => [unit.code, unit.type]));
+    kept = keepUnitRuleIntervals(allAdvanced, unitRules, types, ruleKey, { savedRule: false, before });
+    appliesTo = (unitRows.results ?? [])
+      .filter((unit) => unit.enabled === 1 && unit.type !== 'DRAFT'
+        && scheduleSource({ advanced: allAdvanced, basic: unitRules }, types, unit.code) === ruleKey)
+      .map((unit) => unit.code);
 
-    await env.DB.batch([
+    const statements = [
       env.DB
-        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ?')
-        .bind(JSON.stringify(config), now, siteId),
+        .prepare(
+          `UPDATE publisher_configs SET config_json = ?, updated_at = ?
+           WHERE publisher_id = ? AND config_json = ? AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}`,
+        )
+        .bind(JSON.stringify(config), now, siteId, configRow.configJson, ...unitRuleRowsUnchangedArgs(siteId, rows)),
+      existing
+        ? env.DB
+            .prepare(
+              `UPDATE unit_rules SET rule_json = ?, updated_at = ?
+               WHERE publisher_id = ? AND id = ? AND updated_at = ? AND changes() = 1`,
+            )
+            .bind(mirroredJson, nextRowVersion(existing.updated_at, now), siteId, existing.id, existing.updated_at)
+        : env.DB
+            .prepare(
+              `INSERT INTO unit_rules (id, publisher_id, rule_key, rule_json, created_at, updated_at)
+               SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
+            )
+            .bind(mirroredId, siteId, ruleKey, mirroredJson, now, now),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'unit_rule.advanced_updated', ?, 'advanced_unit_rule', ?, ?, ?)`,
+           ) SELECT ?, ?, 'unit_rule.advanced_updated', ?, 'advanced_unit_rule', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
           actor,
           siteId,
           ruleKey,
-          JSON.stringify({ ruleKey, advanced, mirroredUnitRuleId: mirrored.id }),
+          JSON.stringify({ ruleKey, advanced, mirroredUnitRuleId: mirroredId, ...(kept.length ? { keptUnitRuleIntervals: kept } : {}) }),
           now,
         ),
-    ]);
+    ];
+    const results = await env.DB.batch(statements);
+    if (results[0]?.meta.changes !== 1) {
+      return apiError(REFRESH_CHANGED_ELSEWHERE, 409);
+    }
+    if (!everyStatementChangedOneRow(results, statements.length)) {
+      return apiError('Advanced rule update was not fully applied. Reload before saving again.', 500);
+    }
   } catch (error) {
     return apiError('Advanced rule update failed.', 500, error instanceof Error ? error.message : String(error));
   }
 
-  return json({ ok: true, ruleKey, advancedRule: advanced });
+  return json({ ok: true, ruleKey, advancedRule: advanced, keptUnitRuleIntervals: kept, appliesToAdUnits: appliesTo });
 }

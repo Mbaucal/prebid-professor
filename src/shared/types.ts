@@ -199,6 +199,8 @@ export type UnitRule = {
 export type CreateUnitRuleInput = {
   ruleKey: string;
   rule: UnitRuleConfig;
+  /** Leave an inherited Refresh schedule in charge of this rule's interval (base-rule presets). */
+  followInheritedSchedule?: boolean;
 };
 
 export type UpdateUnitRuleInput = {
@@ -364,11 +366,19 @@ export type UnitRulesResponse = {
 export type UnitRuleResponse = {
   ok: true;
   unitRule: UnitRule;
+  /** Rules whose Unit rules interval was given its own fixed schedule by this save. */
+  keptUnitRuleIntervals?: string[];
 };
 
 export type DeleteUnitRuleResponse = {
   ok: true;
   deletedId: string;
+  keptUnitRuleIntervals?: string[];
+};
+
+export type UnitRuleSaveResult = {
+  unitRule: UnitRule;
+  keptUnitRuleIntervals: string[];
 };
 
 export type BiddersResponse = {

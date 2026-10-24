@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import { runtimeLabel } from '../site-workspace/runtime-labels';
 import type {
   AdUnit,
@@ -20,6 +20,11 @@ type Props = {
 };
 
 type FormMode = 'create' | 'edit' | 'duplicate';
+
+// 404/409 from a rule save means another tab deleted or changed the rules first.
+function isStaleRuleError(error: unknown): error is ApiError {
+  return error instanceof ApiError && (error.status === 404 || error.status === 409);
+}
 
 type LoadingSummary = {
   runtimeVersion: string | null;
@@ -229,6 +234,16 @@ function scopeLabel(ruleKey: string): string {
   return `Exact · ${ruleKey}`;
 }
 
+/** Names rules whose Unit rules interval a save gave its own fixed schedule. */
+function keptIntervalsNotice(keys: string[]): string | null {
+  if (!keys.length) return null;
+  const names = keys.map((key) => key === '__DEFAULT__' ? 'Default' : key === '__ATF__' ? 'ATF group' : key === '__BTF__' ? 'BTF group' : key);
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return names.length === 1
+    ? `${list} uses its own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows it as “Same every time”.`
+    : `${list} use their own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows them as “Same every time”.`;
+}
+
 function timeoutText(rule: UnitRuleConfig): string {
   return rule.timeout === undefined ? 'Inherited' : `${rule.timeout} ms`;
 }
@@ -254,6 +269,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
   const [sizeMaps, setSizeMaps] = useState<SizeMap[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [mode, setMode] = useState<FormMode | null>(null);
   const [source, setSource] = useState<UnitRule | null>(null);
   const [form, setForm] = useState<RuleForm>(() => formFromRule('__DEFAULT__', presetForKey('__DEFAULT__')));
@@ -433,19 +449,31 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     }
 
     setSubmitting(true);
+    setNotice(null);
     try {
-      if (mode === 'edit' && source) {
-        await api.updateUnitRule(publisherId, source.id, { rule });
-      } else if (mode === 'duplicate' && source) {
-        await api.duplicateUnitRule(publisherId, source.id, { ruleKey: form.ruleKey });
-      } else {
-        await api.createUnitRule(publisherId, { ruleKey: form.ruleKey, rule });
-      }
+      const saved = mode === 'edit' && source
+        ? await api.updateUnitRule(publisherId, source.id, { rule })
+        : mode === 'duplicate' && source
+          ? await api.duplicateUnitRule(publisherId, source.id, { ruleKey: form.ruleKey })
+          : await api.createUnitRule(publisherId, { ruleKey: form.ruleKey, rule });
+      setNotice(keptIntervalsNotice(saved.keptUnitRuleIntervals));
       await load();
       await onChanged?.();
       closeForm();
     } catch (requestError) {
-      setFormError(requestError instanceof Error ? requestError.message : 'Unit rule operation failed.');
+      const message = requestError instanceof Error ? requestError.message : 'Unit rule operation failed.';
+      if (isStaleRuleError(requestError)) {
+        // Another tab changed or deleted the rule and nothing was saved. Refresh the list
+        // behind the dialog, but keep the dialog and every entered value.
+        await load();
+        if (requestError.status === 404 && mode === 'edit') {
+          setMode('create');
+          setSource(null);
+          setFormError(`${message} Your entries are kept: select Save rule to create this rule again, or Cancel.`);
+          return;
+        }
+      }
+      setFormError(message);
     } finally {
       setSubmitting(false);
     }
@@ -455,11 +483,15 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     if (!window.confirm(`Delete rule ${scopeLabel(rule.ruleKey)}? Its values will fall back to inherited rules.`)) {
       return;
     }
+    setNotice(null);
     try {
-      await api.deleteUnitRule(publisherId, rule.id);
+      const deleted = await api.deleteUnitRule(publisherId, rule.id);
+      setNotice(keptIntervalsNotice(deleted.keptUnitRuleIntervals));
       await load();
       await onChanged?.();
     } catch (requestError) {
+      // A successful reload clears the panel error, so reload first and report after.
+      if (isStaleRuleError(requestError)) await load();
       setError(requestError instanceof Error ? requestError.message : 'Could not delete unit rule.');
     }
   }
@@ -468,13 +500,19 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     if (!missingReserved.length) return;
     setCreatingBaseRules(true);
     setError(null);
+    setNotice(null);
     try {
+      const kept: string[] = [];
       for (const item of missingReserved) {
-        await api.createUnitRule(publisherId, {
+        // Presets are starting values: a schedule already saved in Refresh schedules keeps applying.
+        const saved = await api.createUnitRule(publisherId, {
           ruleKey: item.key,
           rule: presetForKey(item.key),
+          followInheritedSchedule: true,
         });
+        kept.push(...saved.keptUnitRuleIntervals);
       }
+      setNotice(keptIntervalsNotice(kept));
       await load();
       await onChanged?.();
     } catch (requestError) {
@@ -537,6 +575,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
         </div>
 
         {error ? <div className="form-error config-error">{error}</div> : null}
+        {notice ? <p role="status" className="loading-summary-help unit-rules-notice">{notice}</p> : null}
         {loading ? <div className="config-loading">Loading unit rules from D1…</div> : null}
 
         <div className="rule-inheritance-strip">

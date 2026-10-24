@@ -164,6 +164,19 @@ function schedulePreview(form: FormState, count = 7): number[] {
   return values;
 }
 
+function keptIntervalsText(keys: string[]): string {
+  const names = keys.map((key) => key === '__DEFAULT__' ? 'Default' : key === '__ATF__' ? 'ATF group' : key === '__BTF__' ? 'BTF group' : key);
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `${list} ${names.length === 1 ? 'keeps its' : 'keep their'} own interval from Unit rules.`;
+}
+
+function savedScheduleText(ruleKey: string, kept: string[], appliesTo?: string[]): string {
+  if (!kept.length) return `Saved ${ruleKey}. The runtime profile will apply this schedule during release generation.`;
+  // Every position below this scope keeps a more specific interval: say so instead of promising an effect.
+  if (appliesTo && !appliesTo.length) return `Saved ${ruleKey}. This schedule currently applies to no ad unit. ${keptIntervalsText(kept)}`;
+  return `Saved ${ruleKey}. The runtime profile will apply this schedule during release generation. ${keptIntervalsText(kept)}`;
+}
+
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
   const payload = (await response.json()) as T & { error?: string };
@@ -245,7 +258,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
 
     setSaving(true);
     try {
-      await requestJson(
+      const saved = await requestJson<{ ok: true; keptUnitRuleIntervals?: string[]; appliesToAdUnits?: string[] }>(
         `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced/${encodeURIComponent(form.ruleKey)}`,
         {
           method: 'PUT',
@@ -283,7 +296,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
       ]);
       setRules(unitRules);
       setAdvancedRules(advancedPayload.advancedRules);
-      setSavedMessage(`Saved ${form.ruleKey}. The runtime profile will apply this schedule during release generation.`);
+      setSavedMessage(savedScheduleText(form.ruleKey, saved.keptUnitRuleIntervals ?? [], saved.appliesToAdUnits));
       await onChanged?.();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Advanced schedule could not be saved.');
