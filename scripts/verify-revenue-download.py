@@ -93,29 +93,30 @@ with sync_playwright() as p:
     # corrupt-file refusal and recovery without changing any stored bytes.
     page.goto('https://tessera.fixture.invalid/site-workspace#packages')
     button=page.get_by_role('button',name='Download saved ZIP',exact=True)
+    notice=page.locator('.runtime-message[role="status"], .runtime-error[role="status"]')
     expect(button).to_be_enabled()
     first_file=descriptor['files'][0]['name'];mode['hold']=base+'/files/'+first_file
     button.click()
     deadline=time.monotonic()+5
     while not pending and time.monotonic()<deadline:page.wait_for_timeout(10)
     assert pending,'Actual download did not reach its first saved file'
-    expect(button).to_be_disabled();expect(page.get_by_role('status')).to_have_text('Downloading '+first_file+'…')
-    page.get_by_role('status').scroll_into_view_if_needed()
+    expect(button).to_be_disabled();expect(notice).to_have_text('Downloading '+first_file+'…')
+    notice.scroll_into_view_if_needed()
     page.screenshot(path=str(out/f'releases-loading-{width}.png'),full_page=True)
     assert len(downloads)==1,'Loading unexpectedly emitted a download'
     mode['hold']=None;mode['corrupt']=base+'/files/deals-plan.json'
     for r,result in pending:fulfill(r,result)
     pending.clear()
-    expect(page.get_by_role('status')).to_have_text('Saved file checksum differs: deals-plan.json')
+    expect(notice).to_have_text('Saved file checksum differs: deals-plan.json')
     expect(button).to_be_enabled();assert len(downloads)==1,'Corruption emitted a ZIP'
-    page.get_by_role('status').scroll_into_view_if_needed()
+    notice.scroll_into_view_if_needed()
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
     page.screenshot(path=str(out/f'releases-error-{width}.png'),full_page=True)
     mode['corrupt']=None
     with page.expect_download() as retry:button.click()
     assert verify_download(retry.value)==homepage_zip,'Two UI entry points assembled different saved ZIP bytes'
-    expect(page.get_by_role('status')).to_have_text('Saved ZIP downloaded.');expect(button).to_be_enabled()
-    page.get_by_role('status').scroll_into_view_if_needed()
+    expect(notice).to_have_text('Saved ZIP downloaded.');expect(button).to_be_enabled()
+    notice.scroll_into_view_if_needed()
     page.screenshot(path=str(out/f'releases-recovered-{width}.png'),full_page=True)
     assert data(base)['verified'] is True
     assert sum(r['method']=='POST' for r in requests)==writes_before,'Download/retry regenerated or changed settings'
