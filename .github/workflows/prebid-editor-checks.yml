@@ -26,7 +26,7 @@ jobs:
           python-version: '3.12'
       - run: node scripts/bootstrap-toolchain.mjs
       - run: node scripts/check-test-activation.mjs && node scripts/isolated-toolchain.mjs prepare && node scripts/prepare-test-workspace.mjs
-      - run: node --experimental-strip-types --test tests/runtime/test-prebid-*.test.mjs
+      - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/test-prebid-*.test.mjs
       - name: Compile TEST only; no deployment
         env:
           WRANGLER_SEND_METRICS: 'false'
