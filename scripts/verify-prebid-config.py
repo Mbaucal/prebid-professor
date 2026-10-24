@@ -172,7 +172,7 @@ with tempfile.TemporaryDirectory(prefix='tessera-local-tls-') as tls:
     subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1',
                     '-keyout',str(key),'-out',str(cert),'-subj','/CN='+hostname,
                     '-addext','subjectAltName=DNS:'+hostname],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-    process=subprocess.Popen(['node','--experimental-strip-types','scripts/test-workspace-server.mjs',str(key),str(cert)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/test-workspace-server.mjs',str(key),str(cert)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
         for attempt in range(80):
             if process.poll() is not None:

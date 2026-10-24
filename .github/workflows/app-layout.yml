@@ -30,6 +30,10 @@ jobs:
       - run: python scripts/verify-app-dialogs.py
       - run: node --experimental-strip-types --loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ads-txt-versions.test.mjs
       - run: python scripts/verify-adstxt-versions.py
+      - name: Verify audit warnings, rule edits and saved sync choices on desktop and mobile
+        run: |
+          python scripts/verify-admin-audit-ui.py
+          python scripts/verify-admin-audit-ui.py --runtime 3.16.1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -40,4 +44,5 @@ jobs:
             .generated/release-action-evidence/
             .generated/app-dialog-evidence/
             .generated/adstxt-version-evidence/
+            .generated/admin-audit-ui-evidence/
           retention-days: 14

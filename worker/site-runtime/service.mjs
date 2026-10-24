@@ -4,13 +4,16 @@ import {normalizeGpid} from '../runtime-demand-v1/snapshot.mjs';
 import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { pinRuntime } from '../runtime/version-pin.mjs';
-import { describeRuntimeReleases } from '../runtime/runtime-release-history.mjs';
+import { describeRuntimeReleases, runtimeReleaseHistory } from '../runtime/runtime-release-history.mjs';
 import { runtimeCatalog, descriptorForPin, previewInput, prepareSiteRuntimeSelection, readPinnedSiteRuntime, buildArtifactCandidate } from '../test-workspace/runtime-catalog.mjs';
 import { readPositions, normalizeOverlay, normalizeLazy } from '../runtime-next/position-settings.mjs';
 import { takeOverForBuild } from '../test-workspace/takeover-settings.mjs';
 import { zipSync } from 'fflate';
 import { siteSetupState } from './setup-state.mjs';
 import { loadingSummary } from './loading-summary.mjs';
+import { initializeMissingUserSync } from '../user-id-config.ts';
+import { assertSnapshotCompilerCompatibility } from '../compiler-input-compatibility.mjs';
+import { refreshSummary } from './refresh-summary.mjs';
 
 export class SiteRuntimeError extends Error { constructor(message,status=422){super(message);this.status=status;} }
 const fail=(message,status)=>{throw new SiteRuntimeError(message,status);};
@@ -63,14 +66,16 @@ export async function siteRuntimeSettings(env,siteId){
  const saved=await read(env,siteId),config=JSON.parse(saved.config.config_json);
  // Operator recommendation only. Historical pins and catalog order remain
  // available to the checked readers; saving a new pin is still explicit.
- const current=runtimeCatalog.find(r=>r.id==='tessera-3.16.0'&&r.version==='3.16.0'&&r.channel==='stable');
+ const recommended=runtimeReleaseHistory.find(release=>release.channel==='stable');
+ const current=recommended&&runtimeCatalog.find(r=>r.id===recommended.id&&r.version===recommended.version&&r.codeSha256===recommended.codeSha256&&r.channel==='stable');
  const pin=config.builtinRuntimeSelection?.runtime;let validationIssue=null,preview=null;
- try{if(pin)preview=previewInput(saved,descriptorForPin(pin),'20000101_000000');}catch(e){validationIssue=e.message;}
+ try{if(pin){const descriptor=descriptorForPin(pin);assertSnapshotCompilerCompatibility(saved,descriptor);preview=previewInput(saved,descriptor,'20000101_000000');}}catch(e){validationIssue=e.message;}
  const positions=readPositions(config,saved.units),sticky=config.runtimeControls?.sticky;
  const stickyId=Object.hasOwn(sticky??{},'bottomAdUnitId')?sticky.bottomAdUnitId:(saved.units.some(u=>u.code==='Sticky'&&u.enabled===1)?'Sticky':'');
  return {site:saved.site,revision:await digest(saved),selected:pin??null,validationIssue,enablePrebid:config.enablePrebid===true,...siteSetupState(saved),
   loadingSummary:loadingSummary(preview,saved.units,pin,validationIssue),
   demandSignals:preview?.demandSignals??null,
+  refreshSummary:refreshSummary(preview,saved.units,pin),
   currentRuntime:current?{version:current.version,channel:current.channel,pin:pinRuntime(current)}:null,
   runtimes:runtimeCatalog.map(r=>({version:r.version,channel:r.channel,pin:pinRuntime(r,{allowPreview:true})})),history:describeRuntimeReleases(runtimeCatalog,pin),
   positions:saved.units.filter(u=>u.media_type==='banner'&&u.type!=='DRAFT').map(u=>({code:u.code,type:u.type,sizeMap:u.size_map_key,enabled:u.enabled===1,
@@ -95,7 +100,8 @@ export async function changeSiteRuntime(env,siteId,actor,body){
   const currentId=saved.prebidBuilds.length===1?saved.prebidBuilds[0].id:null;
   const plan=await prepareSiteRuntimeSelection({siteId,snapshot:saved,catalog:runtimeCatalog,expectedRevision:body.revision,
    selection:{runtime:body.runtime,allowPreview:body.allowPreview,enablePrebid,prebidBuildId:enablePrebid?currentId:null}},env.BUILDS);
-  return commitSiteConfiguration(env,saved,plan.configJson,actor);
+  const nextConfig=setupAction&&enablePrebid&&config.enablePrebid!==true?JSON.stringify(initializeMissingUserSync(JSON.parse(plan.configJson))):plan.configJson;
+  return commitSiteConfiguration(env,saved,nextConfig,actor);
  }
  if(body.action!=='position')fail('Unknown settings action.');
  keys(body,['action','revision','position']);keys(body.position,['code','display','overlay','lazy',...(Object.hasOwn(body.position,'gpid')?['gpid']:[])]);

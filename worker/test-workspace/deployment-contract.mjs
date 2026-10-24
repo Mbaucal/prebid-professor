@@ -1,6 +1,6 @@
 import { unzipSync } from 'fflate';
 import { describeCandidate } from '../runtime/draft-release-store.mjs';
-import { sha256, parsePrebidHeader } from '../runtime/prebid-artifact-check.mjs';
+import { sha256, parsePrebidHeader } from '../runtime/prebid-artifact-check-v2.mjs';
 
 export const DEPLOY_ORIGIN = 'https://prebid-professor-test.mbaucal.workers.dev';
 export const DEPLOY_REPO = 'Mbaucal/prebid-professor';

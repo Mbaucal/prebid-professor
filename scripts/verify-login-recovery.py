@@ -10,7 +10,7 @@ hostname='prebid-professor-test.mbaucal.workers.dev'
 key=str(Path(tls.name)/'key.pem');cert=str(Path(tls.name)/'cert.pem')
 if test_workspace:
     subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-keyout',key,'-out',cert,'-subj','/CN='+hostname,'-addext','subjectAltName=DNS:'+hostname],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-process=subprocess.Popen((['node','--experimental-strip-types','scripts/login-test-browser-fixture.mjs',key,cert] if test_workspace else ['node','scripts/verify-auth-boundaries.mjs','--serve']),cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+process=subprocess.Popen((['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/login-test-browser-fixture.mjs',key,cert] if test_workspace else ['node','scripts/verify-auth-boundaries.mjs','--serve']),cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
 def command(value):
     process.stdin.write(value+'\n');process.stdin.flush()
     for line in process.stdout:

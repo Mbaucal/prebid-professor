@@ -29,10 +29,11 @@ for (const name of ['readiness','reporting']) {
 
 test('main profile cannot be accidentally used for the TEST source tree',async()=>{await assert.rejects(verifyIsolation(root,{profile:'main'}),/Wrong historical profile/);});
 test('malformed TEST history still fails closed',async()=>changed('worker/runtime/runtime-releases.json',()=>assert.rejects(verifyIsolation(root,{profile:'test'}),/Historical runtime history changed/)));
-test('the seven historical records and receipt stay immutable beneath stable 3.16 and its earlier builds',async()=>{
+test('the seven historical records and receipt stay immutable beneath stable 3.16, its patch and earlier builds',async()=>{
  const receipt=await readReceipt(root,'test'),baseline=await readFile(resolve(root,'tools/test-runtime-history.json'));
  const current=JSON.parse(await readFile(resolve(root,'worker/runtime/runtime-releases.json'))),old=JSON.parse(baseline);
  const added=[
+  ['tessera-3.16.1','3.16.1'],
   ['tessera-3.16.0','3.16.0'],
   ['tessera-revenue-preview-3','3.16.0-revenue.preview.3'],
   ['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],

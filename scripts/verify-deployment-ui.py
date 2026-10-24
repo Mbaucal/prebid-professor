@@ -11,7 +11,7 @@ def check(name,ok):
 with tempfile.TemporaryDirectory(prefix='tessera-delivery-tls-') as tls:
     key=pathlib.Path(tls)/'key.pem';cert=pathlib.Path(tls)/'cert.pem'
     subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-keyout',str(key),'-out',str(cert),'-subj','/CN='+hostname,'-addext','subjectAltName=DNS:'+hostname],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-    process=subprocess.Popen(['node','--experimental-strip-types','scripts/deployment-ui-server.mjs',str(key),str(cert)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/deployment-ui-server.mjs',str(key),str(cert)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
         for attempt in range(80):
             if process.poll() is not None: raise RuntimeError(process.stderr.read().decode())

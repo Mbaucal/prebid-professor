@@ -1,4 +1,4 @@
-import {inspectPrebidArtifact,prebidFailureMessage} from './runtime/prebid-artifact-check.mjs';
+import {inspectPrebidArtifact,prebidFailureMessage} from './runtime/prebid-artifact-check-v2.mjs';
 
 /** Verify the original bytes before giving a duplicate its own immutable object.
  * Never remove an object on SQL failure: the transaction may have committed and

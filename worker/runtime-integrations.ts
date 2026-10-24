@@ -1,5 +1,6 @@
 import { apiError, getActor, json } from './http';
 import type { ReleaseEnv } from './releases';
+import { assertCompilerStrings, assertSchainCompatibility } from './compiler-input-compatibility.mjs';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -302,6 +303,11 @@ export async function updateRuntimeIntegrations(
   }
 
   const runtime = isRecord(state.config.runtimeControls) ? state.config.runtimeControls : {};
+  try {
+    assertCompilerStrings(validated.schain, 'SChain');
+    const selection = isRecord(state.config.builtinRuntimeSelection) ? state.config.builtinRuntimeSelection : {};
+    assertSchainCompatibility(validated.schain, selection.runtime);
+  } catch (error) { return apiError(error instanceof Error ? error.message : 'SChain values are not supported by this script version.', 422); }
   const previous = state.integrations;
   runtime.schain = {
     enabled: validated.schain.enabled,

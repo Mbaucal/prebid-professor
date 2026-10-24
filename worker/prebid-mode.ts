@@ -1,3 +1,4 @@
+import { initializeMissingUserSync } from './user-id-config';
 import { apiError, getActor, json } from './http.ts';
 import type { DatabaseEnv } from './publishers';
 import { readPreviewSnapshot } from './runtime/builtin-preview-service.mjs';
@@ -170,7 +171,8 @@ export async function updatePrebidMode(
       const plan = await prepareSiteRuntimeSelection({siteId, snapshot:saved, catalog:runtimeCatalog,
         expectedRevision:await digest(saved), selection:{runtime:current.builtinRuntimeSelection.runtime,
           allowPreview:true, enablePrebid:enabled, prebidBuildId:enabled && saved.prebidBuilds.length===1?saved.prebidBuilds[0].id:null}}, env.BUILDS);
-      const nextConfig = JSON.parse(plan.configJson);
+      const selectedConfig = JSON.parse(plan.configJson);
+      const nextConfig = enabled ? initializeMissingUserSync(selectedConfig) : selectedConfig;
       if (Object.hasOwn(body,'bidCache')) nextConfig.prebidBidCache = bidCache;
       await commitSiteConfiguration(env,saved,JSON.stringify(nextConfig),getActor(request),{audit:{
         action:'prebid_mode.updated',entityType:'prebid_mode',entityId:siteId,
@@ -183,6 +185,7 @@ export async function updatePrebidMode(
     }
   }
   config.enablePrebid = enabled;
+  if (enabled) Object.assign(config, initializeMissingUserSync(config));
   if (Object.hasOwn(body,'bidCache')) config.prebidBidCache = bidCache;
 
   const actor = getActor(request);
