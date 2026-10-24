@@ -29,8 +29,8 @@ export function refreshSummary(input, units, runtime) {
   // Version-pin capabilities are a frozen schema; the newly registered source
   // implements this behavior without changing historical descriptor validation.
   const hasWallClockGap = runtime?.capabilities?.includes('refresh-wall-clock-gap')
-    || ((runtime?.runtimeId ?? runtime?.id) === 'tessera-3.16.1'
-      && (runtime?.runtimeVersion ?? runtime?.version) === '3.16.1');
+    || [['tessera-3.16.1', '3.16.1'], ['tessera-3.16.2', '3.16.2']].some(([id, version]) =>
+      (runtime?.runtimeId ?? runtime?.id) === id && (runtime?.runtimeVersion ?? runtime?.version) === version);
   if (!hasWallClockGap) {
     const gaps = Object.entries(rules).filter(([, rule]) => Number(rule?.refresh?.minGapSeconds) > 0).map(([key]) => key);
     if (gaps.length) warnings.push(`Minimum wall-clock gap is saved for: ${gaps.join(', ')}, but this script version does not enforce it. Choose a script version with wall-clock gap support before relying on this setting.`);

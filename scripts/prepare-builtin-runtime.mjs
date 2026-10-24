@@ -10,6 +10,7 @@ import { prepareRevenueV2Runtime } from './prepare-revenue-v2-runtime.mjs';
 import { prepareRevenueV3Runtime } from './prepare-revenue-v3-runtime.mjs';
 import { prepareRuntime316 } from './prepare-runtime316.mjs';
 import { prepareRuntime3161 } from './prepare-runtime3161.mjs';
+import { prepareRuntime3162 } from './prepare-runtime3162.mjs';
 import { prepareReadinessRuntime } from './prepare-readiness-runtime.mjs';
 import { prepareReportingRuntime } from './prepare-reporting-runtime.mjs';
 import { prepareNextRuntime } from './prepare-next-runtime.mjs';
@@ -80,6 +81,7 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareRevenueV3Runtime(root);
   await prepareRuntime316(root);
   await prepareRuntime3161(root);
+  await prepareRuntime3162(root);
   await prepareTestPageClient(root);
   return descriptor;
 }

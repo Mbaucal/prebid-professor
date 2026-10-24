@@ -16,7 +16,7 @@ export async function getDealSettings(env,siteId){
  const settings=config.runtimeControls?.deals??{schemaVersion:1,entries:[]};let validationIssue=null;
  try{normalizeDeals(settings,{bidders:saved.bidders,units:saved.units});assertManagedDealParams(settings,saved);}catch(error){validationIssue=error.message;}
  return {revision:await digest(saved),settings,bidders:saved.bidders.map(b=>({bidder:b.bidder,enabled:b.enabled===1})),units:saved.units.map(u=>({code:u.code,enabled:u.enabled===1})),plan:dealPlan(saved,settings),notice:DEAL_NOTICE,
-  validationIssue,servingAvailable:['tessera-3.16.1','tessera-3.16.0','tessera-revenue-preview-1','tessera-revenue-preview-2','tessera-revenue-preview-3'].includes(config.builtinRuntimeSelection?.runtime?.runtimeId),publishable:false};
+  validationIssue,servingAvailable:['tessera-3.16.2','tessera-3.16.1','tessera-3.16.0','tessera-revenue-preview-1','tessera-revenue-preview-2','tessera-revenue-preview-3'].includes(config.builtinRuntimeSelection?.runtime?.runtimeId),publishable:false};
 }
 export async function saveDealSettings(env,siteId,actor,body){
  if(!body||Object.keys(body).sort().join(',')!=='revision,settings')fail('Use the displayed deal settings.');

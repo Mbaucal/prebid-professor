@@ -34,7 +34,7 @@ try{
   assert.equal(logged.status,303);cookie=logged.headers.get('set-cookie').split(';')[0];
   await json('/test-api/setup',{confirm:'prepare-empty-test-database'});
   const state=await json('/test-api/runtime-selection');
-  check('Compiled settings GET preserves the default, includes opt-in readiness and revenue versions and has no implicit saved selection',state.selected===null&&JSON.stringify(state.runtimes.map(r=>r.version))===JSON.stringify(['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.13.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3','3.16.0','3.16.1']));
+  check('Compiled settings GET preserves the default, includes opt-in readiness and revenue versions and has no implicit saved selection',state.selected===null&&JSON.stringify(state.runtimes.map(r=>r.version))===JSON.stringify(['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.13.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3','3.16.0','3.16.1','3.16.2']));
   const stable=state.runtimes.find(runtime=>runtime.version==='3.16.0');
   check('Compiled catalog exposes the genuine stable engine without replacing historical defaults',stable?.channel==='stable'&&stable.pin.runtimeId==='tessera-3.16.0'&&stable.pin.runtimeSha256==='624afa6dff60db3f6da1f71ada6d89c55c513d1c72ddbe210b3b2246832c69b9');
   const patch=state.runtimes.find(runtime=>runtime.version==='3.16.1');
