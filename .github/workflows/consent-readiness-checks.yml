@@ -58,12 +58,15 @@ jobs:
           node --experimental-strip-types scripts/prepare-revenue-browser-fixtures.mjs --stable
           node scripts/prepare-outstream-responsive-fixtures.mjs --stable
           node --experimental-strip-types scripts/prepare-runtime3161-browser-fixtures.mjs
+          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-runtime3162-browser-fixtures.mjs
       - name: Consent, deadline, reporting and pending-slot regressions
         run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
       - name: Verified 3.16.1 corrections, preserved history and saved-package contracts
         run: |
           node scripts/check-runtime-release-history.mjs HEAD^
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3161-fixes.test.mjs tests/runtime/runtime3161-readiness.test.mjs tests/runtime/runtime3161-artifact.test.mjs tests/runtime/refresh-counting.test.mjs
+      - name: Explicit 3.16.2 empty Sticky retry after a refresh gap
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3162-sticky-gap.test.mjs tests/runtime/runtime3162-artifact.test.mjs
       - name: Deals and Outstream contracts, routes and exact package integration
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/revenue-integration.test.mjs tests/runtime/test-revenue-settings.test.mjs tests/runtime/outstream-position-scope.test.mjs tests/runtime/outstream-responsive.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/runtime-labels.test.mjs
       - name: Install pinned Chromium verification tools
@@ -75,11 +78,14 @@ jobs:
           python scripts/verify-consent-readiness.py
           python scripts/verify-consent-readiness.py --stable
           python scripts/verify-consent-readiness.py --fixtures-dir .generated/runtime3161-evidence/fixed
+          python scripts/verify-consent-readiness.py --fixtures-dir .generated/runtime3162-evidence/fixed
       - name: Native 3.16.1 before/after and delayed-consent dispatch boundaries
         run: |
           python scripts/verify-runtime3161-browser.py
           python scripts/audit-native-observe-20261024.py --fixtures-dir .generated/runtime3161-evidence/fixed --expect-fixed --resize-checks
           python scripts/audit-native-cmp-gap-20261024.py --script .generated/runtime3161-evidence/fixed/cmp-gap.js --expect-fixed
+      - name: 3.16.0 / 3.16.1 / 3.16.2 empty Sticky retry, close, visibility and consent boundaries
+        run: python scripts/verify-runtime3162-sticky-gap.py
       - name: Atomic consent boundary and failure-detection controls
         run: |
           python scripts/verify-consent-boundary.py
@@ -151,5 +157,7 @@ jobs:
             .generated/stable-main-revenue-workspace-evidence/*.png
             .generated/runtime3161-evidence/browser-results.json
             .generated/runtime3161-evidence/fixed/browser-results.json
+            .generated/runtime3162-evidence/sticky-gap-results.json
+            .generated/runtime3162-evidence/fixed/browser-results.json
             .generated/audit-independent-review/native-working-candidate.json
             .generated/audit-independent-review/native-cmp-min-gap.json
