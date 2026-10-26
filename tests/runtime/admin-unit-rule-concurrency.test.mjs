@@ -12,6 +12,7 @@ import {updateUserIdConfig} from '../../worker/user-id-config.ts';
 import {updateRuntimeIntegrations} from '../../worker/runtime-integrations.ts';
 import {rebaseEdits,rebaseReview} from '../../src/edit-rebase.ts';
 import {FIELD_LABELS,FORM_GATES,fieldText,formFromRule,ruleFromForm} from '../../src/unit-rule-form.ts';
+import * as refreshTabForm from '../../src/refresh-form.ts';
 import {intervalText,mergeRefresh,ruleChain} from '../../worker/refresh-inheritance.ts';
 import {readPreviewSnapshot} from '../../worker/runtime/builtin-preview-service.mjs';
 import {previewInput,runtimeCatalog} from '../../worker/test-workspace/runtime-catalog.mjs';
@@ -659,6 +660,114 @@ for(const frozen of [false,true]){
   await ok(await updateAdvancedRule(refreshForm(2100,45,createdAtf.unitRule),f.env,SITE,'__ATF__'));assertConsistent(f);
  });
 }
+
+// The Refresh tab as AdvancedRefreshPanel runs it: one listing read, the scope's form
+// (src/refresh-form.ts), optional edits through the same helper the inputs use, and Save.
+async function refreshTabSave(f,key,edits={}){
+ const body=await ok(await listAdvancedRules(f.env,SITE));
+ const type=f.sqlite.prepare('SELECT type FROM ad_units WHERE publisher_id=? AND code=?').get(SITE,key)?.type??null;
+ const baseline=refreshTabForm.baselineFor(key,type,body.advancedRules,body.unitRuleRows);
+ const form=Object.entries(edits).reduce((current,[field,value])=>refreshTabForm.withEdit(current,field,value),baseline.form);
+ const sent={expectedUpdatedAt:baseline.updatedAt,expectedUnitRuleId:baseline.rowId,...refreshTabForm.requestBody(form)};
+ return {baseline,sent,saved:await ok(await updateAdvancedRule(request(sent,'PUT'),f.env,SITE,key))};
+}
+// What a position resolves to from per-scope rules, as the generated getAdUnitRuntimeRule merges
+// Default, its group and the position: the last scope that sets a timeout wins.
+function resolvedFrom(rules,code,type='BTF'){
+ const scopes=ruleChain(code,type).map(key=>rules[key]??{}),last=field=>scopes.map(scope=>scope[field]).filter(value=>value!=null).at(-1);
+ return {timeout:last('timeout'),cmpTimeout:last('cmpTimeout'),interval:intervalText(mergeRefresh(...scopes.map(scope=>scope.refresh)))};
+}
+// The same from the stored rows and records (row, then Refresh record on top, like the preview).
+// Used where per-slot lazy load keeps the preview from compiling.
+const storedRules=f=>{const config=f.readConfig(),byKey=Object.fromEntries(rows(f).map(r=>[r.rule_key,JSON.parse(r.rule_json)]));
+ return Object.fromEntries([...new Set([...Object.keys(byKey),...Object.keys(config.advancedUnitRules??{})])].map(key=>[key,mergeRefresh(byKey[key],config.advancedUnitRules?.[key])]));};
+
+test('Refresh tab, unchanged save: a position whose Refresh record holds only lazy load keeps its Unit rules 1800 ms and 45 s',async()=>{
+ const f=setup();
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:1800,refresh:refresh(45)}},'POST'),f.env,SITE),201);
+ assert.equal(f.readConfig().advancedUnitRules?.P1,undefined);
+ // An Ad positions save then stores P1's lazy load, as worker/site-runtime/service.mjs does:
+ // `advancedUnitRules[code] ??= {}` and its `lazy`, so the Refresh record holds only lazy load.
+ const config=f.readConfig();config.advancedUnitRules={...config.advancedUnitRules,P1:{lazy}};f.writeConfig(config);
+ const before=resolvedFrom(storedRules(f),'P1');assert.deepEqual(before,{timeout:1800,cmpTimeout:undefined,interval:'45s'});
+ const {baseline,sent}=await refreshTabSave(f,'P1');
+ const {form}=baseline;
+ assert.deepEqual([form.ownTimeout,form.timeout,form.ownCmpTimeout,form.cmpTimeout,form.ownRefresh,form.mode,form.fixedSeconds],[true,1800,false,1500,true,'fixed',45],'the tab shows what P1 stores');
+ assert.equal(Object.hasOwn(sent,'cmpTimeout'),false,'the inherited CMP wait is not sent');
+ assert.deepEqual(resolvedFrom(storedRules(f),'P1'),before,'an unchanged save keeps 1800 ms and 45 s');
+ assert.deepEqual(f.readConfig().advancedUnitRules.P1.lazy,lazy);assertConsistent(f);
+});
+
+for(const via of ['a Unit rules save','an ad-unit group change']){
+ test(`Refresh tab, unchanged save: a kept interval made by ${via} keeps the inherited 1800 ms and CMP 3000 ms in 3.16.1 and 3.16.2`,async()=>{
+  const f=setup();
+  // Default sets the timeouts; a group has its own schedule; P1 (BTF) has only an interval in Unit rules.
+  await ok(await updateAdvancedRule(request({timeout:1800,cmpTimeout:3000},'PUT'),f.env,SITE,'__DEFAULT__'));
+  if(via==='a Unit rules save'){
+   await ok(await updateAdvancedRule(request({refresh:{enabled:true,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__BTF__'));
+   assert.deepEqual((await ok(await createUnitRule(request({ruleKey:'P1',rule:{refresh:{enabled:true,minSeconds:60}}},'POST'),f.env,SITE),201)).keptUnitRuleIntervals,['P1']);
+  }else{
+   await ok(await updateAdvancedRule(request({refresh:{enabled:true,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__ATF__'));
+   assert.deepEqual((await ok(await createUnitRule(request({ruleKey:'P1',rule:{refresh:{enabled:true,minSeconds:60}}},'POST'),f.env,SITE),201)).keptUnitRuleIntervals,[]);
+   assert.deepEqual((await ok(await updateAdUnit(request({type:'ATF'}),f.env,SITE,'audit-unit'))).keptUnitRuleIntervals,['P1']);
+  }
+  const type=adUnitRow(f,'P1').type,record=f.readConfig().advancedUnitRules.P1,row=rows(f).find(r=>r.rule_key==='P1').rule_json;
+  assert.deepEqual([Object.hasOwn(record,'timeout'),Object.hasOwn(record,'cmpTimeout'),record.refresh.schedule],[false,false,FIXED_SIXTY],'the kept interval owns only refresh');
+  const generated=async()=>{const result=await generatedIntervals(f,['P1']),cmp=await generatedCmpTimeouts(f);
+   return ['3.16.1','3.16.2'].map(version=>({...resolvedFrom(result['rules '+version],'P1',type),intervals:[result[version+' P1'],result[version+' P1 mobile']],
+    summaryTimeout:result['summary '+version].units.find(unit=>unit.code==='P1').timeout,maxCmp:cmp[version].maxCmpTimeout}));};
+  const before=await generated();
+  for(const each of before)assert.deepEqual(each,{timeout:1800,cmpTimeout:3000,interval:'60s',intervals:[SIXTY,SIXTY],summaryTimeout:1800,maxCmp:3000});
+  const {baseline,sent}=await refreshTabSave(f,'P1');
+  const {form}=baseline;
+  assert.deepEqual([form.ownTimeout,form.timeout,form.ownCmpTimeout,form.cmpTimeout,form.ownRefresh,form.fixedSeconds],[false,1800,false,3000,true,60],'the tab shows the inherited timeouts');
+  assert.deepEqual(refreshTabForm.inheritedFrom('P1',type,(await ok(await listAdvancedRules(f.env,SITE))).advancedRules,{}).ownTimeout,'__DEFAULT__');
+  assert.equal(Object.hasOwn(sent,'timeout')||Object.hasOwn(sent,'cmpTimeout'),false,'inherited timeouts are not sent');
+  assert.deepEqual(await generated(),before,'an unchanged save keeps 1800 ms, CMP 3000 ms and 60 s');
+  const after=f.readConfig().advancedUnitRules.P1;
+  assert.deepEqual([Object.hasOwn(after,'timeout'),Object.hasOwn(after,'cmpTimeout')],[false,false]);assert.equal(rows(f).find(r=>r.rule_key==='P1').rule_json,row,'the Unit rules row is unchanged');
+  // Entering a timeout here sets it for P1 only, and the CMP wait stays inherited.
+  await refreshTabSave(f,'P1',{timeout:1200});
+  const edited=await generated();for(const each of edited)assert.deepEqual([each.timeout,each.cmpTimeout,each.interval],[1200,3000,'60s']);
+  assert.equal(JSON.parse(rows(f).find(r=>r.rule_key==='P1').rule_json).timeout,1200);assertConsistent(f);
+ });
+}
+
+test('Refresh tab: a scope that stores nothing has nothing to save, and a save never writes an empty refresh into its Unit rules row',async()=>{
+ const f=setup();
+ await ok(await updateAdvancedRule(request({timeout:1800,cmpTimeout:3000,refresh:{enabled:true,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__DEFAULT__'));
+ const body=await ok(await listAdvancedRules(f.env,SITE));
+ const p1=refreshTabForm.baselineFor('P1','BTF',body.advancedRules,body.unitRuleRows).form;
+ assert.equal(refreshTabForm.storesNothing(p1),true);assert.deepEqual(refreshTabForm.requestBody(p1),{});
+ assert.deepEqual([p1.timeout,p1.cmpTimeout,p1.mode,p1.sequenceText],[1800,3000,'sequence','20, 40, 80'],'the inherited values are shown');
+ // A timeout-only Unit rules rule: a CMP wait entered here leaves its row without a refresh section.
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:1200}},'POST'),f.env,SITE),201);
+ await refreshTabSave(f,'P1',{cmpTimeout:2000});
+ assert.deepEqual(JSON.parse(rows(f).find(r=>r.rule_key==='P1').rule_json),{timeout:1200});
+ assert.deepEqual(f.readConfig().advancedUnitRules.P1,{timeout:1200,cmpTimeout:2000});assertConsistent(f);
+});
+
+test('Refresh tab after a 409: the other tab\'s removed refresh override is named as inherited, not as the form defaults',async()=>{
+ const f=setup();
+ // P1 has an interval and Enter at 70% in Unit rules and no Refresh record.
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:1800,refresh:{...refresh(45),minViewPct:70}}},'POST'),f.env,SITE),201);
+ const opened=await ok(await listAdvancedRules(f.env,SITE));
+ const loaded=refreshTabForm.baselineFor('P1','BTF',opened.advancedRules,opened.unitRuleRows);
+ assert.deepEqual([loaded.form.fixedSeconds,loaded.form.minViewPct],[45,70]);
+ // Unit rules removes the refresh override; this tab changes Enter at to 80% and is refused.
+ const tab=await listed(f,'P1');
+ await ok(await updateUnitRule(request({rule:{timeout:1800},expectedUpdatedAt:tab.updatedAt}),f.env,SITE,tab.id));
+ const edited=refreshTabForm.withEdit(loaded.form,'minViewPct',80);
+ await refused(await updateAdvancedRule(request({expectedUpdatedAt:loaded.updatedAt,expectedUnitRuleId:loaded.rowId,...refreshTabForm.requestBody(edited)},'PUT'),f.env,SITE,'P1'),409,/changed in another tab/);
+ const latest=await ok(await listAdvancedRules(f.env,SITE));
+ const current=refreshTabForm.baselineFor('P1','BTF',latest.advancedRules,latest.unitRuleRows);
+ assert.equal(current.form.ownRefresh,false);
+ const rebased=rebaseEdits(edited,loaded.form,current.form,refreshTabForm.FORM_GATES);
+ const review=rebaseReview(rebased,current.form,key=>refreshTabForm.FIELD_LABELS[key],refreshTabForm.fieldText);
+ assert.deepEqual(review,{conflicts:[{field:'Refresh settings',yours:'set for this scope',saved:'inherited'}],applied:['Enter at']});
+ assert.doesNotMatch(JSON.stringify(review),/50%|30 sec/,'a form default is never shown as the other tab\'s value');
+ assert.deepEqual([rebased.form.fixedSeconds,rebased.form.minViewPct,rebased.form.timeout],[45,80,1800],'the form keeps what this tab showed and entered');
+});
 
 test('rebaseEdits: changed fields are carried, untouched fields take the saved values, both-changed fields are conflicts',()=>{
  const loaded={ruleKey:'P1',timeout:2500,minSeconds:60,checkEveryMs:5000,minViewPct:50,conditionalMappings:[{id:'m',priority:1}]};

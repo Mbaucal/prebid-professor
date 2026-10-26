@@ -223,6 +223,16 @@ with sync_playwright() as pw:
     retried=data('/__fixture/snapshot');assert [json.loads(r['rule_json'])['timeout'] for r in retried['rules'] if r['rule_key']=='P1_3']==[1700];assert retried['config']['advancedUnitRules']['P1_3']['timeout']==1700 and retried['config']['advancedUnitRules']['P1_3']['refresh']['schedule']['fixedSeconds']==60
     nav('Unit rules');copy_row=page.locator('table.effective-rule-table tbody tr').filter(has=page.get_by_text('P1_3',exact=True));expect(copy_row.locator('td').nth(2)).to_contain_text('1700 ms');expect(copy_row.locator('td').nth(4)).to_contain_text('60s')
     billboard=page.locator('table.effective-rule-table tbody tr').filter(has=page.get_by_text('Billboard',exact=True));expect(billboard.locator('td').nth(4)).to_contain_text('45s');expect(page.get_by_text('Unit rules is not used',exact=False)).to_have_count(0);screen('unit-rules-after-ad-unit-copy',copy_row)
+    # An inherited timeout stays inherited: the BTF group sets 1800 ms and CMP 3000 ms, and Billboard (now BTF) stores only its 45 s.
+    # Refresh schedules shows the inherited values and where they come from; saving Billboard unchanged stores no timeout of its own.
+    group=data('/api/publishers/main-site/unit-rules-advanced')['unitRuleRows'].get('__BTF__')
+    assert send('/api/publishers/main-site/unit-rules-advanced/__BTF__','PUT',{'expectedUpdatedAt':group['updatedAt'] if group else None,'expectedUnitRuleId':group['id'] if group else None,'timeout':1800,'cmpTimeout':3000})['status']==200
+    nav('Refresh schedules');page.locator('.advanced-target-list button').filter(has_text='Billboard · BTF').click();expect(page.get_by_role('heading',name='Timeouts for Billboard',exact=True)).to_be_visible()
+    expect(page.get_by_label('Prebid auction timeout',exact=False)).to_have_value('1800');expect(page.get_by_label('CMP wait timeout',exact=False)).to_have_value('3000');expect(page.get_by_label('Every refresh',exact=False)).to_have_value('45')
+    notes=page.locator('.advanced-rule-card small.advanced-inherited-note');expect(notes).to_have_count(2);expect(notes.first).to_contain_text('Inherited from the BTF group.');expect(notes.nth(1)).to_contain_text('Inherited from the BTF group.')
+    screen('refresh-inherited-timeouts',page.locator('.advanced-refresh-form'))
+    page.get_by_role('button',name='Save Billboard',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved Billboard.');expect(notes).to_have_count(2)
+    record=data('/__fixture/snapshot')['config']['advancedUnitRules']['Billboard'];assert 'timeout' not in record and 'cmpTimeout' not in record and record['refresh']['schedule']['fixedSeconds']==45,record
     assert not errors,errors
     assert any(r['status']==409 and 'unit-rules' in r['path'] for r in requests)
     assert any(r['status']==404 and r['method']=='PATCH' and 'unit-rules' in r['path'] for r in requests)

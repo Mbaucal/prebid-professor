@@ -206,20 +206,26 @@ function advancedMap(config: JsonRecord): Record<string, JsonRecord> {
   return result;
 }
 
-/** The Unit rules row a Refresh schedules save keeps in step (legacy mirror of the editable fields), from the row read in the snapshot. */
+/**
+ * The Unit rules row a Refresh schedules save keeps in step (legacy mirror of the editable
+ * fields), from the row read in the snapshot. Only the sections the Refresh record stores are
+ * mirrored: a save that leaves the timeout or refresh inherited keeps the row's own value, or
+ * its absence, as it was (no `refresh: {}` that Unit rules would show as an override).
+ */
 function mirroredLegacyRule(saved: JsonRecord, advanced: JsonRecord): JsonRecord {
   const rule = { ...saved };
-  const advancedRefresh = isRecord(advanced.refresh) ? advanced.refresh : {};
-  const currentRefresh = isRecord(rule.refresh) ? rule.refresh : {};
-  rule.timeout = advanced.timeout;
-  rule.refresh = {
-    ...currentRefresh,
-    enabled: advancedRefresh.enabled,
-    minSeconds: advancedRefresh.minSeconds,
-    minViewPct: advancedRefresh.minViewPct,
-    requirePreviousViewable: advancedRefresh.requirePreviousViewable,
-    checkEveryMs: advancedRefresh.checkEveryMs,
-  };
+  if (Object.hasOwn(advanced, 'timeout')) rule.timeout = advanced.timeout;
+  if (isRecord(advanced.refresh)) {
+    const currentRefresh = isRecord(rule.refresh) ? rule.refresh : {};
+    rule.refresh = {
+      ...currentRefresh,
+      enabled: advanced.refresh.enabled,
+      minSeconds: advanced.refresh.minSeconds,
+      minViewPct: advanced.refresh.minViewPct,
+      requirePreviousViewable: advanced.refresh.requirePreviousViewable,
+      checkEveryMs: advanced.refresh.checkEveryMs,
+    };
+  }
   return rule;
 }
 

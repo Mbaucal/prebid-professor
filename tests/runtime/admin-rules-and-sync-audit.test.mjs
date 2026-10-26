@@ -11,6 +11,7 @@ import {readPreviewSnapshot} from '../../worker/runtime/builtin-preview-service.
 import {siteSetupState} from '../../worker/site-runtime/setup-state.mjs';
 import {listAdvancedRules,updateAdvancedRule} from '../../worker/advanced-rules.ts';
 import {generatedIntervals as compiledIntervals} from '../support/generated-refresh.mjs';
+import {baselineFor,requestBody} from '../../src/refresh-form.ts';
 const request=(body,method='POST')=>new Request('https://test.invalid/api/settings',{method,headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 const fixtures=[];const setup=options=>{const f=adminAuditStore(options);fixtures.push(f);return f;};test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 const refresh=n=>({enabled:true,minSeconds:n,minViewPct:50,requirePreviousViewable:false,checkEveryMs:5000});
@@ -200,20 +201,9 @@ test('a Refresh schedules save that races a Unit rules save is refused with no p
   const result=await generatedIntervals(f,['P1']);for(const version of scripts)assert(every(result[version+' P1'],60));
  }
 });
-// The Refresh schedules tab (src/components/AdvancedRefreshPanel.tsx): selecting a target
-// fills the form with formFromRule(key, advancedRules[key] ?? its Unit rules rule) and Save
-// PUTs every form field. Same defaults and fallbacks as that component; the real component
-// is driven in scripts/verify-admin-audit-ui.py.
-function refreshTabForm(key,rule){
- assert(rule,'only a saved rule is selected here');
- const refresh=rule.refresh??{},schedule=refresh.schedule??{},number=(value,fallback)=>Number.isFinite(Number(value))?Number(value):fallback,flag=(value,fallback)=>typeof value==='boolean'?value:fallback,legacy=number(refresh.minSeconds,30);
- return {timeout:number(rule.timeout,key==='__ATF__'?2200:2500),cmpTimeout:number(rule.cmpTimeout,1500),enabled:flag(refresh.enabled,true),
-  mode:['fixed','firstThenFixed','percentage','sequence'].includes(String(schedule.mode))?String(schedule.mode):'fixed',fixedSeconds:number(schedule.fixedSeconds,legacy),firstSeconds:number(schedule.firstSeconds,legacy),nextSeconds:number(schedule.nextSeconds,legacy),growthPercent:number(schedule.growthPercent,20),maxSeconds:number(schedule.maxSeconds,120),
-  sequenceSeconds:Array.isArray(schedule.sequenceSeconds)&&schedule.sequenceSeconds.length?schedule.sequenceSeconds.map(Number).filter(value=>Number.isFinite(value)&&value>0):[20,30],
-  minViewPct:number(refresh.minViewPct,key==='__ATF__'?60:50),exitViewPct:number(refresh.exitViewPct,10),accumulateViewTime:flag(refresh.accumulateViewTime,true),minGapSeconds:number(refresh.minGapSeconds,0),maxRefreshes:number(refresh.maxRefreshes,20),requirePreviousViewable:flag(refresh.requirePreviousViewable,false),checkEveryMs:number(refresh.checkEveryMs,5000)};
-}
-const refreshTabBody=form=>({timeout:form.timeout,cmpTimeout:form.cmpTimeout,refresh:{enabled:form.enabled,minViewPct:form.minViewPct,exitViewPct:form.exitViewPct,accumulateViewTime:form.accumulateViewTime,minGapSeconds:form.minGapSeconds,maxRefreshes:form.maxRefreshes,requirePreviousViewable:form.requirePreviousViewable,checkEveryMs:form.checkEveryMs,
- schedule:{mode:form.mode,fixedSeconds:form.fixedSeconds,firstSeconds:form.firstSeconds,nextSeconds:form.nextSeconds,growthPercent:form.growthPercent,maxSeconds:form.maxSeconds,sequenceSeconds:form.sequenceSeconds}}});
+// The Refresh schedules tab: the panel builds the form with src/refresh-form.ts from one
+// GET /unit-rules-advanced read and Save PUTs requestBody(form); the real component is
+// driven in scripts/verify-admin-audit-ui.py.
 test('a kept interval saved unchanged in Refresh schedules keeps its Unit rules timeout and interval in 3.16.1 and 3.16.2',async()=>{
  const f=setup({config:{enablePrebid:false}});await saveSchedule(f,'__DEFAULT__',schedules.sequence);
  const created=await createUnitRule(request({ruleKey:'P1',rule:{timeout:1800,refresh:refresh(60)}}),f.env,'audit-site');assert.equal(created.status,201,await created.clone().text());
@@ -221,11 +211,11 @@ test('a kept interval saved unchanged in Refresh schedules keeps its Unit rules 
  const row=()=>JSON.parse(f.sqlite.prepare("SELECT rule_json FROM unit_rules WHERE rule_key='P1'").get().rule_json),before=row();
  const cmp=async version=>catalogPreviewInput(await readPreviewSnapshot(f.env.DB,'audit-site'),runtimeCatalog.find(r=>r.version===version),'20261024_120000').core.maxCmpTimeout;
  const cmpBefore=[await cmp('3.16.1'),await cmp('3.16.2')];
- // The tab loads GET /unit-rules-advanced and the Unit rules list; then P1 is selected.
- const {advancedRules}=await (await listAdvancedRules(f.env,'audit-site')).json(),{unitRules}=await (await listUnitRules(f.env,'audit-site')).json();
- const form=refreshTabForm('P1',advancedRules.P1??unitRules.find(rule=>rule.ruleKey==='P1')?.rule);
+ // The tab loads GET /unit-rules-advanced; then P1 is selected and saved unchanged.
+ const {advancedRules,unitRuleRows}=await (await listAdvancedRules(f.env,'audit-site')).json();
+ const {form,rowId,updatedAt}=baselineFor('P1','BTF',advancedRules,unitRuleRows);
  assert.equal(form.timeout,1800,'the form shows the timeout saved in Unit rules');assert.equal(form.mode,'fixed');assert.equal(form.fixedSeconds,60);assert.equal(form.minViewPct,50);
- const saved=await updateAdvancedRule(request(refreshTabBody(form),'PUT'),f.env,'audit-site','P1');assert.equal(saved.status,200,await saved.clone().text());
+ const saved=await updateAdvancedRule(request({expectedUpdatedAt:updatedAt,expectedUnitRuleId:rowId,...requestBody(form)},'PUT'),f.env,'audit-site','P1');assert.equal(saved.status,200,await saved.clone().text());
  assert.deepEqual(row(),before,'the Unit rules row keeps timeout 1800, its interval and no CMP timeout');assert.equal(row().timeout,1800);assert.equal(Object.hasOwn(row(),'cmpTimeout'),false);
  assert.deepEqual([await cmp('3.16.1'),await cmp('3.16.2')],cmpBefore,'the generated CMP timeout is unchanged');
  const result=await compiledIntervals(f,['P1'],['3.16.1','3.16.2']);
