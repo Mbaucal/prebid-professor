@@ -22,14 +22,15 @@ test('3.16.1 retains the exact complete GAM-only fixture bytes after 3.16.2 is a
  assert.equal(previousDescriptor.codeSha256,'2a7feef5b88968d756bb60421c714ba9e47f782aec90c42b402029c65eb7c25b');
 });
 
-test('3.16.2 is an explicit preview, keeps the stable recommendation and builds a verifiable package',async()=>{
+test('3.16.2 is the stable recommendation for new setups, keeps 3.16.1 stable and builds a verifiable package',async()=>{
  assert.equal(runtimeCatalog[0].id,'tessera-positions-preview-1');
- assert.equal(descriptor.id,'tessera-3.16.2');assert.equal(descriptor.version,'3.16.2');assert.equal(descriptor.channel,'preview');
+ assert.equal(descriptor.id,'tessera-3.16.2');assert.equal(descriptor.version,'3.16.2');assert.equal(descriptor.channel,'stable');
  assert.deepEqual([...descriptor.capabilities],[...previousDescriptor.capabilities]);
- assert.equal(runtimeReleaseHistory.find(r=>r.channel==='stable').id,'tessera-3.16.1');
+ assert.equal(runtimeReleaseHistory.find(r=>r.channel==='stable').id,'tessera-3.16.2');
+ assert.equal(runtimeReleaseHistory.find(r=>r.id==='tessera-3.16.1').channel,'stable');
  assert(runtimeCatalog.some(r=>r.id==='tessera-3.16.2'&&r.codeSha256===descriptor.codeSha256));
- assert.throws(()=>pinRuntime(descriptor),/explicit opt-in/);
- const saved=snapshot(),before=structuredClone(saved),pin=pinRuntime(descriptor,{allowPreview:true});
+ assert.deepEqual(pinRuntime(descriptor),pinRuntime(descriptor,{allowPreview:true}));
+ const saved=snapshot(),before=structuredClone(saved),pin=pinRuntime(descriptor);
  const candidate=await buildArtifactCandidate({snapshot:saved,pin,buildTimestamp});
  assert.deepEqual(saved,before);assert.deepEqual(candidate.manifest.runtime,pin);
  assert.equal(candidate.files['prebid.js'],undefined);

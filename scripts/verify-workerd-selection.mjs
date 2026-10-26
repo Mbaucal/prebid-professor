@@ -37,7 +37,7 @@ try{
   const stable=state.runtimes.find(runtime=>runtime.version==='3.16.0');
   check('Compiled catalog exposes the genuine stable engine without replacing historical defaults',stable?.channel==='stable'&&stable.pin.runtimeId==='tessera-3.16.0'&&stable.pin.runtimeSha256==='624afa6dff60db3f6da1f71ada6d89c55c513d1c72ddbe210b3b2246832c69b9');
   const offered=await json('/test-api/site-runtime');
-  check('Current recommendation is stable and does not implicitly save a selection',offered.selected===null&&offered.currentRuntime?.version==='3.16.1'&&JSON.stringify(offered.currentRuntime.pin)===JSON.stringify(state.runtimes.find(r=>r.version==='3.16.1').pin));
+  check('Current recommendation is stable and does not implicitly save a selection',offered.selected===null&&offered.currentRuntime?.version==='3.16.2'&&offered.currentRuntime.channel==='stable'&&JSON.stringify(offered.currentRuntime.pin)===JSON.stringify(state.runtimes.find(r=>r.version==='3.16.2').pin));
   const input=selection(state);input.selection.allowPreview=false;
   await json('/test-api/runtime-selection',input,422);
   check('Compiled settings writer requires Preview opt-in',true);

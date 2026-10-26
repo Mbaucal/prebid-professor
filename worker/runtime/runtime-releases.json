@@ -2,9 +2,9 @@
   {
     "id": "tessera-3.16.2",
     "version": "3.16.2",
-    "codeSha256": "704e91402ed7eba5b4ea8d68ae77b484e3b764e107646f708020cbb2b0ebc2dd",
+    "codeSha256": "ee9c0d5bc0a6ca3c4335a41cde4af8f3a7f749875a4965e4c45f70ba6d6a6910",
     "configSchemaVersion": 1,
-    "channel": "preview",
+    "channel": "stable",
     "capabilities": [
       "config-preview",
       "gpt-only",
@@ -19,15 +19,18 @@
       "prebid-deals",
       "outstream-pilot"
     ],
-    "date": "2026-10-24",
-    "title": "Tessera 3.16.2 — empty Sticky retry after a refresh gap",
+    "date": "2026-10-26",
+    "title": "Tessera 3.16.2 — empty Sticky retry, inherited refresh visibility threshold and schedule steps",
     "sourceManifest": "scripts/prepare-runtime3162.mjs",
-    "sourceCommit": "68c3afa5c60c39a375e766d75ff6f07b8137ed9a",
+    "sourceCommit": "dbf391e365a8641b6f6e1a011233c51b13adc2c3",
     "changes": [
       "An empty Sticky retry refused by the refresh interval or the minimum wall-clock gap is rescheduled for the exact remaining time instead of stopping Sticky for the rest of the page view. If the device clock moved back and the retry is still refused, it is rescheduled again, at most three times per retry and only while no other Sticky request was made.",
       "The configured retry count, maximum refreshes, Sticky close, page visibility and CMP decision still apply; no request is sent earlier than the saved gap after the previous actual request.",
       "A retry that becomes due on a hidden page, or just as the page is paused, waits for the page to become active again. A gap value computed for one refresh attempt is not reused by a later timer.",
-      "Everything else is identical to 3.16.1. Selecting this version is explicit; 3.16.1 sources, saved configurations and package bytes remain unchanged."
+      "A position, including a filled Sticky, whose Default, group and position refresh settings save no minimum in-view percentage uses the inherited threshold at refresh time: 50% unless the Default refresh, or the ATF refresh when there is no Default refresh, saves another value. Saved percentages, including 0, are unchanged, and the view entry and exit thresholds are the same as in 3.16.1.",
+      "While a queued content refresh is still waiting to be sent, the content timer already uses the next schedule step, so a later shorter step returns to the 3.16.0 request times when the queued request is sent within that step. With very short steps and slower sends it waits as 3.16.1 did. No request is made before the interval the actual refresh count allows, and refresh counts still advance only for actual requests.",
+      "This is the current version for new scripts; a new setup still saves it explicitly. Sites keep their saved exact version, and 3.16.1 stays a stable choice.",
+      "Everything else is identical to 3.16.1. 3.16.1 sources, saved configurations and package bytes remain unchanged."
     ]
   },
   {

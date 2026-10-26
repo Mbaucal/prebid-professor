@@ -54,8 +54,8 @@ test('one current recommendation leaves historical catalog, unconfigured site an
  const audits=f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n;
  const state=await siteRuntimeSettings(f.env,'test-site');
  assert.equal(state.selected,null);
- assert.equal(state.currentRuntime.version,'3.16.1');
- assert.equal(state.currentRuntime.pin.runtimeId,'tessera-3.16.1');
+ assert.equal(state.currentRuntime.version,'3.16.2');
+ assert.equal(state.currentRuntime.pin.runtimeId,'tessera-3.16.2');
  assert.notEqual(state.currentRuntime.pin.runtimeSha256,'c257412bbcfa4e004a4e56dd320b4c043bdfc4b755bde7cdfa32b09ce4a189da');
  assert.deepEqual(state.currentRuntime,state.runtimes.find(item=>item.version===state.currentRuntime.version));
  assert.equal(state.currentRuntime.channel,'stable');
@@ -75,6 +75,18 @@ test('new setup explicitly saves the current pin and generates its exact runtime
  const manifest=JSON.parse(new TextDecoder().decode(zip['manifest.json']));
  assert.equal(manifest.runtime.runtimeVersion,current.version);assert.equal(manifest.runtime.runtimeSha256,current.pin.runtimeSha256);
  assert.equal(zip['prebid.js'],undefined);assert(zip['deals-plan.json']);
+});
+test('a saved 3.16.1 pin keeps generating 3.16.1 after 3.16.2 becomes the current recommendation',async()=>{
+ const {f}=await setup();let state=await siteRuntimeSettings(f.env,'test-site');
+ const previous=state.runtimes.find(item=>item.version==='3.16.1');
+ assert.equal(previous.channel,'stable');assert.equal(state.currentRuntime.version,'3.16.2');
+ await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:state.revision,runtime:previous.pin,allowPreview:false,enablePrebid:false});
+ const before=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ state=await siteRuntimeSettings(f.env,'test-site');
+ assert.deepEqual(state.selected,previous.pin);assert.notDeepEqual(state.selected,state.currentRuntime.pin);
+ const zip=unzipSync(new Uint8Array(await(await siteRuntimeBundle(f.env,'test-site',{action:'bundle',revision:state.revision,acknowledge:true})).arrayBuffer()));
+ assert.equal(JSON.parse(new TextDecoder().decode(zip['manifest.json'])).runtime.runtimeVersion,'3.16.1');
+ assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
 });
 test('editing an older setup preserves its exact pin until an explicit current-version save',async()=>{
  const {f}=await setup();let state=await select(f);const oldPin=state.selected;

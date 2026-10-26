@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/readiness-setup-evidence';out.mkdir(parents=True,exist_ok=True)
 origin='https://main-revenue.fixture.invalid';endpoint='/api/publishers/main-site/builtin-site-settings'
-current='3.16.1';checks=[]
+current='3.16.2';checks=[]
 with sync_playwright() as playwright:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
  executable=os.environ.get('CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROMIUM_PATH')

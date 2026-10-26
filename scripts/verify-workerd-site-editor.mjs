@@ -40,7 +40,7 @@ try{
   const patch=state.runtimes.find(runtime=>runtime.version==='3.16.1');
   check('Compiled catalog adds the reviewed correction as an explicit stable choice',patch?.channel==='stable'&&patch.pin.runtimeId==='tessera-3.16.1'&&patch.pin.runtimeSha256==='2a7feef5b88968d756bb60421c714ba9e47f782aec90c42b402029c65eb7c25b');
   const offered=await json('/test-api/site-runtime');
-  check('Current recommendation is stable and does not implicitly save a selection',offered.selected===null&&offered.currentRuntime?.version==='3.16.1'&&JSON.stringify(offered.currentRuntime.pin)===JSON.stringify(patch.pin));
+  check('Current recommendation is stable and does not implicitly save a selection',offered.selected===null&&offered.currentRuntime?.version==='3.16.2'&&offered.currentRuntime.channel==='stable'&&JSON.stringify(offered.currentRuntime.pin)===JSON.stringify(state.runtimes.find(r=>r.version==='3.16.2').pin));
   const input=selection(state);input.selection.allowPreview=false;
   await json('/test-api/runtime-selection',input,422);
   check('Compiled settings writer requires Preview opt-in',true);
