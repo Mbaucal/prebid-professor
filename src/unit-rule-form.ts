@@ -1,4 +1,4 @@
-import type { RebaseGate } from './edit-rebase';
+import { carriedEdits, rebaseEdits, rebaseReview, rebasedBaseline, type RebaseGate, type RebaseResult, type RebaseReview } from './edit-rebase';
 import type { UnitRuleConditionalMapping, UnitRuleConfig } from './shared/types';
 
 // The Unit rules edit dialog's form: how a saved rule fills it, how it is saved, and how a
@@ -84,9 +84,14 @@ const FIELD_UNITS: Partial<Record<keyof RuleForm, string>> = {
 // A section's values take effect only while its override is on (nothing is stored while it
 // is off), and the inputs below an Enabled switch only while that switch is on.
 export const FORM_GATES: Array<RebaseGate<RuleForm>> = [
-  { gate: 'overrideTimeout', fields: ['timeout'], storedOnlyWhenUsed: true },
-  { gate: 'overrideLazy', fields: ['lazyEnabled', 'fetchMarginPx', 'renderMarginPx'], storedOnlyWhenUsed: true },
-  { gate: 'overrideRefresh', fields: ['refreshEnabled', 'minSeconds', 'minViewPct', 'requirePreviousViewable', 'checkEveryMs'], storedOnlyWhenUsed: true },
+  { gate: 'overrideTimeout', fields: ['timeout'], storedOnlyWhenUsed: true, hiddenWhenUnused: true },
+  { gate: 'overrideLazy', fields: ['lazyEnabled', 'fetchMarginPx', 'renderMarginPx'], storedOnlyWhenUsed: true, hiddenWhenUnused: true },
+  {
+    gate: 'overrideRefresh',
+    fields: ['refreshEnabled', 'minSeconds', 'minViewPct', 'requirePreviousViewable', 'checkEveryMs'],
+    storedOnlyWhenUsed: true,
+    hiddenWhenUnused: true,
+  },
   { gate: 'lazyEnabled', fields: ['fetchMarginPx', 'renderMarginPx'] },
   { gate: 'refreshEnabled', fields: ['minSeconds', 'minViewPct', 'requirePreviousViewable', 'checkEveryMs'] },
 ];
@@ -125,4 +130,22 @@ export function ruleFromForm(form: RuleForm): UnitRuleConfig {
     rule.conditionalMappings = form.conditionalMappings;
   }
   return rule;
+}
+
+/** What the dialog compares a refused save with: the form it loaded, and the values earlier rebases carried. */
+export type DialogBaseline = { form: RuleForm; carried: Partial<RuleForm> };
+
+/**
+ * The dialog after a 409: the rule as saved now with only this dialog's changes applied, the
+ * note it shows, and what it compares the next refused save with (see rebasedBaseline).
+ */
+export function dialogAfterRefusal(edited: RuleForm, loaded: DialogBaseline, saved: RuleForm): {
+  rebased: RebaseResult<RuleForm>; review: RebaseReview; next: DialogBaseline;
+} {
+  const rebased = rebaseEdits(edited, loaded.form, saved, FORM_GATES, { carried: loaded.carried });
+  return {
+    rebased,
+    review: rebaseReview(rebased, saved, (key) => FIELD_LABELS[key], fieldText),
+    next: { form: rebasedBaseline(rebased, saved), carried: carriedEdits(rebased) },
+  };
 }

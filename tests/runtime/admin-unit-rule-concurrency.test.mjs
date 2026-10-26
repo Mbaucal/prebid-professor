@@ -10,8 +10,8 @@ import {createUnitRule,updateUnitRule,deleteUnitRule,duplicateUnitRule,listUnitR
 import {listAdvancedRules,updateAdvancedRule} from '../../worker/advanced-rules.ts';
 import {updateUserIdConfig} from '../../worker/user-id-config.ts';
 import {updateRuntimeIntegrations} from '../../worker/runtime-integrations.ts';
-import {rebaseEdits,rebaseReview} from '../../src/edit-rebase.ts';
-import {FIELD_LABELS,FORM_GATES,fieldText,formFromRule,ruleFromForm} from '../../src/unit-rule-form.ts';
+import {rebaseEdits,rebaseReview,rebasedBaseline} from '../../src/edit-rebase.ts';
+import {FIELD_LABELS,FORM_GATES,dialogAfterRefusal,fieldText,formFromRule,ruleFromForm} from '../../src/unit-rule-form.ts';
 import * as refreshTabForm from '../../src/refresh-form.ts';
 import {intervalText,mergeRefresh,ruleChain} from '../../worker/refresh-inheritance.ts';
 import {readPreviewSnapshot} from '../../worker/runtime/builtin-preview-service.mjs';
@@ -614,6 +614,7 @@ test('Refresh listing returns each scope with its Unit rules row version from th
  const stored=f.sqlite.prepare('SELECT id,rule_key,rule_json,updated_at FROM unit_rules WHERE publisher_id=?').all(SITE);
  assert.deepEqual(body.unitRuleRows,Object.fromEntries(stored.map(r=>[r.rule_key,{id:r.id,ruleKey:r.rule_key,updatedAt:r.updated_at,rule:JSON.parse(r.rule_json)}])));
  assert.deepEqual(body.advancedRules,f.readConfig().advancedUnitRules);
+ assert.deepEqual(body.unitTypes,{P1:'BTF'},'each position\'s group comes from the same read');
  // Another tab saves P1 = 75 s while the listing reads: whatever the timing, the schedule and
  // the version in the response belong to one saved state, never 60 s with the 75 s version.
  const before={fixed:60,version:body.unitRuleRows.P1.updatedAt};
@@ -665,10 +666,9 @@ for(const frozen of [false,true]){
 // (src/refresh-form.ts), optional edits through the same helper the inputs use, and Save.
 async function refreshTabSave(f,key,edits={}){
  const body=await ok(await listAdvancedRules(f.env,SITE));
- const type=f.sqlite.prepare('SELECT type FROM ad_units WHERE publisher_id=? AND code=?').get(SITE,key)?.type??null;
- const baseline=refreshTabForm.baselineFor(key,type,body.advancedRules,body.unitRuleRows);
+ const baseline=refreshTabForm.baselineFor(key,body.unitTypes[key]??null,body.advancedRules,body.unitRuleRows);
  const form=Object.entries(edits).reduce((current,[field,value])=>refreshTabForm.withEdit(current,field,value),baseline.form);
- const sent={expectedUpdatedAt:baseline.updatedAt,expectedUnitRuleId:baseline.rowId,...refreshTabForm.requestBody(form)};
+ const sent={expectedUpdatedAt:baseline.updatedAt,expectedUnitRuleId:baseline.rowId,...refreshTabForm.requestBody(form,baseline)};
  return {baseline,sent,saved:await ok(await updateAdvancedRule(request(sent,'PUT'),f.env,SITE,key))};
 }
 // What a position resolves to from per-scope rules, as the generated getAdUnitRuntimeRule merges
@@ -737,8 +737,8 @@ test('Refresh tab: a scope that stores nothing has nothing to save, and a save n
  const f=setup();
  await ok(await updateAdvancedRule(request({timeout:1800,cmpTimeout:3000,refresh:{enabled:true,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__DEFAULT__'));
  const body=await ok(await listAdvancedRules(f.env,SITE));
- const p1=refreshTabForm.baselineFor('P1','BTF',body.advancedRules,body.unitRuleRows).form;
- assert.equal(refreshTabForm.storesNothing(p1),true);assert.deepEqual(refreshTabForm.requestBody(p1),{});
+ const p1Baseline=refreshTabForm.baselineFor('P1','BTF',body.advancedRules,body.unitRuleRows),p1=p1Baseline.form;
+ assert.equal(refreshTabForm.storesNothing(p1),true);assert.deepEqual(refreshTabForm.requestBody(p1,p1Baseline),{});
  assert.deepEqual([p1.timeout,p1.cmpTimeout,p1.mode,p1.sequenceText],[1800,3000,'sequence','20, 40, 80'],'the inherited values are shown');
  // A timeout-only Unit rules rule: a CMP wait entered here leaves its row without a refresh section.
  await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:1200}},'POST'),f.env,SITE),201);
@@ -747,7 +747,7 @@ test('Refresh tab: a scope that stores nothing has nothing to save, and a save n
  assert.deepEqual(f.readConfig().advancedUnitRules.P1,{timeout:1200,cmpTimeout:2000});assertConsistent(f);
 });
 
-test('Refresh tab after a 409: the other tab\'s removed refresh override is named as inherited, not as the form defaults',async()=>{
+test('Refresh tab after a 409: the other tab\'s removed refresh override is named as inherited, not as the form defaults, and is not put back',async()=>{
  const f=setup();
  // P1 has an interval and Enter at 70% in Unit rules and no Refresh record.
  await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:1800,refresh:{...refresh(45),minViewPct:70}}},'POST'),f.env,SITE),201);
@@ -758,15 +758,585 @@ test('Refresh tab after a 409: the other tab\'s removed refresh override is name
  const tab=await listed(f,'P1');
  await ok(await updateUnitRule(request({rule:{timeout:1800},expectedUpdatedAt:tab.updatedAt}),f.env,SITE,tab.id));
  const edited=refreshTabForm.withEdit(loaded.form,'minViewPct',80);
- await refused(await updateAdvancedRule(request({expectedUpdatedAt:loaded.updatedAt,expectedUnitRuleId:loaded.rowId,...refreshTabForm.requestBody(edited)},'PUT'),f.env,SITE,'P1'),409,/changed in another tab/);
+ await refused(await updateAdvancedRule(request({expectedUpdatedAt:loaded.updatedAt,expectedUnitRuleId:loaded.rowId,...refreshTabForm.requestBody(edited,loaded)},'PUT'),f.env,SITE,'P1'),409,/changed in another tab/);
  const latest=await ok(await listAdvancedRules(f.env,SITE));
  const current=refreshTabForm.baselineFor('P1','BTF',latest.advancedRules,latest.unitRuleRows);
  assert.equal(current.form.ownRefresh,false);
- const rebased=rebaseEdits(edited,loaded.form,current.form,refreshTabForm.FORM_GATES);
+ const rebased=rebaseEdits(edited,loaded.form,current.form,refreshTabForm.FORM_GATES,{unstored:{loaded:loaded.unstored,saved:current.unstored}});
  const review=rebaseReview(rebased,current.form,key=>refreshTabForm.FIELD_LABELS[key],refreshTabForm.fieldText);
  assert.deepEqual(review,{conflicts:[{field:'Refresh settings',yours:'set for this scope',saved:'inherited'}],applied:['Enter at']});
  assert.doesNotMatch(JSON.stringify(review),/50%|30 sec/,'a form default is never shown as the other tab\'s value');
- assert.deepEqual([rebased.form.fixedSeconds,rebased.form.minViewPct,rebased.form.timeout],[45,80,1800],'the form keeps what this tab showed and entered');
+ assert.deepEqual(rebased.form,{...current.form,ownRefresh:true,minViewPct:80},
+  'only the value entered here is applied: the interval the other tab removed shows what P1 inherits now');
+ assert.notEqual(rebased.form.fixedSeconds,45);
+});
+
+// The Refresh tab after a 409, as AdvancedRefreshPanel runs it: a fresh listing read, then
+// afterRefusal, which rebases on what each read stores and returns the next save's baseline.
+async function refreshTabRebase(f,loaded,edited,key='P1'){
+ const latest=await ok(await listAdvancedRules(f.env,SITE));
+ const current=refreshTabForm.baselineFromListing(key,latest);
+ const outcome=refreshTabForm.afterRefusal(edited,loaded,current);
+ return {current,outcome,form:outcome.form,review:outcome.review,next:outcome.next};
+}
+const refreshTabPut=(baseline,form)=>request({expectedUpdatedAt:baseline.updatedAt,expectedUnitRuleId:baseline.rowId,...refreshTabForm.requestBody(form,baseline)},'PUT');
+
+test('Refresh tab: a refresh section filled from a Default changed since it loaded is refused, the rebase names the change, and a reviewed save applies',async()=>{
+ const f=setup();
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:15,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__DEFAULT__'));
+ const opened=await ok(await listAdvancedRules(f.env,SITE));
+ const loaded=refreshTabForm.baselineFor('P1','BTF',opened.advancedRules,opened.unitRuleRows);
+ assert.deepEqual([loaded.form.ownRefresh,loaded.form.refreshEnabled,loaded.form.maxRefreshes],[false,true,15]);
+ // Another tab turns Default refresh off; this tab sets Maximum refreshes for P1, which saves
+ // the whole refresh section with the values it shows from Default.
+ await ok(await updateAdvancedRule(request({refresh:{enabled:false,maxRefreshes:15,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__DEFAULT__'));
+ const edited=refreshTabForm.withEdit(loaded.form,'maxRefreshes',5);
+ const before=f.readConfig(),beforeRows=rows(f),saves=auditCount(f,'unit_rule.advanced_updated');
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ assert.deepEqual(f.readConfig(),before,'nothing was written');assert.deepEqual(rows(f),beforeRows);
+ assert.equal(auditCount(f,'unit_rule.advanced_updated'),saves,'a refused save records no audit row');
+ const {current,outcome,form,review,next}=await refreshTabRebase(f,loaded,edited);
+ assert.equal(current.form.refreshEnabled,false,'the reloaded form shows Default refresh off');
+ assert.deepEqual([outcome.kind,outcome.cause],['rebased','parents'],'only the settings P1 inherits changed');
+ assert.deepEqual(review,{conflicts:[{field:'Refresh enabled',yours:'on',saved:'off'}],applied:['Refresh settings','Maximum refreshes']});
+ // Saving after the review is this tab's choice, checked against the parents it reloaded.
+ const reviewed=refreshTabForm.requestBody(form,next);
+ assert.deepEqual([Object.hasOwn(reviewed,'timeout'),Object.hasOwn(reviewed,'cmpTimeout')],[false,false],'a refresh edit leaves the inherited timeouts out');
+ await ok(await updateAdvancedRule(refreshTabPut(next,form),f.env,SITE,'P1'));
+ const p1=f.readConfig().advancedUnitRules.P1.refresh;
+ assert.deepEqual([p1.enabled,p1.maxRefreshes,p1.schedule.sequenceSeconds],[true,5,[20,40,80]]);assertConsistent(f);
+ assert.deepEqual(['timeout','cmpTimeout'].filter(key=>Object.hasOwn(f.readConfig().advancedUnitRules.P1,key)),[],'P1 stores no timeout of its own');
+ assert.equal(Object.hasOwn(JSON.parse(rows(f).find(r=>r.rule_key==='P1').rule_json),'timeout'),false);
+ // P1 now stores its whole refresh section: its save sends no parents' settings, so a Default
+ // change does not refuse it.
+ const own=await ok(await listAdvancedRules(f.env,SITE));
+ const stored=refreshTabForm.baselineFor('P1','BTF',own.advancedRules,own.unitRuleRows);
+ assert.deepEqual(stored.unstored,[]);
+ const body=refreshTabForm.requestBody(refreshTabForm.withEdit(stored.form,'maxRefreshes',7),stored);
+ assert.equal(Object.hasOwn(body,'expectedInheritedRefresh'),false);
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:15,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__DEFAULT__'));
+ await ok(await updateAdvancedRule(refreshTabPut(stored,refreshTabForm.withEdit(stored.form,'maxRefreshes',7)),f.env,SITE,'P1'));
+ assert.equal(f.readConfig().advancedUnitRules.P1.refresh.maxRefreshes,7);assertConsistent(f);
+});
+
+for(const withDefault of [false,true]){
+ test(`Refresh tab after a 409: values the other tab's Unit rules refresh override does not store are not its changes (${withDefault?'with':'without'} a Default record)`,async()=>{
+  const f=setup();
+  if(withDefault)await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:15,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__DEFAULT__'));
+  await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:1800}},'POST'),f.env,SITE),201);
+  const opened=await ok(await listAdvancedRules(f.env,SITE));
+  const loaded=refreshTabForm.baselineFor('P1','BTF',opened.advancedRules,opened.unitRuleRows);
+  assert.equal(loaded.form.ownRefresh,false);
+  // The other tab turns P1's refresh override on in Unit rules (45 s). Its row stores neither
+  // Maximum refreshes nor the dwell values, so those stay inherited there.
+  const tab=await listed(f,'P1');
+  await ok(await updateUnitRule(request({rule:{timeout:1800,refresh:refresh(45)},expectedUpdatedAt:tab.updatedAt}),f.env,SITE,tab.id));
+  const inherited=withDefault?15:20;
+  for(const [field,value,conflicts] of [['maxRefreshes',5,[]],['refreshEnabled',false,['Refresh enabled']]]){
+   const edited=refreshTabForm.withEdit(loaded.form,field,value);
+   await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+   const {current,form:rebased,review}=await refreshTabRebase(f,loaded,edited);
+   assert.deepEqual([current.form.ownRefresh,current.form.maxRefreshes,current.unstored.includes('maxRefreshes')],[true,inherited,true]);
+   assert.deepEqual(review.conflicts.map(conflict=>conflict.field),conflicts,`${field}: ${JSON.stringify(review)}`);
+   assert.doesNotMatch(JSON.stringify(review),/Maximum refreshes: /,'an inherited value is never named as the other tab\'s');
+   if(field==='maxRefreshes'){
+    assert.deepEqual(review.applied,['Refresh settings','Maximum refreshes']);
+    assert.deepEqual([rebased.maxRefreshes,rebased.fixedSeconds],[5,45],'this tab\'s value and the other tab\'s interval');
+   }else{
+    assert.deepEqual(review.conflicts[0].yours,'off');assert.match(review.conflicts[0].saved,/^on \(.*Every refresh: 45 sec/);
+   }
+  }
+ });
+}
+
+test('Refresh tab refused twice: the values entered here stay, and the other tabs\' changes, a removed override among them, are not undone',async()=>{
+ const f=setup();
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:15}},'PUT'),f.env,SITE,'__DEFAULT__'));
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:1800,refresh:{...refresh(45),minViewPct:70,checkEveryMs:2000}}},'POST'),f.env,SITE),201);
+ const opened=await ok(await listAdvancedRules(f.env,SITE));
+ const loaded=refreshTabForm.baselineFor('P1','BTF',opened.advancedRules,opened.unitRuleRows);
+ assert.deepEqual([loaded.form.fixedSeconds,loaded.form.minViewPct,loaded.form.checkEveryMs],[45,70,2000]);
+ // Unit rules removes P1's refresh override; this tab sets Exit at 5% and is refused.
+ const tab=await listed(f,'P1');
+ await ok(await updateUnitRule(request({rule:{timeout:1800},expectedUpdatedAt:tab.updatedAt}),f.env,SITE,tab.id));
+ const edited=refreshTabForm.withEdit(loaded.form,'exitViewPct',5);
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ const round1=await refreshTabRebase(f,loaded,edited);
+ assert.deepEqual(round1.review.conflicts.map(conflict=>conflict.field),['Refresh settings']);
+ assert.deepEqual(round1.form,{...round1.current.form,ownRefresh:true,exitViewPct:5},'what P1 inherits now, with the entry made here');
+ // A third tab changes Default's Maximum refreshes, so the reviewed save is refused again.
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:25}},'PUT'),f.env,SITE,'__DEFAULT__'));
+ const saves=auditCount(f,'unit_rule.advanced_updated');
+ await refused(await updateAdvancedRule(refreshTabPut(round1.next,round1.form),f.env,SITE,'P1'),409,/changed in another tab/);
+ assert.equal(auditCount(f,'unit_rule.advanced_updated'),saves);
+ const round2=await refreshTabRebase(f,round1.next,round1.form);
+ assert.deepEqual([round2.outcome.kind,round2.outcome.cause],['rebased','parents']);
+ assert.deepEqual(round2.review,{conflicts:[],applied:['Refresh settings','Exit at']});
+ assert.deepEqual(round2.form,{...round2.current.form,ownRefresh:true,exitViewPct:5},'the entry stays; the third tab\'s Default value shows');
+ assert.equal(round2.form.maxRefreshes,25);
+ await ok(await updateAdvancedRule(refreshTabPut(round2.next,round2.form),f.env,SITE,'P1'));
+ const p1=f.readConfig().advancedUnitRules.P1.refresh,inherits=round2.current.form;
+ assert.deepEqual([p1.schedule.fixedSeconds,p1.minViewPct,p1.checkEveryMs,p1.exitViewPct,p1.maxRefreshes],[inherits.fixedSeconds,inherits.minViewPct,inherits.checkEveryMs,5,25]);
+ assert.notDeepEqual([p1.schedule.fixedSeconds,p1.minViewPct,p1.checkEveryMs],[45,70,2000],'the removed override is not saved back');assertConsistent(f);
+});
+
+test('Refresh tab refused twice: a value entered here stays this tab\'s even when it equals the inherited value another tab saved',async()=>{
+ const f=setup();
+ const setDefault=n=>updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:n}},'PUT'),f.env,SITE,'__DEFAULT__');
+ await ok(await setDefault(15));
+ const opened=await ok(await listAdvancedRules(f.env,SITE));
+ const loaded=refreshTabForm.baselineFor('P1','BTF',opened.advancedRules,opened.unitRuleRows);
+ await ok(await setDefault(25));
+ const edited=refreshTabForm.withEdit(loaded.form,'maxRefreshes',25);
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ const round1=await refreshTabRebase(f,loaded,edited);
+ assert.deepEqual(round1.review,{conflicts:[],applied:['Refresh settings','Maximum refreshes']});
+ await ok(await setDefault(30));
+ await refused(await updateAdvancedRule(refreshTabPut(round1.next,round1.form),f.env,SITE,'P1'),409,/changed in another tab/);
+ const round2=await refreshTabRebase(f,round1.next,round1.form);
+ assert.deepEqual(round2.review,{conflicts:[],applied:['Refresh settings','Maximum refreshes']});
+ assert.equal(round2.form.maxRefreshes,25,'the entry stays, not Default\'s newer 30');
+ await ok(await updateAdvancedRule(refreshTabPut(round2.next,round2.form),f.env,SITE,'P1'));
+ assert.equal(f.readConfig().advancedUnitRules.P1.refresh.maxRefreshes,25);assertConsistent(f);
+});
+
+test('Refresh tab: a value typed and put back sends nothing, and only refresh values a save sends are checked',async()=>{
+ const f=setup();
+ await ok(await updateAdvancedRule(request({timeout:1800,refresh:{enabled:true,maxRefreshes:15,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__DEFAULT__'));
+ let body=await ok(await listAdvancedRules(f.env,SITE));
+ const inherits=refreshTabForm.baselineFor('P1','BTF',body.advancedRules,body.unitRuleRows);
+ const edit=(form,pairs)=>pairs.reduce((current,[field,value])=>refreshTabForm.withEdit(current,field,value),form);
+ const reverted=edit(inherits.form,[['maxRefreshes',155],['maxRefreshes',15],['accumulateViewTime',false],['accumulateViewTime',true],['timeout',1900],['timeout',1800]]);
+ assert.equal(refreshTabForm.storesNothing(reverted),false,'the switches are on');
+ assert.deepEqual(refreshTabForm.requestBody(reverted,inherits),{},'no value differs from what the tab loaded');
+ assert.deepEqual(refreshTabForm.requestBody(edit(inherits.form,[['maxRefreshes',16]]),inherits).refresh.maxRefreshes,16);
+ // As the panel runs each edit (afterEdit), a section whose values are all put back shows as inherited again.
+ const typed=(form,pairs,loaded)=>pairs.reduce((current,[field,value])=>refreshTabForm.afterEdit(refreshTabForm.withEdit(current,field,value),loaded),form);
+ const putBack=typed(inherits.form,[['maxRefreshes',155],['maxRefreshes',15],['accumulateViewTime',false],['accumulateViewTime',true],['timeout',1900],['timeout',1800]],inherits);
+ assert.deepEqual(putBack,inherits.form);assert.equal(refreshTabForm.storesNothing(putBack),true);
+ assert.deepEqual([typed(inherits.form,[['maxRefreshes',16]],inherits).ownRefresh,typed(inherits.form,[['timeout',1900]],inherits).ownTimeout],[true,true]);
+ // A strategy tried and put back, or the intervals retyped with other spacing, is no edit either: only what the form shows counts,
+ // and intervals that save the same keep the text typed.
+ for(const [pairs,shows] of [[[['mode','fixed'],['fixedSeconds',40],['mode','sequence']],inherits.form],[[['sequenceText','20,40,80']],{...inherits.form,sequenceText:'20,40,80'}]]){
+  const back=typed(inherits.form,pairs,inherits);
+  assert.deepEqual(back,shows,JSON.stringify(pairs));assert.deepEqual(refreshTabForm.requestBody(back,inherits),{});assert.equal(refreshTabForm.storesNothing(back),true);
+ }
+ // Typed key by key, as the input sends it, a separator on the way to the next interval stays.
+ const keyed=[...', 160'].reduce((current,key)=>refreshTabForm.afterEdit(refreshTabForm.withEdit(current,'sequenceText',current.sequenceText+key),inherits),inherits.form);
+ assert.equal(keyed.sequenceText,'20, 40, 80, 160');
+ assert.deepEqual(refreshTabForm.requestBody(keyed,inherits).refresh.schedule.sequenceSeconds,[20,40,80,160]);
+ // P1 stores 1800 ms and a 5% Enter at in Unit rules; Exit at (10%) is inherited from the script.
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:1800,refresh:{...refresh(45),minViewPct:5}}},'POST'),f.env,SITE),201);
+ body=await ok(await listAdvancedRules(f.env,SITE));
+ const p1=refreshTabForm.baselineFor('P1','BTF',body.advancedRules,body.unitRuleRows);
+ assert.deepEqual([p1.form.minViewPct,p1.form.exitViewPct],[5,10]);
+ assert.equal(typed(p1.form,[['timeout',1900],['timeout',1800]],p1).ownTimeout,true,'a section the scope stores stays its own');
+ const cmpOnly=edit(p1.form,[['cmpTimeout',3000]]);
+ assert.deepEqual(refreshTabForm.requestBody(cmpOnly,p1),{timeout:1800,cmpTimeout:3000},'the timeout P1 stores and the CMP wait entered here');
+ assert.equal(refreshTabForm.formError(cmpOnly,p1),null,'the unchanged refresh section is not sent, so it is not checked');
+ assert.equal(refreshTabForm.formError(edit(p1.form,[['maxRefreshes',9]]),p1),'Exit view % should be lower than or equal to entry view %.');
+ await ok(await updateAdvancedRule(refreshTabPut(p1,cmpOnly),f.env,SITE,'P1'));
+ assert.deepEqual(f.readConfig().advancedUnitRules.P1.cmpTimeout,3000);
+ assert.equal(JSON.parse(rows(f).find(r=>r.rule_key==='P1').rule_json).refresh.minViewPct,5,'the row keeps its refresh values');assertConsistent(f);
+});
+
+test('Refresh tab after a 409: a timeout, CMP wait or refresh value typed and put back is no edit, so the reviewed save leaves it inherited',async()=>{
+ const f=setup();
+ const setDefault=(timeout,cmpTimeout,maxRefreshes)=>updateAdvancedRule(request({timeout,cmpTimeout,refresh:{enabled:true,maxRefreshes,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__DEFAULT__');
+ const edit=(form,pairs)=>pairs.reduce((current,[field,value])=>refreshTabForm.withEdit(current,field,value),form);
+ await ok(await setDefault(1800,3000,15));
+ // This tab types a timeout and a CMP wait and puts them back, and sets Maximum refreshes; Default changes all three meanwhile.
+ const loaded=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ const edited=edit(loaded.form,[['timeout',1900],['timeout',1800],['cmpTimeout',3100],['cmpTimeout',3000],['maxRefreshes',5]]);
+ assert.deepEqual(Object.keys(refreshTabForm.requestBody(edited,loaded)),['expectedInheritedRefresh','refresh']);
+ await ok(await setDefault(2000,3500,25));
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ const round=await refreshTabRebase(f,loaded,edited);
+ assert.deepEqual(round.review,{conflicts:[],applied:['Refresh settings','Maximum refreshes']},'the put-back timeouts are not listed as changes');
+ assert.deepEqual([round.form.ownTimeout,round.form.timeout,round.form.ownCmpTimeout,round.form.cmpTimeout,round.form.maxRefreshes],[false,2000,false,3500,5],
+  'the timeouts show Default\'s new values, inherited');
+ // The entry put back to the inherited value after the review is no longer sent either.
+ assert.deepEqual(refreshTabForm.requestBody(edit(round.form,[['maxRefreshes',25]]),round.next),{});
+ const body=refreshTabForm.requestBody(round.form,round.next);
+ assert.deepEqual([Object.hasOwn(body,'timeout'),Object.hasOwn(body,'cmpTimeout'),body.refresh.maxRefreshes],[false,false,5]);
+ await ok(await updateAdvancedRule(refreshTabPut(round.next,round.form),f.env,SITE,'P1'));
+ const p1=f.readConfig().advancedUnitRules.P1;
+ assert.deepEqual([Object.hasOwn(p1,'timeout'),Object.hasOwn(p1,'cmpTimeout'),p1.refresh.maxRefreshes],[false,false,5]);
+ assert.equal(Object.hasOwn(JSON.parse(rows(f).find(r=>r.rule_key==='P1').rule_json),'timeout'),false,'its row stores no timeout either');assertConsistent(f);
+ // A refresh checkbox unticked and ticked again, with a real timeout change, refused because another
+ // tab saved the BTF group's CMP wait: the reviewed save sends the timeout, not a copy of Default's refresh.
+ const group=refreshTabForm.baselineFromListing('__BTF__',await ok(await listAdvancedRules(f.env,SITE)));
+ const toggled=edit(group.form,[['accumulateViewTime',false],['accumulateViewTime',true],['timeout',2200]]);
+ assert.deepEqual(refreshTabForm.requestBody(toggled,group),{timeout:2200});
+ await ok(await updateAdvancedRule(request({cmpTimeout:3600},'PUT'),f.env,SITE,'__BTF__'));
+ await refused(await updateAdvancedRule(refreshTabPut(group,toggled),f.env,SITE,'__BTF__'),409,/changed in another tab/);
+ const again=await refreshTabRebase(f,group,toggled,'__BTF__');
+ assert.deepEqual([again.outcome.cause,again.review],['changed',{conflicts:[],applied:['Prebid auction timeout']}]);
+ assert.deepEqual(refreshTabForm.requestBody(again.form,again.next),{timeout:2200,cmpTimeout:3600});
+ await ok(await updateAdvancedRule(refreshTabPut(again.next,again.form),f.env,SITE,'__BTF__'));
+ assert.deepEqual(f.readConfig().advancedUnitRules.__BTF__,{timeout:2200,cmpTimeout:3600},'the group still inherits refresh');assertConsistent(f);
+});
+
+test('Refresh tab after a 409: the ATF group\'s shown 2200 ms typed and put back is not saved over the script\'s timeout',async()=>{
+ const f=setup();
+ const setDefault=n=>updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:n}},'PUT'),f.env,SITE,'__DEFAULT__');
+ await ok(await setDefault(15));
+ const loaded=refreshTabForm.baselineFromListing('__ATF__',await ok(await listAdvancedRules(f.env,SITE)));
+ assert.deepEqual([loaded.form.ownTimeout,loaded.form.timeout],[false,2200]);
+ const edited=[['timeout',2300],['timeout',2200],['maxRefreshes',7]].reduce((form,[field,value])=>refreshTabForm.withEdit(form,field,value),loaded.form);
+ await ok(await setDefault(25));
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'__ATF__'),409,/changed in another tab/);
+ const {form,next,review}=await refreshTabRebase(f,loaded,edited,'__ATF__');
+ assert.deepEqual(review,{conflicts:[],applied:['Refresh settings','Maximum refreshes']});
+ assert.equal(Object.hasOwn(refreshTabForm.requestBody(form,next),'timeout'),false);
+ await ok(await updateAdvancedRule(refreshTabPut(next,form),f.env,SITE,'__ATF__'));
+ assert.equal(Object.hasOwn(f.readConfig().advancedUnitRules.__ATF__,'timeout'),false);assertConsistent(f);
+});
+
+test('Refresh tab after a 409 for a deleted rule: only the values changed here are applied, onto what the scope inherits now',async()=>{
+ const f=setup();
+ const setDefault=n=>updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:n,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__DEFAULT__');
+ await ok(await setDefault(15));
+ // P1 stores only a 2000 ms timeout. This tab changes it to 2500 ms, what P1 would otherwise inherit,
+ // while Unit rules deletes the rule: the change is still this tab's, and the reviewed save stores it.
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:2000}},'POST'),f.env,SITE),201);
+ let loaded=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ let edited=refreshTabForm.withEdit(loaded.form,'timeout',2500);
+ await ok(await deleteUnitRule(request({},'DELETE'),f.env,SITE,(await listed(f,'P1')).id));
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ let round=await refreshTabRebase(f,loaded,edited);
+ assert.deepEqual([round.outcome.cause,round.outcome.changed],['deleted',true]);
+ assert.deepEqual(round.review,{conflicts:[{field:'Prebid auction timeout',yours:'set for this scope',saved:'inherited'}],applied:[]});
+ assert.deepEqual(refreshTabForm.requestBody(round.form,round.next),{timeout:2500});
+ await ok(await updateAdvancedRule(refreshTabPut(round.next,round.form),f.env,SITE,'P1'));
+ assert.deepEqual(JSON.parse(rows(f).find(r=>r.rule_key==='P1').rule_json),{timeout:2500});assertConsistent(f);
+ // P1 stores 2000 ms and a 45 s interval; Maximum refreshes is inherited from Default. This tab sets
+ // the CMP wait and Exit at, while Unit rules deletes the rule and Default's Maximum refreshes becomes 25.
+ await ok(await deleteUnitRule(request({},'DELETE'),f.env,SITE,(await listed(f,'P1')).id));
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:2000,refresh:refresh(45)}},'POST'),f.env,SITE),201);
+ loaded=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ assert.deepEqual([loaded.form.fixedSeconds,loaded.form.maxRefreshes],[45,15]);
+ edited=[['cmpTimeout',1200],['exitViewPct',5]].reduce((form,[field,value])=>refreshTabForm.withEdit(form,field,value),loaded.form);
+ await ok(await deleteUnitRule(request({},'DELETE'),f.env,SITE,(await listed(f,'P1')).id));
+ await ok(await setDefault(25));
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ round=await refreshTabRebase(f,loaded,edited);
+ assert.deepEqual([round.outcome.cause,round.review],['deleted',{conflicts:[{field:'Refresh settings',yours:'set for this scope',saved:'inherited'}],applied:['CMP wait timeout','Exit at']}]);
+ assert.deepEqual(round.form,{...round.current.form,ownCmpTimeout:true,cmpTimeout:1200,ownRefresh:true,exitViewPct:5},
+  'the deleted timeout and 45 s interval are inherited now; only the CMP wait and Exit at entered here apply, with Default\'s new Maximum refreshes');
+ assert.deepEqual([round.form.ownTimeout,round.form.timeout,round.form.mode,round.form.maxRefreshes],[false,2500,'sequence',25]);
+ // Exit at put back to what P1 inherits: the section shows as inherited again and only the CMP wait is sent.
+ assert.deepEqual(round.next.form,round.current.form,'the next save is compared with what P1 inherits now');
+ const putBack=refreshTabForm.afterEdit(refreshTabForm.withEdit(round.form,'exitViewPct',round.current.form.exitViewPct),round.next);
+ assert.deepEqual(putBack,{...round.current.form,ownCmpTimeout:true,cmpTimeout:1200});
+ assert.deepEqual(refreshTabForm.requestBody(putBack,round.next),{cmpTimeout:1200});
+ const body=refreshTabForm.requestBody(round.form,round.next);
+ assert.deepEqual([Object.hasOwn(body,'timeout'),body.cmpTimeout,body.refresh.maxRefreshes,body.expectedInheritedRefresh.maxRefreshes],[false,1200,25,25]);
+ assert.deepEqual([body.refresh.schedule.mode,body.refresh.schedule.sequenceSeconds],['sequence',[20,40,80]],'the deleted interval is not sent');
+ await ok(await updateAdvancedRule(refreshTabPut(round.next,round.form),f.env,SITE,'P1'));
+ const p1=f.readConfig().advancedUnitRules.P1;
+ assert.deepEqual([Object.hasOwn(p1,'timeout'),p1.cmpTimeout,p1.refresh.exitViewPct,p1.refresh.maxRefreshes,p1.refresh.schedule.mode],[false,1200,5,25,'sequence']);assertConsistent(f);
+});
+
+test('Refresh tab after a 409 from a parent change P1 does not show: nothing to review, and saving again applies',async()=>{
+ const f=setup();
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:15,minViewPct:50}},'PUT'),f.env,SITE,'__DEFAULT__'));
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:1800,refresh:{...refresh(45),minViewPct:70}}},'POST'),f.env,SITE),201);
+ const loaded=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ const edited=refreshTabForm.withEdit(loaded.form,'maxRefreshes',7);
+ // Default changes Enter at and Require previous, both of which P1 stores itself.
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:15,minViewPct:60,requirePreviousViewable:true}},'PUT'),f.env,SITE,'__DEFAULT__'));
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ const {outcome,form,next}=await refreshTabRebase(f,loaded,edited);
+ assert.deepEqual([outcome.cause,outcome.changed,outcome.unchanged,outcome.invalid],['parents',true,true,null]);
+ assert.deepEqual(form,edited,'the form is exactly as submitted');
+ await ok(await updateAdvancedRule(refreshTabPut(next,form),f.env,SITE,'P1'));
+ assert.equal(f.readConfig().advancedUnitRules.P1.refresh.maxRefreshes,7);assertConsistent(f);
+});
+
+test('Refresh tab refused twice: the other tab\'s value typed after the review is no entry, so a third tab\'s removed override shows inherited and is not sent',async()=>{
+ const f=setup();
+ await ok(await updateAdvancedRule(request({timeout:1800,refresh:{enabled:true,maxRefreshes:15}},'PUT'),f.env,SITE,'__DEFAULT__'));
+ const loaded=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ assert.deepEqual([loaded.form.ownTimeout,loaded.form.timeout],[false,1800]);
+ // Unit rules gives P1 a 2200 ms timeout while this tab enters 2000 ms.
+ const edited=refreshTabForm.withEdit(loaded.form,'timeout',2000);
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:2200}},'POST'),f.env,SITE),201);
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ const round1=await refreshTabRebase(f,loaded,edited);
+ assert.deepEqual(round1.review.conflicts,[{field:'Prebid auction timeout',yours:'2000 ms',saved:'2200 ms'}]);
+ assert.deepEqual(round1.next.carried,{timeout:2000},'a section switch is never carried on its own');
+ // This tab takes the other tab's 2200 ms and sets Maximum refreshes, as the panel runs each edit;
+ // a third tab then removes P1's timeout override in Unit rules.
+ const accepted=[['timeout',2200],['maxRefreshes',5]].reduce((form,[field,value])=>
+  refreshTabForm.afterEdit(refreshTabForm.withEdit(form,field,value),round1.next),round1.form);
+ const tab=await listed(f,'P1');
+ await ok(await updateUnitRule(request({rule:{lazy:{enabled:false,fetchMarginPx:500,renderMarginPx:200}},expectedUpdatedAt:tab.updatedAt}),f.env,SITE,tab.id));
+ await refused(await updateAdvancedRule(refreshTabPut(round1.next,accepted),f.env,SITE,'P1'),409,/changed in another tab/);
+ const round2=await refreshTabRebase(f,round1.next,accepted);
+ assert.deepEqual(round2.review,{conflicts:[],applied:['Refresh settings','Maximum refreshes']},'no timeout is named as this tab\'s');
+ assert.deepEqual([round2.form.ownTimeout,round2.form.timeout,round2.form.maxRefreshes],[false,1800,5],'the timeout shows inherited, as P1 will run');
+ const body=refreshTabForm.requestBody(round2.form,round2.next);
+ assert.deepEqual([Object.hasOwn(body,'timeout'),body.refresh.maxRefreshes],[false,5]);
+ await ok(await updateAdvancedRule(refreshTabPut(round2.next,round2.form),f.env,SITE,'P1'));
+ const p1=f.readConfig().advancedUnitRules.P1;
+ assert.deepEqual([Object.hasOwn(p1,'timeout'),p1.refresh.maxRefreshes],[false,5]);assertConsistent(f);
+});
+
+test('Refresh tab after a 409 with refresh switched off: a value both tabs changed is still a conflict, and one changed only here is applied',async()=>{
+ const f=setup();
+ await ok(await updateAdvancedRule(request({refresh:{enabled:false,maxRefreshes:15,minViewPct:50,schedule:SEQUENCE}},'PUT'),f.env,SITE,'P1'));
+ let listing=await ok(await listAdvancedRules(f.env,SITE));
+ let tabA=refreshTabForm.baselineFromListing('P1',listing),tabB=refreshTabForm.baselineFromListing('P1',listing);
+ assert.deepEqual([tabA.form.ownRefresh,tabA.form.refreshEnabled],[true,false]);
+ // The form keeps every refresh value editable and saved while refresh is off.
+ await ok(await updateAdvancedRule(refreshTabPut(tabB,refreshTabForm.withEdit(tabB.form,'maxRefreshes',10)),f.env,SITE,'P1'));
+ let edited=refreshTabForm.withEdit(tabA.form,'maxRefreshes',5);
+ await refused(await updateAdvancedRule(refreshTabPut(tabA,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ let round=await refreshTabRebase(f,tabA,edited);
+ assert.deepEqual(round.review,{conflicts:[{field:'Maximum refreshes',yours:'5',saved:'10'}],applied:[]});
+ assert.equal(round.outcome.unchanged,false,'the conflict is shown before this tab can save over 10');
+ // Here Maximum refreshes, there Enter at: both apply, and the review lists this tab's change.
+ listing=await ok(await listAdvancedRules(f.env,SITE));
+ tabA=refreshTabForm.baselineFromListing('P1',listing);tabB=refreshTabForm.baselineFromListing('P1',listing);
+ await ok(await updateAdvancedRule(refreshTabPut(tabB,refreshTabForm.withEdit(tabB.form,'minViewPct',60)),f.env,SITE,'P1'));
+ edited=refreshTabForm.withEdit(tabA.form,'maxRefreshes',5);
+ await refused(await updateAdvancedRule(refreshTabPut(tabA,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ round=await refreshTabRebase(f,tabA,edited);
+ assert.deepEqual(round.review,{conflicts:[],applied:['Maximum refreshes']});
+ assert.deepEqual([round.form.maxRefreshes,round.form.minViewPct,round.form.refreshEnabled],[5,60,false]);
+ await ok(await updateAdvancedRule(refreshTabPut(round.next,round.form),f.env,SITE,'P1'));
+ const p1=f.readConfig().advancedUnitRules.P1.refresh;
+ assert.deepEqual([p1.enabled,p1.maxRefreshes,p1.minViewPct],[false,5,60]);assertConsistent(f);
+ // This tab switches refresh off and changes a value the other tab changed: the switch and the value are both conflicts.
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:20,schedule:SEQUENCE}},'PUT'),f.env,SITE,'P1'));
+ listing=await ok(await listAdvancedRules(f.env,SITE));
+ tabA=refreshTabForm.baselineFromListing('P1',listing);tabB=refreshTabForm.baselineFromListing('P1',listing);
+ await ok(await updateAdvancedRule(refreshTabPut(tabB,refreshTabForm.withEdit(tabB.form,'maxRefreshes',10)),f.env,SITE,'P1'));
+ edited=refreshTabForm.withEdit(refreshTabForm.withEdit(tabA.form,'refreshEnabled',false),'maxRefreshes',5);
+ await refused(await updateAdvancedRule(refreshTabPut(tabA,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ round=await refreshTabRebase(f,tabA,edited);
+ assert.deepEqual(round.review,{conflicts:[{field:'Refresh enabled',yours:'off',saved:'on (Maximum refreshes: 10)'},
+  {field:'Maximum refreshes',yours:'5',saved:'10'}],applied:[]});
+ assert.equal(f.readConfig().advancedUnitRules.P1.refresh.maxRefreshes,10,'nothing of this tab was saved');
+ // Under the switch, only values that took effect in the other save are named: a Unit rules save writes Minimum time into
+ // every fixed interval, but First refresh, hidden under its Same every time, is only a conflict of its own.
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:20,schedule:{mode:'fixed',fixedSeconds:30,firstSeconds:20,nextSeconds:30}}},'PUT'),f.env,SITE,'P1'));
+ tabA=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ const row=await listed(f,'P1');
+ await ok(await updateUnitRule(request({rule:ruleFromForm({...opened(row.rule),minSeconds:45}),expectedUpdatedAt:row.updatedAt}),f.env,SITE,row.id));
+ edited=[['refreshEnabled',false],['mode','firstThenFixed'],['firstSeconds',25]].reduce((form,[field,value])=>refreshTabForm.withEdit(form,field,value),tabA.form);
+ await refused(await updateAdvancedRule(refreshTabPut(tabA,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ round=await refreshTabRebase(f,tabA,edited);
+ assert.deepEqual(round.review,{conflicts:[{field:'Refresh enabled',yours:'off',saved:'on (Every refresh: 45 sec)'},
+  {field:'First refresh',yours:'25 sec',saved:'45 sec'}],applied:['Interval strategy']});
+});
+
+test('Refresh tab after a 409: intervals of a strategy given up, or retyped with other spacing, are no entry and never replace the other tab\'s',async()=>{
+ const f=setup();
+ const start={enabled:true,maxRefreshes:20,schedule:{mode:'fixed',fixedSeconds:30,sequenceSeconds:[20,40,80]}};
+ const typed=(form,loaded,pairs)=>pairs.reduce((current,[field,value])=>refreshTabForm.afterEdit(refreshTabForm.withEdit(current,field,value),loaded),form);
+ // P1 stores `stored`; tab B saves `other`, then tab A, opened before, saves `mine` and is refused.
+ async function stale(stored,other,mine){
+  await ok(await updateAdvancedRule(request({refresh:stored},'PUT'),f.env,SITE,'P1'));
+  const listing=await ok(await listAdvancedRules(f.env,SITE));
+  const tabA=refreshTabForm.baselineFromListing('P1',listing),tabB=refreshTabForm.baselineFromListing('P1',listing);
+  await ok(await updateAdvancedRule(refreshTabPut(tabB,typed(tabB.form,tabB,other)),f.env,SITE,'P1'));
+  const edited=typed(tabA.form,tabA,mine);
+  await refused(await updateAdvancedRule(refreshTabPut(tabA,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+  return refreshTabRebase(f,tabA,edited);
+ }
+ const saved=()=>{const {maxRefreshes,minViewPct,schedule:{mode,fixedSeconds,sequenceSeconds}}=f.readConfig().advancedUnitRules.P1.refresh;
+  return {maxRefreshes,minViewPct,mode,fixedSeconds,sequenceSeconds};};
+ // Every refresh typed, then a sequence chosen: the strategy is the conflict, and taking the other tab's shows its 50 s, not the 40 given up.
+ let round=await stale(start,[['fixedSeconds',50]],[['fixedSeconds',40],['mode','sequence'],['sequenceText','30, 60']]);
+ assert.deepEqual(round.review,{conflicts:[{field:'Interval strategy',yours:'Explicit sequence',saved:'Same every time (Every refresh: 50 sec)'}],
+  applied:['Intervals, in seconds']});
+ let form=typed(round.form,round.next,[['mode','fixed'],['maxRefreshes',7]]);
+ assert.equal(form.fixedSeconds,50);
+ // Refused again, by a third tab's Enter at: the intervals given up are not carried, and are not saved.
+ const third=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ await ok(await updateAdvancedRule(refreshTabPut(third,typed(third.form,third,[['minViewPct',60]])),f.env,SITE,'P1'));
+ await refused(await updateAdvancedRule(refreshTabPut(round.next,form),f.env,SITE,'P1'),409,/changed in another tab/);
+ const again=await refreshTabRebase(f,round.next,form);
+ assert.deepEqual(again.review,{conflicts:[],applied:['Maximum refreshes']});
+ assert.deepEqual(again.next.carried,{maxRefreshes:7});
+ await ok(await updateAdvancedRule(refreshTabPut(again.next,again.form),f.env,SITE,'P1'));
+ assert.deepEqual(saved(),{maxRefreshes:7,minViewPct:60,mode:'fixed',fixedSeconds:50,sequenceSeconds:[20,40,80]});
+ // A sequence tried and given up, while the other tab chose a sequence: no conflict, and the other tab's sequence stays.
+ round=await stale(start,[['mode','sequence'],['sequenceText','10, 20']],[['mode','sequence'],['sequenceText','30, 60'],['mode','fixed'],['maxRefreshes',5]]);
+ assert.deepEqual(round.review,{conflicts:[],applied:['Maximum refreshes']});
+ assert.deepEqual([round.form.mode,round.form.sequenceText],['sequence','10, 20']);
+ await ok(await updateAdvancedRule(refreshTabPut(round.next,round.form),f.env,SITE,'P1'));
+ assert.deepEqual(saved(),{maxRefreshes:5,minViewPct:60,mode:'sequence',fixedSeconds:30,sequenceSeconds:[10,20]});
+ // Intervals retyped with other spacing and sent with another change: no conflict with the other tab's intervals, which stay.
+ const sequence={...start,schedule:{...start.schedule,mode:'sequence'}};
+ round=await stale(sequence,[['sequenceText','10, 20']],[['sequenceText','20,40,80'],['maxRefreshes',5]]);
+ assert.deepEqual(round.review,{conflicts:[],applied:['Maximum refreshes']});
+ await ok(await updateAdvancedRule(refreshTabPut(round.next,round.form),f.env,SITE,'P1'));
+ assert.deepEqual(saved().sequenceSeconds,[10,20]);
+ // Both tabs set the same intervals, spaced differently: no conflict, and nothing shown here changed.
+ round=await stale(sequence,[['sequenceText','20, 40, 80, 160']],[['sequenceText','20,40,80,160']]);
+ assert.deepEqual([round.review,round.outcome.unchanged],[{conflicts:[],applied:['Intervals, in seconds']},true]);
+ // Refused because the other tab saved the same values again: an interval typed under a strategy given up is no difference either.
+ await ok(await updateAdvancedRule(request({refresh:sequence},'PUT'),f.env,SITE,'P1'));
+ const before=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ await ok(await updateAdvancedRule(request({refresh:sequence},'PUT'),f.env,SITE,'P1'));
+ const hiddenTyped=typed(before.form,before,[['mode','fixed'],['fixedSeconds',40],['mode','sequence'],['maxRefreshes',5]]);
+ await refused(await updateAdvancedRule(refreshTabPut(before,hiddenTyped),f.env,SITE,'P1'),409,/changed in another tab/);
+ round=await refreshTabRebase(f,before,hiddenTyped);
+ assert.deepEqual([round.review,round.outcome.unchanged],[{conflicts:[],applied:['Maximum refreshes']},true]);
+ // Refused because a Unit rules save rewrote only intervals this form hides (First and Second refresh of a fixed schedule): nothing
+ // shown here changed, and the reviewed save keeps the intervals that save wrote.
+ await ok(await updateAdvancedRule(request({refresh:{...start,schedule:{...start.schedule,firstSeconds:20,nextSeconds:35}}},'PUT'),f.env,SITE,'P1'));
+ const fixed=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ const row=await listed(f,'P1');
+ await ok(await updateUnitRule(request({rule:{...row.rule,lazy},expectedUpdatedAt:row.updatedAt}),f.env,SITE,row.id));
+ assert.deepEqual([saved().mode,f.readConfig().advancedUnitRules.P1.refresh.schedule.firstSeconds],['fixed',30],'the Unit rules save wrote the hidden First refresh');
+ const maxOnly=typed(fixed.form,fixed,[['maxRefreshes',5]]);
+ await refused(await updateAdvancedRule(refreshTabPut(fixed,maxOnly),f.env,SITE,'P1'),409,/changed in another tab/);
+ round=await refreshTabRebase(f,fixed,maxOnly);
+ assert.deepEqual([round.review,round.outcome.unchanged],[{conflicts:[],applied:['Maximum refreshes']},true]);
+ await ok(await updateAdvancedRule(refreshTabPut(round.next,round.form),f.env,SITE,'P1'));
+ assert.equal(f.readConfig().advancedUnitRules.P1.refresh.schedule.firstSeconds,30);
+ await ok(await updateAdvancedRule(request({refresh:sequence},'PUT'),f.env,SITE,'P1'));
+ // Without a 409 too, a save sends the intervals of a strategy the form does not show as loaded.
+ const listing=await ok(await listAdvancedRules(f.env,SITE));const loaded=refreshTabForm.baselineFromListing('P1',listing);
+ const body=refreshTabForm.requestBody(typed(loaded.form,loaded,[['mode','fixed'],['fixedSeconds',40],['mode','sequence'],['maxRefreshes',6]]),loaded);
+ assert.deepEqual([body.refresh.schedule.fixedSeconds,body.refresh.schedule.sequenceSeconds],[30,[20,40,80]]);assertConsistent(f);
+});
+
+test('Refresh tab refused again: an entry carried as typed, with other spacing, stays this tab\'s while it holds the same intervals',async()=>{
+ const f=setup();
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:15,schedule:{mode:'sequence',sequenceSeconds:[20,40]}}},'PUT'),f.env,SITE,'P1'));
+ const loaded=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ assert.equal(loaded.form.sequenceText,'20, 40');
+ // An earlier review carried intervals typed as "20,40", and the settings saved since hold the same intervals. Another tab then changes them.
+ const reviewed={...loaded,carried:{sequenceText:'20,40'}},edited={...loaded.form,sequenceText:'20,40'};
+ await ok(await updateAdvancedRule(refreshTabPut(loaded,refreshTabForm.withEdit(loaded.form,'sequenceText','10, 20')),f.env,SITE,'P1'));
+ const {review,form}=await refreshTabRebase(f,reviewed,edited);
+ assert.deepEqual(review,{conflicts:[{field:'Intervals, in seconds',yours:'20,40',saved:'10, 20'}],applied:[]});
+ assert.equal(form.sequenceText,'20,40');
+});
+
+test('Refresh tab refused twice: an interval retyped under the strategy this tab chose stays its entry, even when it equals the value stored hidden',async()=>{
+ const f=setup();
+ const typed=(form,loaded,pairs)=>pairs.reduce((current,[field,value])=>refreshTabForm.afterEdit(refreshTabForm.withEdit(current,field,value),loaded),form);
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:15,schedule:{...SEQUENCE,fixedSeconds:30}}},'PUT'),f.env,SITE,'P1'));
+ const listing=await ok(await listAdvancedRules(f.env,SITE));
+ const tabA=refreshTabForm.baselineFromListing('P1',listing),tabB=refreshTabForm.baselineFromListing('P1',listing);
+ assert.deepEqual([tabA.form.mode,tabA.form.fixedSeconds],['sequence',30]);
+ await ok(await updateAdvancedRule(refreshTabPut(tabB,typed(tabB.form,tabB,[['maxRefreshes',10]])),f.env,SITE,'P1'));
+ const first=typed(tabA.form,tabA,[['mode','fixed'],['fixedSeconds',45]]);
+ await refused(await updateAdvancedRule(refreshTabPut(tabA,first),f.env,SITE,'P1'),409,/changed in another tab/);
+ const round=await refreshTabRebase(f,tabA,first);
+ assert.deepEqual(round.review,{conflicts:[],applied:['Interval strategy','Every refresh']});
+ // The 30 s P1 stores under its sequence strategy was hidden, so typing it is an entry, not a value put back.
+ const second=typed(round.form,round.next,[['fixedSeconds',30]]);
+ const tabC=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ await ok(await updateAdvancedRule(refreshTabPut(tabC,typed(tabC.form,tabC,[['mode','fixed'],['fixedSeconds',60]])),f.env,SITE,'P1'));
+ await refused(await updateAdvancedRule(refreshTabPut(round.next,second),f.env,SITE,'P1'),409,/changed in another tab/);
+ const again=await refreshTabRebase(f,round.next,second);
+ assert.deepEqual(again.review,{conflicts:[{field:'Every refresh',yours:'30 sec',saved:'60 sec'}],applied:['Interval strategy']});
+ assert.equal(again.form.fixedSeconds,30);
+ assert.equal(f.readConfig().advancedUnitRules.P1.refresh.schedule.fixedSeconds,60,'nothing of this tab was saved');
+});
+
+test('Refresh tab after a 409: a value both tabs changed is a conflict to review, even when the rebased form is exactly as submitted',async()=>{
+ const f=setup();
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:15,schedule:SEQUENCE}},'PUT'),f.env,SITE,'P1'));
+ const listing=await ok(await listAdvancedRules(f.env,SITE));
+ const tabA=refreshTabForm.baselineFromListing('P1',listing),tabB=refreshTabForm.baselineFromListing('P1',listing);
+ assert.deepEqual([tabA.form.ownRefresh,tabA.unstored],[true,[]]);
+ await ok(await updateAdvancedRule(refreshTabPut(tabB,refreshTabForm.withEdit(tabB.form,'maxRefreshes',9)),f.env,SITE,'P1'));
+ const edited=refreshTabForm.withEdit(tabA.form,'maxRefreshes',7);
+ await refused(await updateAdvancedRule(refreshTabPut(tabA,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ const {outcome,form,review}=await refreshTabRebase(f,tabA,edited);
+ assert.deepEqual(form,edited,'the form is exactly as submitted');
+ assert.deepEqual(review,{conflicts:[{field:'Maximum refreshes',yours:'7',saved:'9'}],applied:[]});
+ assert.deepEqual([outcome.cause,outcome.changed,outcome.unchanged],['changed',true,false],'the panel shows the conflict before this tab can save over 9');
+ assert.equal(f.readConfig().advancedUnitRules.P1.refresh.maxRefreshes,9);
+});
+
+test('Refresh tab after a 409: an entry that no longer fits a value changed in the other tab is reported, and the corrected save applies',async()=>{
+ const f=setup();
+ const setDefault=minViewPct=>updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:15,minViewPct,exitViewPct:10}},'PUT'),f.env,SITE,'__DEFAULT__');
+ await ok(await setDefault(50));
+ const loaded=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ const edited=refreshTabForm.withEdit(loaded.form,'exitViewPct',40);
+ assert.equal(refreshTabForm.formError(edited,loaded),null,'40% fits the 50% Enter at this tab loaded');
+ await ok(await setDefault(30));
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ const {outcome,form,next}=await refreshTabRebase(f,loaded,edited);
+ assert.deepEqual([outcome.cause,form.minViewPct,form.exitViewPct],['parents',30,40]);
+ assert.equal(outcome.invalid,'Exit view % should be lower than or equal to entry view %.');
+ const corrected=refreshTabForm.withEdit(form,'exitViewPct',25);
+ assert.equal(refreshTabForm.formError(corrected,next),null);
+ await ok(await updateAdvancedRule(refreshTabPut(next,corrected),f.env,SITE,'P1'));
+ assert.deepEqual([f.readConfig().advancedUnitRules.P1.refresh.minViewPct,f.readConfig().advancedUnitRules.P1.refresh.exitViewPct],[30,25]);assertConsistent(f);
+});
+
+test('Refresh tab after its own save while another tab changed Default: a value put back shows what this tab saved against, and only entries made here are carried',async()=>{
+ const f=setup();
+ const setDefault=(timeout,minViewPct,maxRefreshes)=>updateAdvancedRule(request({timeout,refresh:{enabled:true,maxRefreshes,minViewPct}},'PUT'),f.env,SITE,'__DEFAULT__');
+ await ok(await setDefault(1800,50,15));
+ const opened=await ok(await listAdvancedRules(f.env,SITE));
+ const first=refreshTabForm.baselineFromListing('P1',opened);
+ await ok(await setDefault(2000,60,25));
+ // This tab saves only P1's CMP wait, which is not checked against Default, so it applies.
+ const saved=await ok(await updateAdvancedRule(refreshTabPut(first,refreshTabForm.withEdit(first.form,'cmpTimeout',3000)),f.env,SITE,'P1'));
+ // As the panel does after a save: the scope as stored, from the response, on the listing it had.
+ const loaded=refreshTabForm.baselineFromListing('P1',refreshTabForm.listingAfterSave(opened,'P1',saved));
+ const typed=(form,pairs)=>pairs.reduce((current,[field,value])=>refreshTabForm.afterEdit(refreshTabForm.withEdit(current,field,value),loaded),form);
+ const putBack=typed(loaded.form,[['timeout',1801],['timeout',1800],['accumulateViewTime',false],['accumulateViewTime',true]]);
+ assert.deepEqual(putBack,loaded.form,'the sections show the values this tab\'s saves are compared with, not a newer read');
+ assert.deepEqual(refreshTabForm.requestBody(putBack,loaded),{cmpTimeout:3000});
+ // Exit at entered: refused, because Default changed since this tab read it, and only Exit at is carried.
+ const exit=typed(loaded.form,[['exitViewPct',5]]);
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,exit),f.env,SITE,'P1'),409,/changed in another tab/);
+ const round=await refreshTabRebase(f,loaded,exit);
+ assert.deepEqual(round.review,{conflicts:[],applied:['Refresh settings','Exit at']});
+ assert.deepEqual(round.next.carried,{exitViewPct:5});
+ assert.deepEqual([round.form.minViewPct,round.form.maxRefreshes,round.form.ownTimeout,round.form.timeout,round.form.cmpTimeout],[60,25,false,2000,3000]);
+ await ok(await updateAdvancedRule(refreshTabPut(round.next,round.form),f.env,SITE,'P1'));
+ const p1=f.readConfig().advancedUnitRules.P1;
+ assert.deepEqual([Object.hasOwn(p1,'timeout'),p1.cmpTimeout,p1.refresh.minViewPct,p1.refresh.maxRefreshes,p1.refresh.exitViewPct],[false,3000,60,25,5]);assertConsistent(f);
+});
+
+test('Refresh tab after a Default save that kept a position\'s Unit rules interval: the position, selected from the saved state, keeps it',async()=>{
+ const f=setup();
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:1800,refresh:refresh(45)}},'POST'),f.env,SITE),201);
+ const opened=await ok(await listAdvancedRules(f.env,SITE));
+ const def=refreshTabForm.baselineFromListing('__DEFAULT__',opened);
+ const sequence=['mode','sequence','sequenceText','20, 40, 80'];
+ const form=refreshTabForm.withEdit(refreshTabForm.withEdit(def.form,sequence[0],sequence[1]),sequence[2],sequence[3]);
+ const saved=await ok(await updateAdvancedRule(refreshTabPut(def,form),f.env,SITE,'__DEFAULT__'));
+ assert.deepEqual(saved.keptUnitRuleIntervals,['P1']);
+ assert.deepEqual(saved.keptAdvancedRules.P1,f.readConfig().advancedUnitRules.P1,'the response carries the record the save wrote');
+ // As the panel does after the save, before its follow-up read lands (or when that read fails).
+ const p1=refreshTabForm.baselineFromListing('P1',refreshTabForm.listingAfterSave(opened,'__DEFAULT__',saved));
+ assert.deepEqual([p1.form.mode,p1.form.fixedSeconds],['fixed',45]);
+ await ok(await updateAdvancedRule(refreshTabPut(p1,refreshTabForm.withEdit(p1.form,'maxRefreshes',7)),f.env,SITE,'P1'));
+ const schedule=f.readConfig().advancedUnitRules.P1.refresh;
+ assert.deepEqual([schedule.schedule.mode,schedule.schedule.fixedSeconds,schedule.maxRefreshes],['fixed',45,7],'the kept 45 s interval is not replaced by Default\'s sequence');assertConsistent(f);
+});
+
+test('Refresh tab after a group change elsewhere: the refused save is rebased on the new group, not refused again and again',async()=>{
+ const f=setup();
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:10,schedule:{mode:'fixed',fixedSeconds:40}}},'PUT'),f.env,SITE,'__ATF__'));
+ await ok(await updateAdvancedRule(request({refresh:{enabled:true,maxRefreshes:15,schedule:{mode:'fixed',fixedSeconds:60}}},'PUT'),f.env,SITE,'__BTF__'));
+ const opened=await ok(await listAdvancedRules(f.env,SITE));
+ const loaded=refreshTabForm.baselineFor('P1',opened.unitTypes.P1,opened.advancedRules,opened.unitRuleRows);
+ assert.deepEqual([opened.unitTypes.P1,loaded.form.fixedSeconds],['BTF',60]);
+ // Ad units moves P1 to ATF; this tab sets Maximum refreshes, built on the BTF group's values.
+ await ok(await updateAdUnit(request({type:'ATF'}),f.env,SITE,'audit-unit'));
+ const edited=refreshTabForm.withEdit(loaded.form,'maxRefreshes',7);
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,'P1'),409,/changed in another tab/);
+ const {current,outcome,form,next}=await refreshTabRebase(f,loaded,edited);
+ assert.deepEqual([outcome.kind,outcome.cause,current.form.fixedSeconds],['rebased','parents',40],'the form now inherits from the ATF group');
+ assert.deepEqual([form.maxRefreshes,form.fixedSeconds],[7,40]);
+ await ok(await updateAdvancedRule(refreshTabPut(next,form),f.env,SITE,'P1'));
+ const p1=f.readConfig().advancedUnitRules.P1.refresh;assert.deepEqual([p1.maxRefreshes,p1.schedule.fixedSeconds],[7,40]);assertConsistent(f);
 });
 
 test('rebaseEdits: changed fields are carried, untouched fields take the saved values, both-changed fields are conflicts',()=>{
@@ -804,7 +1374,8 @@ test('rebaseEdits with gates: an override or strategy the other tab switched is 
  // The other tab removed the refresh override; the saved form shows placeholders (30 sec, 50%, 5000 ms) it never saved.
  const overrideOff={...loaded,overrideRefresh:false,refreshEnabled:true,minSeconds:30,minViewPct:50,requirePreviousViewable:false,checkEveryMs:5000};
  const result=rebaseEdits({...loaded,minSeconds:20},loaded,overrideOff,unitGates);
- assert.deepEqual(result,{form:{...loaded,minSeconds:20},changed:['overrideRefresh','minSeconds'],conflicts:['overrideRefresh'],applied:['minSeconds']});
+ assert.deepEqual(result,{form:{...loaded,minSeconds:20},changed:['overrideRefresh','minSeconds'],conflicts:['overrideRefresh'],applied:['minSeconds'],
+  kept:['refreshEnabled','minViewPct','requirePreviousViewable','checkEveryMs']},'the values this tab showed are kept, not the placeholders');
  const labels={overrideRefresh:'Override inherited refresh',refreshEnabled:'Refresh enabled',minSeconds:'Minimum time',timeout:'Timeout'};
  const text=(key,value)=>typeof value==='boolean'?(value?'on':key.startsWith('override')?'off (inherited)':'off'):`${value}`;
  const review=rebaseReview(result,overrideOff,key=>labels[key],text);
@@ -894,10 +1465,11 @@ test('rebaseEdits with gates: a switch made here that turns off values the other
 
 // The Unit rules dialog after a 409, exactly as UnitRulesPanel runs it: the form it opened
 // with, the rule as saved now, and the note it shows.
-function dialogRebase(source,latest,form){
- const saved=formFromRule(latest.ruleKey??'P1',latest.rule);
- const rebased=rebaseEdits(form,formFromRule(source.ruleKey??'P1',source.rule),saved,FORM_GATES);
- return {rebased,review:rebaseReview(rebased,saved,key=>FIELD_LABELS[key],fieldText),next:ruleFromForm(rebased.form)};
+// It runs dialogAfterRefusal, and after an earlier rebase compares with the state that rebase
+// left (`state`), as the dialog keeps it.
+function dialogRebase(source,latest,form,state={form:formFromRule(source.ruleKey??'P1',source.rule),carried:{}}){
+ const {rebased,review,next}=dialogAfterRefusal(form,state,formFromRule(latest.ruleKey??'P1',latest.rule));
+ return {rebased,review,next:ruleFromForm(rebased.form),state:next};
 }
 const opened=rule=>formFromRule('P1',rule);
 const placeholderRefresh={enabled:true,minSeconds:30,minViewPct:50,requirePreviousViewable:false,checkEveryMs:5000};
@@ -919,9 +1491,9 @@ test('Unit rules dialog after a 409: a section both tabs switched on is compared
  const round1=dialogRebase(inherits,pinned,{...opened(inherits.rule),overrideRefresh:true,minSeconds:45});
  assert.deepEqual(round1.review,{conflicts:[{field:'Minimum time',yours:'45 sec',saved:'30 sec'}],applied:['Override inherited refresh']});
  // Refused again: a third tab changed Minimum in view. The dialog now compares against the rule
- // it reloaded, so only Minimum time is this tab's, and the third tab's 70% stays.
- const round2=dialogRebase(pinned,{rule:{timeout:1800,refresh:{...placeholderRefresh,minViewPct:70}}},round1.rebased.form);
- assert.deepEqual(round2.review,{conflicts:[],applied:['Minimum time']});
+ // it reloaded, so only the override and Minimum time are this tab's, and the third tab's 70% stays.
+ const round2=dialogRebase(pinned,{rule:{timeout:1800,refresh:{...placeholderRefresh,minViewPct:70}}},round1.rebased.form,round1.state);
+ assert.deepEqual(round2.review,{conflicts:[],applied:['Override inherited refresh','Minimum time']});
  assert.deepEqual(round2.next,{timeout:1800,refresh:{...placeholderRefresh,minSeconds:45,minViewPct:70}});
 });
 
@@ -938,9 +1510,60 @@ test('Unit rules dialog after a 409: a value typed before this tab switched its 
  const off=dialogRebase(fast,other,{...opened(fast.rule),minSeconds:20,overrideRefresh:false});
  assert.deepEqual(off.review,{conflicts:[{field:'Override inherited refresh',yours:'off (inherited)',saved:'on (Minimum time: 45 sec)'}],applied:[]});
  assert.deepEqual(off.rebased.switchedOff,{overrideRefresh:['minSeconds']});
+ // The 20 s stayed hidden under the switched-off override, so it is not carried: turning the
+ // override back on shows and saves the other tab's 45 s.
+ assert.equal(off.rebased.form.minSeconds,45);assert.deepEqual(off.rebased.changed,['overrideRefresh']);
+ assert.equal(ruleFromForm({...off.rebased.form,overrideRefresh:true}).refresh.minSeconds,45);
  // (c) The same with the inner switch: typed 20 s, then turned refresh off under the kept override.
  const disabled=dialogRebase(fast,other,{...opened(fast.rule),minSeconds:20,refreshEnabled:false});
  assert.deepEqual(disabled.review,{conflicts:[{field:'Refresh enabled',yours:'off',saved:'on (Minimum time: 45 sec)'}],applied:[]});
+});
+
+test('Unit rules dialog refused twice: values the first rebase kept from what the form showed are not taken for this tab\'s entries',()=>{
+ // P1 refreshes at 60 s, Minimum in view 70% and a 2000 ms check. The other tab removes the
+ // override while this tab changes Minimum time to 45 s.
+ const source={rule:{timeout:1800,refresh:{...refresh(60),minViewPct:70,checkEveryMs:2000}}};
+ const removed={rule:{timeout:1800}};
+ const round1=dialogRebase(source,removed,{...opened(source.rule),minSeconds:45});
+ assert.deepEqual(round1.review.conflicts.map(conflict=>conflict.field),['Override inherited refresh']);
+ assert.deepEqual([round1.rebased.form.minSeconds,round1.rebased.form.minViewPct,round1.rebased.form.checkEveryMs],[45,70,2000],'the form keeps what it showed');
+ const {state}=round1;
+ assert.deepEqual([state.form.overrideRefresh,state.form.minSeconds,state.form.minViewPct,state.form.checkEveryMs],[false,30,70,2000],
+  'the baseline takes back only this tab\'s changes');
+ assert.deepEqual(state.carried,{overrideRefresh:true,minSeconds:45},'the values this tab entered, as the review showed them');
+ // Saved again with the override kept, and refused: a third tab turned it on at 60%. Only
+ // Minimum time is this tab's; Minimum in view and Check interval take the third tab's values.
+ const third={rule:{timeout:1800,refresh:{...placeholderRefresh,minViewPct:60}}};
+ const round2=dialogRebase(removed,third,round1.rebased.form,state);
+ assert.deepEqual(round2.review,{conflicts:[{field:'Minimum time',yours:'45 sec',saved:'30 sec'}],applied:['Override inherited refresh']});
+ assert.deepEqual(round2.next,{timeout:1800,refresh:{...placeholderRefresh,minSeconds:45,minViewPct:60}});
+ // 30 s typed after the review equals the dialog's placeholder under the override the other tab
+ // removed, which this tab never saw: it is this tab's entry, and the third tab's 50 s is a conflict.
+ const typed=dialogRebase(removed,{rule:{timeout:1800,refresh:{...placeholderRefresh,minSeconds:50}}},{...round1.rebased.form,minSeconds:30},state);
+ assert.deepEqual(typed.review,{conflicts:[{field:'Minimum time',yours:'30 sec',saved:'50 sec'}],applied:['Override inherited refresh']});
+ assert.equal(typed.next.refresh.minSeconds,30);
+ // Refused again because a third tab changed only the timeout: the override is still off there,
+ // so the form keeps the 70% and 2000 ms it showed, not the dialog's placeholders.
+ const timeoutOnly=dialogRebase(removed,{rule:{timeout:2000}},round1.rebased.form,state);
+ assert.deepEqual(timeoutOnly.review,{conflicts:[],applied:['Override inherited refresh','Minimum time']});
+ assert.deepEqual(timeoutOnly.next,{timeout:2000,refresh:{...refresh(45),minViewPct:70,checkEveryMs:2000}});
+ assert.deepEqual(timeoutOnly.rebased.kept,['refreshEnabled','minViewPct','requirePreviousViewable','checkEveryMs']);
+ // A value entered here stays this tab's in the next round even where the other tab saved the
+ // same value: a third tab's change to it is a conflict, not taken over silently.
+ const agreed=dialogRebase(source,{rule:{...source.rule,timeout:2000}},{...opened(source.rule),timeout:2000});
+ assert.deepEqual(agreed.review,{conflicts:[],applied:['Timeout']});
+ const again=dialogRebase({rule:{...source.rule,timeout:2000}},{rule:{...source.rule,timeout:2500}},agreed.rebased.form,agreed.state);
+ assert.deepEqual(again.review,{conflicts:[{field:'Timeout',yours:'2000 ms',saved:'2500 ms'}],applied:[]});
+ assert.equal(again.next.timeout,2000);
+ // An entry put back after the review to the value the form showed is no longer this tab's:
+ // refused again, the dialog takes the third tab's Minimum time without a conflict.
+ const timedOther={rule:{...source.rule,timeout:2000}};
+ const changed=dialogRebase(source,timedOther,{...opened(source.rule),minSeconds:45});
+ assert.deepEqual(changed.review,{conflicts:[],applied:['Minimum time']});
+ assert.deepEqual(changed.state.carried,{minSeconds:45});
+ const putBack=dialogRebase(timedOther,{rule:{...timedOther.rule,refresh:{...timedOther.rule.refresh,minSeconds:50}}},{...changed.rebased.form,minSeconds:60},changed.state);
+ assert.deepEqual(putBack.review,{conflicts:[],applied:[]});
+ assert.equal(putBack.next.refresh.minSeconds,50);
 });
 
 test('Unit rules dialog after a real 409: the other tab\'s lazy-off override is shown as a conflict before this tab can save over it',async()=>{
@@ -958,6 +1581,38 @@ test('Unit rules dialog after a real 409: the other tab\'s lazy-off override is 
  // Saving after the review is this tab's choice, checked against the version it reloaded.
  await ok(await updateUnitRule(request({rule:next,expectedUpdatedAt:latest.updatedAt}),f.env,SITE,latest.id));
  assert.deepEqual(JSON.parse(rows(f)[0].rule_json).lazy,{enabled:true,fetchMarginPx:300,renderMarginPx:200});assertConsistent(f);
+});
+
+test('Unit rules dialog after a real 409: a value the Refresh tab saved while refresh was off is a conflict when this dialog puts its own into effect',async()=>{
+ for(const enabled of [false,true,null]){
+  const f=setup();
+  // null: the rule inherits refresh, and the dialog switches its override on.
+  await ok(await createUnitRule(request({ruleKey:'P1',rule:enabled===null?{timeout:1800}:{refresh:{...refresh(30),enabled}}},'POST'),f.env,SITE),201);
+  const tabA=await listed(f,'P1');
+  // Refresh schedules keeps refresh values editable while refresh is off, and mirrors them into the row.
+  const tab=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+  const edits=[...(enabled!==false?[['refreshEnabled',false]]:[]),['minViewPct',60]];
+  await ok(await updateAdvancedRule(refreshTabPut(tab,edits.reduce((form,[field,value])=>refreshTabForm.withEdit(form,field,value),tab.form)),f.env,SITE,'P1'));
+  assert.deepEqual([JSON.parse(rows(f)[0].rule_json).refresh.enabled,JSON.parse(rows(f)[0].rule_json).refresh.minViewPct],[false,60]);
+  const form={...opened(tabA.rule),overrideRefresh:true,refreshEnabled:true,minViewPct:70};
+  await refused(await updateUnitRule(request({rule:ruleFromForm(form),expectedUpdatedAt:tabA.updatedAt}),f.env,SITE,tabA.id),409,/changed in another tab/);
+  const {review}=dialogRebase(tabA,await listed(f,'P1'),form);
+  assert.deepEqual(review,enabled===false
+   ? {conflicts:[{field:'Minimum in view',yours:'70%',saved:'60%'}],applied:['Refresh enabled']}
+   : {conflicts:[{field:'Refresh enabled',yours:'on',saved:'off'},{field:'Minimum in view',yours:'70%',saved:'60%'}],
+    applied:enabled===null?['Override inherited refresh']:[]},`enabled ${enabled}`);
+  assert.equal(JSON.parse(rows(f)[0].rule_json).refresh.minViewPct,60,'nothing of this tab was saved');
+ }
+ // The Refresh tab only switched refresh off, with no parent setting Minimum in view: the value it saved is the form value the
+ // dialog showed, so it is no conflict. (With a parent value the dialog compares with its form values; see the Z5 residual.)
+ const f=setup();
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:1800}},'POST'),f.env,SITE),201);
+ const tabA=await listed(f,'P1'),tab=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ await ok(await updateAdvancedRule(refreshTabPut(tab,refreshTabForm.withEdit(tab.form,'refreshEnabled',false)),f.env,SITE,'P1'));
+ const form={...opened(tabA.rule),overrideRefresh:true,refreshEnabled:true,minViewPct:70};
+ await refused(await updateUnitRule(request({rule:ruleFromForm(form),expectedUpdatedAt:tabA.updatedAt}),f.env,SITE,tabA.id),409,/changed in another tab/);
+ assert.deepEqual(dialogRebase(tabA,await listed(f,'P1'),form).review,
+  {conflicts:[{field:'Refresh enabled',yours:'on',saved:'off'}],applied:['Override inherited refresh','Minimum in view']});
 });
 
 // Point 3b / D4: a whole-config writer that read config_json before another save must not

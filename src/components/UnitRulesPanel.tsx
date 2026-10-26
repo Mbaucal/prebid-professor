@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../api';
-import { rebaseEdits, rebaseReview, type RebaseReview } from '../edit-rebase';
-import { BASELINE_RULE, FIELD_LABELS, FORM_GATES, fieldText, formFromRule, ruleFromForm, type RuleForm } from '../unit-rule-form';
+import type { RebaseReview } from '../edit-rebase';
+import { BASELINE_RULE, dialogAfterRefusal, formFromRule, ruleFromForm, type DialogBaseline, type RuleForm } from '../unit-rule-form';
 import { runtimeLabel } from '../site-workspace/runtime-labels';
 import EditRebaseReview from './EditRebaseReview';
 import type {
@@ -197,6 +197,8 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
   const [form, setForm] = useState<RuleForm>(() => formFromRule('__DEFAULT__', presetForKey('__DEFAULT__')));
   const [formError, setFormError] = useState<string | null>(null);
   const [rebaseNote, setRebaseNote] = useState<RebaseReview | null>(null);
+  // After a refused save: what the dialog counts as loaded for the next one (see rebasedBaseline).
+  const [rebasedFrom, setRebasedFrom] = useState<DialogBaseline | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [creatingBaseRules, setCreatingBaseRules] = useState(false);
   const [loadingSummary, setLoadingSummary] = useState<LoadingSummary | null>(null);
@@ -262,6 +264,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setForm(formFromRule(target, presetForKey(target)));
     setFormError(null);
     setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function openEdit(rule: UnitRule) {
@@ -270,6 +273,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setForm(formFromRule(rule.ruleKey, rule.rule));
     setFormError(null);
     setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function openDuplicate(rule: UnitRule) {
@@ -279,6 +283,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setForm(formFromRule(target, rule.rule));
     setFormError(null);
     setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function closeForm() {
@@ -287,6 +292,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setSource(null);
     setFormError(null);
     setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function updateForm<K extends keyof RuleForm>(key: K, value: RuleForm[K]) {
@@ -403,11 +409,15 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
           // Edit the rule as it is saved now: only the fields changed in this dialog stay,
           // so saving again cannot put back what the other tab replaced. The next save is
           // checked against this reloaded version, never the one the dialog opened with.
-          const saved = formFromRule(latest.ruleKey, latest.rule);
-          const rebased = rebaseEdits(form, formFromRule(source.ruleKey, source.rule), saved, FORM_GATES);
+          const { rebased, review, next } = dialogAfterRefusal(
+            form,
+            rebasedFrom ?? { form: formFromRule(source.ruleKey, source.rule), carried: {} },
+            formFromRule(latest.ruleKey, latest.rule),
+          );
+          setRebasedFrom(next);
           setSource(latest);
           setForm(rebased.form);
-          setRebaseNote(rebaseReview(rebased, saved, (key) => FIELD_LABELS[key], fieldText));
+          setRebaseNote(review);
           setFormError(rebased.changed.length
             ? 'This rule was changed in another tab, so nothing was saved. The dialog now shows the saved rule with your changes applied. Review it and select Save rule again.'
             : 'This rule was changed in another tab, so nothing was saved. You had not changed anything in this dialog, so it now shows the rule as saved in the other tab.');
@@ -416,6 +426,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
         if (requestError.status === 404 && mode === 'edit') {
           setMode('create');
           setSource(null);
+          setRebasedFrom(null);
           setFormError(`${message} Your entries are kept: select Save rule to create this rule again, or Cancel.`);
           return;
         }

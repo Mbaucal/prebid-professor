@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../api';
-import { rebaseEdits, rebaseReview, type RebaseReview } from '../edit-rebase';
+import type { RebaseReview } from '../edit-rebase';
 import {
-  FIELD_LABELS, FORM_GATES, baselineFor, defaultForm, fieldText, inheritedFrom, parseSequence, requestBody, scopeName,
-  storesNothing, withEdit,
-  type AdvancedRule, type Baseline, type FormState, type MirroredRow,
+  afterEdit, afterRefusal, baselineFromListing, defaultForm, formError, inheritedFrom, listingAfterSave, parseSequence, refreshSources, requestBody,
+  scopeName, storesNothing, withEdit,
+  type AdvancedRule, type Baseline, type FormState, type Listing, type MirroredRow, type Saved,
 } from '../refresh-form';
 import type { AdUnit } from '../shared/types';
 import EditRebaseReview from './EditRebaseReview';
@@ -15,12 +15,11 @@ type Props = {
   onOpenUnitRules?: () => void;
 };
 
-type AdvancedPayload = { ok: true; advancedRules: Record<string, AdvancedRule>; unitRuleRows: Record<string, MirroredRow> };
+/** The listing, with each position's ATF/BTF group from the same read: the parents its form inherits from. */
+type AdvancedPayload = Listing & { ok: true };
 
-type SavePayload = {
+type SavePayload = Saved & {
   ok: true;
-  advancedRule: AdvancedRule;
-  unitRule: MirroredRow;
   keptUnitRuleIntervals?: string[];
   appliesToAdUnits?: string[];
 };
@@ -60,15 +59,18 @@ function savedScheduleText(ruleKey: string, kept: string[], appliesTo?: string[]
   return `Saved ${ruleKey}. The runtime profile will apply this schedule during release generation. ${keptIntervalsText(kept)}`;
 }
 
-// Where a section the scope does not store comes from, under its inputs.
-function inheritedNote(ruleKey: string, source: string | null, what: string): string {
-  const from = source
-    ? `Inherited from ${scopeName(source)}.`
+// Where a section the scope does not store comes from, under its inputs: the parent scopes, closest first.
+function inheritedNote(ruleKey: string, sources: string[], change: string): string {
+  const from = sources.length
+    ? `Inherited from ${sources.map(scopeName).join(' and ')}.`
     : ruleKey === '__DEFAULT__'
       ? 'Not set for Default: the script’s own setting applies.'
       : 'Not set here, in Default or in the group: the script’s own setting applies.';
-  return `${from} Changing ${what} saves it for this scope; leaving it unchanged keeps it inherited.`;
+  return `${from} ${change}`;
 }
+
+const SAVES_IT = 'Changing it saves it for this scope; leaving it unchanged keeps it inherited.';
+const SAVES_SECTION = 'Changing any refresh or dwell value saves all of them for this scope, as shown';
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
@@ -80,7 +82,7 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
 // The form and the version it is saved against both come from this one response.
 async function loadAdvancedRules(publisherId: string): Promise<AdvancedPayload> {
   const payload = await requestJson<AdvancedPayload>(`/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced`);
-  return { ...payload, unitRuleRows: payload.unitRuleRows ?? {} };
+  return { ...payload, unitRuleRows: payload.unitRuleRows ?? {}, unitTypes: payload.unitTypes ?? {} };
 }
 
 export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUnitRules }: Props) {
@@ -88,8 +90,8 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
   const [rows, setRows] = useState<Record<string, MirroredRow>>({});
   const [advancedRules, setAdvancedRules] = useState<Record<string, AdvancedRule>>({});
   const [form, setForm] = useState<FormState>(() => defaultForm());
-  const [loaded, setLoaded] = useState<Baseline>(() => ({ form: defaultForm(), rowId: null, updatedAt: null }));
-  const unitTypeOf = (ruleKey: string, units: AdUnit[] = adUnits) => units.find((unit) => unit.code === ruleKey)?.type ?? null;
+  const [unitTypes, setUnitTypes] = useState<Record<string, string>>({});
+  const [loaded, setLoaded] = useState<Baseline>(() => ({ form: defaultForm(), rowId: null, updatedAt: null, unstored: [], inheritedRefresh: {}, carried: {} }));
   const [rebaseNote, setRebaseNote] = useState<RebaseReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -104,7 +106,8 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
       setAdUnits(units);
       setRows(advancedPayload.unitRuleRows);
       setAdvancedRules(advancedPayload.advancedRules);
-      const baseline = baselineFor(form.ruleKey, unitTypeOf(form.ruleKey, units), advancedPayload.advancedRules, advancedPayload.unitRuleRows);
+      setUnitTypes(advancedPayload.unitTypes);
+      const baseline = baselineFromListing(form.ruleKey, advancedPayload);
       setForm(baseline.form);
       setLoaded(baseline);
     } catch (requestError) {
@@ -124,19 +127,25 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
   );
 
   const preview = useMemo(() => schedulePreview(form), [form]);
-  const sources = useMemo(
-    () => inheritedFrom(form.ruleKey, adUnits.find((unit) => unit.code === form.ruleKey)?.type ?? null, advancedRules, rows),
-    [form.ruleKey, adUnits, advancedRules, rows],
-  );
+  const sources = useMemo(() => {
+    const unitType = unitTypes[form.ruleKey] ?? null;
+    const from = inheritedFrom(form.ruleKey, unitType, advancedRules, rows);
+    return {
+      ownTimeout: from.ownTimeout ? [from.ownTimeout] : [],
+      ownCmpTimeout: from.ownCmpTimeout ? [from.ownCmpTimeout] : [],
+      ownRefresh: refreshSources(form.ruleKey, unitType, advancedRules, rows),
+    };
+  }, [form.ruleKey, unitTypes, advancedRules, rows]);
 
-  // An entered value makes its section this scope's own; untouched inherited sections are not saved.
+  // An entered value makes its section this scope's own; untouched inherited sections are not
+  // saved, and a section whose values are all put back shows as inherited again.
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((current) => withEdit(current, key, value));
+    setForm((current) => afterEdit(withEdit(current, key, value), loaded));
     setSavedMessage(null);
   }
 
   function selectTarget(ruleKey: string) {
-    const baseline = baselineFor(ruleKey, unitTypeOf(ruleKey), advancedRules, rows);
+    const baseline = baselineFromListing(ruleKey, { advancedRules, unitRuleRows: rows, unitTypes });
     setForm(baseline.form);
     setLoaded(baseline);
     setSavedMessage(null);
@@ -148,20 +157,27 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
     event.preventDefault();
     setError(null);
     setSavedMessage(null);
-    setRebaseNote(null);
 
     if (storesNothing(form)) {
+      setRebaseNote(null);
       setError(`Nothing to save: ${form.ruleKey} inherits every setting shown here. Change a value to set it for this scope.`);
       return;
     }
-    if (form.ownRefresh && form.mode === 'sequence' && parseSequence(form.sequenceText).length === 0) {
-      setError('Enter at least one sequence interval.');
+    // Only sections changed here, or timeouts the scope stores, are sent and checked.
+    const body = requestBody(form, loaded);
+    if (!Object.keys(body).length) {
+      setRebaseNote(null);
+      setError(`Nothing to save: no value was changed for ${form.ruleKey}.`);
       return;
     }
-    if (form.ownRefresh && form.exitViewPct > form.minViewPct) {
-      setError('Exit view % should be lower than or equal to entry view %.');
+    const invalid = formError(form, loaded);
+    if (invalid) {
+      setError(invalid);
       return;
     }
+    // A review note after a 409 stays while a save stops at this check, so the values to
+    // correct stay named.
+    setRebaseNote(null);
 
     // What this form was built from: the scope's Unit rules row (id and version) goes with
     // the save, so a save from a tab opened before another tab's save is refused (409).
@@ -178,21 +194,21 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
           body: JSON.stringify({
             expectedUpdatedAt: baseline.updatedAt,
             expectedUnitRuleId: baseline.rowId,
-            // Only the sections this scope stores: an inherited timeout or schedule stays inherited.
-            ...requestBody(submitted),
+            // An unchanged schedule or inherited timeout stays as saved.
+            ...body,
           }),
         },
       );
       // The form now shows the scope as stored (its Unit rules row and Refresh record from this
       // save's response), and its next save is checked against the row version this save wrote,
-      // taken from its own response rather than paired from a later list read.
-      const nextAdvanced = { ...advancedRules, [submitted.ruleKey]: saved.advancedRule };
-      const nextRows = { ...rows, [submitted.ruleKey]: saved.unitRule };
-      const stored = baselineFor(submitted.ruleKey, unitTypeOf(submitted.ruleKey), nextAdvanced, nextRows);
+      // taken from its own response rather than paired from a later list read. Positions that
+      // kept their Unit rules interval in this save get their records from it too.
+      const next = listingAfterSave({ advancedRules, unitRuleRows: rows, unitTypes }, submitted.ruleKey, saved);
+      const stored = baselineFromListing(submitted.ruleKey, next);
       setForm(stored.form);
       setLoaded(stored);
-      setAdvancedRules(nextAdvanced);
-      setRows(nextRows);
+      setAdvancedRules(next.advancedRules);
+      setRows(next.unitRuleRows);
       setSavedMessage(savedScheduleText(submitted.ruleKey, saved.keptUnitRuleIntervals ?? [], saved.appliesToAdUnits));
       // Other scopes may have changed with this save (kept intervals); refresh them from one
       // consistent read. The baseline above stays: it is what this form was saved as.
@@ -200,6 +216,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
         const latest = await loadAdvancedRules(publisherId);
         setAdvancedRules(latest.advancedRules);
         setRows(latest.unitRuleRows);
+        setUnitTypes(latest.unitTypes);
       } catch {
         // The save itself succeeded and this scope's baseline is set; other scopes refresh on the next load.
       }
@@ -211,23 +228,32 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
         // again cannot put back the other tab's values. The next save is checked against
         // the reloaded version, never the one this form was opened with.
         try {
-          const latest = await loadAdvancedRules(publisherId);
-          const current = baselineFor(submitted.ruleKey, unitTypeOf(submitted.ruleKey), latest.advancedRules, latest.unitRuleRows);
+          const [units, latest] = await Promise.all([api.listAdUnits(publisherId), loadAdvancedRules(publisherId)]);
+          // The scope's parents come from the same read as its row, so a group change counts.
+          const current = baselineFromListing(submitted.ruleKey, latest);
+          setAdUnits(units);
           setAdvancedRules(latest.advancedRules);
           setRows(latest.unitRuleRows);
-          if (current.rowId !== baseline.rowId || current.updatedAt !== baseline.updatedAt) {
-            setLoaded(current);
-            if (baseline.rowId && !current.rowId) {
-              // Deleted elsewhere: every entered value stays, and saving creates the rule again.
-              setError(`The rule for ${submitted.ruleKey} was deleted in another tab, so nothing was saved. Your entries are kept: select Save ${submitted.ruleKey} to create it again.`);
-              return;
-            }
-            const rebased = rebaseEdits(submitted, baseline.form, current.form, FORM_GATES);
-            setForm(rebased.form);
-            setRebaseNote(rebaseReview(rebased, current.form, (key) => FIELD_LABELS[key], fieldText));
-            setError(rebased.changed.length
-              ? `${submitted.ruleKey} was changed in another tab, so nothing was saved. The form now shows the saved settings with your changes applied. Review them and select Save ${submitted.ruleKey} again.`
-              : `${submitted.ruleKey} was changed in another tab, so nothing was saved. You had not changed anything here, so the form now shows the settings saved in the other tab.`);
+          setUnitTypes(latest.unitTypes);
+          const outcome = afterRefusal(submitted, baseline, current);
+          if (outcome.kind === 'rebased') {
+            const key = submitted.ruleKey;
+            setLoaded(outcome.next);
+            setForm(outcome.form);
+            setRebaseNote(outcome.unchanged && !outcome.invalid ? null : outcome.review);
+            const changedElsewhere = {
+              changed: `${key} was changed in another tab`,
+              deleted: `The rule for ${key} was deleted in another tab`,
+              parents: `The settings ${key} inherits were changed in another tab`,
+            }[outcome.cause];
+            const shown = outcome.cause === 'deleted' ? `what ${key} inherits` : 'the settings saved in the other tab';
+            setError(!outcome.changed
+              ? `${changedElsewhere}, so nothing was saved. You had not changed anything here, so the form now shows ${shown}.`
+              : outcome.invalid
+                ? `${changedElsewhere}, so nothing was saved. With the settings saved there, the values shown here no longer fit together: ${outcome.invalid} Correct them, then select Save ${key} again.`
+                : outcome.unchanged
+                ? `${changedElsewhere}, so nothing was saved. None of the values shown here changed: select Save ${key} again.`
+                : `${changedElsewhere}, so nothing was saved. The form now shows the saved settings with your changes applied. Review them and select Save ${key} again.`);
             return;
           }
         } catch {
@@ -289,13 +315,13 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
                 <span>Prebid auction timeout</span>
                 <div className="number-with-unit"><input min="100" max="30000" onChange={(event) => update('timeout', Number(event.target.value))} type="number" value={form.timeout} /><b>ms</b></div>
                 <small>Already supported by the frozen runtime per position.</small>
-                {form.ownTimeout ? null : <small className="advanced-inherited-note">{inheritedNote(form.ruleKey, sources.ownTimeout, 'it')}</small>}
+                {form.ownTimeout ? null : <small className="advanced-inherited-note">{inheritedNote(form.ruleKey, sources.ownTimeout, SAVES_IT)}</small>}
               </label>
               <label>
                 <span>CMP wait timeout</span>
                 <div className="number-with-unit"><input min="100" max="30000" onChange={(event) => update('cmpTimeout', Number(event.target.value))} type="number" value={form.cmpTimeout} /><b>ms</b></div>
                 <small>Per-auction wrapper consent wait. The Prebid consent module itself remains globally configured.</small>
-                {form.ownCmpTimeout ? null : <small className="advanced-inherited-note">{inheritedNote(form.ruleKey, sources.ownCmpTimeout, 'it')}</small>}
+                {form.ownCmpTimeout ? null : <small className="advanced-inherited-note">{inheritedNote(form.ruleKey, sources.ownCmpTimeout, SAVES_IT)}</small>}
               </label>
             </div>
           </article>
@@ -309,9 +335,12 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
               <label className="advanced-toggle"><input checked={form.refreshEnabled} onChange={(event) => update('refreshEnabled', event.target.checked)} type="checkbox" /><span>Refresh enabled</span></label>
             </div>
 
-            {form.ownRefresh ? null : (
-              <p className="advanced-inherited-note">{inheritedNote(form.ruleKey, sources.ownRefresh, 'any refresh or dwell value')}</p>
-            )}
+            {!form.ownRefresh ? (
+              <p className="advanced-inherited-note">{inheritedNote(form.ruleKey, sources.ownRefresh, `${SAVES_SECTION}; leaving them unchanged keeps them inherited.`)}</p>
+            ) : loaded.form.ownRefresh && loaded.unstored.length ? (
+              // Stored in part (a Unit rules row holds only some refresh settings): the rest is filled from the parents.
+              <p className="advanced-inherited-note">{`This scope stores only some of these values; ${sources.ownRefresh.length ? `the others are inherited from ${sources.ownRefresh.map(scopeName).join(' and ')}` : 'the others are the script’s own settings'}. ${SAVES_SECTION}.`}</p>
+            ) : null}
 
             <div className="schedule-mode-grid">
               <label className={form.mode === 'fixed' ? 'selected' : ''}>

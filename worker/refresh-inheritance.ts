@@ -131,6 +131,11 @@ function chainRefresh(state: RuleState, types: UnitTypes, key: string, inherited
     .flatMap((scope) => [refreshOf(state.basic, scope), refreshOf(state.advanced, scope)]));
 }
 
+/** Refresh settings `key` inherits: its parent scopes merged as the script merges them (Default, then the group). */
+export function inheritedRefresh(state: RuleState, types: UnitTypes, key: string): JsonRecord {
+  return chainRefresh(state, types, key, true);
+}
+
 /**
  * Whether a shadowed Unit rules interval is an operator choice that must stay in
  * effect. Group (ATF/BTF) rules are the inheritance layer and are usually the

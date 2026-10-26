@@ -11,7 +11,7 @@ import {readPreviewSnapshot} from '../../worker/runtime/builtin-preview-service.
 import {siteSetupState} from '../../worker/site-runtime/setup-state.mjs';
 import {listAdvancedRules,updateAdvancedRule} from '../../worker/advanced-rules.ts';
 import {generatedIntervals as compiledIntervals} from '../support/generated-refresh.mjs';
-import {baselineFor,requestBody} from '../../src/refresh-form.ts';
+import {baselineFor,requestBody,withEdit} from '../../src/refresh-form.ts';
 const request=(body,method='POST')=>new Request('https://test.invalid/api/settings',{method,headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 const fixtures=[];const setup=options=>{const f=adminAuditStore(options);fixtures.push(f);return f;};test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 const refresh=n=>({enabled:true,minSeconds:n,minViewPct:50,requirePreviousViewable:false,checkEveryMs:5000});
@@ -202,7 +202,7 @@ test('a Refresh schedules save that races a Unit rules save is refused with no p
  }
 });
 // The Refresh schedules tab: the panel builds the form with src/refresh-form.ts from one
-// GET /unit-rules-advanced read and Save PUTs requestBody(form); the real component is
+// GET /unit-rules-advanced read and Save PUTs requestBody(form, baseline); the real component is
 // driven in scripts/verify-admin-audit-ui.py.
 test('a kept interval saved unchanged in Refresh schedules keeps its Unit rules timeout and interval in 3.16.1 and 3.16.2',async()=>{
  const f=setup({config:{enablePrebid:false}});await saveSchedule(f,'__DEFAULT__',schedules.sequence);
@@ -213,11 +213,55 @@ test('a kept interval saved unchanged in Refresh schedules keeps its Unit rules 
  const cmpBefore=[await cmp('3.16.1'),await cmp('3.16.2')];
  // The tab loads GET /unit-rules-advanced; then P1 is selected and saved unchanged.
  const {advancedRules,unitRuleRows}=await (await listAdvancedRules(f.env,'audit-site')).json();
- const {form,rowId,updatedAt}=baselineFor('P1','BTF',advancedRules,unitRuleRows);
+ const baseline=baselineFor('P1','BTF',advancedRules,unitRuleRows),{form,rowId,updatedAt}=baseline;
  assert.equal(form.timeout,1800,'the form shows the timeout saved in Unit rules');assert.equal(form.mode,'fixed');assert.equal(form.fixedSeconds,60);assert.equal(form.minViewPct,50);
- const saved=await updateAdvancedRule(request({expectedUpdatedAt:updatedAt,expectedUnitRuleId:rowId,...requestBody(form)},'PUT'),f.env,'audit-site','P1');assert.equal(saved.status,200,await saved.clone().text());
+ assert.deepEqual(requestBody(form,baseline),{timeout:1800},'only the timeout P1 stores is sent; its unchanged refresh is not');
+ const saved=await updateAdvancedRule(request({expectedUpdatedAt:updatedAt,expectedUnitRuleId:rowId,...requestBody(form,baseline)},'PUT'),f.env,'audit-site','P1');assert.equal(saved.status,200,await saved.clone().text());
  assert.deepEqual(row(),before,'the Unit rules row keeps timeout 1800, its interval and no CMP timeout');assert.equal(row().timeout,1800);assert.equal(Object.hasOwn(row(),'cmpTimeout'),false);
  assert.deepEqual([await cmp('3.16.1'),await cmp('3.16.2')],cmpBefore,'the generated CMP timeout is unchanged');
  const result=await compiledIntervals(f,['P1'],['3.16.1','3.16.2']);
  for(const version of ['3.16.1','3.16.2']){assert(every(result[version+' P1'],60),`${version}: ${result[version+' P1']}`);assert.equal(result['rules '+version].P1.timeout,1800);assert.deepEqual(intervalWarnings(result['summary '+version]),[]);}
+});
+// The Refresh tab for a scope, as AdvancedRefreshPanel runs it: one listing read, the form, the
+// edits through the same helper the inputs use, and the PUT body.
+async function refreshTab(f,key,edits={}){
+ const {advancedRules,unitRuleRows}=await (await listAdvancedRules(f.env,'audit-site')).json();
+ const type=f.sqlite.prepare("SELECT type FROM ad_units WHERE publisher_id='audit-site' AND code=?").get(key)?.type??null;
+ const baseline=baselineFor(key,type,advancedRules,unitRuleRows);
+ const form=Object.entries(edits).reduce((current,[field,value])=>withEdit(current,field,value),baseline.form);
+ return {baseline,form,body:{expectedUpdatedAt:baseline.updatedAt,expectedUnitRuleId:baseline.rowId,...requestBody(form,baseline)}};
+}
+test('a group preset saved in Refresh schedules, unchanged or with a new timeout, keeps following the Default schedule',async()=>{
+ const f=setup({config:{enablePrebid:false}});addUnit(f,'A1','ATF');
+ await saveSchedule(f,'__DEFAULT__',schedules.sequence);
+ assert.deepEqual(await createBaseRules(f,{followInheritedSchedule:true}),[]);assert.deepEqual(Object.keys(f.readConfig().advancedUnitRules),['__DEFAULT__']);
+ const row=()=>JSON.parse(f.sqlite.prepare("SELECT rule_json FROM unit_rules WHERE rule_key='__ATF__'").get().rule_json),before=row();
+ const unchanged=await refreshTab(f,'__ATF__');
+ assert.deepEqual([unchanged.form.ownRefresh,unchanged.form.mode,unchanged.form.sequenceText,unchanged.form.minViewPct],[true,'sequence','20, 40, 80',60],'the tab shows the group values and the inherited schedule');
+ assert.equal(Object.hasOwn(unchanged.body,'refresh'),false,'an unchanged save sends no refresh');
+ assert.equal((await updateAdvancedRule(request(unchanged.body,'PUT'),f.env,'audit-site','__ATF__')).status,200);
+ const timeoutOnly=await refreshTab(f,'__ATF__',{timeout:2000});
+ assert.deepEqual(Object.keys(timeoutOnly.body).filter(key=>!key.startsWith('expected')),['timeout'],'a timeout-only save sends only the timeout');
+ assert.equal((await updateAdvancedRule(request(timeoutOnly.body,'PUT'),f.env,'audit-site','__ATF__')).status,200);
+ assert.deepEqual(row(),{...before,timeout:2000},'the row keeps its 30 s and 60%; only the timeout changed');
+ assert.equal(Object.hasOwn(f.readConfig().advancedUnitRules.__ATF__,'refresh'),false,'no schedule was copied from Default');
+ // A1 still follows Default: a new Default sequence applies to it.
+ await saveSchedule(f,'__DEFAULT__',{mode:'sequence',sequenceSeconds:[60,90]});
+ const result=await compiledIntervals(f,['A1'],['3.16.1','3.16.2']);
+ for(const version of ['3.16.1','3.16.2'])for(const device of ['',' mobile'])assert.deepEqual(result[version+' A1'+device],[60,90,90,90],`${version} A1${device}`);
+ // And the group interval can still be changed in Unit rules.
+ const edited=await editRule(f,'__ATF__',{...row(),refresh:{...row().refresh,minSeconds:45}});assert.deepEqual(edited.keptUnitRuleIntervals,['__ATF__']);
+});
+test('Refresh tab on a new site: an ATF group interval entered here stores 50%, so the 3.16.2 positions keep 50%',async()=>{
+ const f=setup({config:{enablePrebid:false}});addUnit(f,'A1','ATF');
+ const {form,body}=await refreshTab(f,'__ATF__',{fixedSeconds:45});
+ assert.deepEqual([form.ownRefresh,form.minViewPct],[true,50],'the form shows the 50% the script checks when no scope saves one');
+ assert.equal(body.refresh.minViewPct,50);
+ assert.deepEqual(['timeout','cmpTimeout'].filter(key=>Object.hasOwn(body,key)),[],'an interval entered here sends neither the shown 2200 ms nor the CMP wait');
+ assert.equal((await updateAdvancedRule(request(body,'PUT'),f.env,'audit-site','__ATF__')).status,200);
+ assert.equal(f.readConfig().advancedUnitRules.__ATF__.refresh.minViewPct,50);
+ assert.equal(Object.hasOwn(f.readConfig().advancedUnitRules.__ATF__,'timeout'),false);
+ const result=await compiledIntervals(f,['A1','P1'],['3.16.2']);const units=result['summary 3.16.2'].units;
+ for(const code of ['A1','P1'])assert.match(units.find(unit=>unit.code===code).label,/· 50%$/,`${code}: ${units.find(unit=>unit.code===code).label}`);
+ assert.equal(units.find(unit=>unit.code==='A1').timeout,2500,'A1 keeps the script\'s 2500 ms');
 });

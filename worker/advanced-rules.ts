@@ -1,6 +1,6 @@
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
-import { keepUnitRuleIntervals, scheduleSource } from './refresh-inheritance';
+import { inheritedRefresh, keepUnitRuleIntervals, scheduleSource } from './refresh-inheritance';
 import {
   UNIT_RULE_ROWS_UNCHANGED_SQL,
   everyStatementChangedOneRow,
@@ -58,6 +58,13 @@ async function ruleTargetExists(db: D1Database, siteId: string, ruleKey: string)
     .bind(siteId, ruleKey)
     .first<{ code: string }>();
   return Boolean(row);
+}
+
+/** Equal as JSON values, whatever the key order. */
+function sameJson(left: unknown, right: unknown): boolean {
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
+    : isRecord(value) ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
+  return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
 }
 
 function parseRecord(value: string | null | undefined): JsonRecord {
@@ -208,14 +215,14 @@ function advancedMap(config: JsonRecord): Record<string, JsonRecord> {
 
 /**
  * The Unit rules row a Refresh schedules save keeps in step (legacy mirror of the editable
- * fields), from the row read in the snapshot. Only the sections the Refresh record stores are
- * mirrored: a save that leaves the timeout or refresh inherited keeps the row's own value, or
- * its absence, as it was (no `refresh: {}` that Unit rules would show as an override).
+ * fields), from the row read in the snapshot. Only the sections this save sends are mirrored:
+ * a section left out (unchanged, or inherited) keeps the row's own value, or its absence, as
+ * it was (no `refresh: {}` that Unit rules would show as an override).
  */
-function mirroredLegacyRule(saved: JsonRecord, advanced: JsonRecord): JsonRecord {
+function mirroredLegacyRule(saved: JsonRecord, advanced: JsonRecord, input: JsonRecord): JsonRecord {
   const rule = { ...saved };
-  if (Object.hasOwn(advanced, 'timeout')) rule.timeout = advanced.timeout;
-  if (isRecord(advanced.refresh)) {
+  if (Object.hasOwn(input, 'timeout')) rule.timeout = advanced.timeout;
+  if (Object.hasOwn(input, 'refresh') && isRecord(advanced.refresh)) {
     const currentRefresh = isRecord(rule.refresh) ? rule.refresh : {};
     rule.refresh = {
       ...currentRefresh,
@@ -239,21 +246,25 @@ function mirroredRow(row: { id: string; rule_key: string; rule_json: string; upd
 export async function listAdvancedRules(env: DatabaseEnv, siteId: string): Promise<Response> {
   if (!env.DB) return databaseMissing();
   if (!(await siteExists(env.DB, siteId))) return apiError('Site not found.', 404);
-  // config_json and the unit_rules rows are read in one batch (one D1 transaction), so
-  // a form built from this response and the row version it is saved against always
-  // describe the same saved state; a save in between cannot pair one with the other.
-  const [configResult, rowResult] = await env.DB.batch([
+  // config_json, the unit_rules rows and each position's ATF/BTF group are read in one batch
+  // (one D1 transaction), so a form built from this response, the parents it inherits from and
+  // the row version it is saved against always describe the same saved state; a save in
+  // between cannot pair one with the other.
+  const [configResult, rowResult, unitResult] = await env.DB.batch([
     env.DB.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1').bind(siteId),
     env.DB
       .prepare('SELECT id, rule_key, rule_json, updated_at FROM unit_rules WHERE publisher_id = ? ORDER BY rule_key COLLATE NOCASE')
       .bind(siteId),
+    env.DB.prepare('SELECT code, type FROM ad_units WHERE publisher_id = ?').bind(siteId),
   ]);
   const config = (configResult?.results?.[0] as { config_json: string } | undefined)?.config_json;
   const rows = (rowResult?.results ?? []) as Array<{ id: string; rule_key: string; rule_json: string; updated_at: string }>;
+  const units = (unitResult?.results ?? []) as Array<{ code: string; type: string }>;
   return json({
     ok: true,
     advancedRules: config === undefined ? {} : advancedMap(parseRecord(config)),
     unitRuleRows: Object.fromEntries(rows.map((row) => [row.rule_key, mirroredRow(row)])),
+    unitTypes: Object.fromEntries(units.map((unit) => [unit.code, unit.type])),
   });
 }
 
@@ -338,7 +349,16 @@ export async function updateAdvancedRule(
     }
     const mirroredId = existing?.id ?? crypto.randomUUID();
     const mirroredVersion = existing ? nextRowVersion(existing.updated_at, now) : now;
-    const mirroredJson = JSON.stringify(mirroredLegacyRule(parseRecord(existing?.rule_json), advanced));
+    const types = Object.fromEntries((unitRows.results ?? []).map((unit) => [unit.code, unit.type]));
+    const basic = Object.fromEntries(rows.map((row) => [row.rule_key, parseRecord(row.rule_json)]));
+    // A refresh section sent with values filled from the parent scopes carries the parents'
+    // settings it was built from; a Default or group change since then would otherwise be
+    // undone silently by those copies, so the save is refused (409) and the tab rebases.
+    if (Object.hasOwn(input, 'expectedInheritedRefresh')
+      && !sameJson(input.expectedInheritedRefresh, inheritedRefresh({ advanced: allAdvanced, basic }, types, ruleKey))) {
+      return apiError(REFRESH_CHANGED_ELSEWHERE, 409);
+    }
+    const mirroredJson = JSON.stringify(mirroredLegacyRule(parseRecord(existing?.rule_json), advanced, input));
     // Unit rules as the table will hold them after this save, in the table's order
     // (SQLite's own NOCASE sort, as before). Only the order is taken from this read:
     // it must hold exactly the rows of the guarded snapshot above, or another save
@@ -356,10 +376,7 @@ export async function updateAdvancedRule(
     if (ordered.length !== snapshot.size || ordered.some((row) => snapshot.get(row.rule_key) !== row.rule_json)) {
       return apiError(REFRESH_CHANGED_ELSEWHERE, 409);
     }
-    const before = {
-      advanced: structuredClone(allAdvanced) as Record<string, unknown>,
-      basic: Object.fromEntries(rows.map((row) => [row.rule_key, parseRecord(row.rule_json)])) as Record<string, unknown>,
-    };
+    const before = { advanced: structuredClone(allAdvanced) as Record<string, unknown>, basic: basic as Record<string, unknown> };
     const unitRules: Record<string, JsonRecord> = {};
     for (const row of ordered) unitRules[row.rule_key] = parseRecord(row.rule_json);
     allAdvanced[ruleKey] = advanced;
@@ -368,7 +385,6 @@ export async function updateAdvancedRule(
     // A chosen child Unit rules interval in effect before this save stays in
     // effect instead of silently following this schedule; the response names them.
     // The kept schedules are part of the same guarded config write below.
-    const types = Object.fromEntries((unitRows.results ?? []).map((unit) => [unit.code, unit.type]));
     kept = keepUnitRuleIntervals(allAdvanced, unitRules, types, ruleKey, { savedRule: false, before });
     appliesTo = (unitRows.results ?? [])
       .filter((unit) => unit.enabled === 1 && unit.type !== 'DRAFT'
@@ -425,5 +441,8 @@ export async function updateAdvancedRule(
 
   // The committed row and version, returned without a second read that a later save could
   // race: the tab saves its next change against exactly this version.
-  return json({ ok: true, ruleKey, advancedRule: advanced, unitRule: written, keptUnitRuleIntervals: kept, appliesToAdUnits: appliesTo });
+  return json({
+    ok: true, ruleKey, advancedRule: advanced, unitRule: written, keptUnitRuleIntervals: kept,
+    keptAdvancedRules: Object.fromEntries(kept.map((key) => [key, allAdvanced[key]])), appliesToAdUnits: appliesTo,
+  });
 }
