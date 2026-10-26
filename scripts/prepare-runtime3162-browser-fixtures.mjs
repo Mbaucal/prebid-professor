@@ -1,4 +1,4 @@
-/** Synthetic Sticky-only fixtures for the 3.16.2 empty-retry gap correction.
+/** Synthetic fixtures for the 3.16.2 empty-retry gap, refresh visibility and schedule corrections.
  * Settings are saved through the real advanced-rule admin path; the same saved
  * snapshot is compiled by 3.16.0, 3.16.1 and 3.16.2. No network, no deploys.
  */
@@ -16,6 +16,7 @@ import {compileRuntime3162} from '../worker/runtime-3162/compiler.mjs';
 import {finalizeJavaScript} from '../worker/runtime/artifact-minifier.mjs';
 import {installSharedStickyStyles,stickyStyles} from '../worker/runtime/artifact-styles.mjs';
 import {positionFixture} from '../tests/support/position-runtime-fixture.mjs';
+import {readPreviewSnapshot} from '../worker/runtime/builtin-preview-service.mjs';
 
 const out=new URL('../.generated/runtime3162-evidence/',import.meta.url);
 const gap={enabled:true,minViewPct:0,minGapSeconds:100,maxRefreshes:20,schedule:{mode:'fixed',fixedSeconds:30}};
@@ -86,4 +87,40 @@ for(const name of ['prebid','gam','sticky','legacy-lazy','desktop-only','mobile-
   snapshot.config.config_json=JSON.stringify(config);
   await emit(name,snapshot);
 }
-console.log('Prepared 3.16.0 / 3.16.1 / 3.16.2 Sticky gap fixtures and the 3.16.2 consent matrix; synthetic traffic only.');
+// R3-01 / R3-09: one BTF position (P1) on the admin audit site. Schedules are saved
+// through the Refresh tab handler; rule rows the admin cannot write (no saved
+// minViewPct) are stored as raw unit_rules rows, as imports can. The ATF-only site
+// has no Default refresh, so P1 inherits the script threshold from the ATF rule;
+// the same site with 60% saved on P1 is the control for that inherited value.
+const seq=schedule=>({refresh:{enabled:true,minViewPct:50,schedule}});
+export const refreshVariants={
+  'seq-30-90-45':{advanced:seq({mode:'sequence',sequenceSeconds:[30,90,45]})},
+  'seq-30-90-45-prebid':{prebid:true,advanced:seq({mode:'sequence',sequenceSeconds:[30,90,45]})},
+  'first60-next30':{advanced:seq({mode:'firstThenFixed',firstSeconds:60,nextSeconds:30})},
+  'fixed30':{advanced:seq({mode:'fixed',fixedSeconds:30})},
+  'pct30-50':{advanced:seq({mode:'percentage',firstSeconds:30,growthPercent:50,maxSeconds:120})},
+  'view-none':{rows:[]},
+  'view-explicit0':{rows:[['__DEFAULT__',{refresh:{enabled:true,minSeconds:30,minViewPct:0}}]]},
+  'view-explicit50':{rows:[['__DEFAULT__',{refresh:{enabled:true,minSeconds:30,minViewPct:50}}]]},
+  'view-atf-only':{rows:[['__ATF__',{refresh:{enabled:true,minSeconds:45,minViewPct:60}}]]},
+  'view-atf-only-p1-60':{rows:[['__ATF__',{refresh:{enabled:true,minSeconds:45,minViewPct:60}}],['P1',{refresh:{minViewPct:60}}]]},
+};
+const refreshOut=new URL('refresh/',out);
+for(const [name,variant] of Object.entries(refreshVariants)){
+  const store=adminAuditStore({config:{enablePrebid:!!variant.prebid,runtimeControls:{sticky:{bottomAdUnitId:''},floors:{enabled:false},currencyConversion:{enabled:false}}}});
+  let snapshot;
+  try{
+    if(variant.advanced){const response=await updateAdvancedRule(new Request('https://local.invalid/advanced',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(variant.advanced)}),store.env,'audit-site','__DEFAULT__');assert.equal(response.status,200,await response.text());}
+    for(const [key,rule] of variant.rows??[])store.sqlite.prepare('INSERT INTO unit_rules(id,publisher_id,rule_key,rule_json) VALUES(?,?,?,?)').run('fixture-'+key,'audit-site',key,JSON.stringify(rule));
+    snapshot=await readPreviewSnapshot(store.env.DB,'audit-site');
+  }finally{store.close();}
+  for(const [version,v] of Object.entries(versions)){
+    const input=v.input(structuredClone(snapshot),v.descriptor,'20261025_120000');
+    let js=installSharedStickyStyles(v.compile(input).adsJs,stickyStyles(input.options.sticky.bottomAdUnitId));
+    if(version!=='3.16.0')js=idempotentStickyStyles(js);
+    const finalized=await finalizeJavaScript(js);
+    const dir=new URL(version+'/',refreshOut);await mkdir(dir,{recursive:true});
+    await writeFile(new URL(name+'.js',dir),finalized.adsJs);await writeFile(new URL(name+'.min.js',dir),finalized.adsMinJs);
+  }
+}
+console.log('Prepared 3.16.0 / 3.16.1 / 3.16.2 Sticky gap and refresh fixtures and the 3.16.2 consent matrix; synthetic traffic only.');

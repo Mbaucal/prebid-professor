@@ -129,13 +129,20 @@ test('3.16.2 changes only the reviewed anchors and stays parser-valid in every m
     .replace("    tryRefresh(STICKY_TARGET_ID, slot, 0);\n    tesseraDeferStickyEmptyRetry();\n","    tryRefresh(STICKY_TARGET_ID, slot, 0);\n")
     .replace(fn(after,'tesseraDeferStickyEmptyRetry')+'\n','')
     .replace('  _sticky.retryIdx = idx+1;\n  _sticky.emptyGapDeferrals = 0;','  _sticky.retryIdx = idx+1;')
-    .replace('_sticky.emptyRemainingMs = Math.max(1, _sticky.emptyNextAt - now());','_sticky.emptyRemainingMs = Math.max(0, _sticky.emptyNextAt - now());');
+    .replace('_sticky.emptyRemainingMs = Math.max(1, _sticky.emptyNextAt - now());','_sticky.emptyRemainingMs = Math.max(0, _sticky.emptyNextAt - now());')
+    // R3-01 and R3-09
+    .replace('    minViewPct: Number(refresh.minViewPct == null ? REFRESH_IN_VIEW_PCT : refresh.minViewPct),','    minViewPct: Number(refresh.minViewPct == null ? 0 : refresh.minViewPct),')
+    .replace('      enqueueRefresh(id, slot);\n    }\n    return true;\n  }\n\n  function setupAutoRefresh(){','      enqueueRefresh(id, slot);\n    }\n  }\n\n  function setupAutoRefresh(){')
+    .replace('function getAdUnitRefreshRule(code,pendingSteps){','function getAdUnitRefreshRule(code){')
+    .replace('  var completed = ((_refreshCounts && _refreshCounts[code]) || 0) + (pendingSteps > 0 ? pendingSteps : 0);','  var completed = (_refreshCounts && _refreshCounts[code]) || 0;')
+    .replace('var tesseraQueued = tryRefresh(id, slot, minSecNow) === true;','tryRefresh(id, slot, minSecNow);')
+    .replace('var rrNext = getAdUnitRefreshRule(id, tesseraQueued && _tesseraRefreshPending[id] === slot ? 1 : 0);','var rrNext = getAdUnitRefreshRule(id);');
   for(const snapshot of [fixture(),configure(fixture(),c=>c.enablePrebid=false),configure(fixture(),c=>{c.runtimeControls.sticky.bottomAdUnitId='';}),positionFixture(true),positionFixture(false)]){
     for(const overlay of [undefined,takeOver()]){
       const saved=structuredClone(snapshot),next=previewInput(snapshot,descriptor,stamp,overlay);
       const old=compileRuntime3161(next),generated=compileRuntime3162(next);
       assert.equal(restore(generated.adsJs),old.adsJs);
-      assert.equal(generated.patches.length,old.patches.length+2);
+      assert.equal(generated.patches.length,old.patches.length+4);
       const out=await finalizeJavaScript(idempotentStickyStyles(installSharedStickyStyles(generated.adsJs,stickyStyles(next.options.sticky.bottomAdUnitId))));
       for(const code of [out.adsJs,out.adsMinJs]){parse(code,{ecmaVersion:2015});new vm.Script(code);assert(code.includes('tesseraDeferStickyEmptyRetry'));}
       assert.deepEqual(snapshot,saved);

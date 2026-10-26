@@ -20,6 +20,10 @@ function once(source, before, after) {
  * between. Every existing gate (closed, page visibility, cap, consent/readiness
  * dispatch, view and gap rules) is still evaluated by tryRefresh when the
  * deferred step runs.
+ * Before 3.16.2 is frozen it also applies the script's inherited minimum
+ * in-view percentage at refresh time when a position saves none (R3-01), and
+ * the content dwell timer counts a still-pending queued refresh when it picks
+ * the next schedule step (R3-09).
  */
 export function compileRuntime3162(input) {
   const result = compileRuntime3161(input);
@@ -66,8 +70,35 @@ function scheduleStickyEmptyRetry(){`);
   source = once(source, 'if(_sticky.emptyNextAt){ _sticky.emptyRemainingMs = Math.max(0, _sticky.emptyNextAt - now()); }',
     'if(_sticky.emptyNextAt){ _sticky.emptyRemainingMs = Math.max(1, _sticky.emptyNextAt - now()); }');
 
+  // R3-01: a refresh rule without minViewPct resolves to the script's inherited
+  // threshold REFRESH_IN_VIEW_PCT (Default refresh, else ATF refresh, else 50%)
+  // instead of 0, so the refresh-time view check applies it. Any saved value,
+  // including an explicit 0, is kept. Dwell entry reads the same value, which
+  // equals the device threshold it fell back to before (an inherited 0 still
+  // falls back to it), so view entry and exit are unchanged.
+  if (source.split('\n  var REFRESH_IN_VIEW_PCT = ').length !== 2) throw Error('Tessera 3.16.2 insertion point changed: REFRESH_IN_VIEW_PCT');
+  source = once(source, '    minViewPct: Number(refresh.minViewPct == null ? 0 : refresh.minViewPct),',
+    '    minViewPct: Number(refresh.minViewPct == null ? REFRESH_IN_VIEW_PCT : refresh.minViewPct),');
+
+  // R3-09: 3.16.1 counts a refresh when GPT actually sends it, after the batch
+  // window, so the dwell timer chose the next schedule step with the old count.
+  // tryRefresh now reports the one path that queued a request; while that exact
+  // request is still pending it is the next completed step (one step at most,
+  // no time comparison). Counting, caps, rollback and the gap check are
+  // unchanged, so a send slower than the next step still waits as in 3.16.1.
+  source = once(source, '      enqueueRefresh(id, slot);\n    }\n  }\n\n  function setupAutoRefresh(){',
+    '      enqueueRefresh(id, slot);\n    }\n    return true;\n  }\n\n  function setupAutoRefresh(){');
+  source = once(source, 'function getAdUnitRefreshRule(code){', 'function getAdUnitRefreshRule(code,pendingSteps){');
+  source = once(source, '  var completed = (_refreshCounts && _refreshCounts[code]) || 0;',
+    '  var completed = ((_refreshCounts && _refreshCounts[code]) || 0) + (pendingSteps > 0 ? pendingSteps : 0);');
+  source = once(source, 'tryRefresh(id, slot, minSecNow);', 'var tesseraQueued = tryRefresh(id, slot, minSecNow) === true;');
+  source = once(source, 'var rrNext = getAdUnitRefreshRule(id);',
+    'var rrNext = getAdUnitRefreshRule(id, tesseraQueued && _tesseraRefreshPending[id] === slot ? 1 : 0);');
+
   parse(source, {ecmaVersion:2015});
   return {...result, adsJs:source, adsMinJs:source, patches:[...result.patches,
     '3.16.2: an empty Sticky retry refused by the refresh gap is deferred to the remaining allowed time (at most three times per step, only while nothing was dispatched)',
-    '3.16.2: a due empty Sticky retry on an inactive or pausing page resumes with the page; stale gap values are not reused']};
+    '3.16.2: a due empty Sticky retry on an inactive or pausing page resumes with the page; stale gap values are not reused',
+    '3.16.2: a position without its own saved minimum in-view percentage uses the script\'s inherited threshold at refresh time (50% unless the Default or, without a Default refresh, the ATF refresh saves another value); saved values, including 0, and view entry/exit are unchanged',
+    '3.16.2: the content dwell timer counts a still-pending queued refresh when it picks the next schedule step, restoring the 3.16.0 request times when that request is sent within the next step; with very short steps and slower sends it waits as 3.16.1 did; no request is made before the interval the actual count allows, and counters still advance only on actual requests']};
 }
