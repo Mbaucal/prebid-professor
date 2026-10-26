@@ -383,11 +383,15 @@ async function prepareConfigUpdate(
   if (isRecord(config.advancedUnitRules) || Object.keys(advanced).length) config.advancedUnitRules = advanced;
   // config_json is derived from this config snapshot and these rows, so it may only be
   // written while both are unchanged; the row statements that follow are gated on changes().
-  // The kept intervals are part of this same guarded config write.
+  // The kept intervals are part of this same guarded config write. They also depend on the
+  // saved position's ATF/BTF group, which an ad-unit edit can change without touching any
+  // row when the position has none yet, so its code and group must still be as read.
+  const unitType = (units.results ?? []).find((unit) => unit.code === ruleKey)?.type ?? null;
   const statement = db.prepare(
     `UPDATE publisher_configs SET config_json = ?, config_hash = NULL, updated_at = ?
-     WHERE publisher_id = ? AND config_json = ? AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}`,
-  ).bind(JSON.stringify(config), now, siteId, row.config_json, ...unitRuleRowsUnchangedArgs(siteId, rows));
+     WHERE publisher_id = ? AND config_json = ? AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}
+       AND (SELECT type FROM ad_units WHERE publisher_id = ? AND code = ? LIMIT 1) IS ?`,
+  ).bind(JSON.stringify(config), now, siteId, row.config_json, ...unitRuleRowsUnchangedArgs(siteId, rows), siteId, ruleKey, unitType);
   return { statement, kept };
 }
 

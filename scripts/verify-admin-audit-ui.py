@@ -98,6 +98,38 @@ with sync_playwright() as pw:
     screen('deleted-rule-save-refused',error)
     dialog.get_by_role('button',name='Save rule',exact=True).click();expect(dialog).to_have_count(0)
     recreated=data('/__fixture/snapshot');assert [json.loads(r['rule_json'])['timeout'] for r in recreated['rules'] if r['rule_key']=='P1']==[1300];assert recreated['config']['unitRules']['P1']['timeout']==1300
+    # A Unit rules interval kept under the Default sequence: Refresh schedules shows its Unit rules timeout, and saving it unchanged keeps both.
+    assert recreated['config']['advancedUnitRules']['__DEFAULT__']['refresh']['schedule']['sequenceSeconds']==[20,40,80]
+    page.once('dialog',lambda dialog:dialog.accept());page.locator('article.unit-rule-card.exact').filter(has=page.get_by_role('heading',name='P1',exact=True)).get_by_role('button',name='Delete',exact=True).click()
+    expect(page.locator('article.unit-rule-card.exact').filter(has=page.get_by_role('heading',name='P1',exact=True))).to_have_count(0);assert 'P1' not in data('/__fixture/snapshot')['config']['advancedUnitRules']
+    page.get_by_role('button',name='＋ New rule',exact=True).click();dialog=page.get_by_role('dialog');dialog.get_by_label('Rule target',exact=False).select_option(label='P1 · BTF')
+    auction=dialog.locator('section.rule-form-section').filter(has_text='Prebid timeout');auction.get_by_label('Override inherited value',exact=True).check();auction.locator('input[type="number"]').fill('1800')
+    dialog.locator('section.rule-form-section').filter(has_text='Viewability refresh guard').get_by_label('Override inherited value',exact=True).check();dialog.get_by_label('Minimum time',exact=False).fill('60');dialog.get_by_role('button',name='Save rule',exact=True).click();expect(dialog).to_have_count(0)
+    expect(row.locator('td').nth(2)).to_contain_text('1800 ms');expect(row.locator('td').nth(4)).to_contain_text('60s')
+    nav('Refresh schedules');page.locator('.advanced-target-list button').filter(has_text='P1 · BTF').click();expect(page.get_by_role('heading',name='Timeouts for P1',exact=True)).to_be_visible()
+    expect(page.get_by_label('Prebid auction timeout',exact=False)).to_have_value('1800');expect(page.locator('.schedule-mode-grid label').filter(has_text='Same every time').locator('input')).to_be_checked();expect(page.get_by_label('Every refresh',exact=False)).to_have_value('60')
+    screen('refresh-kept-timeout',page.locator('.advanced-refresh-form'))
+    page.get_by_role('button',name='Save P1',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved P1.')
+    kept=data('/__fixture/snapshot');rule=[json.loads(r['rule_json']) for r in kept['rules'] if r['rule_key']=='P1'];assert len(rule)==1 and rule[0]['timeout']==1800 and rule[0]['refresh']['minSeconds']==60,rule
+    assert kept['config']['advancedUnitRules']['P1']['timeout']==1800 and kept['config']['advancedUnitRules']['P1']['refresh']['schedule']['fixedSeconds']==60,kept['config']['advancedUnitRules']['P1']
+    nav('Unit rules');expect(row.locator('td').nth(2)).to_contain_text('1800 ms');expect(row.locator('td').nth(4)).to_contain_text('60s');expect(page.get_by_text('Unit rules is not used',exact=False)).to_have_count(0);screen('unit-rules-kept-timeout',row)
+    # Ad units: an ATF/BTF group change keeps an interval saved in Unit rules and says so; a copy carries P1's rule and kept 60 s; a copy that loses a race is refused with the entries kept, and the retry copies the current settings.
+    assert send('/api/publishers/main-site/unit-rules','POST',{'ruleKey':'Billboard','rule':{'refresh':{'enabled':True,'minSeconds':45}}})['status']==201;assert 'Billboard' not in data('/__fixture/snapshot')['config']['advancedUnitRules'],'45 s follows the ATF group'
+    nav('Ad units');board=page.locator('.ad-unit-board');card=lambda code:board.locator('.ad-unit-card').filter(has=page.locator('code').get_by_text(code,exact=True));notice=page.locator('.ad-units-notice')
+    card('Billboard').get_by_role('button',name='Edit',exact=True).click();dialog=page.get_by_role('dialog');dialog.get_by_label('Inventory group',exact=False).select_option('BTF');dialog.get_by_role('button',name='Save changes',exact=True).click();expect(dialog).to_have_count(0)
+    expect(notice).to_have_text('Billboard uses its own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows it as “Same every time”.');expect(board.locator('.ad-unit-column').nth(1).locator('code').get_by_text('Billboard',exact=True)).to_be_visible()
+    moved=data('/__fixture/snapshot')['config']['advancedUnitRules']['Billboard'];assert moved['refresh']['schedule']['fixedSeconds']==45,moved;screen('ad-units-group-kept',notice)
+    card('P1').get_by_role('button',name='Duplicate',exact=True).click();dialog=page.get_by_role('dialog');code=dialog.get_by_label('Ad unit code / div ID',exact=False);expect(code).to_have_value('P1_2');expect(dialog.get_by_label('Copy exact unit rule',exact=True)).to_be_checked()
+    dialog.get_by_role('button',name='Duplicate ad unit',exact=True).click();expect(dialog).to_have_count(0);expect(card('P1_2')).to_be_visible();expect(notice).to_have_count(0)
+    copied=data('/__fixture/snapshot');rule={r['rule_key']:json.loads(r['rule_json']) for r in copied['rules']};assert rule['P1_2']==rule['P1'] and rule['P1_2']['timeout']==1800,rule;assert copied['config']['advancedUnitRules']['P1_2']==copied['config']['advancedUnitRules']['P1'],copied['config']['advancedUnitRules']
+    card('P1').get_by_role('button',name='Duplicate',exact=True).click();dialog=page.get_by_role('dialog');code=dialog.get_by_label('Ad unit code / div ID',exact=False);code.fill('P1_3')
+    assert send('/__fixture/unit-rule-save-before-next-batch','POST',{'ruleKey':'P1','rule':{'timeout':1700}})['status']==200
+    dialog.get_by_role('button',name='Duplicate ad unit',exact=True).click();error=dialog.locator('.form-error');expect(error).to_have_text('Site settings changed. Reload before copying this ad unit.');expect(code).to_have_value('P1_3')
+    refused=data('/__fixture/snapshot');assert 'P1_3' not in {r['rule_key'] for r in refused['rules']} and 'P1_3' not in refused['config']['advancedUnitRules'];assert [json.loads(r['rule_json'])['timeout'] for r in refused['rules'] if r['rule_key']=='P1']==[1700];screen('ad-unit-copy-refused',error)
+    dialog.get_by_role('button',name='Duplicate ad unit',exact=True).click();expect(dialog).to_have_count(0);expect(card('P1_3')).to_be_visible()
+    retried=data('/__fixture/snapshot');assert [json.loads(r['rule_json'])['timeout'] for r in retried['rules'] if r['rule_key']=='P1_3']==[1700];assert retried['config']['advancedUnitRules']['P1_3']['timeout']==1700 and retried['config']['advancedUnitRules']['P1_3']['refresh']['schedule']['fixedSeconds']==60
+    nav('Unit rules');copy_row=page.locator('table.effective-rule-table tbody tr').filter(has=page.get_by_text('P1_3',exact=True));expect(copy_row.locator('td').nth(2)).to_contain_text('1700 ms');expect(copy_row.locator('td').nth(4)).to_contain_text('60s')
+    billboard=page.locator('table.effective-rule-table tbody tr').filter(has=page.get_by_text('Billboard',exact=True));expect(billboard.locator('td').nth(4)).to_contain_text('45s');expect(page.get_by_text('Unit rules is not used',exact=False)).to_have_count(0);screen('unit-rules-after-ad-unit-copy',copy_row)
     assert not errors,errors
     assert any(r['status']==409 and 'unit-rules' in r['path'] for r in requests)
     assert any(r['status']==404 and r['method']=='PATCH' and 'unit-rules' in r['path'] for r in requests)

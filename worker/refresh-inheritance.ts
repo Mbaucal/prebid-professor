@@ -174,7 +174,12 @@ export function keepUnitRuleIntervals(
     if (seconds === null || isRecord(current?.schedule)) continue;
     if (followsFixedInterval(chainRefresh({ advanced, basic }, types, key), seconds)) continue;
     if (!isChosenInterval(key, ruleKey, seconds, before, types)) continue;
+    // Refresh schedules shows this record and re-sends every field on save, so a new
+    // record starts from the rule's own timeout (not the form default) and its refresh
+    // settings (below). Unit rules saves no CMP timeout.
+    const rule = basic[key];
     advanced[key] = {
+      ...(isRecord(rule) && Object.hasOwn(rule, 'timeout') ? { timeout: rule.timeout } : {}),
       ...(isRecord(advanced[key]) ? advanced[key] : {}),
       refresh: {
         ...(current ?? {}),

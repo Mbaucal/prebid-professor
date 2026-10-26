@@ -234,8 +234,8 @@ export const api = {
     publisherId: string,
     adUnitId: string,
     input: UpdateAdUnitInput,
-  ): Promise<AdUnit> {
-    const payload = await requestJson<AdUnitResponse>(
+  ): Promise<{ adUnit: AdUnit; keptUnitRuleIntervals: string[] }> {
+    const payload = await requestJson<AdUnitResponse & { keptUnitRuleIntervals?: string[] }>(
       `/api/publishers/${encodeURIComponent(publisherId)}/ad-units/${encodeURIComponent(adUnitId)}`,
       {
         method: 'PATCH',
@@ -243,15 +243,15 @@ export const api = {
         body: JSON.stringify(input),
       },
     );
-    return payload.adUnit;
+    return { adUnit: payload.adUnit, keptUnitRuleIntervals: payload.keptUnitRuleIntervals ?? [] };
   },
 
   async duplicateAdUnit(
     publisherId: string,
     adUnitId: string,
     input: DuplicateAdUnitInput,
-  ): Promise<AdUnit> {
-    const payload = await requestJson<AdUnitResponse>(
+  ): Promise<{ adUnit: AdUnit; keptUnitRuleIntervals: string[] }> {
+    const payload = await requestJson<AdUnitResponse & { keptUnitRuleIntervals?: string[] }>(
       `/api/publishers/${encodeURIComponent(publisherId)}/ad-units/${encodeURIComponent(adUnitId)}/duplicate`,
       {
         method: 'POST',
@@ -259,7 +259,7 @@ export const api = {
         body: JSON.stringify(input),
       },
     );
-    return payload.adUnit;
+    return { adUnit: payload.adUnit, keptUnitRuleIntervals: payload.keptUnitRuleIntervals ?? [] };
   },
 
   async deleteAdUnit(publisherId: string, adUnitId: string): Promise<string> {

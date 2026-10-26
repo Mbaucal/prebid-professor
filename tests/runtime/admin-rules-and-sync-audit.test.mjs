@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {adminAuditStore} from '../support/admin-audit-store.mjs';
-import {createUnitRule,updateUnitRule,deleteUnitRule,duplicateUnitRule} from '../../worker/unit-rules.ts';
+import {createUnitRule,updateUnitRule,deleteUnitRule,duplicateUnitRule,listUnitRules} from '../../worker/unit-rules.ts';
 import {createPublisher} from '../../worker/publishers.ts';
 import {defaultUserIdSettings,initializeMissingUserSync,getUserIdConfig,updateUserIdConfig} from '../../worker/user-id-config.ts';
 import {updatePrebidMode} from '../../worker/prebid-mode.ts';
@@ -9,12 +9,8 @@ import {previewInput} from '../../worker/runtime/preview-snapshot.mjs';
 import {previewInput as catalogPreviewInput,runtimeCatalog} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {readPreviewSnapshot} from '../../worker/runtime/builtin-preview-service.mjs';
 import {siteSetupState} from '../../worker/site-runtime/setup-state.mjs';
-import vm from 'node:vm';
-import {parse} from 'acorn';
-import {updateAdvancedRule} from '../../worker/advanced-rules.ts';
-import {compileRuntime316} from '../../worker/runtime-316/compiler.mjs';
-import {compileRuntime3161} from '../../worker/runtime-3161/compiler.mjs';
-import {refreshSummary} from '../../worker/site-runtime/refresh-summary.mjs';
+import {listAdvancedRules,updateAdvancedRule} from '../../worker/advanced-rules.ts';
+import {generatedIntervals as compiledIntervals} from '../support/generated-refresh.mjs';
 const request=(body,method='POST')=>new Request('https://test.invalid/api/settings',{method,headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 const fixtures=[];const setup=options=>{const f=adminAuditStore(options);fixtures.push(f);return f;};test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 const refresh=n=>({enabled:true,minSeconds:n,minViewPct:50,requirePreviousViewable:false,checkEveryMs:5000});
@@ -70,19 +66,7 @@ function addUnit(f,code,type){f.sqlite.prepare('INSERT INTO ad_units(id,publishe
 async function saveSchedule(f,key,schedule){const r=await updateAdvancedRule(request({refresh:{enabled:true,schedule}},'PUT'),f.env,'audit-site',key);assert.equal(r.status,200,await r.clone().text());return r.json();}
 async function saveInterval(f,key,minSeconds){const r=await createUnitRule(request({ruleKey:key,rule:{refresh:{enabled:true,minSeconds}}}),f.env,'audit-site');assert.equal(r.status,201,await r.clone().text());return (await r.json()).unitRule;}
 /** Intervals from the real generated scheduler of each script version, after 0..3 refreshes. */
-async function generatedIntervals(f,codes){
- const saved=await readPreviewSnapshot(f.env.DB,'audit-site'),out={};
- for(const version of scripts){
-  const runtime=runtimeCatalog.find(r=>r.version===version),input=catalogPreviewInput(saved,runtime,'20261024_120000');
-  const source=(version==='3.16.0'?compileRuntime316:compileRuntime3161)(input).adsJs,functions=[];
-  const scan=node=>{if(!node||typeof node!=='object')return;if(node.type==='FunctionDeclaration'&&['_plainMerge','getAdUnitRuntimeRule','getAdUnitRefreshRule'].includes(node.id.name))functions.push(source.slice(node.start,node.end));for(const value of Object.values(node))if(Array.isArray(value))value.forEach(scan);else if(value&&typeof value==='object')scan(value);};
-  scan(parse(source,{ecmaVersion:'latest'}));assert.equal(functions.length,3);
-  const units=Object.fromEntries(saved.units.map(u=>[u.code,u.type]));
-  for(const code of codes){out[version+' '+code]=[0,1,2,3].map(completed=>{const context={AD_UNIT_RULES:input.core.adUnitRules,getUnitConfigById:id=>({type:units[id]}),isMobile:()=>false,_refreshCounts:{[code]:completed},MIN_SECONDS_BETWEEN_REFRESHES:30,MOBILE_MIN_SECONDS_BETWEEN_REFRESHES:30,DWELL_MIN_VIEW_SEC:30,REFRESH_EXIT_PCT:10,MAX_REFRESHES_PER_SLOT:20,REFRESH_MAX_INTERVAL_SEC:120,TESSERA_OUTSTREAM:{disabledRefreshCodes:[]}};vm.createContext(context);vm.runInContext(functions.join('\n'),context);return vm.runInContext(`getAdUnitRefreshRule(${JSON.stringify(code)}).minSeconds`,context);});}
-  out['summary '+version]=refreshSummary(input,saved.units,runtime,saved.rules);out['sticky '+version]=input.options.sticky.refreshSeconds;
- }
- return out;
-}
+const generatedIntervals=(f,codes)=>compiledIntervals(f,codes,scripts);
 const every=(values,seconds)=>values.every(v=>v===seconds);
 test('a new Unit rules interval is used instead of an inherited Refresh schedule in every mode and script',async()=>{
  for(const [mode,schedule] of Object.entries(schedules))for(const [parent,key,code,type] of [['__DEFAULT__','P1','P1','BTF'],['__BTF__','P1','P1','BTF'],['__ATF__','A1','A1','ATF'],['__DEFAULT__','__BTF__','P1','BTF']]){
@@ -215,4 +199,35 @@ test('a Refresh schedules save that races a Unit rules save is refused with no p
   assert.deepEqual((await saveSchedule(f,'__DEFAULT__',schedules.fixed)).keptUnitRuleIntervals,['P1']);
   const result=await generatedIntervals(f,['P1']);for(const version of scripts)assert(every(result[version+' P1'],60));
  }
+});
+// The Refresh schedules tab (src/components/AdvancedRefreshPanel.tsx): selecting a target
+// fills the form with formFromRule(key, advancedRules[key] ?? its Unit rules rule) and Save
+// PUTs every form field. Same defaults and fallbacks as that component; the real component
+// is driven in scripts/verify-admin-audit-ui.py.
+function refreshTabForm(key,rule){
+ assert(rule,'only a saved rule is selected here');
+ const refresh=rule.refresh??{},schedule=refresh.schedule??{},number=(value,fallback)=>Number.isFinite(Number(value))?Number(value):fallback,flag=(value,fallback)=>typeof value==='boolean'?value:fallback,legacy=number(refresh.minSeconds,30);
+ return {timeout:number(rule.timeout,key==='__ATF__'?2200:2500),cmpTimeout:number(rule.cmpTimeout,1500),enabled:flag(refresh.enabled,true),
+  mode:['fixed','firstThenFixed','percentage','sequence'].includes(String(schedule.mode))?String(schedule.mode):'fixed',fixedSeconds:number(schedule.fixedSeconds,legacy),firstSeconds:number(schedule.firstSeconds,legacy),nextSeconds:number(schedule.nextSeconds,legacy),growthPercent:number(schedule.growthPercent,20),maxSeconds:number(schedule.maxSeconds,120),
+  sequenceSeconds:Array.isArray(schedule.sequenceSeconds)&&schedule.sequenceSeconds.length?schedule.sequenceSeconds.map(Number).filter(value=>Number.isFinite(value)&&value>0):[20,30],
+  minViewPct:number(refresh.minViewPct,key==='__ATF__'?60:50),exitViewPct:number(refresh.exitViewPct,10),accumulateViewTime:flag(refresh.accumulateViewTime,true),minGapSeconds:number(refresh.minGapSeconds,0),maxRefreshes:number(refresh.maxRefreshes,20),requirePreviousViewable:flag(refresh.requirePreviousViewable,false),checkEveryMs:number(refresh.checkEveryMs,5000)};
+}
+const refreshTabBody=form=>({timeout:form.timeout,cmpTimeout:form.cmpTimeout,refresh:{enabled:form.enabled,minViewPct:form.minViewPct,exitViewPct:form.exitViewPct,accumulateViewTime:form.accumulateViewTime,minGapSeconds:form.minGapSeconds,maxRefreshes:form.maxRefreshes,requirePreviousViewable:form.requirePreviousViewable,checkEveryMs:form.checkEveryMs,
+ schedule:{mode:form.mode,fixedSeconds:form.fixedSeconds,firstSeconds:form.firstSeconds,nextSeconds:form.nextSeconds,growthPercent:form.growthPercent,maxSeconds:form.maxSeconds,sequenceSeconds:form.sequenceSeconds}}});
+test('a kept interval saved unchanged in Refresh schedules keeps its Unit rules timeout and interval in 3.16.1 and 3.16.2',async()=>{
+ const f=setup({config:{enablePrebid:false}});await saveSchedule(f,'__DEFAULT__',schedules.sequence);
+ const created=await createUnitRule(request({ruleKey:'P1',rule:{timeout:1800,refresh:refresh(60)}}),f.env,'audit-site');assert.equal(created.status,201,await created.clone().text());
+ assert.deepEqual((await created.json()).keptUnitRuleIntervals,['P1']);
+ const row=()=>JSON.parse(f.sqlite.prepare("SELECT rule_json FROM unit_rules WHERE rule_key='P1'").get().rule_json),before=row();
+ const cmp=async version=>catalogPreviewInput(await readPreviewSnapshot(f.env.DB,'audit-site'),runtimeCatalog.find(r=>r.version===version),'20261024_120000').core.maxCmpTimeout;
+ const cmpBefore=[await cmp('3.16.1'),await cmp('3.16.2')];
+ // The tab loads GET /unit-rules-advanced and the Unit rules list; then P1 is selected.
+ const {advancedRules}=await (await listAdvancedRules(f.env,'audit-site')).json(),{unitRules}=await (await listUnitRules(f.env,'audit-site')).json();
+ const form=refreshTabForm('P1',advancedRules.P1??unitRules.find(rule=>rule.ruleKey==='P1')?.rule);
+ assert.equal(form.timeout,1800,'the form shows the timeout saved in Unit rules');assert.equal(form.mode,'fixed');assert.equal(form.fixedSeconds,60);assert.equal(form.minViewPct,50);
+ const saved=await updateAdvancedRule(request(refreshTabBody(form),'PUT'),f.env,'audit-site','P1');assert.equal(saved.status,200,await saved.clone().text());
+ assert.deepEqual(row(),before,'the Unit rules row keeps timeout 1800, its interval and no CMP timeout');assert.equal(row().timeout,1800);assert.equal(Object.hasOwn(row(),'cmpTimeout'),false);
+ assert.deepEqual([await cmp('3.16.1'),await cmp('3.16.2')],cmpBefore,'the generated CMP timeout is unchanged');
+ const result=await compiledIntervals(f,['P1'],['3.16.1','3.16.2']);
+ for(const version of ['3.16.1','3.16.2']){assert(every(result[version+' P1'],60),`${version}: ${result[version+' P1']}`);assert.equal(result['rules '+version].P1.timeout,1800);assert.deepEqual(intervalWarnings(result['summary '+version]),[]);}
 });
