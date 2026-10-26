@@ -131,9 +131,103 @@ function chainRefresh(state: RuleState, types: UnitTypes, key: string, inherited
     .flatMap((scope) => [refreshOf(state.basic, scope), refreshOf(state.advanced, scope)]));
 }
 
-/** Refresh settings `key` inherits: its parent scopes merged as the script merges them (Default, then the group). */
-export function inheritedRefresh(state: RuleState, types: UnitTypes, key: string): JsonRecord {
-  return chainRefresh(state, types, key, true);
+/** The selected script's runtime pin (or catalog descriptor); null when the site has none yet. */
+export type SelectedRuntime = { runtimeId?: unknown; runtimeVersion?: unknown; id?: unknown; version?: unknown; capabilities?: unknown } | null | undefined;
+
+/**
+ * Whether the script is 3.16.1 or later: it sets MIN_SECONDS_BETWEEN_REFRESHES to the global
+ * minimum time, which is then both its wall-clock gap and the interval of a position no scope
+ * gives one, and its global switch is on while any position's own rule is (runtime-3161).
+ * Older scripts set it to the global minimum wall-clock gap and switch with the global settings.
+ */
+export function usesGlobalMinSeconds(runtime: SelectedRuntime): boolean {
+  if (!isRecord(runtime)) return false;
+  const id = runtime.runtimeId ?? runtime.id;
+  const version = runtime.runtimeVersion ?? runtime.version;
+  return (Array.isArray(runtime.capabilities) && runtime.capabilities.includes('refresh-wall-clock-gap'))
+    || [['tessera-3.16.1', '3.16.1'], ['tessera-3.16.2', '3.16.2']].some(([candidate, release]) => id === candidate && version === release);
+}
+
+/** Scope whose refresh settings the compiled globals come from (worker/runtime/preview-snapshot.mjs, worker/releases.ts): Default's, else the ATF group's. */
+export function globalRefreshScope(state: RuleState): string | undefined {
+  return [DEFAULT_RULE_KEY, '__ATF__'].find((key) => isRecord(mergeRefresh(state.basic[key], state.advanced[key]).refresh));
+}
+
+/** What decides the refresh values the script fills in: the selected script and the site's bottom Sticky ad unit. */
+export type RefreshScript = { runtime?: SelectedRuntime; stickyAdUnit?: string | null };
+
+/** First interval of the global schedule (DWELL_MIN_VIEW_SEC before its minimum-time fallback), or 0. */
+function firstScheduledSeconds(global: JsonRecord): number {
+  const schedule = isRecord(global.schedule) ? global.schedule : {};
+  const first = Number(schedule.mode === 'fixed' ? schedule.fixedSeconds
+    : schedule.mode === 'sequence' && Array.isArray(schedule.sequenceSeconds) ? schedule.sequenceSeconds[0] : schedule.firstSeconds);
+  return Number.isFinite(first) && first > 0 ? first : 0;
+}
+
+/**
+ * What the compiled globals (worker/runtime-compiler.ts, patchGlobalRefresh) give a refresh
+ * value that no scope in a position's chain saves: Refresh enabled (REFRESH_ENABLED, the
+ * global switch), the interval (MIN_SECONDS_BETWEEN_REFRESHES, else DWELL_MIN_VIEW_SEC), Enter
+ * at (REFRESH_IN_VIEW_PCT), Exit at (REFRESH_EXIT_PCT) and Maximum refreshes (MAX_REFRESHES_PER_SLOT).
+ */
+export function refreshFallbacks(global: JsonRecord, globalMinSeconds: boolean): JsonRecord {
+  const dwellSeconds = firstScheduledSeconds(global) || Number(global.minSeconds || 30) || 30;
+  return {
+    enabled: global.enabled !== false,
+    minSeconds: globalMinSeconds ? Number(global.minSeconds) || 30 : Number(global.minGapSeconds ?? 0) || dwellSeconds,
+    minViewPct: Number(global.minViewPct ?? 50),
+    exitViewPct: Number(global.exitViewPct ?? 10),
+    maxRefreshes: Number(global.maxRefreshes ?? 20),
+  };
+}
+
+function scriptFallbacks(state: RuleState, scope: string, script: RefreshScript): { values: JsonRecord; fromGlobal: string[] } {
+  const source = globalRefreshScope(state);
+  const global = source !== undefined && source !== scope ? mergeRefresh(state.basic[source], state.advanced[source]).refresh as JsonRecord : {};
+  const current = usesGlobalMinSeconds(script.runtime);
+  // Older scripts time the bottom Sticky on its own: its own minimum time, else 30 s
+  // (preview-snapshot `sticky.refreshSeconds`; the legacy path keeps the template's 30 s).
+  const stickyTimer = !current && Boolean(script.stickyAdUnit) && scope === script.stickyAdUnit;
+  const { enabled, ...values } = refreshFallbacks(global, current);
+  if (stickyTimer) values.minSeconds = 30;
+  // Before 3.16.1 a save of the scope the globals come from is also the global switch.
+  const switches = !current && (scope === DEFAULT_RULE_KEY || (scope === '__ATF__' && source !== DEFAULT_RULE_KEY));
+  const out = switches ? { enabled: source === undefined && isRecord(script.runtime) ? false : enabled, ...values } : values;
+  const intervalSaved = current ? Number(global.minSeconds) > 0
+    : Number(global.minGapSeconds) > 0 || firstScheduledSeconds(global) > 0 || Number(global.minSeconds) > 0;
+  return {
+    values: out,
+    fromGlobal: Object.keys(out).filter((key) => key === 'minSeconds' ? !stickyTimer && intervalSaved : global[key] != null),
+  };
+}
+
+/**
+ * Refresh values a scope gets from the selected script where neither the scope nor its parents
+ * save them: those the compiled globals give (refreshFallbacks) from Default's refresh, or the
+ * ATF group's while Default has none, so on such a site a BTF scope shows and keeps the ATF
+ * interval and percentages it runs with. A scope that is itself that source gets the compiler
+ * defaults: what it saves is its own, and what it leaves out falls back to them. Before 3.16.1
+ * a save of that source (Default, or the ATF group while Default has none) is also the global
+ * switch, so the scope shows the switch as it is: the ATF group's for Default, or off in a
+ * built-in script when neither scope saves refresh settings; and the bottom Sticky keeps the
+ * 30 s its separate timer uses. Without a selection the site uses the legacy Generate path
+ * (worker/releases.ts), which resolves like 3.16.0 but leaves the switch on then.
+ */
+export function scriptRefreshDefaults(state: RuleState, scope: string, script: RefreshScript = {}): JsonRecord {
+  return scriptFallbacks(state, scope, script).values;
+}
+
+/** Which of those values come from the saved global refresh settings; the others are compiler defaults. */
+export function globalRefreshValues(state: RuleState, scope: string, script: RefreshScript = {}): string[] {
+  return scriptFallbacks(state, scope, script).fromGlobal;
+}
+
+/**
+ * Refresh settings `key` inherits: what the selected script fills in (scriptRefreshDefaults),
+ * then its parent scopes merged as the script merges them (Default, then the group).
+ */
+export function inheritedRefresh(state: RuleState, types: UnitTypes, key: string, script: RefreshScript = {}): JsonRecord {
+  return mergeRefresh(scriptRefreshDefaults(state, key, script), chainRefresh(state, types, key, true));
 }
 
 /**

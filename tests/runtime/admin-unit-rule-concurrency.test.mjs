@@ -13,11 +13,12 @@ import {updateRuntimeIntegrations} from '../../worker/runtime-integrations.ts';
 import {rebaseEdits,rebaseReview,rebasedBaseline} from '../../src/edit-rebase.ts';
 import {FIELD_LABELS,FORM_GATES,dialogAfterRefusal,fieldText,formFromRule,ruleFromForm} from '../../src/unit-rule-form.ts';
 import * as refreshTabForm from '../../src/refresh-form.ts';
-import {intervalText,mergeRefresh,ruleChain} from '../../worker/refresh-inheritance.ts';
+import {intervalText,mergeRefresh,ruleChain,scheduledSeconds} from '../../worker/refresh-inheritance.ts';
+import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {readPreviewSnapshot} from '../../worker/runtime/builtin-preview-service.mjs';
 import {previewInput,runtimeCatalog} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {createAdUnit,updateAdUnit,duplicateAdUnit,deleteAdUnit} from '../../worker/ad-units.ts';
-import {generatedCmpTimeouts,generatedIntervals} from '../support/generated-refresh.mjs';
+import {generatedCmpTimeouts,generatedIntervals,legacyGeneratedRefresh} from '../support/generated-refresh.mjs';
 
 const SITE='audit-site';
 const request=(body,method='PATCH')=>new Request('https://test.invalid/api/unit-rules',{method,headers:{'content-type':'application/json'},body:JSON.stringify(body)});
@@ -666,7 +667,7 @@ for(const frozen of [false,true]){
 // (src/refresh-form.ts), optional edits through the same helper the inputs use, and Save.
 async function refreshTabSave(f,key,edits={}){
  const body=await ok(await listAdvancedRules(f.env,SITE));
- const baseline=refreshTabForm.baselineFor(key,body.unitTypes[key]??null,body.advancedRules,body.unitRuleRows);
+ const baseline=refreshTabForm.baselineFromListing(key,body);
  const form=Object.entries(edits).reduce((current,[field,value])=>refreshTabForm.withEdit(current,field,value),baseline.form);
  const sent={expectedUpdatedAt:baseline.updatedAt,expectedUnitRuleId:baseline.rowId,...refreshTabForm.requestBody(form,baseline)};
  return {baseline,sent,saved:await ok(await updateAdvancedRule(request(sent,'PUT'),f.env,SITE,key))};
@@ -1337,6 +1338,237 @@ test('Refresh tab after a group change elsewhere: the refused save is rebased on
  assert.deepEqual([form.maxRefreshes,form.fixedSeconds],[7,40]);
  await ok(await updateAdvancedRule(refreshTabPut(next,form),f.env,SITE,'P1'));
  const p1=f.readConfig().advancedUnitRules.P1.refresh;assert.deepEqual([p1.maxRefreshes,p1.schedule.fixedSeconds],[7,40]);assertConsistent(f);
+});
+
+// ATF-only sites: Default stores no refresh settings and the ATF group does. Every built-in
+// script then reads its global refresh values from the ATF group's refresh (worker/releases.ts),
+// so a BTF position with no refresh of its own runs at the ATF interval, Exit at and Maximum
+// refreshes, and its dwell timer enters at the ATF percentage (which 3.16.2 also checks when a
+// refresh is due). Real Worker handlers and the real generated scheduler of each version.
+const VERSIONS=['3.16.0','3.16.1','3.16.2'];
+const atfRefresh=(seconds,pct,extra={})=>({enabled:true,minViewPct:pct,exitViewPct:10,accumulateViewTime:true,minGapSeconds:0,maxRefreshes:20,requirePreviousViewable:false,checkEveryMs:5000,
+ schedule:{mode:'fixed',fixedSeconds:seconds,firstSeconds:seconds,nextSeconds:seconds,growthPercent:20,maxSeconds:120,sequenceSeconds:[seconds]},...extra});
+async function atfOnlySite(seconds=45,pct=60,extra){
+ const f=setup();
+ await ok(await createAdUnit(request({code:'Billboard',type:'ATF',sizeMapKey:'display'},'POST'),f.env,SITE),201);
+ await ok(await updateAdvancedRule(request({refresh:atfRefresh(seconds,pct,extra)},'PUT'),f.env,SITE,'__ATF__'));
+ return f;
+}
+// The site's selected script, as the Script setup save stores it (none: no selection yet).
+function selectRuntime(f,version){
+ const config=f.readConfig();
+ if(version)config.builtinRuntimeSelection={runtime:pinRuntime(runtimeCatalog.find(r=>r.version===version),{allowPreview:true})};else delete config.builtinRuntimeSelection;
+ f.writeConfig(config);
+}
+// A site without a selected script generates through the legacy path; its profile is put on the
+// advanced-refresh engine, under which Refresh schedules take effect there.
+function legacySite(f){
+ selectRuntime(f,null);
+ const key='generator-profiles/audit-profile/manifest.json',profile=JSON.parse(new TextDecoder().decode(f.objects.get(key)));
+ f.objects.set(key,new TextEncoder().encode(JSON.stringify({...profile,engine:'legacy-advanced-refresh-v1'})));
+}
+// What a version's generated script (`legacy`: the legacy Generate path) runs for `code` on desktop
+// or mobile: the interval after 0..3 refreshes and the rule values before the first, its global
+// refresh settings, and the effective-behavior label the admin shows.
+async function generated(f,code,versions=VERSIONS){
+ const builtin=versions.filter(version=>version!=='legacy');
+ const g={...(builtin.length?await generatedIntervals(f,[code],builtin):{}),...(versions.includes('legacy')?await legacyGeneratedRefresh(f,[code]):{})};
+ return {
+  run:(version,device='')=>({intervals:g[`${version} ${code}${device}`],...g[`rule ${version} ${code}${device}`]}),
+  label:version=>g['summary '+version].units.find(unit=>unit.code===code).label,
+  global:version=>g['global '+version],
+ };
+}
+const BOTH=['',' mobile'];
+
+test('Refresh tab on an ATF-only site: BTF scopes show the 45 s and 60% the scripts use, and changing only Maximum refreshes keeps them',async()=>{
+ for(const key of ['P1','__BTF__','__DEFAULT__']){
+  const f=await atfOnlySite();
+  const before=await generated(f,'P1');
+  // 3.16.0 and 3.16.1 check 0% when a refresh is due (R3-01); their dwell timer enters at the ATF 60%.
+  for(const version of VERSIONS)for(const device of BOTH)assert.deepEqual(before.run(version,device),
+   {intervals:[45,45,45,45],enabled:true,minViewPct:version==='3.16.2'?60:0,exitViewPct:10,maxRefreshes:20},`${version}${device} before`);
+  assert.deepEqual(VERSIONS.map(before.label),['45s · 50%','45s · 50%','45s · 60%'],'the effective behavior shows the interval the scripts use');
+  const {baseline,sent}=await refreshTabSave(f,key,{maxRefreshes:12});
+  const {form}=baseline;
+  assert.deepEqual([form.ownRefresh,form.refreshEnabled,form.mode,form.fixedSeconds,form.minViewPct,form.exitViewPct,form.maxRefreshes],
+   [false,true,'fixed',45,60,10,20],`${key} shows what P1 runs with`);
+  assert.deepEqual(sent.expectedInheritedRefresh,{...(key==='__DEFAULT__'?{enabled:true}:{}),minSeconds:45,minViewPct:60,exitViewPct:10,maxRefreshes:20},
+   'the save carries the ATF values it was built from');
+  const stored=f.readConfig().advancedUnitRules[key].refresh;
+  assert.deepEqual([stored.enabled,stored.minSeconds,stored.schedule.mode,stored.schedule.fixedSeconds,stored.minViewPct,stored.exitViewPct,stored.maxRefreshes],[true,45,'fixed',45,60,10,12]);
+  const after=await generated(f,'P1');
+  // The 60% is now saved, so 3.16.0 and 3.16.1 check it too.
+  for(const version of VERSIONS)for(const device of BOTH)assert.deepEqual(after.run(version,device),
+   {intervals:[45,45,45,45],enabled:true,minViewPct:60,exitViewPct:10,maxRefreshes:12},`${key}: ${version}${device} after`);
+  assert.deepEqual(VERSIONS.map(after.label),['45s · 60%','45s · 60%','45s · 60%']);
+  assert(VERSIONS.every(version=>after.global(version).enabled!==false),'refresh stays on');
+  // The ATF position keeps the ATF group's own values.
+  const billboard=await generated(f,'Billboard');
+  for(const version of VERSIONS)for(const device of BOTH)assert.deepEqual(billboard.run(version,device),
+   {intervals:[45,45,45,45],enabled:true,minViewPct:60,exitViewPct:10,maxRefreshes:20},`${key}: Billboard ${version}${device}`);
+  assertConsistent(f);
+ }
+});
+
+test('Refresh tab on an ATF-only site: a save built on the ATF values is refused with 409 when the ATF refresh changed since, and nothing is written',async()=>{
+ for(const key of ['P1','__BTF__','__DEFAULT__']){
+  const f=await atfOnlySite();
+  const loaded=refreshTabForm.baselineFromListing(key,await ok(await listAdvancedRules(f.env,SITE)));
+  assert.deepEqual([loaded.form.fixedSeconds,loaded.form.minViewPct,loaded.form.maxRefreshes],[45,60,20]);
+  // Another tab changes the ATF group to 75 s and 70%; this tab then changes only Maximum refreshes.
+  const atf=(await ok(await listAdvancedRules(f.env,SITE))).unitRuleRows.__ATF__;
+  await ok(await updateAdvancedRule(request({expectedUpdatedAt:atf.updatedAt,expectedUnitRuleId:atf.id,refresh:atfRefresh(75,70)},'PUT'),f.env,SITE,'__ATF__'));
+  const edited=refreshTabForm.withEdit(loaded.form,'maxRefreshes',12);
+  const before=f.readConfig(),beforeRows=rows(f),saves=auditCount(f,'unit_rule.advanced_updated');
+  await refused(await updateAdvancedRule(refreshTabPut(loaded,edited),f.env,SITE,key),409,/changed in another tab/);
+  assert.deepEqual(f.readConfig(),before,`${key}: nothing was written`);assert.deepEqual(rows(f),beforeRows);
+  assert.equal(auditCount(f,'unit_rule.advanced_updated'),saves,'a refused save records no audit row');
+  const runs=await generated(f,'P1');
+  for(const version of VERSIONS)for(const device of BOTH)assert.deepEqual(runs.run(version,device).intervals,[75,75,75,75],`${key}: P1 follows the new ATF interval in ${version}${device}`);
+  assert.equal(runs.run('3.16.2').minViewPct,70);
+  // The rebase shows the new ATF values with this tab's entry, and the reviewed save applies them.
+  const {outcome,form,review,next}=await refreshTabRebase(f,loaded,edited,key);
+  assert.deepEqual([outcome.kind,outcome.cause,form.fixedSeconds,form.minViewPct,form.maxRefreshes],['rebased','parents',75,70,12],key);
+  assert.deepEqual(review,{conflicts:[],applied:['Refresh settings','Maximum refreshes']});
+  await ok(await updateAdvancedRule(refreshTabPut(next,form),f.env,SITE,key));
+  const after=await generated(f,'P1');
+  for(const version of VERSIONS)for(const device of BOTH)assert.deepEqual(after.run(version,device),
+   {intervals:[75,75,75,75],enabled:true,minViewPct:70,exitViewPct:10,maxRefreshes:12},`${key}: ${version}${device} after the reviewed save`);
+  assertConsistent(f);
+ }
+});
+
+test('Refresh tab on an ATF-only site follows the selected script: 3.16.0 and the legacy path run a BTF position at the ATF minimum wall-clock gap',async()=>{
+ const f=await atfOnlySite(45,60,{minGapSeconds:15});
+ legacySite(f);
+ const runs=await generated(f,'P1',[...VERSIONS,'legacy']);
+ for(const device of BOTH)assert.deepEqual([...VERSIONS,'legacy'].map(version=>runs.run(version,device).intervals),[[15,15,15,15],[45,45,45,45],[45,45,45,45],[15,15,15,15]],`P1${device}`);
+ assert.deepEqual(VERSIONS.map(runs.label),['15s · 50%','45s · 50%','45s · 60%']);
+ for(const [version,seconds] of [['3.16.0',15],['3.16.1',45],['3.16.2',45],[null,15]]){
+  selectRuntime(f,version);
+  const listing=await ok(await listAdvancedRules(f.env,SITE)),pin=f.readConfig().builtinRuntimeSelection?.runtime;
+  assert.deepEqual(listing.runtime,pin?{runtimeId:pin.runtimeId,runtimeVersion:pin.runtimeVersion,capabilities:pin.capabilities}:null);
+  assert.equal(refreshTabForm.baselineFromListing('P1',listing).form.fixedSeconds,seconds,`${version??'no selection'}: P1 shows the interval its script runs`);
+ }
+ // Built for 3.16.0, refused once another tab selected 3.16.2, which runs P1 at 45 s.
+ selectRuntime(f,'3.16.0');
+ const loaded=refreshTabForm.baselineFromListing('P1',await ok(await listAdvancedRules(f.env,SITE)));
+ selectRuntime(f,'3.16.2');const before=f.readConfig(),beforeRows=rows(f);
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,refreshTabForm.withEdit(loaded.form,'maxRefreshes',12)),f.env,SITE,'P1'),409,/changed in another tab/);
+ assert.deepEqual(f.readConfig(),before,'nothing was written');assert.deepEqual(rows(f),beforeRows);
+ // On 3.16.0, changing only Maximum refreshes keeps the 15 s.
+ selectRuntime(f,'3.16.0');
+ await refreshTabSave(f,'P1',{maxRefreshes:12});
+ const after=await generated(f,'P1',['3.16.0']);
+ for(const device of BOTH)assert.deepEqual(after.run('3.16.0',device),{intervals:[15,15,15,15],enabled:true,minViewPct:60,exitViewPct:10,maxRefreshes:12});
+});
+
+test('Refresh tab on an ATF-only site: the bottom Sticky shows the interval its timer uses, and changing only Maximum refreshes keeps it',async()=>{
+ // 3.16.0 times the bottom Sticky every 30 s unless its own settings give it a minimum time, and the legacy template
+ // always uses 30 s; 3.16.1 and 3.16.2 time it like any position, from the ATF interval here.
+ const timer=(g,version)=>version==='3.16.0'||version==='legacy'?g[`sticky ${version}`]:g[`${version} Sticky`][0];
+ async function stickySite(version,type='BTF'){
+  const f=await atfOnlySite();
+  await ok(await createAdUnit(request({code:'Sticky',type,sizeMapKey:'display'},'POST'),f.env,SITE),201);
+  const config=f.readConfig();config.runtimeControls={...config.runtimeControls,sticky:{bottomAdUnitId:'Sticky'}};f.writeConfig(config);
+  if(version==='legacy')legacySite(f);else selectRuntime(f,version);
+  return f;
+ }
+ for(const [version,seconds] of [['3.16.0',30],['3.16.1',45],['3.16.2',45],['legacy',30]]){
+  const f=await stickySite(version);
+  const runs=()=>version==='legacy'?legacyGeneratedRefresh(f,['Sticky']):generatedIntervals(f,['Sticky'],[version]);
+  assert.equal(timer(await runs(),version),seconds,`${version}: the Sticky timer`);
+  const listing=await ok(await listAdvancedRules(f.env,SITE));
+  assert.equal(listing.stickyAdUnit,'Sticky');
+  const atfNote=refreshTabForm.atfIsGlobalSource('__ATF__',listing.advancedRules,listing.unitRuleRows,listing.unitTypes,refreshTabForm.listingScript(listing));
+  assert.equal(atfNote.stickyApart,seconds===30,`${version}: the ATF group note names the Sticky timer`);
+  assert.deepEqual(refreshTabForm.atfGlobalRefresh('Sticky','BTF',listing.advancedRules,listing.unitRuleRows,refreshTabForm.listingScript(listing)),
+   [...(seconds===45?['the interval']:[]),'Enter at','Exit at','Maximum refreshes'],`${version}: the values the note says come from the ATF group`);
+  const {baseline}=await refreshTabSave(f,'Sticky',{maxRefreshes:12});
+  assert.equal(baseline.form.fixedSeconds,seconds,`${version}: the Sticky form shows the interval its timer uses`);
+  assert.equal(timer(await runs(),version),seconds,`${version}: the Sticky timer after a Maximum refreshes save`);
+  assert.equal(f.readConfig().advancedUnitRules.Sticky.refresh.maxRefreshes,12);
+ }
+ // A bottom Sticky saved as none (null): a selected script then has none, so the Sticky position runs like any other (3.16.0:
+ // the ATF 45 s), while the legacy Generate path reads only a saved text and still times 'Sticky' separately at 30 s.
+ // An empty text means none for both. With no bottom Sticky saved at all, both time the 'Sticky' unit separately.
+ for(const [version,saved,target,seconds] of [['3.16.0',null,null,45],['legacy',null,'Sticky',30],['3.16.0','',null,45],['legacy','',null,45],
+  ['3.16.0',undefined,'Sticky',30],['legacy',undefined,'Sticky',30]]){
+  const g=await stickySite(version),c=g.readConfig(),label=`${version}, ${saved===undefined?'none saved':`saved as ${JSON.stringify(saved)}`}`;
+  c.runtimeControls.sticky=saved===undefined?{}:{bottomAdUnitId:saved};g.writeConfig(c);
+  const runs=version==='legacy'?await legacyGeneratedRefresh(g,['Sticky']):await generatedIntervals(g,['Sticky'],[version]);
+  assert.equal(runs[`sticky target ${version}`]||null,target,`${label}: the script's bottom Sticky`);
+  assert.equal(target?runs[`sticky ${version}`]:runs[`${version} Sticky`][0],seconds,`${label}: the Sticky position's interval`);
+  const listing=await ok(await listAdvancedRules(g.env,SITE));
+  assert.equal(listing.stickyAdUnit,target,label);
+  assert.equal(refreshTabForm.baselineFromListing('Sticky',listing).form.fixedSeconds,seconds,`${label}: the Sticky form`);
+ }
+ // An ATF bottom Sticky inherits from the ATF group like any ATF position, so the ATF group note leaves its timer out.
+ {
+  const g=await stickySite('3.16.0','ATF'),listing=await ok(await listAdvancedRules(g.env,SITE));
+  assert.equal(refreshTabForm.atfIsGlobalSource('__ATF__',listing.advancedRules,listing.unitRuleRows,listing.unitTypes,refreshTabForm.listingScript(listing)).stickyApart,false,'3.16.0, ATF bottom Sticky');
+ }
+ // A 3.16.0 Sticky save built before another tab chose another bottom Sticky is refused: the position now runs at the ATF 45 s.
+ const f=await stickySite('3.16.0');
+ const loaded=refreshTabForm.baselineFromListing('Sticky',await ok(await listAdvancedRules(f.env,SITE)));
+ const config=f.readConfig();config.runtimeControls.sticky={bottomAdUnitId:''};f.writeConfig(config);
+ const before=f.readConfig(),beforeRows=rows(f);
+ await refused(await updateAdvancedRule(refreshTabPut(loaded,refreshTabForm.withEdit(loaded.form,'maxRefreshes',12)),f.env,SITE,'Sticky'),409,/changed in another tab/);
+ assert.deepEqual(f.readConfig(),before,'nothing was written');assert.deepEqual(rows(f),beforeRows);
+ assert.equal(refreshTabForm.baselineFromListing('Sticky',await ok(await listAdvancedRules(f.env,SITE))).form.fixedSeconds,45);
+});
+
+test('Refresh tab: where no scope saves a refresh value, the form shows what the selected script runs, and changing another value keeps it',async()=>{
+ const CASES={
+  'nothing saved':{},
+  'ATF refresh only':{advanced:{__ATF__:atfRefresh(45,60)}},
+  'ATF refresh only in Unit rules':{basic:{__ATF__:{refresh:{...refresh(40),minViewPct:65}}}},
+  'ATF growing interval':{advanced:{__ATF__:{...atfRefresh(20,55),schedule:{mode:'percentage',firstSeconds:20,growthPercent:50,maxSeconds:200}}}},
+  'ATF refresh, BTF group stores some values in Unit rules':{advanced:{__ATF__:atfRefresh(45,60,{exitViewPct:5,maxRefreshes:8})},basic:{__BTF__:{refresh:refresh(40)}}},
+  'Default and ATF refresh':{advanced:{__DEFAULT__:atfRefresh(50,55,{maxRefreshes:9}),__ATF__:atfRefresh(45,60)}},
+  'ATF minimum wall-clock gap':{advanced:{__ATF__:atfRefresh(45,60,{minGapSeconds:15})}},
+  'ATF refresh off':{advanced:{__ATF__:atfRefresh(45,60,{enabled:false})}},
+ };
+ // The intervals a form's schedule gives after 0..3 refreshes, the way the script reads a saved schedule.
+ const formIntervals=form=>[0,1,2,3].map(completed=>scheduledSeconds({minSeconds:form.fixedSeconds,schedule:{mode:form.mode,fixedSeconds:form.fixedSeconds,firstSeconds:form.firstSeconds,
+  nextSeconds:form.nextSeconds,growthPercent:form.growthPercent,maxSeconds:form.maxSeconds,sequenceSeconds:refreshTabForm.parseSequence(form.sequenceText)}},completed));
+ // Enter at is where the dwell timer starts counting: a saved percentage above 0, else the compiled REFRESH_IN_VIEW_PCT (getEntryPct).
+ const entered=(run,global)=>run.minViewPct>0?run.minViewPct:Number(global.minViewPct??50);
+ for(const [name,{advanced={},basic={}}] of Object.entries(CASES))for(const version of [...VERSIONS,'legacy']){
+  const f=setup();
+  for(const [key,rule] of Object.entries(basic))await ok(await createUnitRule(request({ruleKey:key,rule},'POST'),f.env,SITE),201);
+  for(const [key,value] of Object.entries(advanced))await ok(await updateAdvancedRule(request({refresh:value},'PUT'),f.env,SITE,key));
+  if(version==='legacy')legacySite(f);else selectRuntime(f,version);
+  const listing=await ok(await listAdvancedRules(f.env,SITE)),stores=key=>Boolean(refreshTabForm.ownRecord(key,listing.advancedRules,listing.unitRuleRows).refresh);
+  const runs=await generated(f,'P1',[version]),global=runs.global(version);
+  // A scope's form describes P1 when no scope between it and P1 stores refresh settings.
+  const scopes=['P1','__BTF__','__DEFAULT__'].filter((key,index,all)=>all.slice(0,index).every(below=>!stores(below)));
+  for(const key of scopes)for(const device of BOTH){
+   const {form}=refreshTabForm.baselineFromListing(key,listing),run=runs.run(version,device),label=`${name}, ${version}${device}, ${key}`;
+   assert.deepEqual(formIntervals(form),run.intervals,`${label}: interval`);
+   assert.equal(form.minViewPct,entered(run,global),`${label}: Enter at`);
+   assert.deepEqual([form.exitViewPct,form.maxRefreshes],[run.exitViewPct,run.maxRefreshes],`${label}: Exit at and Maximum refreshes`);
+   // Before 3.16.1 a Default save becomes the global switch; otherwise a save sets the scope's own rule.
+   assert.equal(form.refreshEnabled,key==='__DEFAULT__'&&version!=='3.16.1'&&version!=='3.16.2'?global.enabled!==false:run.enabled,`${label}: Refresh enabled`);
+  }
+  // Changing only Maximum refreshes for P1 keeps everything else the script runs.
+  await refreshTabSave(f,'P1',{maxRefreshes:13});
+  const after=await generated(f,'P1',[version]);
+  for(const device of BOTH){
+   const was=runs.run(version,device),now=after.run(version,device);
+   assert.deepEqual([now.intervals,now.enabled,entered(now,after.global(version)),now.exitViewPct,now.maxRefreshes],
+    [was.intervals,was.enabled,entered(was,global),was.exitViewPct,13],`${name}, ${version}${device}: after a Maximum refreshes save`);
+  }
+  assert.equal(after.global(version).enabled!==false,global.enabled!==false,`${name}, ${version}: the global switch is unchanged`);
+  // Before 3.16.1 an ATF group save is also the global switch while Default has none: its form shows the switch as it is,
+  // and changing only Maximum refreshes there keeps it.
+  const atf=refreshTabForm.baselineFromListing('__ATF__',await ok(await listAdvancedRules(f.env,SITE))).form;
+  if(version!=='3.16.1'&&version!=='3.16.2'&&!stores('__DEFAULT__'))assert.equal(atf.refreshEnabled,global.enabled!==false,`${name}, ${version}: the ATF group shows the global switch`);
+  await refreshTabSave(f,'__ATF__',{maxRefreshes:14});
+  assert.equal((await generated(f,'P1',[version])).global(version).enabled!==false,global.enabled!==false,`${name}, ${version}: an ATF group save keeps the global switch`);
+  f.close();fixtures.splice(fixtures.indexOf(f),1);
+ }
 });
 
 test('rebaseEdits: changed fields are carried, untouched fields take the saved values, both-changed fields are conflicts',()=>{

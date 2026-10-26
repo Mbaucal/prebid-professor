@@ -1,4 +1,5 @@
 import { carriedEdits, rebaseEdits, rebaseReview, rebasedBaseline, type RebaseGate, type RebaseReview } from './edit-rebase';
+import { globalRefreshScope, globalRefreshValues, scriptRefreshDefaults, usesGlobalMinSeconds, type RefreshScript, type RuleState } from '../worker/refresh-inheritance';
 
 // The Refresh schedules form: how a scope's saved settings fill it, what a save sends, and
 // how a refused save names and compares its fields. Kept apart from the panel so tests use
@@ -164,6 +165,56 @@ function closest(parents: Scope[], has: (record: AdvancedRule) => boolean): stri
   return [...parents].reverse().find((scope) => has(scope.record))?.key ?? null;
 }
 
+/** The saved rules as the Worker reads them: the Refresh records and the Unit rules rows. */
+function ruleState(advancedRules: Record<string, AdvancedRule>, rows: Record<string, MirroredRow>): RuleState {
+  return { advanced: advancedRules, basic: Object.fromEntries(Object.entries(rows).map(([key, row]) => [key, row.rule])) };
+}
+
+// The form's name for each refresh value the script can fill in from its global settings, in form order.
+const GLOBAL_VALUE_LABELS: Array<[string, string]> = [
+  ['enabled', 'Refresh enabled'], ['minSeconds', 'the interval'], ['minViewPct', 'Enter at'], ['exitViewPct', 'Exit at'], ['maxRefreshes', 'Maximum refreshes'],
+];
+
+/**
+ * The refresh values this form shows from the ATF group's refresh settings, which the script
+ * reads its global refresh values from while Default stores none: those neither this scope nor
+ * its parents set and the ATF group saves, by their form names (empty when there are none).
+ * Not for ATF scopes, which inherit those settings anyway.
+ */
+export function atfGlobalRefresh(
+  ruleKey: string,
+  unitType: string | null | undefined,
+  advancedRules: Record<string, AdvancedRule>,
+  rows: Record<string, MirroredRow>,
+  script: RefreshScript = {},
+): string[] {
+  const state = ruleState(advancedRules, rows);
+  if (globalRefreshScope(state) !== '__ATF__' || ruleKey === '__ATF__' || parentScopes(ruleKey, unitType).includes('__ATF__')) return [];
+  const chain = merge(...parentRecords(ruleKey, unitType, advancedRules, rows).map((scope) => scope.record.refresh), ownRecord(ruleKey, advancedRules, rows).refresh);
+  const fromAtf = globalRefreshValues(state, ruleKey, script)
+    .filter((key) => key === 'minSeconds' ? !isSet(chain.minSeconds) && !isRecord(chain.schedule) : !isSet(chain[key]));
+  return GLOBAL_VALUE_LABELS.filter(([key]) => fromAtf.includes(key)).map(([, label]) => label);
+}
+
+/**
+ * For the ATF group while Default stores no refresh settings: the script also uses its interval,
+ * Enter at, Exit at and Maximum refreshes for BTF scopes that do not set them. Before 3.16.1
+ * (`withSwitch`) that interval is its minimum wall-clock gap when one is saved and its Refresh
+ * enabled is the switch for every position but a BTF bottom Sticky, which keeps its own timer (`stickyApart`).
+ * Null for other scopes, or once Default has some.
+ */
+export function atfIsGlobalSource(
+  ruleKey: string,
+  advancedRules: Record<string, AdvancedRule>,
+  rows: Record<string, MirroredRow>,
+  unitTypes: Record<string, string>,
+  script: RefreshScript = {},
+): { withSwitch: boolean; stickyApart: boolean } | null {
+  if (ruleKey !== '__ATF__' || globalRefreshScope(ruleState(advancedRules, rows)) === DEFAULT_KEY) return null;
+  const older = !usesGlobalMinSeconds(script.runtime), sticky = script.stickyAdUnit;
+  return { withSwitch: older, stickyApart: older && Boolean(sticky) && Object.hasOwn(unitTypes, sticky as string) && parentScopes(sticky as string, unitTypes[sticky as string]).includes('__BTF__') };
+}
+
 /** Every parent scope that stores refresh settings, closest first: each inherited refresh value comes from the closest one that sets it. */
 export function refreshSources(ruleKey: string, unitType: string | null | undefined, advancedRules: Record<string, AdvancedRule>, rows: Record<string, MirroredRow>): string[] {
   return parentRecords(ruleKey, unitType, advancedRules, rows).filter((scope) => isRecord(scope.record.refresh)).map((scope) => scope.key).reverse();
@@ -229,9 +280,9 @@ export function formFromRecords(ruleKey: string, own: AdvancedRule, parents: Adv
 
 /**
  * What the shown form was built from: its values, the row version a save of it is checked
- * against, the refresh values the scope shows without storing them (filled from its parents),
- * the parents' refresh settings those values came from, and the values earlier rebases of
- * this form carried as entered here (see rebasedBaseline).
+ * against, the refresh values the scope shows without storing them (filled from its parents
+ * or the script), the inherited refresh settings those values came from, and the values
+ * earlier rebases of this form carried as entered here (see rebasedBaseline).
  */
 export type Baseline = {
   form: FormState;
@@ -264,16 +315,22 @@ function unstoredRefresh(own: AdvancedRule, parents: AdvancedRule[]): Array<keyo
   return REFRESH_FIELDS.filter((field) => SCHEDULE_FIELDS.includes(field) ? !ownSchedule : !isSet(refresh[REFRESH_KEYS[field] as string]));
 }
 
-/** The form for a scope from one listing read (advanced records and Unit rules rows). */
+/**
+ * The form for a scope from one listing read (advanced records, Unit rules rows, the selected
+ * script and the bottom Sticky). A refresh value neither the scope nor its parents set shows what the
+ * script uses for it (scriptRefreshDefaults), so a save that changes another value keeps it.
+ */
 export function baselineFor(
   ruleKey: string,
   unitType: string | null | undefined,
   advancedRules: Record<string, AdvancedRule>,
   rows: Record<string, MirroredRow>,
+  script: RefreshScript = {},
 ): Baseline {
   const row = rows[ruleKey];
   const own = ownRecord(ruleKey, advancedRules, rows);
-  const parents = parentRecords(ruleKey, unitType, advancedRules, rows).map((scope) => scope.record);
+  const filled = { refresh: scriptRefreshDefaults(ruleState(advancedRules, rows), ruleKey, script) } as AdvancedRule;
+  const parents = [filled, ...parentRecords(ruleKey, unitType, advancedRules, rows).map((scope) => scope.record)];
   return {
     form: formFromRecords(ruleKey, own, parents),
     rowId: row?.id ?? null,
@@ -284,12 +341,17 @@ export function baselineFor(
   };
 }
 
-/** One listing read: the advanced records, the Unit rules rows and each position's ATF/BTF group (same D1 batch). */
-export type Listing = {
+/** One listing read: the advanced records, the Unit rules rows, each position's ATF/BTF group, the selected script and the bottom Sticky (same D1 batch). */
+export type Listing = RefreshScript & {
   advancedRules: Record<string, AdvancedRule>;
   unitRuleRows: Record<string, MirroredRow>;
   unitTypes: Record<string, string>;
 };
+
+/** What the listing says about the script that fills in unsaved refresh values. */
+export function listingScript(listing: Listing): RefreshScript {
+  return { runtime: listing.runtime ?? null, stickyAdUnit: listing.stickyAdUnit ?? null };
+}
 
 /** What a save of a scope returns: its record and Unit rules row as written, and the records of positions that kept their Unit rules interval in it. */
 export type Saved = { advancedRule: AdvancedRule; unitRule: MirroredRow; keptAdvancedRules?: Record<string, AdvancedRule> };
@@ -309,7 +371,7 @@ export function listingAfterSave(listing: Listing, ruleKey: string, saved: Saved
 
 /** The form for a scope from one listing read, with the parents its group has in that read. */
 export function baselineFromListing(ruleKey: string, listing: Listing): Baseline {
-  return baselineFor(ruleKey, listing.unitTypes[ruleKey] ?? null, listing.advancedRules, listing.unitRuleRows);
+  return baselineFor(ruleKey, listing.unitTypes[ruleKey] ?? null, listing.advancedRules, listing.unitRuleRows, listingScript(listing));
 }
 
 /** The section switch a field belongs to: changing the field makes the section this scope's own. */
@@ -423,8 +485,8 @@ export function storesNothing(form: FormState): boolean {
  * here, and its refresh settings only when one of them was changed here, so an unchanged
  * section (stored in part, or inherited) stays exactly as saved. The refresh section is sent
  * whole, with the values it shows and, for strategies it does not show, the intervals it
- * loaded; when some are filled from the parent scopes, the parents'
- * settings go with it, so a save built on an older read of them is refused.
+ * loaded; when some are filled from the parent scopes or the script, the inherited settings
+ * they came from go with it, so a save built on an older read of them is refused.
  */
 export function requestBody(form: FormState, loaded: Baseline): Record<string, unknown> {
   const refresh = sends(form, loaded, 'ownRefresh');

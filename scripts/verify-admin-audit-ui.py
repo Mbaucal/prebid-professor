@@ -35,6 +35,9 @@ with sync_playwright() as pw:
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'Horizontal document overflow'
     page.screenshot(path=str(out/f'{args.runtime}-{name}-{width}.png'),full_page=True)
    def nav(name):page.get_by_role('button',name=name,exact=True).first.click()
+   def refresh_loaded():
+    # Default and the groups are listed before the panel's first read resolves, and that read selects Default again: wait for the ad units.
+    nav('Refresh schedules');expect(page.locator('.advanced-target-list button').nth(3)).to_be_visible();expect(page.locator('.config-loading')).to_have_count(0)
    try:
     page.goto(origin+'/',wait_until='domcontentloaded');panel=page.get_by_role('region',name='Script setup',exact=True)
     expect(panel.get_by_text('User ID settings have not been saved.',exact=False)).to_be_visible()
@@ -68,7 +71,7 @@ with sync_playwright() as pw:
     nav('Unit rules');page.get_by_role('button',name='＋ New rule',exact=True).click();dialog=page.get_by_role('dialog');dialog.get_by_label('Rule target',exact=False).select_option(label='Billboard · ATF')
     dialog.locator('section.rule-form-section').filter(has_text='Viewability refresh guard').get_by_label('Override inherited value',exact=True).check();dialog.get_by_label('Minimum time',exact=False).fill('60');dialog.get_by_role('button',name='Save rule',exact=True).click();expect(dialog).to_have_count(0)
     assert 'Billboard' not in (data('/__fixture/snapshot')['config'].get('advancedUnitRules') or {}),'No inherited schedule yet: nothing extra is saved'
-    nav('Refresh schedules');expect(page.get_by_role('heading',name='Timeouts for __DEFAULT__',exact=True)).to_be_visible();page.get_by_label('Refresh enabled',exact=True).check();page.locator('.schedule-mode-grid label').filter(has_text='Same every time').locator('input').check();page.get_by_label('Every refresh',exact=False).fill('30')
+    refresh_loaded();expect(page.get_by_role('heading',name='Timeouts for __DEFAULT__',exact=True)).to_be_visible();page.get_by_label('Refresh enabled',exact=True).check();page.locator('.schedule-mode-grid label').filter(has_text='Same every time').locator('input').check();page.get_by_label('Every refresh',exact=False).fill('30')
     # The panel's read after this save fails: Billboard, selected then, still shows the interval the save kept for it.
     fail_listing.append(True);page.get_by_role('button',name='Save __DEFAULT__',exact=True).click();message=page.locator('.advanced-save-message');expect(message).to_have_text('✓ Saved __DEFAULT__. This schedule currently applies to no ad unit. Billboard keeps its own interval from Unit rules.')
     saved=data('/__fixture/snapshot')['config']['advancedUnitRules'];assert saved['Billboard']['refresh']['schedule']['fixedSeconds']==60,saved;assert saved['__DEFAULT__']['refresh']['schedule']['fixedSeconds']==30,saved;screen('refresh-kept-interval',message)
@@ -87,7 +90,7 @@ with sync_playwright() as pw:
     expect(warning).to_have_count(0);expect(billboard.locator('td').nth(4)).to_contain_text('45s · 50%');assert data('/__fixture/snapshot')['config']['advancedUnitRules']['Billboard']['refresh']['schedule']['fixedSeconds']==45
     notice=page.locator('.unit-rules-notice');expect(notice).to_have_text('Billboard uses its own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows it as “Same every time”.');screen('unit-rules-legacy-repaired',billboard)
     # Onboarding: a site-wide sequence, then Create base rules. The presets follow the schedule; an interval typed for a group is used.
-    nav('Refresh schedules');expect(page.get_by_role('heading',name='Timeouts for __DEFAULT__',exact=True)).to_be_visible();page.locator('.schedule-mode-grid label').filter(has_text='Explicit sequence').locator('input').check();page.get_by_label('Intervals, in seconds',exact=False).fill('20, 40, 80')
+    refresh_loaded();expect(page.get_by_role('heading',name='Timeouts for __DEFAULT__',exact=True)).to_be_visible();page.locator('.schedule-mode-grid label').filter(has_text='Explicit sequence').locator('input').check();page.get_by_label('Intervals, in seconds',exact=False).fill('20, 40, 80')
     page.get_by_role('button',name='Save __DEFAULT__',exact=True).click();message=page.locator('.advanced-save-message');expect(message).to_contain_text('Saved __DEFAULT__.');assert data('/__fixture/snapshot')['config']['advancedUnitRules']['__DEFAULT__']['refresh']['schedule']['sequenceSeconds']==[20,40,80]
     nav('Unit rules');page.get_by_role('button',name='Create base rules',exact=True).click();expect(page.get_by_role('button',name='Create base rules',exact=True)).to_have_count(0);expect(page.locator('article.unit-rule-card.reserved.configured')).to_have_count(3)
     saved=data('/__fixture/snapshot');assert {'__ATF__','__BTF__'}<={r['rule_key'] for r in saved['rules']},saved['rules'];assert not {'__ATF__','__BTF__'}&set(saved['config']['advancedUnitRules']),'Base-rule presets must not get their own schedule';expect(page.locator('.unit-rules-notice')).to_have_count(0)
@@ -365,6 +368,95 @@ with sync_playwright() as pw:
     intervals.click();page.keyboard.press('End');page.keyboard.type(', 80');expect(intervals).to_have_value('20, 40, 80')
     page.get_by_role('button',name='Save N1',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved N1.')
     assert data('/__fixture/snapshot')['config']['advancedUnitRules']['N1']['refresh']['schedule']['sequenceSeconds']==[20,40,80]
+    # ATF-only site: Unit rules deletes the Default, ATF and BTF group rules, then only the ATF group stores refresh settings (45 s, 60%).
+    # Every script then reads its global refresh values from ATF, and a BTF position without its own refresh runs at 45 s (in
+    # 3.16.2 also checking 60%). Refresh schedules shows those values and where they come from; changing only Maximum refreshes
+    # keeps them; a save built on them after another tab changed the ATF refresh is refused with nothing written.
+    for key in ['__DEFAULT__','__BTF__','__ATF__']:
+     rule=next((r for r in data('/api/publishers/main-site/unit-rules')['unitRules'] if r['ruleKey']==key),None)
+     if rule:assert send('/api/publishers/main-site/unit-rules/'+rule['id'],'DELETE')['status']==200
+    def set_atf(seconds,pct,gap=0):
+     row=data('/api/publishers/main-site/unit-rules-advanced')['unitRuleRows'].get('__ATF__')
+     refresh={'enabled':True,'minViewPct':pct,'exitViewPct':10,'accumulateViewTime':True,'minGapSeconds':gap,'maxRefreshes':20,'requirePreviousViewable':False,'checkEveryMs':5000,
+      'schedule':{'mode':'fixed','fixedSeconds':seconds,'firstSeconds':seconds,'nextSeconds':seconds,'growthPercent':20,'maxSeconds':120,'sequenceSeconds':[seconds]}}
+     assert send('/api/publishers/main-site/unit-rules-advanced/__ATF__','PUT',{'expectedUpdatedAt':row['updatedAt'] if row else None,'expectedUnitRuleId':row['id'] if row else None,'refresh':refresh})['status']==200
+    def atf_note(sticky):
+     rest=' This group’s other refresh settings apply only to ATF positions. A BTF position that saves Enter at 0% still waits for this group’s Enter at before its dwell timer counts.'
+     if ready['gapSupported']:return 'While Default has no refresh settings, the script also uses this group’s first interval, Enter at, Exit at and Maximum refreshes for BTF positions and the BTF group where they do not set them.'+rest
+     return ('While Default has no refresh settings, the script also uses this group’s Enter at, Exit at and Maximum refreshes for BTF positions and the BTF group where they do not set them, and as their interval its minimum wall-clock gap when one is saved, otherwise its first interval'
+      +(' (the bottom Sticky keeps its own timer)' if sticky else '')+'. Turning Refresh enabled off here stops refresh for every position'+(' except the bottom Sticky' if sticky else '')+'.'+rest)
+    # Nothing stores refresh settings yet. Before 3.16.1 the script then keeps refresh off, so Default and the ATF group show Refresh
+    # enabled unchecked, also after the ATF group saves only a timeout; 3.16.1 and later refresh every position that allows it.
+    listing=data('/api/publishers/main-site/unit-rules-advanced');assert all('refresh' not in (listing['advancedRules'].get(key) or {}) for key in ['__DEFAULT__','__ATF__','__BTF__']),listing['advancedRules']
+    enabled=page.get_by_label('Refresh enabled',exact=True);switch=lambda:expect(enabled).to_be_checked() if ready['gapSupported'] else expect(enabled).not_to_be_checked()
+    nav('Unit rules');refresh_loaded();expect(page.get_by_role('heading',name='Timeouts for __DEFAULT__',exact=True)).to_be_visible();switch()
+    page.locator('.advanced-target-list button').filter(has_text='ATF group').click();expect(page.get_by_role('heading',name='Timeouts for __ATF__',exact=True)).to_be_visible();switch()
+    page.get_by_label('Prebid auction timeout',exact=False).fill('2400');page.get_by_role('button',name='Save __ATF__',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved __ATF__.')
+    assert 'refresh' not in (data('/api/publishers/main-site/unit-rules-advanced')['advancedRules'].get('__ATF__') or {});switch()
+    set_atf(45,60)
+    for code in ['Q1','Q2']:assert send('/api/publishers/main-site/ad-units','POST',{'code':code,'type':'BTF','sizeMapKey':'display'})['status']==201
+    listing=data('/api/publishers/main-site/unit-rules-advanced');assert all('refresh' not in (listing['advancedRules'].get(key) or {}) for key in ['__DEFAULT__','__BTF__']),listing['advancedRules']
+    effective=lambda code:page.locator('table.effective-rule-table tbody tr').filter(has=page.get_by_text(code,exact=True)).locator('td').nth(4)
+    nav('Refresh schedules');nav('Unit rules');expect(effective('Q1')).to_contain_text('45s · 60%' if args.runtime=='3.16.2' else '45s · 50%')
+    # The table scrolls sideways at 390 px: bring the Q1 refresh cell's left edge into view for the screenshot.
+    effective('Q1').evaluate("cell=>cell.scrollIntoView({block:'center',inline:'start'})");screen('atf-only-effective')
+    nav('Refresh schedules');page.locator('.advanced-target-list button').filter(has_text='Q1 · BTF').click();expect(page.get_by_role('heading',name='Timeouts for Q1',exact=True)).to_be_visible()
+    every=page.get_by_label('Every refresh',exact=False);enter=page.get_by_label('Enter at',exact=False);maximum=page.get_by_label('Maximum refreshes',exact=True)
+    error=page.locator('.advanced-refresh-page .form-error');note=page.locator('p.advanced-inherited-note')
+    expect(every).to_have_value('45');expect(enter).to_have_value('60');expect(maximum).to_have_value('20')
+    expect(note).to_contain_text('Not set here, in Default or in the group. The interval, Enter at, Exit at and Maximum refreshes come from the ATF group’s refresh settings, which the script uses globally while Default has none')
+    screen('atf-only-refresh',note)
+    maximum.fill('12');page.get_by_role('button',name='Save Q1',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved Q1.')
+    q1=data('/__fixture/snapshot')['config']['advancedUnitRules']['Q1']['refresh'];assert [q1['schedule']['mode'],q1['schedule']['fixedSeconds'],q1['minViewPct'],q1['maxRefreshes']]==['fixed',45,60,12],q1
+    # Q2 is opened, then another tab changes the ATF group to 75 s and 70%. This tab changes only Maximum refreshes.
+    page.locator('.advanced-target-list button').filter(has_text='Q2 · BTF').click();expect(page.get_by_role('heading',name='Timeouts for Q2',exact=True)).to_be_visible()
+    expect(every).to_have_value('45');maximum.fill('12');set_atf(75,70);before=data('/__fixture/snapshot');page.get_by_role('button',name='Save Q2',exact=True).click()
+    expect(error).to_have_text('The settings Q2 inherits were changed in another tab, so nothing was saved. The form now shows the saved settings with your changes applied. Review them and select Save Q2 again.')
+    assert data('/__fixture/snapshot')==before,'Refused save wrote settings'
+    expect(every).to_have_value('75');expect(enter).to_have_value('70');expect(maximum).to_have_value('12');screen('atf-only-refused',error)
+    page.get_by_role('button',name='Save Q2',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved Q2.')
+    q2=data('/__fixture/snapshot')['config']['advancedUnitRules']['Q2']['refresh'];assert [q2['schedule']['fixedSeconds'],q2['minViewPct'],q2['maxRefreshes']]==[75,70,12],q2
+    assert [r['status'] for r in requests if r['method']=='PUT' and r['path'].endswith('unit-rules-advanced/Q2')]==[409,200]
+    # Default stores nothing either: before 3.16.1 its save is also the global switch, which follows the ATF group's.
+    page.locator('.advanced-target-list button').filter(has_text='Default · all ad units').click();expect(page.get_by_role('heading',name='Timeouts for __DEFAULT__',exact=True)).to_be_visible()
+    expect(every).to_have_value('75');expect(enter).to_have_value('70');expect(page.get_by_label('Refresh enabled',exact=True)).to_be_checked()
+    expect(note).to_contain_text(f"Not set for Default. {'The interval' if ready['gapSupported'] else 'Refresh enabled, the interval'}, Enter at, Exit at and Maximum refreshes come from the ATF group’s refresh settings")
+    nav('Unit rules');expect(effective('Q1')).to_contain_text('45s · 60%');expect(effective('Q2')).to_contain_text('75s · 70%')
+    # The ATF group says what else its settings decide while Default has none.
+    refresh_loaded();page.locator('.advanced-target-list button').filter(has_text='ATF group').click();expect(page.get_by_role('heading',name='Timeouts for __ATF__',exact=True)).to_be_visible()
+    expect(note).to_have_text(atf_note(False))
+    screen('atf-only-source',note)
+    # With a 15 s minimum wall-clock gap on the ATF group, 3.16.0 runs a BTF position without its own refresh at 15 s, 3.16.1 and
+    # 3.16.2 at the ATF 75 s. The form shows the selected script's interval when the target is picked, after a timeout-only
+    # save of it (the refresh section stays inherited) and in the inherited values the next save is checked against.
+    set_atf(75,70,15);assert send('/api/publishers/main-site/ad-units','POST',{'code':'Q3','type':'BTF','sizeMapKey':'display'})['status']==201
+    q3_seconds='75' if ready['gapSupported'] else '15'
+    nav('Unit rules');nav('Refresh schedules');page.locator('.advanced-target-list button').filter(has_text='Q3 · BTF').click();expect(page.get_by_role('heading',name='Timeouts for Q3',exact=True)).to_be_visible()
+    expect(every).to_have_value(q3_seconds);page.get_by_label('Prebid auction timeout',exact=False).fill('2400')
+    page.get_by_role('button',name='Save Q3',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved Q3.')
+    assert 'refresh' not in data('/__fixture/snapshot')['config']['advancedUnitRules']['Q3'];expect(every).to_have_value(q3_seconds)
+    maximum.fill('9');page.get_by_role('button',name='Save Q3',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved Q3.')
+    q3=data('/__fixture/snapshot')['config']['advancedUnitRules']['Q3']['refresh'];assert [q3['schedule']['fixedSeconds'],q3['minViewPct'],q3['maxRefreshes']]==[int(q3_seconds),70,9],q3
+    assert [r['status'] for r in requests if r['method']=='PUT' and r['path'].endswith('unit-rules-advanced/Q3')]==[200,200]
+    # Another tab makes Q4 the bottom Sticky. Before 3.16.1 the script times it on its own 30 s timer, so its form shows 30 and the note
+    # leaves the interval out; 3.16.1 and 3.16.2 run it at the ATF 75 s. A timeout-only save and a Maximum refreshes save keep that.
+    assert send('/api/publishers/main-site/ad-units','POST',{'code':'Q4','type':'BTF','sizeMapKey':'display'})['status']==201;assert send('/__fixture/bottom-sticky','POST',{'code':'Q4'})['status']==200
+    q4_seconds='75' if ready['gapSupported'] else '30'
+    nav('Unit rules');refresh_loaded();page.locator('.advanced-target-list button').filter(has_text='Q4 · BTF').click();expect(page.get_by_role('heading',name='Timeouts for Q4',exact=True)).to_be_visible()
+    expect(every).to_have_value(q4_seconds)
+    expect(note).to_contain_text(f"Not set here, in Default or in the group. {'The interval, Enter at' if ready['gapSupported'] else 'Enter at'}, Exit at and Maximum refreshes come from the ATF group’s refresh settings")
+    screen('atf-only-sticky',note)
+    page.get_by_label('Prebid auction timeout',exact=False).fill('2400');page.get_by_role('button',name='Save Q4',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved Q4.')
+    assert 'refresh' not in data('/__fixture/snapshot')['config']['advancedUnitRules']['Q4'];expect(every).to_have_value(q4_seconds)
+    maximum.fill('9');page.get_by_role('button',name='Save Q4',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved Q4.')
+    q4=data('/__fixture/snapshot')['config']['advancedUnitRules']['Q4']['refresh'];assert [q4['schedule']['fixedSeconds'],q4['minViewPct'],q4['maxRefreshes']]==[int(q4_seconds),70,9],q4
+    assert [r['status'] for r in requests if r['method']=='PUT' and r['path'].endswith('unit-rules-advanced/Q4')]==[200,200]
+    # Before 3.16.1 the ATF group note now also says the bottom Sticky keeps its own timer.
+    page.locator('.advanced-target-list button').filter(has_text='ATF group').click();expect(page.get_by_role('heading',name='Timeouts for __ATF__',exact=True)).to_be_visible();expect(note).to_have_text(atf_note(True))
+    # A Default save that changes only Maximum refreshes is checked against what the selected script fills in, and goes through.
+    page.locator('.advanced-target-list button').filter(has_text='Default · all ad units').click();expect(page.get_by_role('heading',name='Timeouts for __DEFAULT__',exact=True)).to_be_visible()
+    expect(every).to_have_value(q3_seconds);maximum.fill('9');page.get_by_role('button',name='Save __DEFAULT__',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved __DEFAULT__.')
+    assert [r['status'] for r in requests if r['method']=='PUT' and r['path'].endswith('unit-rules-advanced/__DEFAULT__')][-1:]==[200]
     assert not errors,errors
     assert any(r['status']==409 and 'unit-rules' in r['path'] for r in requests)
     assert any(r['status']==404 and r['method']=='PATCH' and 'unit-rules' in r['path'] for r in requests)

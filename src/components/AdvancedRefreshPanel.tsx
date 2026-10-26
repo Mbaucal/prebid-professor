@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { api, ApiError } from '../api';
 import type { RebaseReview } from '../edit-rebase';
 import {
-  afterEdit, afterRefusal, baselineFromListing, defaultForm, formError, inheritedFrom, listingAfterSave, parseSequence, refreshSources, requestBody,
-  scopeName, storesNothing, withEdit,
+  afterEdit, afterRefusal, atfGlobalRefresh, atfIsGlobalSource, baselineFromListing, defaultForm, formError, inheritedFrom, listingAfterSave, listingScript,
+  parseSequence, refreshSources, requestBody, scopeName, storesNothing, withEdit,
   type AdvancedRule, type Baseline, type FormState, type Listing, type MirroredRow, type Saved,
 } from '../refresh-form';
+import type { RefreshScript } from '../../worker/refresh-inheritance';
 import type { AdUnit } from '../shared/types';
 import EditRebaseReview from './EditRebaseReview';
 
@@ -59,14 +60,36 @@ function savedScheduleText(ruleKey: string, kept: string[], appliesTo?: string[]
   return `Saved ${ruleKey}. The runtime profile will apply this schedule during release generation. ${keptIntervalsText(kept)}`;
 }
 
-// Where a section the scope does not store comes from, under its inputs: the parent scopes, closest first.
-function inheritedNote(ruleKey: string, sources: string[], change: string): string {
+// While Default stores no refresh settings, the script reads its global refresh values from the ATF group's.
+const ATF_GLOBAL = 'the ATF group’s refresh settings, which the script uses globally while Default has none';
+
+// "Exit at and Maximum refreshes come from …": the refresh values this form shows from the ATF group's settings.
+function atfFills(fields: string[]): string {
+  const list = fields.length > 1 ? `${fields.slice(0, -1).join(', ')} and ${fields[fields.length - 1]}` : fields[0];
+  return `${list.charAt(0).toUpperCase()}${list.slice(1)} ${fields.length > 1 ? 'come' : 'comes'} from ${ATF_GLOBAL}`;
+}
+
+// Where a section the scope does not store comes from, under its inputs: the parent scopes, closest first,
+// and for refresh values none of them sets, the ATF group as the script's global source (`atfFields`).
+function inheritedNote(ruleKey: string, sources: string[], change: string, atfFields: string[] = []): string {
   const from = sources.length
-    ? `Inherited from ${sources.map(scopeName).join(' and ')}.`
-    : ruleKey === '__DEFAULT__'
-      ? 'Not set for Default: the script’s own setting applies.'
-      : 'Not set here, in Default or in the group: the script’s own setting applies.';
+    ? `Inherited from ${sources.map(scopeName).join(' and ')}.${atfFields.length ? ` ${atfFills(atfFields)}.` : ''}`
+    : atfFields.length
+      ? `Not set ${ruleKey === '__DEFAULT__' ? 'for Default' : 'here, in Default or in the group'}. ${atfFills(atfFields)}; the script’s own setting applies to the rest.`
+      : ruleKey === '__DEFAULT__'
+        ? 'Not set for Default: the script’s own setting applies.'
+        : 'Not set here, in Default or in the group: the script’s own setting applies.';
   return `${from} ${change}`;
+}
+
+// The ATF group while Default has no refresh settings: what else its refresh settings decide.
+function atfSourceNote({ withSwitch, stickyApart }: { withSwitch: boolean; stickyApart: boolean }): string {
+  // Before 3.16.1 the interval a BTF scope takes is the minimum wall-clock gap if one is saved, and this switch stops every
+  // position but a BTF bottom Sticky, whose timer checks only its own rules. A saved Enter at of 0% falls back to this group's.
+  const values = withSwitch
+    ? `Enter at, Exit at and Maximum refreshes for BTF positions and the BTF group where they do not set them, and as their interval its minimum wall-clock gap when one is saved, otherwise its first interval${stickyApart ? ' (the bottom Sticky keeps its own timer)' : ''}. Turning Refresh enabled off here stops refresh for every position${stickyApart ? ' except the bottom Sticky' : ''}.`
+    : 'first interval, Enter at, Exit at and Maximum refreshes for BTF positions and the BTF group where they do not set them.';
+  return `While Default has no refresh settings, the script also uses this group’s ${values} This group’s other refresh settings apply only to ATF positions. A BTF position that saves Enter at 0% still waits for this group’s Enter at before its dwell timer counts.`;
 }
 
 const SAVES_IT = 'Changing it saves it for this scope; leaving it unchanged keeps it inherited.';
@@ -91,6 +114,8 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
   const [advancedRules, setAdvancedRules] = useState<Record<string, AdvancedRule>>({});
   const [form, setForm] = useState<FormState>(() => defaultForm());
   const [unitTypes, setUnitTypes] = useState<Record<string, string>>({});
+  // The selected script (and the bottom Sticky it may time on its own) decides what a refresh value no scope sets resolves to.
+  const [script, setScript] = useState<RefreshScript>({ runtime: null, stickyAdUnit: null });
   const [loaded, setLoaded] = useState<Baseline>(() => ({ form: defaultForm(), rowId: null, updatedAt: null, unstored: [], inheritedRefresh: {}, carried: {} }));
   const [rebaseNote, setRebaseNote] = useState<RebaseReview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,6 +132,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
       setRows(advancedPayload.unitRuleRows);
       setAdvancedRules(advancedPayload.advancedRules);
       setUnitTypes(advancedPayload.unitTypes);
+      setScript(listingScript(advancedPayload));
       const baseline = baselineFromListing(form.ruleKey, advancedPayload);
       setForm(baseline.form);
       setLoaded(baseline);
@@ -134,8 +160,10 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
       ownTimeout: from.ownTimeout ? [from.ownTimeout] : [],
       ownCmpTimeout: from.ownCmpTimeout ? [from.ownCmpTimeout] : [],
       ownRefresh: refreshSources(form.ruleKey, unitType, advancedRules, rows),
+      atfFields: atfGlobalRefresh(form.ruleKey, unitType, advancedRules, rows, script),
+      atfSource: atfIsGlobalSource(form.ruleKey, advancedRules, rows, unitTypes, script),
     };
-  }, [form.ruleKey, unitTypes, advancedRules, rows]);
+  }, [form.ruleKey, unitTypes, advancedRules, rows, script]);
 
   // An entered value makes its section this scope's own; untouched inherited sections are not
   // saved, and a section whose values are all put back shows as inherited again.
@@ -145,7 +173,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
   }
 
   function selectTarget(ruleKey: string) {
-    const baseline = baselineFromListing(ruleKey, { advancedRules, unitRuleRows: rows, unitTypes });
+    const baseline = baselineFromListing(ruleKey, { advancedRules, unitRuleRows: rows, unitTypes, ...script });
     setForm(baseline.form);
     setLoaded(baseline);
     setSavedMessage(null);
@@ -203,7 +231,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
       // save's response), and its next save is checked against the row version this save wrote,
       // taken from its own response rather than paired from a later list read. Positions that
       // kept their Unit rules interval in this save get their records from it too.
-      const next = listingAfterSave({ advancedRules, unitRuleRows: rows, unitTypes }, submitted.ruleKey, saved);
+      const next = listingAfterSave({ advancedRules, unitRuleRows: rows, unitTypes, ...script }, submitted.ruleKey, saved);
       const stored = baselineFromListing(submitted.ruleKey, next);
       setForm(stored.form);
       setLoaded(stored);
@@ -217,6 +245,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
         setAdvancedRules(latest.advancedRules);
         setRows(latest.unitRuleRows);
         setUnitTypes(latest.unitTypes);
+        setScript(listingScript(latest));
       } catch {
         // The save itself succeeded and this scope's baseline is set; other scopes refresh on the next load.
       }
@@ -235,6 +264,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
           setAdvancedRules(latest.advancedRules);
           setRows(latest.unitRuleRows);
           setUnitTypes(latest.unitTypes);
+          setScript(listingScript(latest));
           const outcome = afterRefusal(submitted, baseline, current);
           if (outcome.kind === 'rebased') {
             const key = submitted.ruleKey;
@@ -336,11 +366,12 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
             </div>
 
             {!form.ownRefresh ? (
-              <p className="advanced-inherited-note">{inheritedNote(form.ruleKey, sources.ownRefresh, `${SAVES_SECTION}; leaving them unchanged keeps them inherited.`)}</p>
+              <p className="advanced-inherited-note">{inheritedNote(form.ruleKey, sources.ownRefresh, `${SAVES_SECTION}; leaving them unchanged keeps them inherited.`, sources.atfFields)}</p>
             ) : loaded.form.ownRefresh && loaded.unstored.length ? (
-              // Stored in part (a Unit rules row holds only some refresh settings): the rest is filled from the parents.
-              <p className="advanced-inherited-note">{`This scope stores only some of these values; ${sources.ownRefresh.length ? `the others are inherited from ${sources.ownRefresh.map(scopeName).join(' and ')}` : 'the others are the script’s own settings'}. ${SAVES_SECTION}.`}</p>
+              // Stored in part (a Unit rules row holds only some refresh settings): the rest is filled from the parents or the script.
+              <p className="advanced-inherited-note">{`This scope stores only some of these values${sources.atfFields.length ? `. ${atfFills(sources.atfFields)};` : ';'} ${sources.ownRefresh.length ? `the others are inherited from ${sources.ownRefresh.map(scopeName).join(' and ')}` : 'the others are the script’s own settings'}. ${SAVES_SECTION}.`}</p>
             ) : null}
+            {sources.atfSource ? <p className="advanced-inherited-note">{atfSourceNote(sources.atfSource)}</p> : null}
 
             <div className="schedule-mode-grid">
               <label className={form.mode === 'fixed' ? 'selected' : ''}>

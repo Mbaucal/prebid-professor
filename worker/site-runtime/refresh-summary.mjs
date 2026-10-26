@@ -1,4 +1,4 @@
-import {mergeRefresh, intervalText, scopeName, positionIntervalMismatches} from '../refresh-inheritance.ts';
+import {mergeRefresh, intervalText, scopeName, positionIntervalMismatches, refreshFallbacks, usesGlobalMinSeconds} from '../refresh-inheritance.ts';
 
 const parseRule = value => {try {return typeof value === 'string' ? JSON.parse(value) : value;} catch {return {};}};
 /** Describe the selected compiler input, not the editable UI defaults. No writes.
@@ -14,6 +14,13 @@ export function refreshSummary(input, units, runtime, basicRules = []) {
   const inheritedViewPct = selected(['tessera-3.16.2', '3.16.2']) ? Number(input.core.globalRefresh.minViewPct ?? 50) : null;
   const inheritedNote = input.core.globalRefresh.minViewPct == null ? `its default ${inheritedViewPct}%`
     : `the ${inheritedViewPct}% saved in the ${rules.__DEFAULT__?.refresh != null ? 'Default' : 'ATF'} refresh rule`;
+  // Version-pin capabilities are a frozen schema; the newly registered source
+  // implements this behavior without changing historical descriptor validation.
+  const hasWallClockGap = usesGlobalMinSeconds(runtime);
+  // A position no scope gives an interval refreshes at the compiled fallback: from 3.16.1 the
+  // global minimum time, before it the global minimum wall-clock gap, else the dwell time. On
+  // an ATF-only site that is the ATF refresh, so a BTF position runs at the ATF interval.
+  const fallbackSeconds = refreshFallbacks(input.core.globalRefresh, hasWallClockGap).minSeconds;
   const notes = {};
   // Sentences a row keeps when an interval note replaces its first one.
   const extra = {};
@@ -21,7 +28,7 @@ export function refreshSummary(input, units, runtime, basicRules = []) {
     const group = unit.type === 'ATF' ? '__ATF__' : '__BTF__';
     const scopes = [rules.__DEFAULT__, rules[group], rules[unit.code]].filter(Boolean);
     // Deep merge like the generated scheduler: an inherited schedule is not dropped by a child override.
-    const refresh = mergeRefresh({enabled: true, minSeconds: 30, minViewPct: 50}, ...scopes.map(scope => scope.refresh));
+    const refresh = mergeRefresh({enabled: true, minSeconds: fallbackSeconds, minViewPct: 50}, ...scopes.map(scope => scope.refresh));
     let timeout = unit.type === 'ATF' ? input.core.atfTimeout : input.core.btfTimeout;
     for (const scope of scopes) if (scope.timeout !== undefined) timeout = scope.timeout;
     const result = (label, detail, enabled) => ({code: unit.code, label, detail, enabled, timeout});
@@ -59,10 +66,6 @@ export function refreshSummary(input, units, runtime, basicRules = []) {
     return result(label, `Resolved from the selected script’s Default, group and ad unit settings.${extra[unit.code] ?? ''}${notes[unit.code] ?? ''}`, true);
   });
   if (blocked.length) warnings.push(`Refresh is disabled by this script’s global switch for: ${blocked.join(', ')}. Enable Default refresh in Refresh schedules and disable the groups or positions that should not refresh, or choose a script version that supports independent position rules.`);
-  // Version-pin capabilities are a frozen schema; the newly registered source
-  // implements this behavior without changing historical descriptor validation.
-  const hasWallClockGap = runtime?.capabilities?.includes('refresh-wall-clock-gap')
-    || [['tessera-3.16.1', '3.16.1'], ['tessera-3.16.2', '3.16.2']].some(selected);
   if (!hasWallClockGap) {
     const gaps = Object.entries(rules).filter(([, rule]) => Number(rule?.refresh?.minGapSeconds) > 0).map(([key]) => key);
     if (gaps.length) warnings.push(`Minimum wall-clock gap is saved for: ${gaps.join(', ')}, but this script version does not enforce it. Choose a script version with wall-clock gap support before relying on this setting.`);

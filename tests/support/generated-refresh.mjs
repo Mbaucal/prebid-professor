@@ -11,6 +11,7 @@ import {compileRuntime316} from '../../worker/runtime-316/compiler.mjs';
 import {compileRuntime3161} from '../../worker/runtime-3161/compiler.mjs';
 import {compileRuntime3162} from '../../worker/runtime-3162/compiler.mjs';
 import {refreshSummary} from '../../worker/site-runtime/refresh-summary.mjs';
+import {generateReleaseWithRuntimeControls} from '../../worker/runtime-controls-release.ts';
 
 const COMPILERS={'3.16.0':compileRuntime316,'3.16.1':compileRuntime3161,'3.16.2':compileRuntime3162};
 const SCHEDULER=['_plainMerge','getAdUnitRuntimeRule','getAdUnitRefreshRule'];
@@ -50,26 +51,42 @@ function schedulerProgram(source,version){
  return [...constants,...SCHEDULER.map(name=>source.slice(functions[name][0].start,functions[name][0].end))].join('\n');
 }
 
+// `<label> <code>` (and ` mobile`): intervals after 0..3 refreshes; `rule <label> <code>` (and
+// ` mobile`): the other values getAdUnitRefreshRule resolves before the first refresh.
+function schedulerRuns(source,label,units,codes){
+ const program=schedulerProgram(source,label),out={};
+ for(const code of codes)for(const mobile of [false,true]){
+  const run=completed=>{
+   // Page state the scheduler reads at run time; every constant comes from the script itself.
+   const context=vm.createContext({getUnitConfigById:id=>({type:units[id]}),isMobile:()=>mobile,_refreshCounts:{[code]:completed}});
+   vm.runInContext(program,context);
+   return JSON.parse(vm.runInContext(`JSON.stringify(getAdUnitRefreshRule(${JSON.stringify(code)}))`,context));
+  };
+  const device=mobile?' mobile':'',{enabled,minViewPct,exitViewPct,maxRefreshes}=run(0);
+  out[`${label} ${code}${device}`]=[0,1,2,3].map(completed=>run(completed).minSeconds);
+  out[`rule ${label} ${code}${device}`]={enabled,minViewPct,exitViewPct,maxRefreshes};
+ }
+ return out;
+}
+
 /**
  * Per version: `<version> <code>` intervals after 0..3 refreshes on desktop, `<version>
- * <code> mobile` the same on mobile, `rules <version>` (the compiled adUnitRules),
- * `summary <version>` (refreshSummary) and `sticky <version>`.
+ * <code> mobile` the same on mobile, `rule <version> <code>` (and ` mobile`) the other values
+ * getAdUnitRefreshRule resolves before the first refresh, `rules <version>` (the compiled
+ * adUnitRules), `global <version>` (the compiled global refresh settings), `summary <version>`
+ * (refreshSummary), `sticky <version>` (the separate Sticky timer's seconds) and `sticky target <version>`.
  */
 export async function generatedIntervals(f,codes,versions=['3.16.1','3.16.2'],siteId='audit-site'){
  const saved=await readPreviewSnapshot(f.env.DB,siteId),out={};
  const units=Object.fromEntries(saved.units.map(u=>[u.code,u.type]));
  for(const version of versions){
   const runtime=runtimeCatalog.find(r=>r.version===version),input=previewInput(saved,runtime,'20261024_120000');
-  const program=schedulerProgram(COMPILERS[version](input).adsJs,version);
-  for(const code of codes)for(const mobile of [false,true])out[version+' '+code+(mobile?' mobile':'')]=[0,1,2,3].map(completed=>{
-   // Page state the scheduler reads at run time; every constant comes from the script itself.
-   const context=vm.createContext({getUnitConfigById:id=>({type:units[id]}),isMobile:()=>mobile,_refreshCounts:{[code]:completed}});
-   vm.runInContext(program,context);
-   return vm.runInContext(`getAdUnitRefreshRule(${JSON.stringify(code)}).minSeconds`,context);
-  });
+  Object.assign(out,schedulerRuns(COMPILERS[version](input).adsJs,version,units,codes));
   out['rules '+version]=input.core.adUnitRules;
+  out['global '+version]=input.core.globalRefresh;
   out['summary '+version]=refreshSummary(input,saved.units,runtime,saved.rules);
   out['sticky '+version]=input.options.sticky.refreshSeconds;
+  out['sticky target '+version]=input.options.sticky.bottomAdUnitId;
  }
  return out;
 }
@@ -84,4 +101,21 @@ export async function generatedCmpTimeouts(f,versions=['3.16.1','3.16.2'],siteId
   out[version]={maxCmpTimeout:input.core.maxCmpTimeout,timeout:Number(block.match(/\btimeout:\s*(\d+)/)?.[1]),actionTimeout:Number(block.match(/actionTimeout:\s*(\d+)/)?.[1])};
  }
  return out;
+}
+
+/**
+ * A site without a selected script generates through the legacy path (worker/releases.ts).
+ * With its profile on the advanced-refresh engine: the same keys as generatedIntervals under
+ * the label `legacy`, `global legacy` with the switch (REFRESH_ENABLED) and the entry
+ * percentage (REFRESH_IN_VIEW_PCT) the release compiled, and `sticky legacy` (STICKY_REFRESH_SEC) and
+ * `sticky target legacy` (STICKY_TARGET_ID).
+ */
+export async function legacyGeneratedRefresh(f,codes,siteId='audit-site'){
+ const saved=await readPreviewSnapshot(f.env.DB,siteId),units=Object.fromEntries(saved.units.map(u=>[u.code,u.type]));
+ const response=await generateReleaseWithRuntimeControls(new Request('https://test.invalid/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}),f.env,siteId);
+ assert.equal(response.status,201,await response.clone().text());
+ const {release}=await response.json(),source=new TextDecoder().decode(f.objects.get(`publishers/${siteId}/releases/${release.version}/ads.js`));
+ const compiled=name=>{const found=[...source.matchAll(new RegExp(`^\\s*var ${name} = ([^;]+);`,'gm'))];assert.equal(found.length,1,`legacy ${name}`);return JSON.parse(found[0][1]);};
+ return {...schedulerRuns(source,'legacy',units,codes),'global legacy':{enabled:compiled('REFRESH_ENABLED'),minViewPct:compiled('REFRESH_IN_VIEW_PCT')},
+  'sticky legacy':compiled('STICKY_REFRESH_SEC'),'sticky target legacy':compiled('STICKY_TARGET_ID')};
 }

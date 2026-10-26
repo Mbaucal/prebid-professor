@@ -1,6 +1,6 @@
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
-import { inheritedRefresh, keepUnitRuleIntervals, scheduleSource } from './refresh-inheritance';
+import { inheritedRefresh, keepUnitRuleIntervals, scheduleSource, type RefreshScript } from './refresh-inheritance';
 import {
   UNIT_RULE_ROWS_UNCHANGED_SQL,
   everyStatementChangedOneRow,
@@ -239,6 +239,25 @@ function mirroredLegacyRule(saved: JsonRecord, advanced: JsonRecord, input: Json
 /** A Unit rules row as the Refresh tab saves against it: the row id and version go back with the save. */
 type MirroredRow = { id: string; ruleKey: string; updatedAt: string; rule: JsonRecord };
 
+/**
+ * What decides the value an unsaved refresh setting resolves to: the site's selected script (its
+ * saved runtime pin) and its bottom Sticky ad unit, chosen as that script's build chooses it.
+ */
+function refreshScript(config: JsonRecord, codes: string[]): RefreshScript {
+  const selection = config.builtinRuntimeSelection;
+  const pin = isRecord(selection) && isRecord(selection.runtime) ? selection.runtime : null;
+  const controls = isRecord(config.runtimeControls) ? config.runtimeControls : {};
+  const sticky = isRecord(controls.sticky) ? controls.sticky : {};
+  const fallback = codes.includes('Sticky') ? 'Sticky' : null;
+  // A selected script takes any saved value, an empty one meaning none (worker/runtime/preview-snapshot.mjs);
+  // the legacy Generate path takes only a saved text and otherwise falls back to 'Sticky' (worker/releases.ts).
+  const saved = pin ? Object.hasOwn(sticky, 'bottomAdUnitId') : typeof sticky.bottomAdUnitId === 'string';
+  return {
+    runtime: pin && { runtimeId: pin.runtimeId, runtimeVersion: pin.runtimeVersion, capabilities: pin.capabilities },
+    stickyAdUnit: saved ? String(sticky.bottomAdUnitId ?? '').trim() || null : fallback,
+  };
+}
+
 function mirroredRow(row: { id: string; rule_key: string; rule_json: string; updated_at: string }): MirroredRow {
   return { id: row.id, ruleKey: row.rule_key, updatedAt: row.updated_at, rule: parseRecord(row.rule_json) };
 }
@@ -265,6 +284,7 @@ export async function listAdvancedRules(env: DatabaseEnv, siteId: string): Promi
     advancedRules: config === undefined ? {} : advancedMap(parseRecord(config)),
     unitRuleRows: Object.fromEntries(rows.map((row) => [row.rule_key, mirroredRow(row)])),
     unitTypes: Object.fromEntries(units.map((unit) => [unit.code, unit.type])),
+    ...refreshScript(config === undefined ? {} : parseRecord(config), units.map((unit) => unit.code)),
   });
 }
 
@@ -351,11 +371,12 @@ export async function updateAdvancedRule(
     const mirroredVersion = existing ? nextRowVersion(existing.updated_at, now) : now;
     const types = Object.fromEntries((unitRows.results ?? []).map((unit) => [unit.code, unit.type]));
     const basic = Object.fromEntries(rows.map((row) => [row.rule_key, parseRecord(row.rule_json)]));
-    // A refresh section sent with values filled from the parent scopes carries the parents'
-    // settings it was built from; a Default or group change since then would otherwise be
-    // undone silently by those copies, so the save is refused (409) and the tab rebases.
+    // A refresh section sent with values filled from the parent scopes or the script carries
+    // the inherited settings it was built from; a change since then to Default, the group,
+    // the ATF refresh the script reads its global values from, the selected script or the
+    // bottom Sticky would otherwise be undone silently by those copies, so the save is refused (409) and the tab rebases.
     if (Object.hasOwn(input, 'expectedInheritedRefresh')
-      && !sameJson(input.expectedInheritedRefresh, inheritedRefresh({ advanced: allAdvanced, basic }, types, ruleKey))) {
+      && !sameJson(input.expectedInheritedRefresh, inheritedRefresh({ advanced: allAdvanced, basic }, types, ruleKey, refreshScript(config, Object.keys(types))))) {
       return apiError(REFRESH_CHANGED_ELSEWHERE, 409);
     }
     const mirroredJson = JSON.stringify(mirroredLegacyRule(parseRecord(existing?.rule_json), advanced, input));

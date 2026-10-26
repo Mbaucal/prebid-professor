@@ -246,16 +246,16 @@ test('R3-01: the 3.16.2 admin percentage is the threshold the compiled script ap
       if(name==='positions 0 and 80 under Default 70')assert.deepEqual([desktop,mobile],[70,70]);
     }
   }
-  // Other script versions keep today's label (3.16.1 shows the editor baseline, and no
-  // percentage on schedule labels).
+  // Other script versions keep today's percentage (3.16.1 shows the editor baseline, and no
+  // percentage on schedule labels). The interval is the one the compiled script runs: on an
+  // ATF-only site a BTF position without its own interval refreshes at the ATF 45 s.
   const atfOnly=LABELS['ATF-only 60 (no Default refresh)'][0],old=compiled('3.16.1',atfOnly),pin3161={runtimeId:'tessera-3.16.1',runtimeVersion:'3.16.1'};
   const row=(build,pin,code)=>refreshSummary(build.input,build.snapshot.units,pin,build.snapshot.rules).units.find(item=>item.code===code);
-  assert.equal(row(old,pin3161,'P1').label,'30s · 50%');
+  assert.equal(row(old,pin3161,'P1').label,'45s · 50%');
   assert.equal(row(old,pin3161,'P1').detail,'Resolved from the selected script’s Default, group and ad unit settings.');
   assert.equal(row(compiled('3.16.1',LABELS['ATF-only 60 sequence schedule'][0]),pin3161,'Billboard').label,'Sequence schedule');
-  // Only the percentage is asserted for 3.16.2: the "30s" interval text in this ATF-only case
-  // (compiled P1 refreshes every 45 s) is the separately recorded interval-text task.
-  assert.equal(shown(row(compiled('3.16.2',atfOnly),pins[0],'P1').label),60);
+  assert.equal(row(compiled('3.16.2',atfOnly),pins[0],'P1').label,'45s · 60%');
+  assert.equal(rules(compiled('3.16.2',atfOnly)).getAdUnitRefreshRule('P1').minSeconds,45);
   assert.equal(row(compiled('3.16.1',{}),pin3161,'P1').label,'30s · 50%');
   assert.equal(row(old,pin3161,'Sticky').label,'Sticky timer');
   // The "over 50%" wording follows the timer's own visibility check in the compiled script.
