@@ -387,6 +387,12 @@ async function prepareConfigUpdate(
   // saved position's ATF/BTF group, which an ad-unit edit can change without touching any
   // row when the position has none yet, so its code and group must still be as read.
   const unitType = (units.results ?? []).find((unit) => unit.code === ruleKey)?.type ?? null;
+  // A create or copy for a position that was renamed or deleted after its target was checked
+  // would otherwise pass the guard (NULL IS NULL) and write under a code that no longer
+  // exists. (An existing row is covered by the row guard: a rename moves it, a delete removes it.)
+  if (rule && expectation.absentKey !== undefined && !RESERVED_RULE_KEYS.has(ruleKey) && unitType === null) {
+    throw new RuleConflict(`${ruleKey} was renamed or deleted in Ad units while this rule was being saved, so nothing was saved. Reload and choose the ad unit again.`);
+  }
   const statement = db.prepare(
     `UPDATE publisher_configs SET config_json = ?, config_hash = NULL, updated_at = ?
      WHERE publisher_id = ? AND config_json = ? AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}

@@ -433,6 +433,53 @@ test('a Unit rules create that read before its position changed group or code is
  }
 });
 
+test('a Refresh schedules save that read before its position changed group or code, or was deleted, is refused; nothing is written',async()=>{
+ // P1 (BTF) has no rule row and no record, so the ad-unit edit writes no site settings and moves no row.
+ const edits=[['group change',f=>updateAdUnit(request({type:'ATF'}),f.env,SITE,'audit-unit')],['rename',f=>updateAdUnit(request({code:'P2'}),f.env,SITE,'audit-unit')],
+  ['delete',f=>deleteAdUnit(request({},'DELETE'),f.env,SITE,'audit-unit')]];
+ for(const [name,edit] of edits){
+  const f=setup();await ok(await updateAdvancedRule(request({refresh:{enabled:true,schedule:SEQUENCE}},'PUT'),f.env,SITE,'__ATF__'));
+  const before=f.readConfig(),count=audits(f).length;
+  const save=()=>updateAdvancedRule(refreshForm(1800,60,null),f.env,SITE,'P1');
+  const injected=beforeFirstBatch(f,async()=>ok(await edit(f)));
+  await refused(await save(),409,/changed in another tab/);injected();
+  assert.deepEqual(rows(f).map(r=>r.rule_key),['__ATF__'],name);assert.deepEqual(f.readConfig(),before,`${name}: site settings stay as stored`);
+  assert.equal(audits(f).slice(count).includes('unit_rule.advanced_updated'),false,`${name}: no Refresh audit`);
+  if(name==='group change'){
+   // The same save made now, in the ATF group, applies its 60 s.
+   await ok(await save());await assertIntervals(f,{P1:SIXTY});
+  }
+  assertConsistent(f);
+ }
+});
+
+// Window 0: run `operation` right after the request has checked that its target ad unit exists.
+function afterTargetCheck(f,operation){
+ const original=f.env.DB.prepare;let fired=false;
+ const wrap=statement=>({...statement,bind(...args){return wrap(statement.bind(...args));},async first(){
+  const value=await statement.first();
+  if(!fired&&/SELECT code FROM ad_units WHERE publisher_id = \? AND code = \?/.test(statement.sql)){fired=true;f.env.DB.prepare=original;await operation();}
+  return value;
+ }});
+ f.env.DB.prepare=sql=>wrap(original(sql));
+ return ()=>assert(fired,'interleaving was not injected');
+}
+
+test('a create, copy or Refresh save for a position renamed or deleted right after its target check is refused; nothing is written',async()=>{
+ const saves=[['Unit rules create',f=>createUnitRule(request({ruleKey:'P1',rule:{timeout:1800,refresh:{enabled:true,minSeconds:60}}},'POST'),f.env,SITE)],
+  ['Unit rules copy',f=>duplicateUnitRule(request({ruleKey:'P1'},'POST'),f.env,SITE,'__ATF__')],
+  ['Refresh schedules save',f=>updateAdvancedRule(refreshForm(1800,60,null),f.env,SITE,'P1')]];
+ for(const [name,save] of saves)for(const edit of [f=>updateAdUnit(request({code:'P2'}),f.env,SITE,'audit-unit'),f=>deleteAdUnit(request({},'DELETE'),f.env,SITE,'audit-unit')]){
+  const f=setup();seedRule(f,{key:'__ATF__',rule:{timeout:2200}});
+  const before=f.readConfig(),beforeRows=rows(f),count=audits(f).length;
+  const injected=afterTargetCheck(f,async()=>ok(await edit(f)));
+  await refused(await save(f),409,/P1 was renamed or deleted in Ad units .*so nothing was saved/);injected();
+  assert.deepEqual(rows(f),beforeRows,name);assert.deepEqual(f.readConfig().unitRules,before.unitRules,name);
+  assert.equal(f.readConfig().advancedUnitRules?.P1,undefined,`${name}: no record under the old code`);
+  assert(audits(f).slice(count).every(action=>action.startsWith('ad_unit.')),`${name}: only the ad-unit edit is audited`);
+ }
+});
+
 test('a rename or group change without a rule row leaves a config without a mirror, and delete residue, as stored',async()=>{
  // The fixture config has no config.unitRules; nothing here carries a row.
  const f=setup();const legacy=JSON.stringify(f.readConfig());

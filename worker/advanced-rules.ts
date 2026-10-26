@@ -15,6 +15,8 @@ type RefreshMode = 'fixed' | 'firstThenFixed' | 'percentage' | 'sequence';
 const RESERVED_RULE_KEYS = new Set(['__DEFAULT__', '__ATF__', '__BTF__']);
 const REFRESH_MODES = new Set<RefreshMode>(['fixed', 'firstThenFixed', 'percentage', 'sequence']);
 const REFRESH_CHANGED_ELSEWHERE = 'Unit rules or refresh settings changed in another tab. Reload before saving.';
+const targetChangedElsewhere = (ruleKey: string) =>
+  `${ruleKey} was renamed or deleted in Ad units while this was being saved, so nothing was saved. Reload and choose the ad unit again.`;
 
 function databaseMissing(): Response {
   return apiError('D1 database binding is not configured yet.', 503);
@@ -314,6 +316,11 @@ export async function updateAdvancedRule(
         .all<{ code: string; type: string; enabled: number }>(),
     ]);
     const existing = rows.find((row) => row.rule_key === ruleKey);
+    // An ad-unit rename or delete of a position without a row changes neither config_json
+    // nor any unit_rules row, so the guarded write below also requires the position's code
+    // and ATF/BTF group to be as read here (reserved scopes have no ad unit: NULL IS NULL).
+    const unitType = (unitRows.results ?? []).find((unit) => unit.code === ruleKey)?.type ?? null;
+    if (!RESERVED_RULE_KEYS.has(ruleKey) && unitType === null) return apiError(targetChangedElsewhere(ruleKey), 409);
     // The Unit rules row the Refresh tab loaded for this scope: id and version (null: no row).
     // Every Unit rules or Refresh save of the scope moves the version, and a deleted and
     // re-created row has a new id even in the same millisecond, so a stale tab cannot put
@@ -366,9 +373,10 @@ export async function updateAdvancedRule(
       env.DB
         .prepare(
           `UPDATE publisher_configs SET config_json = ?, updated_at = ?
-           WHERE publisher_id = ? AND config_json = ? AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}`,
+           WHERE publisher_id = ? AND config_json = ? AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}
+             AND (SELECT type FROM ad_units WHERE publisher_id = ? AND code = ? LIMIT 1) IS ?`,
         )
-        .bind(JSON.stringify(config), now, siteId, configRow.configJson, ...unitRuleRowsUnchangedArgs(siteId, rows)),
+        .bind(JSON.stringify(config), now, siteId, configRow.configJson, ...unitRuleRowsUnchangedArgs(siteId, rows), siteId, ruleKey, unitType),
       existing
         ? env.DB
             .prepare(
