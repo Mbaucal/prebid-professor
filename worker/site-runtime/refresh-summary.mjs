@@ -15,6 +15,8 @@ export function refreshSummary(input, units, runtime, basicRules = []) {
   const inheritedNote = input.core.globalRefresh.minViewPct == null ? `its default ${inheritedViewPct}%`
     : `the ${inheritedViewPct}% saved in the ${rules.__DEFAULT__?.refresh != null ? 'Default' : 'ATF'} refresh rule`;
   const notes = {};
+  // Sentences a row keeps when an interval note replaces its first one.
+  const extra = {};
   const rows = units.map(unit => {
     const group = unit.type === 'ATF' ? '__ATF__' : '__BTF__';
     const scopes = [rules.__DEFAULT__, rules[group], rules[unit.code]].filter(Boolean);
@@ -33,8 +35,12 @@ export function refreshSummary(input, units, runtime, basicRules = []) {
     if (inheritedViewPct != null && own == null) notes[unit.code] = ` No in-view percentage is saved for this position in Default, group or ad unit settings, so the script checks ${inheritedNote} at refresh time.`;
     if (input.options.sticky.bottomAdUnitId === unit.code) {
       // 3.16.2 also applies the percentage to a filled Sticky (an empty one keeps retrying).
+      // Its timer only ticks while more than half of the Sticky is in view, so a lower
+      // percentage never decides.
       if (inheritedViewPct == null) return result('Sticky timer', 'Uses the selected script’s separate Sticky refresh timer.', true);
-      return result(`Sticky timer · ${viewPct}%`, `Uses the selected script’s separate Sticky refresh timer. A filled Sticky refreshes only while at least ${viewPct}% of it is in view.${notes[unit.code] ?? ''}`, true);
+      extra[unit.code] = viewPct > 50 ? ` A filled Sticky refreshes only while at least ${viewPct}% of it is in view.`
+        : ` A filled Sticky refreshes only while more than half of it is in view; that check is stricter than the ${viewPct}% this position resolves to.`;
+      return result(viewPct > 50 ? `Sticky timer · ${viewPct}%` : 'Sticky timer · over 50%', `Uses the selected script’s separate Sticky refresh timer.${extra[unit.code]}${notes[unit.code] ?? ''}`, true);
     }
     if (input.core.globalRefresh.enabled === false) {
       blocked.push(unit.code);
@@ -44,7 +50,13 @@ export function refreshSummary(input, units, runtime, basicRules = []) {
     // 3.16.2 applies the percentage to every content schedule, so it is shown for all of them.
     const shown = inheritedViewPct == null ? '' : ` · ${viewPct}%`;
     const label = schedule?.mode === 'sequence' ? `Sequence schedule${shown}` : schedule?.mode === 'percentage' ? `Growing interval${shown}` : `${intervalText(refresh)} · ${viewPct}%`;
-    return result(label, `Resolved from the selected script’s Default, group and ad unit settings.${notes[unit.code] ?? ''}`, true);
+    if (inheritedViewPct != null && viewPct === 0) {
+      // 0% skips the check when a refresh is due, but the dwell timer still waits for the
+      // script's device entry percentage before it counts (getEntryPct in 3.16.2).
+      const desktop = inheritedViewPct || 50, mobile = inheritedViewPct || 40;
+      extra[unit.code] = ` With 0% the script does not check visibility when a refresh is due, but its dwell timer starts counting only once ${desktop === mobile ? `${desktop}% of the position is in view on desktop and mobile` : `${desktop}% of the position is in view on desktop and ${mobile}% on mobile`}.`;
+    }
+    return result(label, `Resolved from the selected script’s Default, group and ad unit settings.${extra[unit.code] ?? ''}${notes[unit.code] ?? ''}`, true);
   });
   if (blocked.length) warnings.push(`Refresh is disabled by this script’s global switch for: ${blocked.join(', ')}. Enable Default refresh in Refresh schedules and disable the groups or positions that should not refresh, or choose a script version that supports independent position rules.`);
   // Version-pin capabilities are a frozen schema; the newly registered source
@@ -67,7 +79,7 @@ export function refreshSummary(input, units, runtime, basicRules = []) {
   const unused = positionIntervalMismatches(rules, basic, types, applied);
   for (const item of unused) {
     const row = rows.find(candidate => candidate.code === item.code);
-    row.detail = `Uses ${item.source} (${item.used}); the ${item.savedSeconds}s interval saved for ${scopeName(item.key)} in Unit rules is not used.${notes[item.code] ?? ''}`;
+    row.detail = `Uses ${item.source} (${item.used}); the ${item.savedSeconds}s interval saved for ${scopeName(item.key)} in Unit rules is not used.${extra[item.code] ?? ''}${notes[item.code] ?? ''}`;
   }
   // A position's own refresh override is an explicit choice, so a mismatch there is reported.
   const exact = unused.filter(item => item.key === item.code);

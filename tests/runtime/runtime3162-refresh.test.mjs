@@ -223,15 +223,27 @@ test('R3-01: the 3.16.2 admin percentage is the threshold the compiled script ap
     const build=compiled('3.16.2',config),generated=rules(build);
     for(const pin of pins){
       const all=refreshSummary(build.input,build.snapshot.units,pin,build.snapshot.rules).units,sticky=all.find(row=>row.code==='Sticky');
-      // A filled Sticky meets the same resolved percentage on its own timer.
-      assert.match(sticky.label,/^Sticky timer · \d+%$/,name);assert.equal(shown(sticky.label),generated.getAdUnitRefreshRule('Sticky').minViewPct,`${name} Sticky`);
-      assert.match(sticky.detail,new RegExp(`^Uses the selected script’s separate Sticky refresh timer\\. A filled Sticky refreshes only while at least ${shown(sticky.label)}% of it is in view\\.`),name);
+      // A filled Sticky meets the same resolved percentage on its own timer, which itself only
+      // ticks while more than half of the Sticky is in view: a lower percentage never decides.
+      const stickyPct=generated.getAdUnitRefreshRule('Sticky').minViewPct;
+      if(stickyPct>50){
+        assert.equal(sticky.label,`Sticky timer · ${stickyPct}%`,`${name} Sticky`);
+        assert.match(sticky.detail,new RegExp(`^Uses the selected script’s separate Sticky refresh timer\\. A filled Sticky refreshes only while at least ${stickyPct}% of it is in view\\.`),name);
+      }else{
+        assert.equal(sticky.label,'Sticky timer · over 50%',`${name} Sticky`);
+        assert.match(sticky.detail,new RegExp(`^Uses the selected script’s separate Sticky refresh timer\\. A filled Sticky refreshes only while more than half of it is in view; that check is stricter than the ${stickyPct}% this position resolves to\\.`),name);
+      }
       const rows=all.filter(row=>row.code!=='Sticky');
       assert.deepEqual(rows.map(row=>row.code),['Billboard','P1'],name);
       for(const row of rows)assert.equal(shown(row.label),generated.getAdUnitRefreshRule(row.code).minViewPct,`${name} ${row.code} (${row.label})`);
       assert.deepEqual(rows.map(row=>shown(row.label)),[billboard,p1],name);
       const p1Row=rows[1],note=NOTES[name]&&` No in-view percentage is saved for this position in Default, group or ad unit settings, so the script checks ${NOTES[name]} at refresh time.`;
-      assert.equal(p1Row.detail,`Resolved from the selected script’s Default, group and ad unit settings.${note||''}`,`${name} P1 detail`);
+      // At 0% the dwell timer still waits for the device entry percentage of the compiled script.
+      const [desktop,mobile]=[false,true].map(device=>visibility(build,{mobile:device})('P1').enters.indexOf(true));
+      const zero=p1===0&&` With 0% the script does not check visibility when a refresh is due, but its dwell timer starts counting only once ${desktop===mobile?`${desktop}% of the position is in view on desktop and mobile`:`${desktop}% of the position is in view on desktop and ${mobile}% on mobile`}.`;
+      assert.equal(p1Row.detail,`Resolved from the selected script’s Default, group and ad unit settings.${zero||''}${note||''}`,`${name} P1 detail`);
+      if(name==='Default 0')assert.deepEqual([desktop,mobile],[50,40]);
+      if(name==='positions 0 and 80 under Default 70')assert.deepEqual([desktop,mobile],[70,70]);
     }
   }
   // Other script versions keep today's label (3.16.1 shows the editor baseline, and no
@@ -246,11 +258,20 @@ test('R3-01: the 3.16.2 admin percentage is the threshold the compiled script ap
   assert.equal(shown(row(compiled('3.16.2',atfOnly),pins[0],'P1').label),60);
   assert.equal(row(compiled('3.16.1',{}),pin3161,'P1').label,'30s · 50%');
   assert.equal(row(old,pin3161,'Sticky').label,'Sticky timer');
+  // The "over 50%" wording follows the timer's own visibility check in the compiled script.
+  assert.match(compiled('3.16.2',{}).source,/stickyVisible = \(visPx \/ rect\.height\) > 0\.5;/);
   // A BTF Sticky on an ATF-only site: 3.16.2 refuses a filled Sticky below the inherited 60% (3.16.1 checked nothing), and the admin says so.
   const btfSticky=compiled('3.16.2',atfOnly,'BTF'),btfRow=row(btfSticky,pins[0],'Sticky');
   assert.equal(rules(btfSticky,{pct:55}).canRefreshSlotNow('Sticky').ok,false);assert.equal(rules(compiled('3.16.1',atfOnly,'BTF'),{pct:55}).canRefreshSlotNow('Sticky').ok,true);
   assert.equal(btfRow.label,'Sticky timer · 60%');
   assert.equal(btfRow.detail,'Uses the selected script’s separate Sticky refresh timer. A filled Sticky refreshes only while at least 60% of it is in view. No in-view percentage is saved for this position in Default, group or ad unit settings, so the script checks the 60% saved in the ATF refresh rule at refresh time.');
+  // A Unit rules interval the inherited schedule replaces: the interval note leads, and the
+  // Sticky timer sentence that explains "over 50%" stays.
+  const replaced=compiled('3.16.2',{__DEFAULT__:{refresh:{enabled:true,minSeconds:30}},Sticky:{refresh:{enabled:true,minSeconds:60}}});
+  replaced.input.core.adUnitRules.__DEFAULT__.refresh.schedule={mode:'sequence',sequenceSeconds:[20,40,80]};
+  const replacedRow=refreshSummary(replaced.input,replaced.snapshot.units,pins[0],replaced.snapshot.rules).units.find(item=>item.code==='Sticky');
+  assert.equal(replacedRow.label,'Sticky timer · over 50%');
+  assert.match(replacedRow.detail,/^Uses the inherited Default schedule \(20s, 40s, 80s.*\); the 60s interval saved for Sticky in Unit rules is not used\. A filled Sticky refreshes only while more than half of it is in view; that check is stricter than the 50% this position resolves to\. No in-view percentage is saved/);
   assert.equal(row(compiled('3.16.1',atfOnly,'BTF'),pin3161,'Sticky').label,'Sticky timer');
   // An interval note from Unit rules keeps the percentage note in 3.16.2 only.
   const snapshot=fixture(),config=JSON.parse(snapshot.config.config_json);
