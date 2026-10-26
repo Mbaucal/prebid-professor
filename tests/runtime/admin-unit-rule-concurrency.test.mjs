@@ -669,10 +669,12 @@ test('rebaseEdits with gates: an override or strategy the other tab switched is 
  const schedule={refreshEnabled:true,mode:'sequence',fixedSeconds:15,firstSeconds:15,nextSeconds:15,growthPercent:20,maxSeconds:120,sequenceText:'15, 30',maxRefreshes:20};
  const switched={...schedule,mode:'fixed',fixedSeconds:40};
  const sequence=rebaseEdits({...schedule,sequenceText:'25, 50'},schedule,switched,refreshGates);
- assert.deepEqual(sequence,{form:{...switched,mode:'sequence',sequenceText:'25, 50'},changed:['mode','sequenceText'],conflicts:['mode']});
- const modeText=(key,value)=>({fixed:'Same every time',sequence:'Explicit sequence'})[value]??`${value}`;
- assert.deepEqual(rebaseReview(sequence,switched,key=>({mode:'Interval strategy',sequenceText:'Intervals, in seconds'})[key],modeText),
-  {conflicts:[{field:'Interval strategy',yours:'Explicit sequence',saved:'Same every time'}],applied:['Intervals, in seconds']});
+ // The other tab's 40 s applies only under its strategy, so the conflict names it too.
+ assert.deepEqual(sequence,{form:{...switched,mode:'sequence',sequenceText:'25, 50'},changed:['mode','sequenceText'],conflicts:['mode'],switchedOff:{mode:['fixedSeconds']}});
+ const modeText=(key,value)=>({fixed:'Same every time',sequence:'Explicit sequence',percentage:'Percentage increase'})[value]??(typeof value==='boolean'?(value?'on':'off'):key==='fixedSeconds'?`${value} sec`:`${value}`);
+ const refreshLabels={refreshEnabled:'Refresh enabled',mode:'Interval strategy',fixedSeconds:'Every refresh',sequenceText:'Intervals, in seconds',maxRefreshes:'Maximum refreshes',maxSeconds:'Maximum interval'};
+ assert.deepEqual(rebaseReview(sequence,switched,key=>refreshLabels[key],modeText),
+  {conflicts:[{field:'Interval strategy',yours:'Explicit sequence',saved:'Same every time (Every refresh: 40 sec)'}],applied:['Intervals, in seconds']});
  // A field both strategies use keeps working under the other tab's strategy: no strategy conflict.
  const first={...schedule,mode:'firstThenFixed'};
  assert.deepEqual(rebaseEdits({...first,firstSeconds:25},first,{...first,mode:'percentage'},refreshGates),{form:{...first,mode:'percentage',firstSeconds:25},changed:['firstSeconds'],conflicts:[]});
@@ -681,7 +683,55 @@ test('rebaseEdits with gates: an override or strategy the other tab switched is 
   {form:{...schedule,maxRefreshes:9,sequenceText:'25, 50'},changed:['refreshEnabled','sequenceText'],conflicts:['refreshEnabled']});
  // This tab changed the strategy itself and the other tab chose a different one: one conflict, on the strategy.
  assert.deepEqual(rebaseEdits({...schedule,mode:'percentage',maxSeconds:90},schedule,switched,refreshGates),
-  {form:{...switched,mode:'percentage',maxSeconds:90},changed:['mode','maxSeconds'],conflicts:['mode']});
+  {form:{...switched,mode:'percentage',maxSeconds:90},changed:['mode','maxSeconds'],conflicts:['mode'],switchedOff:{mode:['fixedSeconds']}});
+});
+
+test('rebaseEdits with gates: a switch made here that turns off values the other tab changed is a conflict naming them',()=>{
+ const unitGates=[
+  {gate:'overrideTimeout',fields:['timeout'],storedOnlyWhenUsed:true},
+  {gate:'overrideRefresh',fields:['refreshEnabled','minSeconds','minViewPct','requirePreviousViewable','checkEveryMs'],storedOnlyWhenUsed:true},
+  {gate:'refreshEnabled',fields:['minSeconds','minViewPct','requirePreviousViewable','checkEveryMs']},
+ ];
+ const labels={overrideTimeout:'Override inherited timeout',timeout:'Timeout',overrideRefresh:'Override inherited refresh',refreshEnabled:'Refresh enabled',minSeconds:'Minimum time',minViewPct:'Minimum in view'};
+ const text=(key,value)=>typeof value==='boolean'?(value?'on':key.startsWith('override')?'off (inherited)':'off'):`${value}${key==='minSeconds'?' sec':key==='timeout'?' ms':key==='minViewPct'?'%':''}`;
+ const loaded={ruleKey:'P1',overrideTimeout:true,timeout:2500,overrideRefresh:true,refreshEnabled:true,minSeconds:15,minViewPct:70,requirePreviousViewable:true,checkEveryMs:2000};
+ // This tab removed the refresh override; the other tab saved Minimum time 45 sec and 60% under it.
+ const other={...loaded,minSeconds:45,minViewPct:60};
+ const off=rebaseEdits({...loaded,overrideRefresh:false},loaded,other,unitGates);
+ assert.deepEqual(off,{form:{...other,overrideRefresh:false},changed:['overrideRefresh'],conflicts:['overrideRefresh'],switchedOff:{overrideRefresh:['minSeconds','minViewPct']}});
+ assert.deepEqual(rebaseReview(off,other,key=>labels[key],text),
+  {conflicts:[{field:'Override inherited refresh',yours:'off (inherited)',saved:'on (Minimum time: 45 sec; Minimum in view: 60%)'}],applied:[]});
+ // Turning refresh off under a kept override: the inner switch is the conflict.
+ const disabled=rebaseEdits({...loaded,refreshEnabled:false,timeout:1200},loaded,{...loaded,minSeconds:45},unitGates);
+ assert.deepEqual(disabled,{form:{...loaded,refreshEnabled:false,timeout:1200,minSeconds:45},changed:['timeout','refreshEnabled'],conflicts:['refreshEnabled'],switchedOff:{refreshEnabled:['minSeconds']}});
+ assert.deepEqual(rebaseReview(disabled,{...loaded,minSeconds:45},key=>labels[key],text),
+  {conflicts:[{field:'Refresh enabled',yours:'off',saved:'on (Minimum time: 45 sec)'}],applied:['Timeout']});
+ // The other tab changed a value this tab's switch leaves in effect, or a form default it never saved: no conflict.
+ assert.deepEqual(rebaseEdits({...loaded,overrideTimeout:false},loaded,other,unitGates),{form:{...other,overrideTimeout:false},changed:['overrideTimeout'],conflicts:[]});
+ const inherited={...loaded,overrideRefresh:false,minSeconds:30,minViewPct:50};
+ assert.deepEqual(rebaseEdits({...loaded,refreshEnabled:false},loaded,inherited,unitGates).switchedOff,undefined,'placeholders under the other tab\'s inherited section are not its values');
+ // Both tabs switched the section off: nothing of the other tab's is lost.
+ assert.deepEqual(rebaseEdits({...loaded,overrideRefresh:false},loaded,inherited,unitGates),{form:inherited,changed:['overrideRefresh'],conflicts:[]});
+
+ // Refresh schedules: this tab switched the strategy or turned refresh off while the other tab changed the old strategy's intervals.
+ const modeFields={fixed:['fixedSeconds'],firstThenFixed:['firstSeconds','nextSeconds'],percentage:['firstSeconds','growthPercent','maxSeconds'],sequence:['sequenceText']};
+ const refreshGates=[
+  {gate:'refreshEnabled',fields:['mode','fixedSeconds','firstSeconds','nextSeconds','growthPercent','maxSeconds','sequenceText','maxRefreshes']},
+  {gate:'mode',fields:['fixedSeconds','firstSeconds','nextSeconds','growthPercent','maxSeconds','sequenceText'],uses:(mode,field)=>modeFields[mode]?.includes(field)??false},
+ ];
+ const schedule={refreshEnabled:true,mode:'sequence',fixedSeconds:15,firstSeconds:15,nextSeconds:15,growthPercent:20,maxSeconds:120,sequenceText:'15, 30',maxRefreshes:20};
+ const longer={...schedule,sequenceText:'25, 50',maxRefreshes:12};
+ const refreshLabels={refreshEnabled:'Refresh enabled',mode:'Interval strategy',fixedSeconds:'Every refresh',sequenceText:'Intervals, in seconds',maxRefreshes:'Maximum refreshes'};
+ const refreshText=(key,value)=>({fixed:'Same every time',sequence:'Explicit sequence'})[value]??(typeof value==='boolean'?(value?'on':'off'):key==='fixedSeconds'?`${value} sec`:`${value}`);
+ const toFixed=rebaseEdits({...schedule,mode:'fixed',fixedSeconds:45},schedule,longer,refreshGates);
+ assert.deepEqual(toFixed,{form:{...longer,mode:'fixed',fixedSeconds:45},changed:['mode','fixedSeconds'],conflicts:['mode'],switchedOff:{mode:['sequenceText']}});
+ assert.deepEqual(rebaseReview(toFixed,longer,key=>refreshLabels[key],refreshText),
+  {conflicts:[{field:'Interval strategy',yours:'Same every time',saved:'Explicit sequence (Intervals, in seconds: 25, 50)'}],applied:['Every refresh']});
+ // Refresh turned off here: every value of the other tab's that refresh used is named once, under the outer switch.
+ const stopped=rebaseEdits({...schedule,refreshEnabled:false,mode:'fixed'},schedule,longer,refreshGates);
+ assert.deepEqual(stopped.conflicts,['refreshEnabled']);assert.deepEqual(stopped.switchedOff,{refreshEnabled:['sequenceText','maxRefreshes']});
+ assert.deepEqual(rebaseReview(stopped,longer,key=>refreshLabels[key],refreshText).conflicts,
+  [{field:'Refresh enabled',yours:'off',saved:'on (Intervals, in seconds: 25, 50; Maximum refreshes: 12)'}]);
 });
 
 // Point 3b / D4: a whole-config writer that read config_json before another save must not

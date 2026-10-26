@@ -141,7 +141,7 @@ with sync_playwright() as pw:
     fixed=page.locator('.schedule-mode-grid label').filter(has_text='Same every time').locator('input');every.fill('120');changed=other_tab({'schedule':{'mode':'sequence','sequenceSeconds':[20,40]}})
     page.get_by_role('button',name='Save P1',exact=True).click()
     expect(error).to_have_text('P1 was changed in another tab, so nothing was saved. The form now shows the saved settings with your changes applied. Review them and select Save P1 again.')
-    expect(review.locator('li')).to_have_count(1);expect(review.locator('li')).to_have_text('Interval strategy: yours Same every time, saved in the other tab Explicit sequence');expect(review).to_contain_text('Your other changes are applied: Every refresh.')
+    expect(review.locator('li')).to_have_count(1);expect(review.locator('li')).to_have_text('Interval strategy: yours Same every time, saved in the other tab Explicit sequence (Intervals, in seconds: 20, 40)');expect(review).to_contain_text('Your other changes are applied: Every refresh.')
     expect(fixed).to_be_checked();expect(every).to_have_value('120');assert data('/__fixture/snapshot')==changed,'Stale save changed stored settings';screen('stale-refresh-strategy-conflict',review)
     page.get_by_role('button',name='Save P1',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved P1.')
     saved=data('/__fixture/snapshot')['config']['advancedUnitRules']['P1']['refresh']['schedule'];assert saved['mode']=='fixed' and saved['fixedSeconds']==120 and saved['sequenceSeconds']==[20,40],saved
@@ -149,6 +149,15 @@ with sync_playwright() as pw:
     changed=other_tab({'maxRefreshes':18});page.get_by_role('button',name='Save P1',exact=True).click()
     expect(error).to_have_text('P1 was changed in another tab, so nothing was saved. You had not changed anything here, so the form now shows the settings saved in the other tab.')
     expect(review).to_have_count(0);expect(most).to_have_value('18');expect(every).to_have_value('120');assert data('/__fixture/snapshot')==changed,'Stale save changed stored settings'
+    # The other way round: this tab switched the strategy while the other tab changed the old strategy's interval. The strategy is the
+    # conflict and names that value, which this tab's switch would otherwise stop applying unseen; choosing it again shows the value.
+    sequence=page.locator('.schedule-mode-grid label').filter(has_text='Explicit sequence').locator('input');sequence.check();intervals=page.get_by_label('Intervals, in seconds',exact=False);intervals.fill('30, 60')
+    changed=other_tab({'schedule':{'mode':'fixed','fixedSeconds':130}});page.get_by_role('button',name='Save P1',exact=True).click()
+    expect(error).to_have_text('P1 was changed in another tab, so nothing was saved. The form now shows the saved settings with your changes applied. Review them and select Save P1 again.')
+    expect(review.locator('li')).to_have_count(1);expect(review.locator('li')).to_have_text('Interval strategy: yours Explicit sequence, saved in the other tab Same every time (Every refresh: 130 sec)');expect(review).to_contain_text('Your other changes are applied: Intervals, in seconds.')
+    expect(sequence).to_be_checked();expect(intervals).to_have_value('30, 60');assert data('/__fixture/snapshot')==changed,'Stale save changed stored settings';screen('stale-refresh-strategy-switched-here',review)
+    fixed.check();expect(every).to_have_value('130');page.get_by_role('button',name='Save P1',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved P1.')
+    saved=data('/__fixture/snapshot')['config']['advancedUnitRules']['P1']['refresh']['schedule'];assert saved['mode']=='fixed' and saved['fixedSeconds']==130 and saved['sequenceSeconds']==[30,60],saved
     # Unit rules: the other tab removed the refresh override while this tab changed Minimum time. The override is the conflict; it stays
     # on so the entered value keeps its effect, and the section keeps the values this dialog showed (not form defaults).
     nav('Unit rules');p1=p1_rule();assert p1['rule'].get('refresh'),p1
@@ -163,6 +172,18 @@ with sync_playwright() as pw:
     expect(override).to_be_checked();expect(minimum).to_have_value('20');expect(check).to_have_value(checked);assert data('/__fixture/snapshot')==changed,'Stale save changed stored settings';screen('stale-rule-override-conflict',review)
     dialog.get_by_role('button',name='Save rule',exact=True).click();expect(dialog).to_have_count(0)
     saved=json.loads(next(r['rule_json'] for r in data('/__fixture/snapshot')['rules'] if r['rule_key']=='P1'));assert saved['refresh']['minSeconds']==20 and str(saved['refresh']['checkEveryMs'])==checked,saved
+    # The other way round: this tab turned the refresh override off while the other tab changed Minimum time. The override is the
+    # conflict and names the other tab's value, which this tab's switch would drop unseen; turning the override on again shows it.
+    p1=p1_rule();page.locator('article.unit-rule-card.exact').filter(has=page.get_by_role('heading',name='P1',exact=True)).get_by_role('button',name='Edit',exact=True).click()
+    dialog=page.get_by_role('dialog');minimum=dialog.get_by_label('Minimum time',exact=False);override=dialog.locator('section.rule-form-section').filter(has_text='Viewability refresh guard').get_by_label('Override inherited value',exact=True)
+    expect(override).to_be_checked();expect(minimum).to_have_value('20');override.uncheck()
+    assert send('/api/publishers/main-site/unit-rules/'+p1['id'],'PATCH',{'rule':{**p1['rule'],'refresh':{**p1['rule']['refresh'],'minSeconds':35}},'expectedUpdatedAt':p1['updatedAt']})['status']==200;changed=data('/__fixture/snapshot')
+    dialog.get_by_role('button',name='Save rule',exact=True).click();error=dialog.locator('.form-error');review=dialog.locator('.edit-rebase-review')
+    expect(error).to_have_text('This rule was changed in another tab, so nothing was saved. The dialog now shows the saved rule with your changes applied. Review it and select Save rule again.')
+    expect(review.locator('li')).to_have_count(1);expect(review.locator('li')).to_have_text('Override inherited refresh: yours off (inherited), saved in the other tab on (Minimum time: 35 sec)');expect(review).not_to_contain_text('changes are applied')
+    expect(override).not_to_be_checked();assert data('/__fixture/snapshot')==changed,'Stale save changed stored settings';screen('stale-rule-override-off-here',review)
+    override.check();expect(minimum).to_have_value('35');dialog.get_by_role('button',name='Save rule',exact=True).click();expect(dialog).to_have_count(0)
+    saved=json.loads(next(r['rule_json'] for r in data('/__fixture/snapshot')['rules'] if r['rule_key']=='P1'));assert saved['refresh']['minSeconds']==35 and str(saved['refresh']['checkEveryMs'])==checked,saved
     # D4: a User ID save the Worker refuses with 409 keeps every entry, and Save again stores it. The Worker's 409 needs a second
     # save inside one D1 round trip (covered in admin-unit-rule-concurrency.test.mjs), so the browser gets that 409 body here.
     nav('User ID modules');delay=page.get_by_label('Auction delay',exact=False);expect(delay).to_be_visible();delay.fill('275');refuse_user_id.append(True)
