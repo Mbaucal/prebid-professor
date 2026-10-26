@@ -541,6 +541,12 @@ export async function updateUnitRule(
   } catch (error) {
     return apiError(error instanceof Error ? error.message : 'Invalid JSON body.');
   }
+  // The editor's own read: a tab opened before another tab saved this rule would put
+  // back values it never changed. `current` (same version) is the batch's expectation,
+  // so the row guard enforces this version again when the batch commits.
+  if (input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt !== current.updatedAt) {
+    return apiError(CHANGED_ELSEWHERE, 409);
+  }
 
   let rule: UnitRuleConfig;
   try {

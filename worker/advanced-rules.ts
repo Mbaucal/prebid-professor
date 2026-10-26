@@ -221,11 +221,32 @@ function mirroredLegacyRule(saved: JsonRecord, advanced: JsonRecord): JsonRecord
   return rule;
 }
 
+/** A Unit rules row as the Refresh tab saves against it: the row id and version go back with the save. */
+type MirroredRow = { id: string; ruleKey: string; updatedAt: string; rule: JsonRecord };
+
+function mirroredRow(row: { id: string; rule_key: string; rule_json: string; updated_at: string }): MirroredRow {
+  return { id: row.id, ruleKey: row.rule_key, updatedAt: row.updated_at, rule: parseRecord(row.rule_json) };
+}
+
 export async function listAdvancedRules(env: DatabaseEnv, siteId: string): Promise<Response> {
   if (!env.DB) return databaseMissing();
   if (!(await siteExists(env.DB, siteId))) return apiError('Site not found.', 404);
-  const config = await readConfig(env.DB, siteId);
-  return json({ ok: true, advancedRules: config ? advancedMap(config.raw) : {} });
+  // config_json and the unit_rules rows are read in one batch (one D1 transaction), so
+  // a form built from this response and the row version it is saved against always
+  // describe the same saved state; a save in between cannot pair one with the other.
+  const [configResult, rowResult] = await env.DB.batch([
+    env.DB.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1').bind(siteId),
+    env.DB
+      .prepare('SELECT id, rule_key, rule_json, updated_at FROM unit_rules WHERE publisher_id = ? ORDER BY rule_key COLLATE NOCASE')
+      .bind(siteId),
+  ]);
+  const config = (configResult?.results?.[0] as { config_json: string } | undefined)?.config_json;
+  const rows = (rowResult?.results ?? []) as Array<{ id: string; rule_key: string; rule_json: string; updated_at: string }>;
+  return json({
+    ok: true,
+    advancedRules: config === undefined ? {} : advancedMap(parseRecord(config)),
+    unitRuleRows: Object.fromEntries(rows.map((row) => [row.rule_key, mirroredRow(row)])),
+  });
 }
 
 export async function updateAdvancedRule(
@@ -278,6 +299,7 @@ export async function updateAdvancedRule(
   const actor = getActor(request);
   let kept: string[] = [];
   let appliesTo: string[] = [];
+  let written: MirroredRow;
 
   try {
     // The mirrored row, config.unitRules and the advanced record are written in one
@@ -292,7 +314,17 @@ export async function updateAdvancedRule(
         .all<{ code: string; type: string; enabled: number }>(),
     ]);
     const existing = rows.find((row) => row.rule_key === ruleKey);
+    // The Unit rules row the Refresh tab loaded for this scope: id and version (null: no row).
+    // Every Unit rules or Refresh save of the scope moves the version, and a deleted and
+    // re-created row has a new id even in the same millisecond, so a stale tab cannot put
+    // back an older schedule or re-create a deleted rule; the row guard rechecks it in the batch.
+    // Callers that send neither field keep the previous contract.
+    if ((Object.hasOwn(input, 'expectedUpdatedAt') && input.expectedUpdatedAt !== (existing?.updated_at ?? null))
+      || (Object.hasOwn(input, 'expectedUnitRuleId') && input.expectedUnitRuleId !== (existing?.id ?? null))) {
+      return apiError(REFRESH_CHANGED_ELSEWHERE, 409);
+    }
     const mirroredId = existing?.id ?? crypto.randomUUID();
+    const mirroredVersion = existing ? nextRowVersion(existing.updated_at, now) : now;
     const mirroredJson = JSON.stringify(mirroredLegacyRule(parseRecord(existing?.rule_json), advanced));
     // Unit rules as the table will hold them after this save, in the table's order
     // (SQLite's own NOCASE sort, as before). Only the order is taken from this read:
@@ -343,13 +375,13 @@ export async function updateAdvancedRule(
               `UPDATE unit_rules SET rule_json = ?, updated_at = ?
                WHERE publisher_id = ? AND id = ? AND updated_at = ? AND changes() = 1`,
             )
-            .bind(mirroredJson, nextRowVersion(existing.updated_at, now), siteId, existing.id, existing.updated_at)
+            .bind(mirroredJson, mirroredVersion, siteId, existing.id, existing.updated_at)
         : env.DB
             .prepare(
               `INSERT INTO unit_rules (id, publisher_id, rule_key, rule_json, created_at, updated_at)
                SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
             )
-            .bind(mirroredId, siteId, ruleKey, mirroredJson, now, now),
+            .bind(mirroredId, siteId, ruleKey, mirroredJson, now, mirroredVersion),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
@@ -372,9 +404,12 @@ export async function updateAdvancedRule(
     if (!everyStatementChangedOneRow(results, statements.length)) {
       return apiError('Advanced rule update was not fully applied. Reload before saving again.', 500);
     }
+    written = mirroredRow({ id: mirroredId, rule_key: ruleKey, rule_json: mirroredJson, updated_at: mirroredVersion });
   } catch (error) {
     return apiError('Advanced rule update failed.', 500, error instanceof Error ? error.message : String(error));
   }
 
-  return json({ ok: true, ruleKey, advancedRule: advanced, keptUnitRuleIntervals: kept, appliesToAdUnits: appliesTo });
+  // The committed row and version, returned without a second read that a later save could
+  // race: the tab saves its next change against exactly this version.
+  return json({ ok: true, ruleKey, advancedRule: advanced, unitRule: written, keptUnitRuleIntervals: kept, appliesToAdUnits: appliesTo });
 }

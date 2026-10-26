@@ -205,6 +205,8 @@ export type CreateUnitRuleInput = {
 
 export type UpdateUnitRuleInput = {
   rule: UnitRuleConfig;
+  /** updatedAt of the rule the editor loaded; a rule saved since then is refused with 409. */
+  expectedUpdatedAt?: string;
 };
 
 export type DuplicateUnitRuleInput = {

@@ -7,7 +7,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {adminAuditStore} from '../support/admin-audit-store.mjs';
 import {createUnitRule,updateUnitRule,deleteUnitRule,duplicateUnitRule,listUnitRules} from '../../worker/unit-rules.ts';
-import {updateAdvancedRule} from '../../worker/advanced-rules.ts';
+import {listAdvancedRules,updateAdvancedRule} from '../../worker/advanced-rules.ts';
+import {updateUserIdConfig} from '../../worker/user-id-config.ts';
+import {updateRuntimeIntegrations} from '../../worker/runtime-integrations.ts';
+import {rebaseEdits,rebaseReview} from '../../src/edit-rebase.ts';
+import {intervalText,mergeRefresh,ruleChain} from '../../worker/refresh-inheritance.ts';
 import {readPreviewSnapshot} from '../../worker/runtime/builtin-preview-service.mjs';
 import {previewInput,runtimeCatalog} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {createAdUnit,updateAdUnit,duplicateAdUnit,deleteAdUnit} from '../../worker/ad-units.ts';
@@ -486,3 +490,253 @@ test('a copy or rename onto a code a deleted position left settings under keeps 
   }
  }
 });
+// Point 3a: the editor sends the version it loaded. A tab opened before another tab's
+// save is refused instead of putting back values it never changed.
+const listed=async(f,key)=>(await (await listUnitRules(f.env,SITE)).json()).unitRules.find(r=>r.ruleKey===key);
+// Interval the generated 3.16.1 script uses for P1 (BTF), merged Default -> BTF -> P1 like the runtime.
+const p1Interval=async f=>{const rules=previewInput(await readPreviewSnapshot(f.env.DB,SITE),runtimeCatalog.find(r=>r.version==='3.16.1'),'20261024_120000').core.adUnitRules??{};return intervalText(mergeRefresh(...ruleChain('P1','BTF').map(k=>rules[k]?.refresh)));};
+for(const frozen of [false,true]){
+ test(`stale Unit rules editor: changing only the timeout cannot put the interval back from 75 to 60 s${frozen?' (same millisecond)':''}`,async t=>{
+  if(frozen)t.mock.timers.enable({apis:['Date'],now:Date.parse('2026-10-24T12:00:00.000Z')});
+  const f=setup();await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:2500,refresh:refresh(60)}},'POST'),f.env,SITE),201);
+  const tabA=await listed(f,'P1'),tabB=await listed(f,'P1');
+  await ok(await updateUnitRule(request({rule:{...tabB.rule,refresh:refresh(75)},expectedUpdatedAt:tabB.updatedAt}),f.env,SITE,tabB.id));
+  await refused(await updateUnitRule(request({rule:{...tabA.rule,timeout:1200},expectedUpdatedAt:tabA.updatedAt}),f.env,SITE,tabA.id),409,/changed in another tab/);
+  assert.deepEqual(JSON.parse(rows(f)[0].rule_json),{timeout:2500,refresh:refresh(75)});assert.equal(await p1Interval(f),'75s');
+  assert.deepEqual(audits(f),['unit_rule.created','unit_rule.updated']);assertConsistent(f);
+  const reloaded=await listed(f,'P1');
+  const saved=await ok(await updateUnitRule(request({rule:{...reloaded.rule,timeout:1200},expectedUpdatedAt:reloaded.updatedAt}),f.env,SITE,reloaded.id));
+  assert.deepEqual(saved.unitRule.rule,{timeout:1200,refresh:refresh(75)});assert.equal(await p1Interval(f),'75s');assertConsistent(f);
+ });
+}
+
+test('Unit rules and Refresh saves without the expected fields keep the previous contract for other callers',async()=>{
+ const f=setup();const created=await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:2500}},'POST'),f.env,SITE),201);
+ await ok(await updateUnitRule(request({rule:{timeout:1500}}),f.env,SITE,created.unitRule.id));
+ await ok(await updateUnitRule(request({rule:{timeout:1200}}),f.env,SITE,created.unitRule.id));
+ assert.equal(JSON.parse(rows(f)[0].rule_json).timeout,1200);assertConsistent(f);
+ await ok(await updateAdvancedRule(request({timeout:1300},'PUT'),f.env,SITE,'P1'));
+ await ok(await updateAdvancedRule(request({timeout:1400},'PUT'),f.env,SITE,'P1'));
+ assert.equal(JSON.parse(rows(f)[0].rule_json).timeout,1400);assert.equal(f.readConfig().advancedUnitRules.P1.timeout,1400);assertConsistent(f);
+});
+
+// The Refresh tab's own read: the advanced records and every scope's Unit rules row, one response.
+const refreshTab=async(f,key)=>{const body=await ok(await listAdvancedRules(f.env,SITE));return {advanced:body.advancedRules[key],row:body.unitRuleRows[key]??null,body};};
+const refreshForm=(timeout,n,row)=>request({expectedUpdatedAt:row?.updatedAt??null,expectedUnitRuleId:row?.id??null,timeout,cmpTimeout:1500,refresh:{enabled:true,minViewPct:50,schedule:{mode:'fixed',fixedSeconds:n}}},'PUT');
+
+test('stale Refresh tab: an older schedule is not put back and a rule deleted in Unit rules is not re-created',async()=>{
+ const f=setup();
+ await refused(await updateAdvancedRule(refreshForm(2500,60,{updatedAt:'2026-10-24T12:00:00.000Z',id:'P1'}),f.env,SITE,'P1'),409,/changed in another tab/);
+ assert.deepEqual(rows(f),[],'a version for a scope without a row is refused');
+ await ok(await updateAdvancedRule(refreshForm(2500,60,null),f.env,SITE,'P1'));
+ const {row:loaded}=await refreshTab(f,'P1');
+ await refused(await updateAdvancedRule(refreshForm(2500,60,null),f.env,SITE,'P1'),409,/changed in another tab/);
+ await ok(await updateAdvancedRule(refreshForm(2500,75,loaded),f.env,SITE,'P1'));
+ await refused(await updateAdvancedRule(refreshForm(1200,60,loaded),f.env,SITE,'P1'),409,/changed in another tab/);
+ assert.equal(f.readConfig().advancedUnitRules.P1.timeout,2500);assert.equal(f.readConfig().advancedUnitRules.P1.refresh.schedule.fixedSeconds,75);assert.equal(await p1Interval(f),'75s');
+ assert.deepEqual(audits(f),['unit_rule.advanced_updated','unit_rule.advanced_updated']);assertConsistent(f);
+ const {row:current}=await refreshTab(f,'P1');
+ await ok(await deleteUnitRule(request({},'DELETE'),f.env,SITE,current.id));
+ await refused(await updateAdvancedRule(refreshForm(1200,60,current),f.env,SITE,'P1'),409,/changed in another tab/);
+ assert.deepEqual(rows(f),[]);assert.equal(f.readConfig().advancedUnitRules?.P1,undefined);assertConsistent(f);
+ const {row:gone}=await refreshTab(f,'P1');assert.equal(gone,null,'the reload shows the rule as deleted');
+ await ok(await updateAdvancedRule(refreshForm(1200,60,gone),f.env,SITE,'P1'));
+ assert.equal(JSON.parse(rows(f)[0].rule_json).timeout,1200,'saving from the reloaded state creates the rule again');assertConsistent(f);
+});
+
+test('stale Refresh tab: a rule deleted and re-created in the same millisecond is not overwritten',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:Date.parse('2026-10-24T12:00:00.000Z')});
+ const f=setup();
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:2500,refresh:refresh(60)}},'POST'),f.env,SITE),201);
+ const {row:tabA}=await refreshTab(f,'P1');
+ await ok(await deleteUnitRule(request({},'DELETE'),f.env,SITE,tabA.id));
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:2500,refresh:refresh(75)}},'POST'),f.env,SITE),201);
+ const {row:recreated}=await refreshTab(f,'P1');assert.equal(recreated.updatedAt,tabA.updatedAt,'same millisecond: only the id tells the rows apart');
+ await refused(await updateAdvancedRule(refreshForm(1200,60,tabA),f.env,SITE,'P1'),409,/changed in another tab/);
+ assert.equal(JSON.parse(rows(f)[0].rule_json).refresh.minSeconds,75);assert.equal(await p1Interval(f),'75s');assertConsistent(f);
+ await ok(await updateAdvancedRule(refreshForm(1200,75,recreated),f.env,SITE,'P1'));assert.equal(await p1Interval(f),'75s');assertConsistent(f);
+});
+
+test('Refresh listing returns each scope with its Unit rules row version from the same read',async()=>{
+ const f=setup();
+ await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:2500,refresh:refresh(60)}},'POST'),f.env,SITE),201);
+ await ok(await updateAdvancedRule(refreshForm(2500,60,(await refreshTab(f,'P1')).row),f.env,SITE,'P1'));
+ const {body}=await refreshTab(f,'P1');
+ const stored=f.sqlite.prepare('SELECT id,rule_key,rule_json,updated_at FROM unit_rules WHERE publisher_id=?').all(SITE);
+ assert.deepEqual(body.unitRuleRows,Object.fromEntries(stored.map(r=>[r.rule_key,{id:r.id,ruleKey:r.rule_key,updatedAt:r.updated_at,rule:JSON.parse(r.rule_json)}])));
+ assert.deepEqual(body.advancedRules,f.readConfig().advancedUnitRules);
+ // Another tab saves P1 = 75 s while the listing reads: whatever the timing, the schedule and
+ // the version in the response belong to one saved state, never 60 s with the 75 s version.
+ const before={fixed:60,version:body.unitRuleRows.P1.updatedAt};
+ const original={prepare:f.env.DB.prepare,batch:f.env.DB.batch};let fired=false;
+ const other=async()=>{if(fired)return;fired=true;Object.assign(f.env.DB,original);await ok(await updateAdvancedRule(refreshForm(2500,75,body.unitRuleRows.P1),f.env,SITE,'P1'));};
+ const wrap=statement=>({...statement,bind(...args){return wrap(statement.bind(...args));},
+  async first(){const value=await statement.first();if(/FROM (publisher_configs|unit_rules)/.test(statement.sql))await other();return value;},
+  async all(){const value=await statement.all();if(/FROM (publisher_configs|unit_rules)/.test(statement.sql))await other();return value;}});
+ f.env.DB.prepare=sql=>wrap(original.prepare(sql));
+ f.env.DB.batch=async items=>{const value=await original.batch.call(f.env.DB,items);await other();return value;};
+ const raced=await ok(await listAdvancedRules(f.env,SITE));assert(fired,'interleaving was not injected');
+ const after={fixed:75,version:f.sqlite.prepare("SELECT updated_at FROM unit_rules WHERE rule_key='P1'").get().updated_at};
+ const pair={fixed:raced.advancedRules.P1.refresh.schedule.fixedSeconds,version:raced.unitRuleRows.P1.updatedAt};
+ assert(JSON.stringify(pair)===JSON.stringify(before)||JSON.stringify(pair)===JSON.stringify(after),`schedule and version from different reads: ${JSON.stringify(pair)}`);
+ // A tab that built its form from that response cannot put 60 s back over the newer save.
+ if(pair.fixed===60)await refused(await updateAdvancedRule(refreshForm(1200,60,raced.unitRuleRows.P1),f.env,SITE,'P1'),409,/changed in another tab/);
+ assert.equal(await p1Interval(f),'75s');assertConsistent(f);
+});
+
+for(const frozen of [false,true]){
+ test(`Refresh tab saves again against the version its own save returned${frozen?' (same millisecond)':''}`,async t=>{
+  if(frozen)t.mock.timers.enable({apis:['Date'],now:Date.parse('2026-10-24T12:00:00.000Z')});
+  const f=setup();
+  await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:2500,refresh:refresh(60)}},'POST'),f.env,SITE),201);
+  const {row:loaded}=await refreshTab(f,'P1');
+  // Tab A saves; the response names the row it wrote.
+  const savedA=await ok(await updateAdvancedRule(refreshForm(2500,60,loaded),f.env,SITE,'P1'));
+  const stored=f.sqlite.prepare("SELECT id,rule_key,rule_json,updated_at FROM unit_rules WHERE rule_key='P1'").get();
+  assert.deepEqual(savedA.unitRule,{id:stored.id,ruleKey:'P1',updatedAt:stored.updated_at,rule:JSON.parse(stored.rule_json)});
+  assert.equal(savedA.unitRule.id,loaded.id);assert.notEqual(savedA.unitRule.updatedAt,loaded.updatedAt,'the save moved the version');
+  assert.deepEqual(savedA.advancedRule,f.readConfig().advancedUnitRules.P1);
+  // Tab B saves 75 s against its own fresh read.
+  const {row:tabB}=await refreshTab(f,'P1');assert.deepEqual(tabB,savedA.unitRule);
+  const savedB=await ok(await updateAdvancedRule(refreshForm(2500,75,tabB),f.env,SITE,'P1'));
+  assert.notEqual(savedB.unitRule.updatedAt,savedA.unitRule.updatedAt);
+  // Tab A changes only the timeout and saves from its baseline: refused, 75 s stays.
+  await refused(await updateAdvancedRule(refreshForm(1200,60,savedA.unitRule),f.env,SITE,'P1'),409,/changed in another tab/);
+  assert.equal(await p1Interval(f),'75s');assert.equal(f.readConfig().advancedUnitRules.P1.timeout,2500);
+  assert.deepEqual(audits(f),['unit_rule.created','unit_rule.advanced_updated','unit_rule.advanced_updated']);assertConsistent(f);
+  // A rule created by the Refresh tab returns its new row the same way.
+  const {row:none}=await refreshTab(f,'__ATF__');assert.equal(none,null);
+  const createdAtf=await ok(await updateAdvancedRule(refreshForm(2200,45,none),f.env,SITE,'__ATF__'));
+  assert.deepEqual(createdAtf.unitRule,(await refreshTab(f,'__ATF__')).row);
+  await ok(await updateAdvancedRule(refreshForm(2100,45,createdAtf.unitRule),f.env,SITE,'__ATF__'));assertConsistent(f);
+ });
+}
+
+test('rebaseEdits: changed fields are carried, untouched fields take the saved values, both-changed fields are conflicts',()=>{
+ const loaded={ruleKey:'P1',timeout:2500,minSeconds:60,checkEveryMs:5000,minViewPct:50,conditionalMappings:[{id:'m',priority:1}]};
+ const saved={...loaded,minSeconds:75,checkEveryMs:4000,minViewPct:70,conditionalMappings:[{id:'m',priority:2}]};
+ // This tab changed timeout (only here), minSeconds (also changed elsewhere, differently)
+ // and minViewPct (also changed elsewhere, to the same value).
+ const edited={...loaded,timeout:1200,minSeconds:90,minViewPct:70};
+ const result=rebaseEdits(edited,loaded,saved);
+ assert.deepEqual(result,{
+  form:{ruleKey:'P1',timeout:1200,minSeconds:90,checkEveryMs:4000,minViewPct:70,conditionalMappings:[{id:'m',priority:2}]},
+  changed:['timeout','minSeconds','minViewPct'],
+  conflicts:['minSeconds'],
+ });
+ const labels={timeout:'Timeout',minSeconds:'Minimum time',minViewPct:'Minimum in view',conditionalMappings:'Key-value mappings'};
+ const text=(key,value)=>key==='conditionalMappings'?`${value.length} mapping`:`${value}${key==='minSeconds'?' sec':key==='timeout'?' ms':'%'}`;
+ assert.deepEqual(rebaseReview(result,saved,key=>labels[key],text),{conflicts:[{field:'Minimum time',yours:'90 sec',saved:'75 sec'}],applied:['Timeout','Minimum in view']});
+ // Mappings are compared as a whole field; values that read the same are still told apart.
+ const mappings=rebaseEdits({...loaded,conditionalMappings:[{id:'m',priority:3}]},loaded,saved);
+ assert.deepEqual(mappings.conflicts,['conditionalMappings']);assert.deepEqual(mappings.form.conditionalMappings,[{id:'m',priority:3}]);
+ assert.deepEqual(rebaseReview(mappings,saved,key=>labels[key],text).conflicts,[{field:'Key-value mappings',yours:'your version',saved:'a different version'}]);
+ assert.deepEqual(rebaseEdits(loaded,loaded,saved),{form:saved,changed:[],conflicts:[]},'nothing changed here: the saved values as they are');
+ assert.deepEqual(rebaseEdits(edited,loaded,loaded).conflicts,[],'nothing changed elsewhere: no conflicts');
+});
+
+test('rebaseEdits with gates: an override or strategy the other tab switched is the conflict, and the edited values stay in effect',()=>{
+ // Unit rules dialog: the same gates as UnitRulesPanel (section overrides store nothing while off).
+ const unitGates=[
+  {gate:'overrideTimeout',fields:['timeout'],storedOnlyWhenUsed:true},
+  {gate:'overrideRefresh',fields:['refreshEnabled','minSeconds','minViewPct','requirePreviousViewable','checkEveryMs'],storedOnlyWhenUsed:true},
+  {gate:'refreshEnabled',fields:['minSeconds','minViewPct','requirePreviousViewable','checkEveryMs']},
+ ];
+ const loaded={ruleKey:'P1',overrideTimeout:true,timeout:2500,overrideRefresh:true,refreshEnabled:true,minSeconds:15,minViewPct:70,requirePreviousViewable:true,checkEveryMs:2000};
+ // The other tab removed the refresh override; the saved form shows placeholders (30 sec, 50%, 5000 ms) it never saved.
+ const overrideOff={...loaded,overrideRefresh:false,refreshEnabled:true,minSeconds:30,minViewPct:50,requirePreviousViewable:false,checkEveryMs:5000};
+ const result=rebaseEdits({...loaded,minSeconds:20},loaded,overrideOff,unitGates);
+ assert.deepEqual(result,{form:{...loaded,minSeconds:20},changed:['overrideRefresh','minSeconds'],conflicts:['overrideRefresh']});
+ const labels={overrideRefresh:'Override inherited refresh',refreshEnabled:'Refresh enabled',minSeconds:'Minimum time',timeout:'Timeout'};
+ const text=(key,value)=>typeof value==='boolean'?(value?'on':key.startsWith('override')?'off (inherited)':'off'):`${value}`;
+ const review=rebaseReview(result,overrideOff,key=>labels[key],text);
+ assert.deepEqual(review,{conflicts:[{field:'Override inherited refresh',yours:'on',saved:'off (inherited)'}],applied:['Minimum time']});
+ assert.doesNotMatch(JSON.stringify(review),/30/,'a form default is never shown as the other tab\'s value');
+ // A field this tab left alone follows the other tab: the override stays off, no conflict.
+ assert.deepEqual(rebaseEdits({...loaded,timeout:1200},loaded,overrideOff,unitGates),{form:{...overrideOff,timeout:1200},changed:['timeout'],conflicts:[]});
+ // The other tab turned refresh off but kept the override: the stored values are real, so untouched ones follow it.
+ const disabled={...loaded,refreshEnabled:false,minViewPct:80};
+ assert.deepEqual(rebaseEdits({...loaded,minSeconds:20},loaded,disabled,unitGates),{form:{...disabled,refreshEnabled:true,minSeconds:20},changed:['refreshEnabled','minSeconds'],conflicts:['refreshEnabled']});
+ // Both tabs changed the same value under a section the other tab kept: the value is the conflict.
+ assert.deepEqual(rebaseEdits({...loaded,minSeconds:20},loaded,{...loaded,minSeconds:45},unitGates).conflicts,['minSeconds']);
+
+ // Refresh schedules: interval fields belong to their strategy, as in AdvancedRefreshPanel.
+ const modeFields={fixed:['fixedSeconds'],firstThenFixed:['firstSeconds','nextSeconds'],percentage:['firstSeconds','growthPercent','maxSeconds'],sequence:['sequenceText']};
+ const refreshGates=[
+  {gate:'refreshEnabled',fields:['mode','fixedSeconds','firstSeconds','nextSeconds','growthPercent','maxSeconds','sequenceText','maxRefreshes']},
+  {gate:'mode',fields:['fixedSeconds','firstSeconds','nextSeconds','growthPercent','maxSeconds','sequenceText'],uses:(mode,field)=>modeFields[mode]?.includes(field)??false},
+ ];
+ const schedule={refreshEnabled:true,mode:'sequence',fixedSeconds:15,firstSeconds:15,nextSeconds:15,growthPercent:20,maxSeconds:120,sequenceText:'15, 30',maxRefreshes:20};
+ const switched={...schedule,mode:'fixed',fixedSeconds:40};
+ const sequence=rebaseEdits({...schedule,sequenceText:'25, 50'},schedule,switched,refreshGates);
+ assert.deepEqual(sequence,{form:{...switched,mode:'sequence',sequenceText:'25, 50'},changed:['mode','sequenceText'],conflicts:['mode']});
+ const modeText=(key,value)=>({fixed:'Same every time',sequence:'Explicit sequence'})[value]??`${value}`;
+ assert.deepEqual(rebaseReview(sequence,switched,key=>({mode:'Interval strategy',sequenceText:'Intervals, in seconds'})[key],modeText),
+  {conflicts:[{field:'Interval strategy',yours:'Explicit sequence',saved:'Same every time'}],applied:['Intervals, in seconds']});
+ // A field both strategies use keeps working under the other tab's strategy: no strategy conflict.
+ const first={...schedule,mode:'firstThenFixed'};
+ assert.deepEqual(rebaseEdits({...first,firstSeconds:25},first,{...first,mode:'percentage'},refreshGates),{form:{...first,mode:'percentage',firstSeconds:25},changed:['firstSeconds'],conflicts:[]});
+ // The other tab disabled refresh while this tab changed an interval: refresh enabled is the conflict.
+ assert.deepEqual(rebaseEdits({...schedule,sequenceText:'25, 50'},schedule,{...schedule,refreshEnabled:false,maxRefreshes:9},refreshGates),
+  {form:{...schedule,maxRefreshes:9,sequenceText:'25, 50'},changed:['refreshEnabled','sequenceText'],conflicts:['refreshEnabled']});
+ // This tab changed the strategy itself and the other tab chose a different one: one conflict, on the strategy.
+ assert.deepEqual(rebaseEdits({...schedule,mode:'percentage',maxSeconds:90},schedule,switched,refreshGates),
+  {form:{...switched,mode:'percentage',maxSeconds:90},changed:['mode','maxSeconds'],conflicts:['mode']});
+});
+
+// Point 3b / D4: a whole-config writer that read config_json before another save must not
+// write the older config back (unit rules, Refresh schedules, consent mode), and a refused
+// write records no audit row.
+// A kept interval owns only refresh, so check the mirror instead of assertConsistent's timeout rule.
+const assertMirror=f=>assert.deepEqual(f.readConfig().unitRules,Object.fromEntries(rows(f).map(r=>[r.rule_key,JSON.parse(r.rule_json)])));
+function afterConfigRead(f,operation){
+ const original=f.env.DB.prepare;let fired=false;
+ const wrap=statement=>({...statement,bind(...args){return wrap(statement.bind(...args));},async first(){
+  const value=await statement.first();
+  if(!fired&&/FROM publisher_configs/.test(statement.sql)){fired=true;f.env.DB.prepare=original;await operation();}
+  return value;
+ }});
+ f.env.DB.prepare=sql=>wrap(original(sql));
+ return ()=>assert(fired,'interleaving was not injected');
+}
+const auditCount=(f,action)=>f.sqlite.prepare('SELECT count(*) AS n FROM audit_log WHERE publisher_id=? AND action=?').get(SITE,action).n;
+const schainBody=(consent='cmp',enabled=false)=>({schain:{enabled,version:'1.0',complete:1,nodes:enabled?[{asi:'example.com',sid:'pub-1',hp:1}]:[]},consent:{mode:consent}});
+const writers=[
+ {name:'User ID save',action:'user_id_config.updated',write:f=>updateUserIdConfig(request({enabled:true,auctionDelay:150,syncDelay:3000,syncsPerBidder:5,modules:[]},'PUT'),f.env,SITE),
+  own:f=>f.readConfig().userIdConfig?.enabled===true},
+ {name:'Supply-chain and consent save',action:'runtime_integrations.updated',write:(f,consent='cmp')=>updateRuntimeIntegrations(request(schainBody(consent,true),'PUT'),f.env,SITE),
+  own:f=>f.readConfig().runtimeControls?.schain?.enabled===true},
+];
+for(const writer of writers){
+ test(`${writer.name} that read the config before a Unit rules save is a 409, keeps the just-saved 60 s interval and records no audit`,async()=>{
+  const f=setup();
+  await ok(await updateAdvancedRule(request({timeout:2500,cmpTimeout:1500,refresh:{enabled:true,schedule:{mode:'sequence',sequenceSeconds:[20,40,80]}}},'PUT'),f.env,SITE,'__DEFAULT__'));
+  const configBefore=f.readConfig(),auditsBefore=audits(f);
+  const injected=afterConfigRead(f,async()=>{
+   const saved=await ok(await createUnitRule(request({ruleKey:'P1',rule:{timeout:2500,refresh:refresh(60)}},'POST'),f.env,SITE),201);
+   assert.deepEqual(saved.keptUnitRuleIntervals,['P1']);
+  });
+  await refused(await writer.write(f),409,/saved at the same time, so nothing was saved\. Select Save again\./);injected();
+  assert.equal(JSON.parse(rows(f)[0].rule_json).refresh.minSeconds,60);
+  assert.equal(f.readConfig().advancedUnitRules.P1.refresh.schedule.fixedSeconds,60);assert.equal(await p1Interval(f),'60s');assertMirror(f);
+  assert.equal(writer.own(f),false,'the refused write changed nothing of its own');
+  assert.deepEqual(f.readConfig().userIdConfig,configBefore.userIdConfig);assert.deepEqual(f.readConfig().runtimeControls,configBefore.runtimeControls);
+  assert.deepEqual(audits(f),[...auditsBefore,'unit_rule.created'],'only the Unit rules save is audited');assert.equal(auditCount(f,writer.action),0);
+  // Select Save again: it now builds on the saved config and keeps the interval.
+  await ok(await writer.write(f));
+  assert.equal(writer.own(f),true);assert.equal(f.readConfig().advancedUnitRules.P1.refresh.schedule.fixedSeconds,60);assert.equal(await p1Interval(f),'60s');assertMirror(f);
+  assert.deepEqual(audits(f),[...auditsBefore,'unit_rule.created',writer.action]);
+ });
+ test(`${writer.name} that read the config before a consent change is a 409 and does not revert the consent mode`,async()=>{
+  const f=setup();const c=f.readConfig();c.runtimeControls={...c.runtimeControls,consent:{mode:'contextual-test'}};f.writeConfig(c);
+  const auditsBefore=audits(f);
+  // Another tab sets consent back to the CMP while this request is between its read and its
+  // write; the Supply-chain request still carries the contextual-test mode its form loaded.
+  const injected=afterConfigRead(f,async()=>ok(await updateRuntimeIntegrations(request(schainBody('cmp'),'PUT'),f.env,SITE)));
+  await refused(await writer.write(f,'contextual-test'),409,/saved at the same time/);injected();
+  assert.equal(f.readConfig().runtimeControls.consent.mode,'cmp','the CMP choice saved in between stays');
+  assert.equal(writer.own(f),false);assert.equal(f.readConfig().runtimeControls.schain.enabled,false);
+  assert.deepEqual(audits(f),[...auditsBefore,'runtime_integrations.updated'],'only the consent save is audited');
+  assert.equal(auditCount(f,writer.action),writer.action==='runtime_integrations.updated'?1:0);
+ });
+}

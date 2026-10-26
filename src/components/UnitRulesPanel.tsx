@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../api';
+import { rebaseEdits, rebaseReview, type RebaseGate, type RebaseReview } from '../edit-rebase';
 import { runtimeLabel } from '../site-workspace/runtime-labels';
+import EditRebaseReview from './EditRebaseReview';
 import type {
   AdUnit,
   SizeMap,
@@ -175,6 +177,48 @@ function formFromRule(ruleKey: string, rule: UnitRuleConfig): RuleForm {
   };
 }
 
+// How a field is named and shown when a refused save lists what both tabs changed.
+const FIELD_LABELS: Record<keyof RuleForm, string> = {
+  ruleKey: 'Rule target',
+  overrideTimeout: 'Override inherited timeout',
+  timeout: 'Timeout',
+  overrideLazy: 'Override inherited lazy load',
+  lazyEnabled: 'Lazy auction enabled',
+  fetchMarginPx: 'Start auction within',
+  renderMarginPx: 'Allow render within',
+  overrideRefresh: 'Override inherited refresh',
+  refreshEnabled: 'Refresh enabled',
+  minSeconds: 'Minimum time',
+  minViewPct: 'Minimum in view',
+  requirePreviousViewable: 'Require previous ad to be viewable',
+  checkEveryMs: 'Check interval',
+  conditionalMappings: 'Key-value mappings',
+};
+const FIELD_UNITS: Partial<Record<keyof RuleForm, string>> = {
+  timeout: ' ms', fetchMarginPx: ' px', renderMarginPx: ' px', minSeconds: ' sec', minViewPct: '%', checkEveryMs: ' ms',
+};
+
+// A section's values take effect only while its override is on (nothing is stored while it
+// is off), and the inputs below an Enabled switch only while that switch is on.
+const FORM_GATES: Array<RebaseGate<RuleForm>> = [
+  { gate: 'overrideTimeout', fields: ['timeout'], storedOnlyWhenUsed: true },
+  { gate: 'overrideLazy', fields: ['lazyEnabled', 'fetchMarginPx', 'renderMarginPx'], storedOnlyWhenUsed: true },
+  { gate: 'overrideRefresh', fields: ['refreshEnabled', 'minSeconds', 'minViewPct', 'requirePreviousViewable', 'checkEveryMs'], storedOnlyWhenUsed: true },
+  { gate: 'lazyEnabled', fields: ['fetchMarginPx', 'renderMarginPx'] },
+  { gate: 'refreshEnabled', fields: ['minSeconds', 'minViewPct', 'requirePreviousViewable', 'checkEveryMs'] },
+];
+const OVERRIDE_FIELDS: Array<keyof RuleForm> = ['overrideTimeout', 'overrideLazy', 'overrideRefresh'];
+
+function fieldText(key: keyof RuleForm, value: RuleForm[keyof RuleForm]): string {
+  if (typeof value === 'boolean') return value ? 'on' : OVERRIDE_FIELDS.includes(key) ? 'off (inherited)' : 'off';
+  if (Array.isArray(value)) {
+    return value.length
+      ? `${value.length} mapping${value.length === 1 ? '' : 's'} (${value.map((mapping) => mapping.name).join(', ')})`
+      : 'no mappings';
+  }
+  return `${value}${FIELD_UNITS[key] ?? ''}`;
+}
+
 function ruleFromForm(form: RuleForm): UnitRuleConfig {
   const rule: UnitRuleConfig = {};
   if (form.overrideTimeout) rule.timeout = Number(form.timeout);
@@ -274,12 +318,14 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
   const [source, setSource] = useState<UnitRule | null>(null);
   const [form, setForm] = useState<RuleForm>(() => formFromRule('__DEFAULT__', presetForKey('__DEFAULT__')));
   const [formError, setFormError] = useState<string | null>(null);
+  const [rebaseNote, setRebaseNote] = useState<RebaseReview | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [creatingBaseRules, setCreatingBaseRules] = useState(false);
   const [loadingSummary, setLoadingSummary] = useState<LoadingSummary | null>(null);
   const loadSequence = useRef(0);
 
-  const load = useCallback(async () => {
+  // Resolves to the loaded rules, or null when the load failed or a newer load replaced it.
+  const load = useCallback(async (): Promise<UnitRule[] | null> => {
     const sequence = ++loadSequence.current;
     setLoading(true);
     setLoadingSummary(null);
@@ -292,15 +338,17 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
           runtimeVersion: null, units: [], issue: 'Loading behavior is unavailable. Reload to try again.',
         })),
       ]);
-      if (sequence !== loadSequence.current) return;
+      if (sequence !== loadSequence.current) return null;
       setUnitRules(rules);
       setAdUnits(units);
       setSizeMaps(maps);
       setLoadingSummary(summary);
       setError(null);
+      return rules;
     } catch (requestError) {
-      if (sequence !== loadSequence.current) return;
+      if (sequence !== loadSequence.current) return null;
       setError(requestError instanceof Error ? requestError.message : 'Could not load unit rules.');
+      return null;
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
     }
@@ -335,6 +383,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setSource(null);
     setForm(formFromRule(target, presetForKey(target)));
     setFormError(null);
+    setRebaseNote(null);
   }
 
   function openEdit(rule: UnitRule) {
@@ -342,6 +391,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setSource(rule);
     setForm(formFromRule(rule.ruleKey, rule.rule));
     setFormError(null);
+    setRebaseNote(null);
   }
 
   function openDuplicate(rule: UnitRule) {
@@ -350,6 +400,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setSource(rule);
     setForm(formFromRule(target, rule.rule));
     setFormError(null);
+    setRebaseNote(null);
   }
 
   function closeForm() {
@@ -357,6 +408,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setMode(null);
     setSource(null);
     setFormError(null);
+    setRebaseNote(null);
   }
 
   function updateForm<K extends keyof RuleForm>(key: K, value: RuleForm[K]) {
@@ -431,6 +483,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
+    setRebaseNote(null);
 
     if (!form.ruleKey) {
       setFormError('Select a rule target.');
@@ -452,7 +505,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setNotice(null);
     try {
       const saved = mode === 'edit' && source
-        ? await api.updateUnitRule(publisherId, source.id, { rule })
+        ? await api.updateUnitRule(publisherId, source.id, { rule, expectedUpdatedAt: source.updatedAt })
         : mode === 'duplicate' && source
           ? await api.duplicateUnitRule(publisherId, source.id, { ruleKey: form.ruleKey })
           : await api.createUnitRule(publisherId, { ruleKey: form.ruleKey, rule });
@@ -465,7 +518,23 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
       if (isStaleRuleError(requestError)) {
         // Another tab changed or deleted the rule and nothing was saved. Refresh the list
         // behind the dialog, but keep the dialog and every entered value.
-        await load();
+        const rules = await load();
+        // The rule as saved now, with its version from the same list read.
+        const latest = mode === 'edit' && source ? rules?.find((item) => item.id === source.id) : undefined;
+        if (requestError.status === 409 && source && latest && latest.updatedAt !== source.updatedAt) {
+          // Edit the rule as it is saved now: only the fields changed in this dialog stay,
+          // so saving again cannot put back what the other tab replaced. The next save is
+          // checked against this reloaded version, never the one the dialog opened with.
+          const saved = formFromRule(latest.ruleKey, latest.rule);
+          const rebased = rebaseEdits(form, formFromRule(source.ruleKey, source.rule), saved, FORM_GATES);
+          setSource(latest);
+          setForm(rebased.form);
+          setRebaseNote(rebaseReview(rebased, saved, (key) => FIELD_LABELS[key], fieldText));
+          setFormError(rebased.changed.length
+            ? 'This rule was changed in another tab, so nothing was saved. The dialog now shows the saved rule with your changes applied. Review it and select Save rule again.'
+            : 'This rule was changed in another tab, so nothing was saved. You had not changed anything in this dialog, so it now shows the rule as saved in the other tab.');
+          return;
+        }
         if (requestError.status === 404 && mode === 'edit') {
           setMode('create');
           setSource(null);
@@ -892,6 +961,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
               </section>
 
               {formError ? <div className="form-error">{formError}</div> : null}
+              {rebaseNote ? <EditRebaseReview review={rebaseNote} /> : null}
               <div className="modal-actions unit-rule-modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeForm} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting || !form.ruleKey} type="submit">

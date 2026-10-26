@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { api } from '../api';
-import type { AdUnit, UnitRule } from '../shared/types';
+import { api, ApiError } from '../api';
+import { rebaseEdits, rebaseReview, type RebaseGate, type RebaseReview } from '../edit-rebase';
+import type { AdUnit } from '../shared/types';
+import EditRebaseReview from './EditRebaseReview';
 
 type Props = {
   publisherId: string;
@@ -38,6 +40,19 @@ type AdvancedRule = {
   timeout?: number;
   cmpTimeout?: number;
   refresh?: Partial<AdvancedRefresh> & { schedule?: Partial<RefreshSchedule> };
+};
+
+/** The scope's Unit rules row, read together with the advanced records (same D1 batch). */
+type MirroredRow = { id: string; ruleKey: string; updatedAt: string; rule: AdvancedRule };
+
+type AdvancedPayload = { ok: true; advancedRules: Record<string, AdvancedRule>; unitRuleRows: Record<string, MirroredRow> };
+
+type SavePayload = {
+  ok: true;
+  advancedRule: AdvancedRule;
+  unitRule: MirroredRow;
+  keptUnitRuleIntervals?: string[];
+  appliesToAdUnits?: string[];
 };
 
 type FormState = {
@@ -148,6 +163,71 @@ function formFromRule(ruleKey: string, rule: AdvancedRule | undefined): FormStat
   };
 }
 
+/** What the shown form was built from: its values and the row version a save of it is checked against. */
+type Baseline = { form: FormState; rowId: string | null; updatedAt: string | null };
+
+function baselineFor(ruleKey: string, advancedRules: Record<string, AdvancedRule>, rows: Record<string, MirroredRow>): Baseline {
+  const row = rows[ruleKey];
+  return { form: formFromRule(ruleKey, advancedRules[ruleKey] ?? row?.rule), rowId: row?.id ?? null, updatedAt: row?.updatedAt ?? null };
+}
+
+// How a field is named and shown when a refused save lists what both tabs changed.
+const FIELD_LABELS: Record<keyof FormState, string> = {
+  ruleKey: 'Rule target',
+  timeout: 'Prebid auction timeout',
+  cmpTimeout: 'CMP wait timeout',
+  refreshEnabled: 'Refresh enabled',
+  mode: 'Interval strategy',
+  fixedSeconds: 'Every refresh',
+  firstSeconds: 'First refresh',
+  nextSeconds: 'Second and every next',
+  growthPercent: 'Increase each next',
+  maxSeconds: 'Maximum interval',
+  sequenceText: 'Intervals, in seconds',
+  minViewPct: 'Enter at',
+  exitViewPct: 'Exit at',
+  accumulateViewTime: 'Accumulate view time',
+  minGapSeconds: 'Minimum wall-clock gap',
+  maxRefreshes: 'Maximum refreshes',
+  requirePreviousViewable: 'Require previous ad to be viewable',
+  checkEveryMs: 'Guard check interval',
+};
+const FIELD_UNITS: Partial<Record<keyof FormState, string>> = {
+  timeout: ' ms', cmpTimeout: ' ms', fixedSeconds: ' sec', firstSeconds: ' sec', nextSeconds: ' sec', growthPercent: '%',
+  maxSeconds: ' sec', minViewPct: '%', exitViewPct: '%', minGapSeconds: ' sec', checkEveryMs: ' ms',
+};
+const MODE_LABELS: Record<RefreshMode, string> = {
+  fixed: 'Same every time', firstThenFixed: 'First, then fixed', percentage: 'Percentage increase', sequence: 'Explicit sequence',
+};
+
+// The interval fields each strategy uses; the others stay stored but have no effect.
+const MODE_FIELDS: Record<RefreshMode, Array<keyof FormState>> = {
+  fixed: ['fixedSeconds'],
+  firstThenFixed: ['firstSeconds', 'nextSeconds'],
+  percentage: ['firstSeconds', 'growthPercent', 'maxSeconds'],
+  sequence: ['sequenceText'],
+};
+// Refresh fields take effect only while refresh is enabled, and interval fields only under
+// the strategy that uses them.
+const FORM_GATES: Array<RebaseGate<FormState>> = [
+  {
+    gate: 'refreshEnabled',
+    fields: ['mode', 'fixedSeconds', 'firstSeconds', 'nextSeconds', 'growthPercent', 'maxSeconds', 'sequenceText', 'minViewPct',
+      'exitViewPct', 'accumulateViewTime', 'minGapSeconds', 'maxRefreshes', 'requirePreviousViewable', 'checkEveryMs'],
+  },
+  {
+    gate: 'mode',
+    fields: ['fixedSeconds', 'firstSeconds', 'nextSeconds', 'growthPercent', 'maxSeconds', 'sequenceText'],
+    uses: (mode, field) => MODE_FIELDS[mode as RefreshMode]?.includes(field) ?? false,
+  },
+];
+
+function fieldText(key: keyof FormState, value: FormState[keyof FormState]): string {
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
+  if (key === 'mode') return MODE_LABELS[value as RefreshMode] ?? String(value);
+  return `${value}${FIELD_UNITS[key] ?? ''}`;
+}
+
 function schedulePreview(form: FormState, count = 7): number[] {
   const values: number[] = [];
   const sequence = parseSequence(form.sequenceText);
@@ -180,15 +260,23 @@ function savedScheduleText(ruleKey: string, kept: string[], appliesTo?: string[]
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
   const payload = (await response.json()) as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error || `Request failed with status ${response.status}.`);
+  if (!response.ok) throw new ApiError(payload.error || `Request failed with status ${response.status}.`, response.status);
   return payload;
+}
+
+// The form and the version it is saved against both come from this one response.
+async function loadAdvancedRules(publisherId: string): Promise<AdvancedPayload> {
+  const payload = await requestJson<AdvancedPayload>(`/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced`);
+  return { ...payload, unitRuleRows: payload.unitRuleRows ?? {} };
 }
 
 export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUnitRules }: Props) {
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
-  const [rules, setRules] = useState<UnitRule[]>([]);
+  const [rows, setRows] = useState<Record<string, MirroredRow>>({});
   const [advancedRules, setAdvancedRules] = useState<Record<string, AdvancedRule>>({});
   const [form, setForm] = useState<FormState>(() => defaultForm());
+  const [loaded, setLoaded] = useState<Baseline>(() => ({ form: defaultForm(), rowId: null, updatedAt: null }));
+  const [rebaseNote, setRebaseNote] = useState<RebaseReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -198,19 +286,13 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
     setLoading(true);
     setError(null);
     try {
-      const [units, unitRules, advancedPayload] = await Promise.all([
-        api.listAdUnits(publisherId),
-        api.listUnitRules(publisherId),
-        requestJson<{ ok: true; advancedRules: Record<string, AdvancedRule> }>(
-          `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced`,
-        ),
-      ]);
+      const [units, advancedPayload] = await Promise.all([api.listAdUnits(publisherId), loadAdvancedRules(publisherId)]);
       setAdUnits(units);
-      setRules(unitRules);
+      setRows(advancedPayload.unitRuleRows);
       setAdvancedRules(advancedPayload.advancedRules);
-      const selected = unitRules.find((rule) => rule.ruleKey === form.ruleKey);
-      const baseRule = selected?.rule as AdvancedRule | undefined;
-      setForm(formFromRule(form.ruleKey, advancedPayload.advancedRules[form.ruleKey] ?? baseRule));
+      const baseline = baselineFor(form.ruleKey, advancedPayload.advancedRules, advancedPayload.unitRuleRows);
+      setForm(baseline.form);
+      setLoaded(baseline);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Advanced schedules could not be loaded.');
     } finally {
@@ -235,16 +317,19 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
   }
 
   function selectTarget(ruleKey: string) {
-    const rule = rules.find((item) => item.ruleKey === ruleKey);
-    setForm(formFromRule(ruleKey, advancedRules[ruleKey] ?? (rule?.rule as AdvancedRule | undefined)));
+    const baseline = baselineFor(ruleKey, advancedRules, rows);
+    setForm(baseline.form);
+    setLoaded(baseline);
     setSavedMessage(null);
     setError(null);
+    setRebaseNote(null);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setSavedMessage(null);
+    setRebaseNote(null);
 
     const sequence = parseSequence(form.sequenceText);
     if (form.mode === 'sequence' && sequence.length === 0) {
@@ -256,14 +341,21 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
       return;
     }
 
+    // What this form was built from: the scope's Unit rules row (id and version) goes with
+    // the save, so a save from a tab opened before another tab's save is refused (409).
+    const baseline = loaded;
+    const submitted = form;
+
     setSaving(true);
     try {
-      const saved = await requestJson<{ ok: true; keptUnitRuleIntervals?: string[]; appliesToAdUnits?: string[] }>(
+      const saved = await requestJson<SavePayload>(
         `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced/${encodeURIComponent(form.ruleKey)}`,
         {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
+            expectedUpdatedAt: baseline.updatedAt,
+            expectedUnitRuleId: baseline.rowId,
             timeout: Number(form.timeout),
             cmpTimeout: Number(form.cmpTimeout),
             refresh: {
@@ -288,17 +380,55 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
           }),
         },
       );
-      const [unitRules, advancedPayload] = await Promise.all([
-        api.listUnitRules(publisherId),
-        requestJson<{ ok: true; advancedRules: Record<string, AdvancedRule> }>(
-          `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced`,
-        ),
-      ]);
-      setRules(unitRules);
-      setAdvancedRules(advancedPayload.advancedRules);
-      setSavedMessage(savedScheduleText(form.ruleKey, saved.keptUnitRuleIntervals ?? [], saved.appliesToAdUnits));
+      // The form now shows the scope as stored, and its next save is checked against the row
+      // version this save wrote, taken from its own response rather than paired from a later
+      // list read.
+      const stored = formFromRule(submitted.ruleKey, saved.advancedRule);
+      setForm(stored);
+      setLoaded({ form: stored, rowId: saved.unitRule.id, updatedAt: saved.unitRule.updatedAt });
+      setAdvancedRules((current) => ({ ...current, [submitted.ruleKey]: saved.advancedRule }));
+      setRows((current) => ({ ...current, [submitted.ruleKey]: saved.unitRule }));
+      setSavedMessage(savedScheduleText(submitted.ruleKey, saved.keptUnitRuleIntervals ?? [], saved.appliesToAdUnits));
+      // Other scopes may have changed with this save (kept intervals); refresh them from one
+      // consistent read. The baseline above stays: it is what this form was saved as.
+      try {
+        const latest = await loadAdvancedRules(publisherId);
+        setAdvancedRules(latest.advancedRules);
+        setRows(latest.unitRuleRows);
+      } catch {
+        // The save itself succeeded and this scope's baseline is set; other scopes refresh on the next load.
+      }
       await onChanged?.();
     } catch (requestError) {
+      if (requestError instanceof ApiError && requestError.status === 409) {
+        // Nothing was saved. Reload (form values and row version from one read) and show the
+        // scope as saved now, with only the fields changed in this form applied, so saving
+        // again cannot put back the other tab's values. The next save is checked against
+        // the reloaded version, never the one this form was opened with.
+        try {
+          const latest = await loadAdvancedRules(publisherId);
+          const current = baselineFor(submitted.ruleKey, latest.advancedRules, latest.unitRuleRows);
+          setAdvancedRules(latest.advancedRules);
+          setRows(latest.unitRuleRows);
+          if (current.rowId !== baseline.rowId || current.updatedAt !== baseline.updatedAt) {
+            setLoaded(current);
+            if (baseline.rowId && !current.rowId) {
+              // Deleted elsewhere: every entered value stays, and saving creates the rule again.
+              setError(`The rule for ${submitted.ruleKey} was deleted in another tab, so nothing was saved. Your entries are kept: select Save ${submitted.ruleKey} to create it again.`);
+              return;
+            }
+            const rebased = rebaseEdits(submitted, baseline.form, current.form, FORM_GATES);
+            setForm(rebased.form);
+            setRebaseNote(rebaseReview(rebased, current.form, (key) => FIELD_LABELS[key], fieldText));
+            setError(rebased.changed.length
+              ? `${submitted.ruleKey} was changed in another tab, so nothing was saved. The form now shows the saved settings with your changes applied. Review them and select Save ${submitted.ruleKey} again.`
+              : `${submitted.ruleKey} was changed in another tab, so nothing was saved. You had not changed anything here, so the form now shows the settings saved in the other tab.`);
+            return;
+          }
+        } catch {
+          // Keep the refusal below; the operator can still reload.
+        }
+      }
       setError(requestError instanceof Error ? requestError.message : 'Advanced schedule could not be saved.');
     } finally {
       setSaving(false);
@@ -321,6 +451,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
       <p className="config-section-note">Choose Default, a group or an individual ad unit below. Save your settings, then generate a new release to use them. Previously downloaded ZIPs keep their original settings.</p>
 
       {error ? <div className="form-error config-error">{error}</div> : null}
+      {rebaseNote ? <EditRebaseReview review={rebaseNote} /> : null}
       {savedMessage ? <div className="advanced-save-message">✓ {savedMessage}</div> : null}
       {loading ? <div className="config-loading">Loading rules…</div> : null}
 

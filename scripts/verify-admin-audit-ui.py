@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright,expect
 parser=argparse.ArgumentParser();parser.add_argument('--runtime',default='3.16.0');args=parser.parse_args()
 root=Path(__file__).resolve().parent.parent;out=root/'.generated/admin-audit-ui-evidence';out.mkdir(parents=True,exist_ok=True)
+USER_ID_CONFLICT='Other site settings were saved at the same time, so nothing was saved. Select Save again.'
 origin='https://admin-audit.fixture.invalid';endpoint='/api/publishers/main-site/builtin-site-settings';results=[]
 with sync_playwright() as pw:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
@@ -20,8 +21,11 @@ with sync_playwright() as pw:
     proc.stdin.write(json.dumps({'path':path,'method':method,'body':None if body is None else json.dumps(body)})+'\n');proc.stdin.flush();value=json.loads(proc.stdout.readline());assert 'error' not in value,value;return value
    def data(path):
     value=send(path);assert value['status']==200,value;return json.loads(base64.b64decode(value['body']))
+   refuse_user_id=[]
    def route(route):
     request=route.request;url=urlsplit(request.url);assert url.netloc=='admin-audit.fixture.invalid','Unexpected external request'
+    if refuse_user_id and request.method=='PUT' and url.path.endswith('/user-id-config'):
+     refuse_user_id.clear();requests.append({'path':url.path,'method':request.method,'status':409});route.fulfill(status=409,headers={'content-type':'application/json'},body=json.dumps({'ok':False,'error':USER_ID_CONFLICT}));return
     value=send(url.path,request.method,json.loads(request.post_data) if request.post_data else None);requests.append({'path':url.path,'method':request.method,'status':value['status']});route.fulfill(status=value['status'],headers=value['headers'],body=base64.b64decode(value['body']))
    page.route('**/*',route)
    def screen(name,target=None):
@@ -98,9 +102,77 @@ with sync_playwright() as pw:
     screen('deleted-rule-save-refused',error)
     dialog.get_by_role('button',name='Save rule',exact=True).click();expect(dialog).to_have_count(0)
     recreated=data('/__fixture/snapshot');assert [json.loads(r['rule_json'])['timeout'] for r in recreated['rules'] if r['rule_key']=='P1']==[1300];assert recreated['config']['unitRules']['P1']['timeout']==1300
+    # Point 3a: this tab loaded P1 before another tab saved it. Only the fields changed here are carried onto the saved rule;
+    # a field both tabs changed is listed with both values and keeps this tab's value for review.
+    def p1_rule():return next(r for r in data('/api/publishers/main-site/unit-rules')['unitRules'] if r['ruleKey']=='P1')
+    page.locator('article.unit-rule-card.exact').filter(has=page.get_by_role('heading',name='P1',exact=True)).get_by_role('button',name='Edit',exact=True).click()
+    dialog=page.get_by_role('dialog');timeout=dialog.locator('input[type="number"][min="100"]');minimum=dialog.get_by_label('Minimum time',exact=False);check=dialog.get_by_label('Check interval',exact=False)
+    timeout.fill('1400');minimum.fill('90')
+    p1=p1_rule();assert send('/api/publishers/main-site/unit-rules/'+p1['id'],'PATCH',{'rule':{**p1['rule'],'refresh':{**p1['rule']['refresh'],'minSeconds':75,'checkEveryMs':4000}},'expectedUpdatedAt':p1['updatedAt']})['status']==200;changed=data('/__fixture/snapshot')
+    dialog.get_by_role('button',name='Save rule',exact=True).click();error=dialog.locator('.form-error');review=dialog.locator('.edit-rebase-review')
+    expect(error).to_have_text('This rule was changed in another tab, so nothing was saved. The dialog now shows the saved rule with your changes applied. Review it and select Save rule again.')
+    expect(review).to_contain_text('Also changed in the other tab. The form keeps your value; check it before saving:');expect(review.locator('li')).to_have_count(1)
+    expect(review.locator('li')).to_have_text('Minimum time: yours 90 sec, saved in the other tab 75 sec');expect(review).to_contain_text('Your other changes are applied: Timeout.')
+    expect(timeout).to_have_value('1400');expect(minimum).to_have_value('90');expect(check).to_have_value('4000');assert data('/__fixture/snapshot')==changed,'Stale save changed stored settings';screen('stale-rule-save-rebased',review)
+    dialog.get_by_role('button',name='Save rule',exact=True).click();expect(dialog).to_have_count(0)
+    saved=json.loads(next(r['rule_json'] for r in data('/__fixture/snapshot')['rules'] if r['rule_key']=='P1'));assert saved['timeout']==1400 and saved['refresh']['minSeconds']==90 and saved['refresh']['checkEveryMs']==4000,saved
+    # The same in Refresh schedules: the form and its row version come from one read, and another tab saves P1 meanwhile.
+    def p1_row():return data('/api/publishers/main-site/unit-rules-advanced')['unitRuleRows']['P1']
+    def other_tab(refresh):row=p1_row();assert send('/api/publishers/main-site/unit-rules-advanced/P1','PUT',{'expectedUpdatedAt':row['updatedAt'],'expectedUnitRuleId':row['id'],'refresh':refresh})['status']==200;return data('/__fixture/snapshot')
+    nav('Refresh schedules');page.locator('.advanced-target-list button').filter(has_text='P1 · BTF').click();expect(page.get_by_role('heading',name='Timeouts for P1',exact=True)).to_be_visible()
+    auction=page.get_by_label('Prebid auction timeout',exact=False);every=page.get_by_label('Every refresh',exact=False);most=page.get_by_label('Maximum refreshes',exact=False);expect(every).to_have_value('90')
+    auction.fill('1500');every.fill('100')
+    changed=other_tab({'maxRefreshes':12,'schedule':{'mode':'fixed','fixedSeconds':110}})
+    page.get_by_role('button',name='Save P1',exact=True).click();error=page.locator('.advanced-refresh-page .form-error');review=page.locator('.advanced-refresh-page .edit-rebase-review')
+    expect(error).to_have_text('P1 was changed in another tab, so nothing was saved. The form now shows the saved settings with your changes applied. Review them and select Save P1 again.')
+    expect(review.locator('li')).to_have_count(1);expect(review.locator('li')).to_have_text('Every refresh: yours 100 sec, saved in the other tab 110 sec');expect(review).to_contain_text('Your other changes are applied: Prebid auction timeout.')
+    expect(auction).to_have_value('1500');expect(every).to_have_value('100');expect(most).to_have_value('12');assert data('/__fixture/snapshot')==changed,'Stale save changed stored settings';screen('stale-refresh-save-rebased',review)
+    page.get_by_role('button',name='Save P1',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved P1.');expect(error).to_have_count(0);expect(review).to_have_count(0)
+    saved=data('/__fixture/snapshot')['config']['advancedUnitRules']['P1'];assert saved['timeout']==1500 and saved['refresh']['schedule']['fixedSeconds']==100 and saved['refresh']['maxRefreshes']==12,saved
+    # After its own save the tab saves against the version that save returned: a later save from another tab is not overwritten.
+    changed=other_tab({'maxRefreshes':15});auction.fill('1600')
+    page.get_by_role('button',name='Save P1',exact=True).click();expect(error).to_contain_text('P1 was changed in another tab, so nothing was saved.')
+    expect(review.locator('li')).to_have_count(0);expect(review).to_have_text('Your changes are applied: Prebid auction timeout.');expect(most).to_have_value('15');expect(every).to_have_value('100');expect(auction).to_have_value('1600')
+    assert data('/__fixture/snapshot')==changed,'Save from the earlier baseline changed stored settings';screen('saved-refresh-baseline-rebased',review)
+    page.get_by_role('button',name='Save P1',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved P1.')
+    saved=data('/__fixture/snapshot')['config']['advancedUnitRules']['P1'];assert saved['timeout']==1600 and saved['refresh']['maxRefreshes']==15 and saved['refresh']['schedule']['fixedSeconds']==100,saved
+    # The other tab switched the strategy while this tab changed a value only the old strategy uses: the strategy is the conflict,
+    # this tab's strategy stays selected so the entered value takes effect, and a second Save stores it.
+    fixed=page.locator('.schedule-mode-grid label').filter(has_text='Same every time').locator('input');every.fill('120');changed=other_tab({'schedule':{'mode':'sequence','sequenceSeconds':[20,40]}})
+    page.get_by_role('button',name='Save P1',exact=True).click()
+    expect(error).to_have_text('P1 was changed in another tab, so nothing was saved. The form now shows the saved settings with your changes applied. Review them and select Save P1 again.')
+    expect(review.locator('li')).to_have_count(1);expect(review.locator('li')).to_have_text('Interval strategy: yours Same every time, saved in the other tab Explicit sequence');expect(review).to_contain_text('Your other changes are applied: Every refresh.')
+    expect(fixed).to_be_checked();expect(every).to_have_value('120');assert data('/__fixture/snapshot')==changed,'Stale save changed stored settings';screen('stale-refresh-strategy-conflict',review)
+    page.get_by_role('button',name='Save P1',exact=True).click();expect(page.locator('.advanced-save-message')).to_contain_text('Saved P1.')
+    saved=data('/__fixture/snapshot')['config']['advancedUnitRules']['P1']['refresh']['schedule'];assert saved['mode']=='fixed' and saved['fixedSeconds']==120 and saved['sequenceSeconds']==[20,40],saved
+    # Nothing was changed in this tab: the refusal says so and the form shows the other tab's settings.
+    changed=other_tab({'maxRefreshes':18});page.get_by_role('button',name='Save P1',exact=True).click()
+    expect(error).to_have_text('P1 was changed in another tab, so nothing was saved. You had not changed anything here, so the form now shows the settings saved in the other tab.')
+    expect(review).to_have_count(0);expect(most).to_have_value('18');expect(every).to_have_value('120');assert data('/__fixture/snapshot')==changed,'Stale save changed stored settings'
+    # Unit rules: the other tab removed the refresh override while this tab changed Minimum time. The override is the conflict; it stays
+    # on so the entered value keeps its effect, and the section keeps the values this dialog showed (not form defaults).
+    nav('Unit rules');p1=p1_rule();assert p1['rule'].get('refresh'),p1
+    page.locator('article.unit-rule-card.exact').filter(has=page.get_by_role('heading',name='P1',exact=True)).get_by_role('button',name='Edit',exact=True).click()
+    dialog=page.get_by_role('dialog');minimum=dialog.get_by_label('Minimum time',exact=False);check=dialog.get_by_label('Check interval',exact=False);checked=str(p1['rule']['refresh']['checkEveryMs'])
+    override=dialog.locator('section.rule-form-section').filter(has_text='Viewability refresh guard').get_by_label('Override inherited value',exact=True);expect(override).to_be_checked();expect(check).to_have_value(checked);minimum.fill('20')
+    assert send('/api/publishers/main-site/unit-rules/'+p1['id'],'PATCH',{'rule':{key:value for key,value in p1['rule'].items() if key!='refresh'},'expectedUpdatedAt':p1['updatedAt']})['status']==200;changed=data('/__fixture/snapshot')
+    assert 'refresh' not in json.loads(next(r['rule_json'] for r in changed['rules'] if r['rule_key']=='P1'))
+    dialog.get_by_role('button',name='Save rule',exact=True).click();error=dialog.locator('.form-error');review=dialog.locator('.edit-rebase-review')
+    expect(error).to_have_text('This rule was changed in another tab, so nothing was saved. The dialog now shows the saved rule with your changes applied. Review it and select Save rule again.')
+    expect(review.locator('li')).to_have_count(1);expect(review.locator('li')).to_have_text('Override inherited refresh: yours on, saved in the other tab off (inherited)');expect(review).to_contain_text('Your other changes are applied: Minimum time.')
+    expect(override).to_be_checked();expect(minimum).to_have_value('20');expect(check).to_have_value(checked);assert data('/__fixture/snapshot')==changed,'Stale save changed stored settings';screen('stale-rule-override-conflict',review)
+    dialog.get_by_role('button',name='Save rule',exact=True).click();expect(dialog).to_have_count(0)
+    saved=json.loads(next(r['rule_json'] for r in data('/__fixture/snapshot')['rules'] if r['rule_key']=='P1'));assert saved['refresh']['minSeconds']==20 and str(saved['refresh']['checkEveryMs'])==checked,saved
+    # D4: a User ID save the Worker refuses with 409 keeps every entry, and Save again stores it. The Worker's 409 needs a second
+    # save inside one D1 round trip (covered in admin-unit-rule-concurrency.test.mjs), so the browser gets that 409 body here.
+    nav('User ID modules');delay=page.get_by_label('Auction delay',exact=False);expect(delay).to_be_visible();delay.fill('275');refuse_user_id.append(True)
+    page.get_by_role('button',name='Save User ID config',exact=True).click();error=page.locator('.form-error.config-error')
+    expect(error).to_have_text(USER_ID_CONFLICT);expect(delay).to_have_value('275');screen('user-id-save-refused',error)
+    page.get_by_role('button',name='Save User ID config',exact=True).click();expect(page.get_by_text('User ID configuration saved.',exact=False)).to_be_visible();expect(error).to_have_count(0)
+    assert data('/__fixture/snapshot')['config']['userIdConfig']['auctionDelay']==275
     # A Unit rules interval kept under the Default sequence: Refresh schedules shows its Unit rules timeout, and saving it unchanged keeps both.
     assert recreated['config']['advancedUnitRules']['__DEFAULT__']['refresh']['schedule']['sequenceSeconds']==[20,40,80]
-    page.once('dialog',lambda dialog:dialog.accept());page.locator('article.unit-rule-card.exact').filter(has=page.get_by_role('heading',name='P1',exact=True)).get_by_role('button',name='Delete',exact=True).click()
+    nav('Unit rules');page.once('dialog',lambda dialog:dialog.accept());page.locator('article.unit-rule-card.exact').filter(has=page.get_by_role('heading',name='P1',exact=True)).get_by_role('button',name='Delete',exact=True).click()
     expect(page.locator('article.unit-rule-card.exact').filter(has=page.get_by_role('heading',name='P1',exact=True))).to_have_count(0);assert 'P1' not in data('/__fixture/snapshot')['config']['advancedUnitRules']
     page.get_by_role('button',name='＋ New rule',exact=True).click();dialog=page.get_by_role('dialog');dialog.get_by_label('Rule target',exact=False).select_option(label='P1 · BTF')
     auction=dialog.locator('section.rule-form-section').filter(has_text='Prebid timeout');auction.get_by_label('Override inherited value',exact=True).check();auction.locator('input[type="number"]').fill('1800')
@@ -133,6 +205,8 @@ with sync_playwright() as pw:
     assert not errors,errors
     assert any(r['status']==409 and 'unit-rules' in r['path'] for r in requests)
     assert any(r['status']==404 and r['method']=='PATCH' and 'unit-rules' in r['path'] for r in requests)
+    assert any(r['status']==409 and r['method']=='PATCH' and 'unit-rules/' in r['path'] for r in requests)
+    assert any(r['status']==409 and r['method']=='PUT' and 'unit-rules-advanced/P1' in r['path'] for r in requests)
     results.append({'runtime':args.runtime,'width':width,'passed':True,'gapSupported':ready['gapSupported'],'pageErrors':errors,'externalRequests':0,'requests':requests,'scope':'Actual MAIN components and authenticated Worker with local SQLite/fake R2'})
     print('PASS audit UI and saved settings',args.runtime,width)
    except Exception:
