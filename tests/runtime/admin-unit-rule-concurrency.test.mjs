@@ -11,6 +11,7 @@ import {listAdvancedRules,updateAdvancedRule} from '../../worker/advanced-rules.
 import {updateUserIdConfig} from '../../worker/user-id-config.ts';
 import {updateRuntimeIntegrations} from '../../worker/runtime-integrations.ts';
 import {rebaseEdits,rebaseReview} from '../../src/edit-rebase.ts';
+import {FIELD_LABELS,FORM_GATES,fieldText,formFromRule,ruleFromForm} from '../../src/unit-rule-form.ts';
 import {intervalText,mergeRefresh,ruleChain} from '../../worker/refresh-inheritance.ts';
 import {readPreviewSnapshot} from '../../worker/runtime/builtin-preview-service.mjs';
 import {previewInput,runtimeCatalog} from '../../worker/test-workspace/runtime-catalog.mjs';
@@ -670,6 +671,7 @@ test('rebaseEdits: changed fields are carried, untouched fields take the saved v
   form:{ruleKey:'P1',timeout:1200,minSeconds:90,checkEveryMs:4000,minViewPct:70,conditionalMappings:[{id:'m',priority:2}]},
   changed:['timeout','minSeconds','minViewPct'],
   conflicts:['minSeconds'],
+  applied:['timeout','minViewPct'],
  });
  const labels={timeout:'Timeout',minSeconds:'Minimum time',minViewPct:'Minimum in view',conditionalMappings:'Key-value mappings'};
  const text=(key,value)=>key==='conditionalMappings'?`${value.length} mapping`:`${value}${key==='minSeconds'?' sec':key==='timeout'?' ms':'%'}`;
@@ -678,7 +680,7 @@ test('rebaseEdits: changed fields are carried, untouched fields take the saved v
  const mappings=rebaseEdits({...loaded,conditionalMappings:[{id:'m',priority:3}]},loaded,saved);
  assert.deepEqual(mappings.conflicts,['conditionalMappings']);assert.deepEqual(mappings.form.conditionalMappings,[{id:'m',priority:3}]);
  assert.deepEqual(rebaseReview(mappings,saved,key=>labels[key],text).conflicts,[{field:'Key-value mappings',yours:'your version',saved:'a different version'}]);
- assert.deepEqual(rebaseEdits(loaded,loaded,saved),{form:saved,changed:[],conflicts:[]},'nothing changed here: the saved values as they are');
+ assert.deepEqual(rebaseEdits(loaded,loaded,saved),{form:saved,changed:[],conflicts:[],applied:[]},'nothing changed here: the saved values as they are');
  assert.deepEqual(rebaseEdits(edited,loaded,loaded).conflicts,[],'nothing changed elsewhere: no conflicts');
 });
 
@@ -693,17 +695,17 @@ test('rebaseEdits with gates: an override or strategy the other tab switched is 
  // The other tab removed the refresh override; the saved form shows placeholders (30 sec, 50%, 5000 ms) it never saved.
  const overrideOff={...loaded,overrideRefresh:false,refreshEnabled:true,minSeconds:30,minViewPct:50,requirePreviousViewable:false,checkEveryMs:5000};
  const result=rebaseEdits({...loaded,minSeconds:20},loaded,overrideOff,unitGates);
- assert.deepEqual(result,{form:{...loaded,minSeconds:20},changed:['overrideRefresh','minSeconds'],conflicts:['overrideRefresh']});
+ assert.deepEqual(result,{form:{...loaded,minSeconds:20},changed:['overrideRefresh','minSeconds'],conflicts:['overrideRefresh'],applied:['minSeconds']});
  const labels={overrideRefresh:'Override inherited refresh',refreshEnabled:'Refresh enabled',minSeconds:'Minimum time',timeout:'Timeout'};
  const text=(key,value)=>typeof value==='boolean'?(value?'on':key.startsWith('override')?'off (inherited)':'off'):`${value}`;
  const review=rebaseReview(result,overrideOff,key=>labels[key],text);
  assert.deepEqual(review,{conflicts:[{field:'Override inherited refresh',yours:'on',saved:'off (inherited)'}],applied:['Minimum time']});
  assert.doesNotMatch(JSON.stringify(review),/30/,'a form default is never shown as the other tab\'s value');
  // A field this tab left alone follows the other tab: the override stays off, no conflict.
- assert.deepEqual(rebaseEdits({...loaded,timeout:1200},loaded,overrideOff,unitGates),{form:{...overrideOff,timeout:1200},changed:['timeout'],conflicts:[]});
+ assert.deepEqual(rebaseEdits({...loaded,timeout:1200},loaded,overrideOff,unitGates),{form:{...overrideOff,timeout:1200},changed:['timeout'],conflicts:[],applied:['timeout']});
  // The other tab turned refresh off but kept the override: the stored values are real, so untouched ones follow it.
  const disabled={...loaded,refreshEnabled:false,minViewPct:80};
- assert.deepEqual(rebaseEdits({...loaded,minSeconds:20},loaded,disabled,unitGates),{form:{...disabled,refreshEnabled:true,minSeconds:20},changed:['refreshEnabled','minSeconds'],conflicts:['refreshEnabled']});
+ assert.deepEqual(rebaseEdits({...loaded,minSeconds:20},loaded,disabled,unitGates),{form:{...disabled,refreshEnabled:true,minSeconds:20},changed:['refreshEnabled','minSeconds'],conflicts:['refreshEnabled'],applied:['minSeconds']});
  // Both tabs changed the same value under a section the other tab kept: the value is the conflict.
  assert.deepEqual(rebaseEdits({...loaded,minSeconds:20},loaded,{...loaded,minSeconds:45},unitGates).conflicts,['minSeconds']);
 
@@ -717,20 +719,20 @@ test('rebaseEdits with gates: an override or strategy the other tab switched is 
  const switched={...schedule,mode:'fixed',fixedSeconds:40};
  const sequence=rebaseEdits({...schedule,sequenceText:'25, 50'},schedule,switched,refreshGates);
  // The other tab's 40 s applies only under its strategy, so the conflict names it too.
- assert.deepEqual(sequence,{form:{...switched,mode:'sequence',sequenceText:'25, 50'},changed:['mode','sequenceText'],conflicts:['mode'],switchedOff:{mode:['fixedSeconds']}});
+ assert.deepEqual(sequence,{form:{...switched,mode:'sequence',sequenceText:'25, 50'},changed:['mode','sequenceText'],conflicts:['mode'],applied:['sequenceText'],switchedOff:{mode:['fixedSeconds']}});
  const modeText=(key,value)=>({fixed:'Same every time',sequence:'Explicit sequence',percentage:'Percentage increase'})[value]??(typeof value==='boolean'?(value?'on':'off'):key==='fixedSeconds'?`${value} sec`:`${value}`);
  const refreshLabels={refreshEnabled:'Refresh enabled',mode:'Interval strategy',fixedSeconds:'Every refresh',sequenceText:'Intervals, in seconds',maxRefreshes:'Maximum refreshes',maxSeconds:'Maximum interval'};
  assert.deepEqual(rebaseReview(sequence,switched,key=>refreshLabels[key],modeText),
   {conflicts:[{field:'Interval strategy',yours:'Explicit sequence',saved:'Same every time (Every refresh: 40 sec)'}],applied:['Intervals, in seconds']});
  // A field both strategies use keeps working under the other tab's strategy: no strategy conflict.
  const first={...schedule,mode:'firstThenFixed'};
- assert.deepEqual(rebaseEdits({...first,firstSeconds:25},first,{...first,mode:'percentage'},refreshGates),{form:{...first,mode:'percentage',firstSeconds:25},changed:['firstSeconds'],conflicts:[]});
+ assert.deepEqual(rebaseEdits({...first,firstSeconds:25},first,{...first,mode:'percentage'},refreshGates),{form:{...first,mode:'percentage',firstSeconds:25},changed:['firstSeconds'],conflicts:[],applied:['firstSeconds']});
  // The other tab disabled refresh while this tab changed an interval: refresh enabled is the conflict.
  assert.deepEqual(rebaseEdits({...schedule,sequenceText:'25, 50'},schedule,{...schedule,refreshEnabled:false,maxRefreshes:9},refreshGates),
-  {form:{...schedule,maxRefreshes:9,sequenceText:'25, 50'},changed:['refreshEnabled','sequenceText'],conflicts:['refreshEnabled']});
+  {form:{...schedule,maxRefreshes:9,sequenceText:'25, 50'},changed:['refreshEnabled','sequenceText'],conflicts:['refreshEnabled'],applied:['sequenceText']});
  // This tab changed the strategy itself and the other tab chose a different one: one conflict, on the strategy.
  assert.deepEqual(rebaseEdits({...schedule,mode:'percentage',maxSeconds:90},schedule,switched,refreshGates),
-  {form:{...switched,mode:'percentage',maxSeconds:90},changed:['mode','maxSeconds'],conflicts:['mode'],switchedOff:{mode:['fixedSeconds']}});
+  {form:{...switched,mode:'percentage',maxSeconds:90},changed:['mode','maxSeconds'],conflicts:['mode'],applied:['maxSeconds'],switchedOff:{mode:['fixedSeconds']}});
 });
 
 test('rebaseEdits with gates: a switch made here that turns off values the other tab changed is a conflict naming them',()=>{
@@ -745,20 +747,20 @@ test('rebaseEdits with gates: a switch made here that turns off values the other
  // This tab removed the refresh override; the other tab saved Minimum time 45 sec and 60% under it.
  const other={...loaded,minSeconds:45,minViewPct:60};
  const off=rebaseEdits({...loaded,overrideRefresh:false},loaded,other,unitGates);
- assert.deepEqual(off,{form:{...other,overrideRefresh:false},changed:['overrideRefresh'],conflicts:['overrideRefresh'],switchedOff:{overrideRefresh:['minSeconds','minViewPct']}});
+ assert.deepEqual(off,{form:{...other,overrideRefresh:false},changed:['overrideRefresh'],conflicts:['overrideRefresh'],applied:[],switchedOff:{overrideRefresh:['minSeconds','minViewPct']}});
  assert.deepEqual(rebaseReview(off,other,key=>labels[key],text),
   {conflicts:[{field:'Override inherited refresh',yours:'off (inherited)',saved:'on (Minimum time: 45 sec; Minimum in view: 60%)'}],applied:[]});
  // Turning refresh off under a kept override: the inner switch is the conflict.
  const disabled=rebaseEdits({...loaded,refreshEnabled:false,timeout:1200},loaded,{...loaded,minSeconds:45},unitGates);
- assert.deepEqual(disabled,{form:{...loaded,refreshEnabled:false,timeout:1200,minSeconds:45},changed:['timeout','refreshEnabled'],conflicts:['refreshEnabled'],switchedOff:{refreshEnabled:['minSeconds']}});
+ assert.deepEqual(disabled,{form:{...loaded,refreshEnabled:false,timeout:1200,minSeconds:45},changed:['timeout','refreshEnabled'],conflicts:['refreshEnabled'],applied:['timeout'],switchedOff:{refreshEnabled:['minSeconds']}});
  assert.deepEqual(rebaseReview(disabled,{...loaded,minSeconds:45},key=>labels[key],text),
   {conflicts:[{field:'Refresh enabled',yours:'off',saved:'on (Minimum time: 45 sec)'}],applied:['Timeout']});
  // The other tab changed a value this tab's switch leaves in effect, or a form default it never saved: no conflict.
- assert.deepEqual(rebaseEdits({...loaded,overrideTimeout:false},loaded,other,unitGates),{form:{...other,overrideTimeout:false},changed:['overrideTimeout'],conflicts:[]});
+ assert.deepEqual(rebaseEdits({...loaded,overrideTimeout:false},loaded,other,unitGates),{form:{...other,overrideTimeout:false},changed:['overrideTimeout'],conflicts:[],applied:['overrideTimeout']});
  const inherited={...loaded,overrideRefresh:false,minSeconds:30,minViewPct:50};
  assert.deepEqual(rebaseEdits({...loaded,refreshEnabled:false},loaded,inherited,unitGates).switchedOff,undefined,'placeholders under the other tab\'s inherited section are not its values');
  // Both tabs switched the section off: nothing of the other tab's is lost.
- assert.deepEqual(rebaseEdits({...loaded,overrideRefresh:false},loaded,inherited,unitGates),{form:inherited,changed:['overrideRefresh'],conflicts:[]});
+ assert.deepEqual(rebaseEdits({...loaded,overrideRefresh:false},loaded,inherited,unitGates),{form:inherited,changed:['overrideRefresh'],conflicts:[],applied:['overrideRefresh']});
 
  // Refresh schedules: this tab switched the strategy or turned refresh off while the other tab changed the old strategy's intervals.
  const modeFields={fixed:['fixedSeconds'],firstThenFixed:['firstSeconds','nextSeconds'],percentage:['firstSeconds','growthPercent','maxSeconds'],sequence:['sequenceText']};
@@ -771,7 +773,7 @@ test('rebaseEdits with gates: a switch made here that turns off values the other
  const refreshLabels={refreshEnabled:'Refresh enabled',mode:'Interval strategy',fixedSeconds:'Every refresh',sequenceText:'Intervals, in seconds',maxRefreshes:'Maximum refreshes'};
  const refreshText=(key,value)=>({fixed:'Same every time',sequence:'Explicit sequence'})[value]??(typeof value==='boolean'?(value?'on':'off'):key==='fixedSeconds'?`${value} sec`:`${value}`);
  const toFixed=rebaseEdits({...schedule,mode:'fixed',fixedSeconds:45},schedule,longer,refreshGates);
- assert.deepEqual(toFixed,{form:{...longer,mode:'fixed',fixedSeconds:45},changed:['mode','fixedSeconds'],conflicts:['mode'],switchedOff:{mode:['sequenceText']}});
+ assert.deepEqual(toFixed,{form:{...longer,mode:'fixed',fixedSeconds:45},changed:['mode','fixedSeconds'],conflicts:['mode'],applied:['fixedSeconds'],switchedOff:{mode:['sequenceText']}});
  assert.deepEqual(rebaseReview(toFixed,longer,key=>refreshLabels[key],refreshText),
   {conflicts:[{field:'Interval strategy',yours:'Same every time',saved:'Explicit sequence (Intervals, in seconds: 25, 50)'}],applied:['Every refresh']});
  // Refresh turned off here: every value of the other tab's that refresh used is named once, under the outer switch.
@@ -779,6 +781,74 @@ test('rebaseEdits with gates: a switch made here that turns off values the other
  assert.deepEqual(stopped.conflicts,['refreshEnabled']);assert.deepEqual(stopped.switchedOff,{refreshEnabled:['sequenceText','maxRefreshes']});
  assert.deepEqual(rebaseReview(stopped,longer,key=>refreshLabels[key],refreshText).conflicts,
   [{field:'Refresh enabled',yours:'off',saved:'on (Intervals, in seconds: 25, 50; Maximum refreshes: 12)'}]);
+});
+
+// The Unit rules dialog after a 409, exactly as UnitRulesPanel runs it: the form it opened
+// with, the rule as saved now, and the note it shows.
+function dialogRebase(source,latest,form){
+ const saved=formFromRule(latest.ruleKey??'P1',latest.rule);
+ const rebased=rebaseEdits(form,formFromRule(source.ruleKey??'P1',source.rule),saved,FORM_GATES);
+ return {rebased,review:rebaseReview(rebased,saved,key=>FIELD_LABELS[key],fieldText),next:ruleFromForm(rebased.form)};
+}
+const opened=rule=>formFromRule('P1',rule);
+const placeholderRefresh={enabled:true,minSeconds:30,minViewPct:50,requirePreviousViewable:false,checkEveryMs:5000};
+
+test('Unit rules dialog after a 409: a section both tabs switched on is compared by what the other tab stored, even when it equals the form default',()=>{
+ // P1 inherits timeout and lazy load; both tabs turn the same override on.
+ const source={rule:{refresh:refresh(60)}};
+ // The other tab kept the prefilled 2500 ms; this tab entered 1800 ms.
+ const timeout=dialogRebase(source,{rule:{refresh:refresh(60),timeout:2500}},{...opened(source.rule),overrideTimeout:true,timeout:1800});
+ assert.deepEqual(timeout.review,{conflicts:[{field:'Timeout',yours:'1800 ms',saved:'2500 ms'}],applied:['Override inherited timeout']});
+ // The other tab turned lazy load off for P1 (prefilled 500/200 px); this tab turned it on at 300 px.
+ const lazyOff={enabled:false,fetchMarginPx:500,renderMarginPx:200};
+ const lazyCase=dialogRebase(source,{rule:{refresh:refresh(60),lazy:lazyOff}},{...opened(source.rule),overrideLazy:true,lazyEnabled:true,fetchMarginPx:300});
+ assert.deepEqual(lazyCase.review,{conflicts:[{field:'Lazy auction enabled',yours:'on',saved:'off'}],applied:['Override inherited lazy load','Start auction within']});
+ // P1 inherits refresh; the other tab pinned the prefilled 30 s, this tab entered 45 s. Fields
+ // this tab never typed take the other tab's stored values and are not listed as applied.
+ const inherits={rule:{timeout:1800}};
+ const pinned={rule:{timeout:1800,refresh:placeholderRefresh}};
+ const round1=dialogRebase(inherits,pinned,{...opened(inherits.rule),overrideRefresh:true,minSeconds:45});
+ assert.deepEqual(round1.review,{conflicts:[{field:'Minimum time',yours:'45 sec',saved:'30 sec'}],applied:['Override inherited refresh']});
+ // Refused again: a third tab changed Minimum in view. The dialog now compares against the rule
+ // it reloaded, so only Minimum time is this tab's, and the third tab's 70% stays.
+ const round2=dialogRebase(pinned,{rule:{timeout:1800,refresh:{...placeholderRefresh,minViewPct:70}}},round1.rebased.form);
+ assert.deepEqual(round2.review,{conflicts:[],applied:['Minimum time']});
+ assert.deepEqual(round2.next,{timeout:1800,refresh:{...placeholderRefresh,minSeconds:45,minViewPct:70}});
+});
+
+test('Unit rules dialog after a 409: a value typed before this tab switched its section off is never compared with a form default',()=>{
+ // (a) Typed 1800 ms, then removed the timeout override; the other tab removed it too and stored nothing.
+ const timed={rule:{timeout:1500,refresh:refresh(60)}};
+ const both=dialogRebase(timed,{rule:{refresh:refresh(60)}},{...opened(timed.rule),timeout:1800,overrideTimeout:false});
+ assert.deepEqual(both.review,{conflicts:[],applied:['Override inherited timeout']});
+ assert.doesNotMatch(JSON.stringify(both.review),/2500/,'a form default is never shown as the other tab\'s value');
+ assert.deepEqual(both.next,{refresh:refresh(60)});
+ // (b) Typed 20 s, then removed the refresh override; the other tab saved 45 s under it.
+ const fast={rule:{timeout:2500,refresh:refresh(15)}};
+ const other={rule:{timeout:2500,refresh:refresh(45)}};
+ const off=dialogRebase(fast,other,{...opened(fast.rule),minSeconds:20,overrideRefresh:false});
+ assert.deepEqual(off.review,{conflicts:[{field:'Override inherited refresh',yours:'off (inherited)',saved:'on (Minimum time: 45 sec)'}],applied:[]});
+ assert.deepEqual(off.rebased.switchedOff,{overrideRefresh:['minSeconds']});
+ // (c) The same with the inner switch: typed 20 s, then turned refresh off under the kept override.
+ const disabled=dialogRebase(fast,other,{...opened(fast.rule),minSeconds:20,refreshEnabled:false});
+ assert.deepEqual(disabled.review,{conflicts:[{field:'Refresh enabled',yours:'off',saved:'on (Minimum time: 45 sec)'}],applied:[]});
+});
+
+test('Unit rules dialog after a real 409: the other tab\'s lazy-off override is shown as a conflict before this tab can save over it',async()=>{
+ const f=setup();await ok(await createUnitRule(request({ruleKey:'P1',rule:{refresh:refresh(60)}},'POST'),f.env,SITE),201);
+ const tabA=await listed(f,'P1'),tabB=await listed(f,'P1');
+ const lazyOff={enabled:false,fetchMarginPx:500,renderMarginPx:200};
+ await ok(await updateUnitRule(request({rule:ruleFromForm({...opened(tabB.rule),overrideLazy:true}),expectedUpdatedAt:tabB.updatedAt}),f.env,SITE,tabB.id));
+ assert.deepEqual(JSON.parse(rows(f)[0].rule_json),{lazy:lazyOff,refresh:refresh(60)});
+ const form={...opened(tabA.rule),overrideLazy:true,lazyEnabled:true,fetchMarginPx:300};
+ await refused(await updateUnitRule(request({rule:ruleFromForm(form),expectedUpdatedAt:tabA.updatedAt}),f.env,SITE,tabA.id),409,/changed in another tab/);
+ const latest=await listed(f,'P1');
+ const {review,next}=dialogRebase(tabA,latest,form);
+ assert.deepEqual(review.conflicts,[{field:'Lazy auction enabled',yours:'on',saved:'off'}]);
+ assert.deepEqual(JSON.parse(rows(f)[0].rule_json).lazy,lazyOff,'nothing of this tab was saved');
+ // Saving after the review is this tab's choice, checked against the version it reloaded.
+ await ok(await updateUnitRule(request({rule:next,expectedUpdatedAt:latest.updatedAt}),f.env,SITE,latest.id));
+ assert.deepEqual(JSON.parse(rows(f)[0].rule_json).lazy,{enabled:true,fetchMarginPx:300,renderMarginPx:200});assertConsistent(f);
 });
 
 // Point 3b / D4: a whole-config writer that read config_json before another save must not

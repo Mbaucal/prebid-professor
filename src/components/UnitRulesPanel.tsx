@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../api';
-import { rebaseEdits, rebaseReview, type RebaseGate, type RebaseReview } from '../edit-rebase';
+import { rebaseEdits, rebaseReview, type RebaseReview } from '../edit-rebase';
+import { BASELINE_RULE, FIELD_LABELS, FORM_GATES, fieldText, formFromRule, ruleFromForm, type RuleForm } from '../unit-rule-form';
 import { runtimeLabel } from '../site-workspace/runtime-labels';
 import EditRebaseReview from './EditRebaseReview';
 import type {
@@ -45,44 +46,11 @@ async function loadLoadingSummary(publisherId: string): Promise<LoadingSummary> 
   return {...data.loadingSummary, refresh: data.refreshSummary};
 }
 
-type RuleForm = {
-  ruleKey: string;
-  overrideTimeout: boolean;
-  timeout: number;
-  overrideLazy: boolean;
-  lazyEnabled: boolean;
-  fetchMarginPx: number;
-  renderMarginPx: number;
-  overrideRefresh: boolean;
-  refreshEnabled: boolean;
-  minSeconds: number;
-  minViewPct: number;
-  requirePreviousViewable: boolean;
-  checkEveryMs: number;
-  conditionalMappings: UnitRuleConditionalMapping[];
-};
-
 const RESERVED_RULES = [
   { key: '__DEFAULT__', label: 'Default', description: 'Base behavior inherited by every ad unit.' },
   { key: '__ATF__', label: 'ATF', description: 'Overrides for all above-the-fold ad units.' },
   { key: '__BTF__', label: 'BTF', description: 'Overrides for all below-the-fold ad units.' },
 ] as const;
-
-const BASELINE_RULE: Required<Pick<UnitRuleConfig, 'timeout' | 'lazy' | 'refresh'>> = {
-  timeout: 2500,
-  lazy: {
-    enabled: false,
-    fetchMarginPx: 500,
-    renderMarginPx: 200,
-  },
-  refresh: {
-    enabled: true,
-    minSeconds: 30,
-    minViewPct: 50,
-    requirePreviousViewable: false,
-    checkEveryMs: 5000,
-  },
-};
 
 function uid(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -152,96 +120,6 @@ function presetForKey(ruleKey: string): UnitRuleConfig {
   }
 
   return { conditionalMappings: [] };
-}
-
-function formFromRule(ruleKey: string, rule: UnitRuleConfig): RuleForm {
-  return {
-    ruleKey,
-    overrideTimeout: rule.timeout !== undefined,
-    timeout: rule.timeout ?? BASELINE_RULE.timeout,
-    overrideLazy: rule.lazy !== undefined,
-    lazyEnabled: rule.lazy?.enabled ?? BASELINE_RULE.lazy.enabled,
-    fetchMarginPx: rule.lazy?.fetchMarginPx ?? BASELINE_RULE.lazy.fetchMarginPx,
-    renderMarginPx: rule.lazy?.renderMarginPx ?? BASELINE_RULE.lazy.renderMarginPx,
-    overrideRefresh: rule.refresh !== undefined,
-    refreshEnabled: rule.refresh?.enabled ?? BASELINE_RULE.refresh.enabled,
-    minSeconds: rule.refresh?.minSeconds ?? BASELINE_RULE.refresh.minSeconds,
-    minViewPct: rule.refresh?.minViewPct ?? BASELINE_RULE.refresh.minViewPct,
-    requirePreviousViewable:
-      rule.refresh?.requirePreviousViewable ?? BASELINE_RULE.refresh.requirePreviousViewable,
-    checkEveryMs: rule.refresh?.checkEveryMs ?? BASELINE_RULE.refresh.checkEveryMs,
-    conditionalMappings: (rule.conditionalMappings ?? []).map((mapping) => ({
-      ...mapping,
-      conditions: mapping.conditions.map((condition) => ({ ...condition })),
-    })),
-  };
-}
-
-// How a field is named and shown when a refused save lists what both tabs changed.
-const FIELD_LABELS: Record<keyof RuleForm, string> = {
-  ruleKey: 'Rule target',
-  overrideTimeout: 'Override inherited timeout',
-  timeout: 'Timeout',
-  overrideLazy: 'Override inherited lazy load',
-  lazyEnabled: 'Lazy auction enabled',
-  fetchMarginPx: 'Start auction within',
-  renderMarginPx: 'Allow render within',
-  overrideRefresh: 'Override inherited refresh',
-  refreshEnabled: 'Refresh enabled',
-  minSeconds: 'Minimum time',
-  minViewPct: 'Minimum in view',
-  requirePreviousViewable: 'Require previous ad to be viewable',
-  checkEveryMs: 'Check interval',
-  conditionalMappings: 'Key-value mappings',
-};
-const FIELD_UNITS: Partial<Record<keyof RuleForm, string>> = {
-  timeout: ' ms', fetchMarginPx: ' px', renderMarginPx: ' px', minSeconds: ' sec', minViewPct: '%', checkEveryMs: ' ms',
-};
-
-// A section's values take effect only while its override is on (nothing is stored while it
-// is off), and the inputs below an Enabled switch only while that switch is on.
-const FORM_GATES: Array<RebaseGate<RuleForm>> = [
-  { gate: 'overrideTimeout', fields: ['timeout'], storedOnlyWhenUsed: true },
-  { gate: 'overrideLazy', fields: ['lazyEnabled', 'fetchMarginPx', 'renderMarginPx'], storedOnlyWhenUsed: true },
-  { gate: 'overrideRefresh', fields: ['refreshEnabled', 'minSeconds', 'minViewPct', 'requirePreviousViewable', 'checkEveryMs'], storedOnlyWhenUsed: true },
-  { gate: 'lazyEnabled', fields: ['fetchMarginPx', 'renderMarginPx'] },
-  { gate: 'refreshEnabled', fields: ['minSeconds', 'minViewPct', 'requirePreviousViewable', 'checkEveryMs'] },
-];
-const OVERRIDE_FIELDS: Array<keyof RuleForm> = ['overrideTimeout', 'overrideLazy', 'overrideRefresh'];
-
-function fieldText(key: keyof RuleForm, value: RuleForm[keyof RuleForm]): string {
-  if (typeof value === 'boolean') return value ? 'on' : OVERRIDE_FIELDS.includes(key) ? 'off (inherited)' : 'off';
-  if (Array.isArray(value)) {
-    return value.length
-      ? `${value.length} mapping${value.length === 1 ? '' : 's'} (${value.map((mapping) => mapping.name).join(', ')})`
-      : 'no mappings';
-  }
-  return `${value}${FIELD_UNITS[key] ?? ''}`;
-}
-
-function ruleFromForm(form: RuleForm): UnitRuleConfig {
-  const rule: UnitRuleConfig = {};
-  if (form.overrideTimeout) rule.timeout = Number(form.timeout);
-  if (form.overrideLazy) {
-    rule.lazy = {
-      enabled: form.lazyEnabled,
-      fetchMarginPx: Number(form.fetchMarginPx),
-      renderMarginPx: Number(form.renderMarginPx),
-    };
-  }
-  if (form.overrideRefresh) {
-    rule.refresh = {
-      enabled: form.refreshEnabled,
-      minSeconds: Number(form.minSeconds),
-      minViewPct: Number(form.minViewPct),
-      requirePreviousViewable: form.requirePreviousViewable,
-      checkEveryMs: Number(form.checkEveryMs),
-    };
-  }
-  if (form.conditionalMappings.length) {
-    rule.conditionalMappings = form.conditionalMappings;
-  }
-  return rule;
 }
 
 function mergeEffectiveRule(...rules: Array<UnitRuleConfig | undefined>): UnitRuleConfig {
