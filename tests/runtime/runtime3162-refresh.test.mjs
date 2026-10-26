@@ -22,10 +22,11 @@ function fn(source,name){
 const COMPILERS={'3.16.1':compileRuntime3161,'3.16.2':compileRuntime3162};
 const builds=new Map();
 /** The fixture site with these Unit rules rows, compiled by 3.16.1 or 3.16.2 from the same input. */
-function compiled(version,config={}){
-  const key=version+' '+JSON.stringify(config);
+function compiled(version,config={},stickyType='ATF'){
+  const key=version+' '+JSON.stringify(config)+' '+stickyType;
   if(!builds.has(key)){
     const snapshot=fixture();snapshot.rules=Object.entries(config).map(([rule_key,rule])=>({rule_key,rule_json:JSON.stringify(rule)}));
+    snapshot.units=snapshot.units.map(unit=>unit.code==='Sticky'?{...unit,type:stickyType}:unit);
     const input=previewInput(snapshot,descriptor,stamp);
     builds.set(key,{snapshot,input,source:COMPILERS[version](input).adsJs});
   }
@@ -221,7 +222,11 @@ test('R3-01: the 3.16.2 admin percentage is the threshold the compiled script ap
   for(const [name,[config,billboard,p1]] of Object.entries(LABELS)){
     const build=compiled('3.16.2',config),generated=rules(build);
     for(const pin of pins){
-      const rows=refreshSummary(build.input,build.snapshot.units,pin,build.snapshot.rules).units.filter(row=>row.code!=='Sticky');
+      const all=refreshSummary(build.input,build.snapshot.units,pin,build.snapshot.rules).units,sticky=all.find(row=>row.code==='Sticky');
+      // A filled Sticky meets the same resolved percentage on its own timer.
+      assert.match(sticky.label,/^Sticky timer · \d+%$/,name);assert.equal(shown(sticky.label),generated.getAdUnitRefreshRule('Sticky').minViewPct,`${name} Sticky`);
+      assert.match(sticky.detail,new RegExp(`^Uses the selected script’s separate Sticky refresh timer\\. A filled Sticky refreshes only while at least ${shown(sticky.label)}% of it is in view\\.`),name);
+      const rows=all.filter(row=>row.code!=='Sticky');
       assert.deepEqual(rows.map(row=>row.code),['Billboard','P1'],name);
       for(const row of rows)assert.equal(shown(row.label),generated.getAdUnitRefreshRule(row.code).minViewPct,`${name} ${row.code} (${row.label})`);
       assert.deepEqual(rows.map(row=>shown(row.label)),[billboard,p1],name);
@@ -240,6 +245,13 @@ test('R3-01: the 3.16.2 admin percentage is the threshold the compiled script ap
   // (compiled P1 refreshes every 45 s) is the separately recorded interval-text task.
   assert.equal(shown(row(compiled('3.16.2',atfOnly),pins[0],'P1').label),60);
   assert.equal(row(compiled('3.16.1',{}),pin3161,'P1').label,'30s · 50%');
+  assert.equal(row(old,pin3161,'Sticky').label,'Sticky timer');
+  // A BTF Sticky on an ATF-only site: 3.16.2 refuses a filled Sticky below the inherited 60% (3.16.1 checked nothing), and the admin says so.
+  const btfSticky=compiled('3.16.2',atfOnly,'BTF'),btfRow=row(btfSticky,pins[0],'Sticky');
+  assert.equal(rules(btfSticky,{pct:55}).canRefreshSlotNow('Sticky').ok,false);assert.equal(rules(compiled('3.16.1',atfOnly,'BTF'),{pct:55}).canRefreshSlotNow('Sticky').ok,true);
+  assert.equal(btfRow.label,'Sticky timer · 60%');
+  assert.equal(btfRow.detail,'Uses the selected script’s separate Sticky refresh timer. A filled Sticky refreshes only while at least 60% of it is in view. No in-view percentage is saved for this position in Default, group or ad unit settings, so the script checks the 60% saved in the ATF refresh rule at refresh time.');
+  assert.equal(row(compiled('3.16.1',atfOnly,'BTF'),pin3161,'Sticky').label,'Sticky timer');
   // An interval note from Unit rules keeps the percentage note in 3.16.2 only.
   const snapshot=fixture(),config=JSON.parse(snapshot.config.config_json);
   snapshot.rules=[{rule_key:'__DEFAULT__',rule_json:JSON.stringify({refresh:{enabled:true,minSeconds:30}})},{rule_key:'P1',rule_json:JSON.stringify({refresh:{enabled:true,minSeconds:60}})}];

@@ -27,16 +27,20 @@ export function refreshSummary(input, units, runtime, basicRules = []) {
     if (input.overlay?.code === unit.code) return result('Disabled', 'TakeOver uses its own display frequency.', false);
     if (input.outstream?.disabledRefreshCodes?.includes(unit.code)) return result('Disabled', 'Automatic refresh is disabled for this video-enabled position.', false);
     if (!refresh.enabled) return result('Disabled', 'Disabled by the resolved refresh rule.', false);
-    if (input.options.sticky.bottomAdUnitId === unit.code) return result('Sticky timer', 'Uses the selected script’s separate Sticky refresh timer.', true);
+    // Same whole-rule merge as the generated getAdUnitRuntimeRule, without the editor baseline.
+    const own = mergeRefresh(...scopes).refresh?.minViewPct;
+    const viewPct = inheritedViewPct == null ? refresh.minViewPct : own == null ? inheritedViewPct : Number(own);
+    if (inheritedViewPct != null && own == null) notes[unit.code] = ` No in-view percentage is saved for this position in Default, group or ad unit settings, so the script checks ${inheritedNote} at refresh time.`;
+    if (input.options.sticky.bottomAdUnitId === unit.code) {
+      // 3.16.2 also applies the percentage to a filled Sticky (an empty one keeps retrying).
+      if (inheritedViewPct == null) return result('Sticky timer', 'Uses the selected script’s separate Sticky refresh timer.', true);
+      return result(`Sticky timer · ${viewPct}%`, `Uses the selected script’s separate Sticky refresh timer. A filled Sticky refreshes only while at least ${viewPct}% of it is in view.${notes[unit.code] ?? ''}`, true);
+    }
     if (input.core.globalRefresh.enabled === false) {
       blocked.push(unit.code);
       return result('Disabled', 'The selected script’s global refresh switch is off; this position’s enabled refresh rule is not applied.', false);
     }
     const schedule = refresh.schedule;
-    // Same whole-rule merge as the generated getAdUnitRuntimeRule, without the editor baseline.
-    const own = mergeRefresh(...scopes).refresh?.minViewPct;
-    const viewPct = inheritedViewPct == null ? refresh.minViewPct : own == null ? inheritedViewPct : Number(own);
-    if (inheritedViewPct != null && own == null) notes[unit.code] = ` No in-view percentage is saved for this position in Default, group or ad unit settings, so the script checks ${inheritedNote} at refresh time.`;
     // 3.16.2 applies the percentage to every content schedule, so it is shown for all of them.
     const shown = inheritedViewPct == null ? '' : ` · ${viewPct}%`;
     const label = schedule?.mode === 'sequence' ? `Sequence schedule${shown}` : schedule?.mode === 'percentage' ? `Growing interval${shown}` : `${intervalText(refresh)} · ${viewPct}%`;
