@@ -75,7 +75,7 @@ export async function siteRuntimeSettings(env,siteId){
  return {site:saved.site,revision:await digest(saved),selected:pin??null,validationIssue,enablePrebid:config.enablePrebid===true,...siteSetupState(saved),
   loadingSummary:loadingSummary(preview,saved.units,pin,validationIssue),
   demandSignals:preview?.demandSignals??null,
-  refreshSummary:refreshSummary(preview,saved.units,pin),
+  refreshSummary:refreshSummary(preview,saved.units,pin,saved.rules),
   currentRuntime:current?{version:current.version,channel:current.channel,pin:pinRuntime(current)}:null,
   runtimes:runtimeCatalog.map(r=>({version:r.version,channel:r.channel,pin:pinRuntime(r,{allowPreview:true})})),history:describeRuntimeReleases(runtimeCatalog,pin),
   positions:saved.units.filter(u=>u.media_type==='banner'&&u.type!=='DRAFT').map(u=>({code:u.code,type:u.type,sizeMap:u.size_map_key,enabled:u.enabled===1,

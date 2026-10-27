@@ -33,13 +33,13 @@ try{
   assert.equal(logged.status,303);cookie=logged.headers.get('set-cookie').split(';')[0];
   await json('/test-api/setup',{confirm:'prepare-empty-test-database'});
   const state=await json('/test-api/runtime-selection');
-  check('Compiled settings GET preserves existing runtimes and default, adds opt-in readiness and revenue versions and has no implicit saved selection',state.selected===null&&JSON.stringify(state.runtimes.map(r=>r.version))===JSON.stringify(['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.11.0-tessera.preview.1','3.13.0','3.15.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3','3.16.0','3.16.1']));
+  check('Compiled settings GET preserves existing runtimes and default, adds opt-in readiness and revenue versions and has no implicit saved selection',state.selected===null&&JSON.stringify(state.runtimes.map(r=>r.version))===JSON.stringify(['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.11.0-tessera.preview.1','3.13.0','3.15.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3','3.16.0','3.16.1','3.16.2']));
   const stable=state.runtimes.find(runtime=>runtime.version==='3.16.0');
   check('Compiled catalog exposes the genuine stable engine without replacing historical defaults',stable?.channel==='stable'&&stable.pin.runtimeId==='tessera-3.16.0'&&stable.pin.runtimeSha256==='624afa6dff60db3f6da1f71ada6d89c55c513d1c72ddbe210b3b2246832c69b9');
   const patch=state.runtimes.find(runtime=>runtime.version==='3.16.1');
   check('Compiled catalog adds the reviewed correction as an explicit stable choice',patch?.channel==='stable'&&patch.pin.runtimeId==='tessera-3.16.1'&&patch.pin.runtimeSha256==='2a7feef5b88968d756bb60421c714ba9e47f782aec90c42b402029c65eb7c25b');
   const offered=await json('/test-api/site-runtime');
-  check('Current recommendation is stable and does not implicitly save a selection',offered.selected===null&&offered.currentRuntime?.version==='3.16.1'&&JSON.stringify(offered.currentRuntime.pin)===JSON.stringify(patch.pin));
+  check('Current recommendation is stable and does not implicitly save a selection',offered.selected===null&&offered.currentRuntime?.version==='3.16.2'&&offered.currentRuntime.channel==='stable'&&JSON.stringify(offered.currentRuntime.pin)===JSON.stringify(state.runtimes.find(r=>r.version==='3.16.2').pin));
   const input=selection(state);input.selection.allowPreview=false;
   await json('/test-api/runtime-selection',input,422);
   check('Compiled settings writer requires Preview opt-in',true);
@@ -69,6 +69,12 @@ try{
   check('Exact persisted runtime selection survives workerd restart',JSON.stringify(restarted.selected)===JSON.stringify(fresh.selected));
   const second=await call(path);assert.equal(second.status,200);
   check('Stored package remains byte-identical after selection and restart',sha(new Uint8Array(await second.arrayBuffer()))===hash);
+  const correction=restarted.runtimes.find(r=>r.version==='3.16.2');
+  await json('/test-api/runtime-selection',{expectedRevision:restarted.revision,selection:{runtime:correction.pin,allowPreview:false,enablePrebid:false,prebidBuildId:null}});
+  const corrected=await json('/test-api/generate',{acknowledge:true,takeOverEnabled:false});
+  check('Compiled TEST Generate uses the exact reviewed 3.16.2 pin and correction',corrected.descriptor.runtime.runtimeSha256==='ee9c0d5bc0a6ca3c4335a41cde4af8f3a7f749875a4965e4c45f70ba6d6a6910'&&corrected.descriptor.runtime.runtimeVersion==='3.16.2'&&corrected.adsJs.includes('tesseraDeferStickyEmptyRetry'));
+  const historical=await call(path);assert.equal(historical.status,200);
+  check('Generating 3.16.2 leaves the earlier saved package byte-identical',sha(new Uint8Array(await historical.arrayBuffer()))===hash);
   check('No outbound fetch was attempted',outbound===0);
   const report={scope:'LOCAL compiled workerd + Miniflare D1/R2; NOT hosted Cloudflare',compiledSha256:sha(script),checks,passed:checks.length,failed:0,outbound,hostedTest:false};
   await mkdir('.generated/test-workspace-evidence',{recursive:true});

@@ -31,7 +31,7 @@ jobs:
       - name: Verify login redirects and publisher HTML isolation
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/auth-redirect.test.mjs tests/runtime/login-rate-limit.test.mjs tests/runtime/test-login-security.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/release-html-security.test.mjs
       - name: Preserve audited rule edits, user sync defaults and exact Prebid files
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/admin-rules-and-sync-audit.test.mjs tests/runtime/prebid-digit-modules-flow.test.mjs tests/runtime/compiler-input-compatibility.test.mjs tests/runtime/refresh-summary.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/admin-rules-and-sync-audit.test.mjs tests/runtime/admin-unit-rule-concurrency.test.mjs tests/runtime/prebid-digit-modules-flow.test.mjs tests/runtime/compiler-input-compatibility.test.mjs tests/runtime/refresh-summary.test.mjs
       - name: Verify security boundaries in the compiled production Worker
         run: node scripts/verify-artifact-boundary.mjs && node scripts/verify-auth-boundaries.mjs
       - run: node scripts/verify-site-duplication-workerd.mjs

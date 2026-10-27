@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/readiness-setup-evidence';out.mkdir(parents=True,exist_ok=True)
 origin='https://main-revenue.fixture.invalid';endpoint='/api/publishers/main-site/builtin-site-settings'
-current='3.16.1';checks=[]
+current='3.16.2';checks=[]
 with sync_playwright() as playwright:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
  executable=os.environ.get('CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROMIUM_PATH')
@@ -39,12 +39,12 @@ with sync_playwright() as playwright:
        faults['invalidCurrent']=False;payload=json.loads(base64.b64decode(value['body']));payload.pop('currentRuntime')
        value['body']=base64.b64encode(json.dumps(payload).encode()).decode()
       if url.path==endpoint and request.method=='GET' and faults['futureStable']:
-       payload=json.loads(base64.b64decode(value['body']));fixed=json.loads(json.dumps(payload['currentRuntime']));fixed.update(version='3.16.2',channel='stable');fixed['pin'].update(runtimeVersion='3.16.2',runtimeSha256='f'*64);payload['runtimes'].append(fixed)
+       payload=json.loads(base64.b64decode(value['body']));fixed=json.loads(json.dumps(payload['currentRuntime']));fixed.update(version='3.16.3',channel='stable');fixed['pin'].update(runtimeVersion='3.16.3',runtimeSha256='f'*64);payload['runtimes'].append(fixed)
        value['body']=base64.b64encode(json.dumps(payload).encode()).decode()
      body=json.loads(request.post_data) if request.post_data else None
      if url.path==endpoint and request.method=='POST':
       version=body['runtime']['runtimeVersion']
-      expected=False if version=='3.16.2' else next(item['channel']!='stable' for item in data()['runtimes'] if item['pin']['runtimeVersion']==version)
+      expected=False if version=='3.16.3' else next(item['channel']!='stable' for item in data()['runtimes'] if item['pin']['runtimeVersion']==version)
       assert body['allowPreview'] is expected,'Wrong explicit preview opt-in contract'
      requests.append({'path':url.path,'method':request.method,'status':value['status'],'body':body})
      route.fulfill(status=value['status'],headers=value['headers'],body=base64.b64decode(value['body']))
@@ -70,7 +70,7 @@ with sync_playwright() as playwright:
      expect(panel.locator('select')).to_have_count(1);expect(selector).to_be_visible()
      labels=selector.locator('option').all_text_contents()
      fresh=[label.split(' · ')[0] for label in labels if 'Saved earlier build' not in label]
-     assert fresh==['3.16.1','3.16.0','3.15.0','3.14.0','3.13.0'],labels
+     assert fresh==['3.16.2','3.16.1','3.16.0','3.15.0','3.14.0','3.13.0'],labels
      expect(panel).not_to_contain_text('revenue.preview');expect(panel).not_to_contain_text('tessera-revenue-preview')
     def choose(version):
      expect(selector).to_be_visible()
@@ -102,7 +102,7 @@ with sync_playwright() as playwright:
       faults['invalidCurrent']=True;page.reload();expect(panel.get_by_role('alert')).to_contain_text('The current script version is unavailable');expect(save).to_be_disabled();expect(selector).to_be_disabled();screen('invalid-current')
       reload.click();expect(panel.get_by_role('alert')).to_have_count(0);expect(summary).to_contain_text(current)
       # A synthetic metadata-only next stable release proves the UI sends allowPreview:false without a version literal.
-      saved_pin=data()['selected'];faults['futureStable']=True;page.reload();choose('3.16.2');expect(summary).to_contain_text('3.16.2');faults['failPost']=True
+      saved_pin=data()['selected'];faults['futureStable']=True;page.reload();choose('3.16.3');expect(summary).to_contain_text('3.16.3');faults['failPost']=True
       save.click();expect(panel.get_by_role('alert')).to_contain_text('Synthetic save unavailable');assert requests[-1]['body']['allowPreview'] is False;assert data()['selected']==saved_pin
       screen('future-stable-metadata');faults['futureStable']=False;reload.click();expect(summary).to_contain_text(current)
      elif scenario in ['legacy','preview']:
