@@ -13,6 +13,7 @@ type PackageState = {
  site:{id:string;name:string};runtime:{runtimeVersion:string}|null;enablePrebid:boolean;
  revision:string;channelRevision:string;ready:boolean;error:string|null;nextStep:string|null;
  testOnly:boolean;releases:Release[];earlierReleases:Release[];
+ warnings?:string[];
 };
 type Props={publisherId:string;endpoint?:string;settingsEndpoint?:string;onChanged?:()=>void|Promise<void>;onNavigate?:(destination:'prebid'|'versions'|'demand')=>void};
 export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint,onChanged,onNavigate}:Props){
@@ -48,6 +49,7 @@ export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint
  </>}
  {editingSetup && state.ready ? <button disabled={busy} onClick={()=>setEditingSetup(false)}>Cancel setup changes</button> : null}
  <h3>2. Generate your script</h3>
+ {state.warnings?.map(warning=><p role="status" className="script-prebid-note" key={warning}>{warning}</p>)}
  <p>Create a ZIP from your saved ad units and size maps, then download it below.</p>
  <label>What changed?<input maxLength={160} value={notes} disabled={busy} onChange={e=>setNotes(e.target.value)} placeholder="Short release note"/></label>
  <div className="runtime-actions"><button disabled={busy||!state.ready||editingSetup} onClick={()=>void run(generate)}>{busy?'Working…':'Generate and save package'}</button><button disabled={busy} onClick={()=>void run(reload)}>Reload releases</button></div>

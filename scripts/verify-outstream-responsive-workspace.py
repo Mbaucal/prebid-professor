@@ -12,7 +12,7 @@ with sync_playwright() as p:
  browser=p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH'),headless=True,args=['--no-sandbox'])
  try:
   for width in [1440,390]:
-   process=subprocess.Popen(['node','--experimental-strip-types','scripts/site-workspace-browser-fixture.mjs','--revenue'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+   process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/site-workspace-browser-fixture.mjs','--revenue'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
    assert json.loads(process.stdout.readline())['ready']
    page=browser.new_page(viewport={'width':width,'height':900});errors=[];requests=[]
    page.on('pageerror',lambda e:errors.append(str(e)))

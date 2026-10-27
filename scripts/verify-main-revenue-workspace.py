@@ -55,7 +55,7 @@ with sync_playwright() as p:
     page.get_by_role('button',name='Generate and releases',exact=True).click()
     page.get_by_label('What changed?',exact=True).fill('Synthetic MAIN revenue regression')
     page.get_by_role('button',name='Generate and save package',exact=True).click()
-    expect(page.get_by_role('status')).to_contain_text('Package saved in Releases.',timeout=90000)
+    expect(page.get_by_role('status').filter(has_text='Package saved in Releases.')).to_be_visible(timeout=90000)
     state=data(base+'/builtin-releases');release_id=state['releases'][0]['id'];assert release_id.startswith('builtin-release-')
     index=data(base+'/builtin-releases/'+release_id+'/index');assert len(index['descriptor']['files'])==12
     original={}
@@ -78,7 +78,7 @@ with sync_playwright() as p:
      assert len(archive.namelist())==12 and set(archive.namelist())==set(original)
      for name,raw in original.items():assert archive.read(name)==raw,name
     assert len([r for r in requests if r['method']!='GET'])==writes_before,'Download wrote settings or regenerated a package'
-    expect(page.get_by_role('status')).to_have_text('Saved ZIP downloaded.');screen('main-saved-zip')
+    expect(page.get_by_role('status').filter(has_text='Saved ZIP downloaded.')).to_be_visible();screen('main-saved-zip')
     page.get_by_role('button',name='Configuration',exact=True).click()
     page.get_by_role('navigation',name='Inventory settings',exact=True).get_by_role('button',name='Size maps',exact=True).click()
     edit_desktop('640x360 | 970x250')
@@ -103,7 +103,7 @@ with sync_playwright() as p:
     assert data(base+'/outstream-settings')['outstream']['units']['Billboard']['playerSizes']=={}
     page.get_by_role('button',name='Generate and releases',exact=True).click()
     page.get_by_role('button',name='Generate and save package',exact=True).click()
-    expect(page.get_by_role('status')).to_contain_text('Package saved in Releases.',timeout=90000);screen('main-generated-after-repair')
+    expect(page.get_by_role('status').filter(has_text='Package saved in Releases.')).to_be_visible(timeout=90000);screen('main-generated-after-repair')
     assert data(base+'/builtin-releases/'+release_id+'/index')==index
     for name,raw in original.items():assert base64.b64decode(send(base+'/builtin-releases/'+release_id+'/files/'+name)['body'])==raw
     assert any(r['method']=='PATCH' and r['path']==base+'/size-maps/map' for r in requests),'Missing native MAIN map mutation'

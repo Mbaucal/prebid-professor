@@ -10,7 +10,7 @@ const SITE = /^[a-z0-9][a-z0-9-]{0,97}$/;
 const ID = /^builtin-draft-[a-f0-9]{64}$/;
 const REQUIRED = ['README.txt','ads.js','ads.min.js','config.json','div-export.csv',
   'implementation.html','manifest.json','min-height.css','sticky.css'];
-const hasDealsPlan = runtime => [['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version) && runtime?.capabilities?.includes('prebid-deals');
+const hasDealsPlan = runtime => [['tessera-3.16.2','3.16.2'],['tessera-3.16.1','3.16.1'],['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version) && runtime?.capabilities?.includes('prebid-deals');
 const MAX_FILE = 8 * 1024 * 1024;
 const MAX_PACKAGE = 12 * 1024 * 1024;
 const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);

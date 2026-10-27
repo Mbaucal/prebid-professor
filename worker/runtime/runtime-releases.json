@@ -1,5 +1,73 @@
 [
   {
+    "id": "tessera-3.16.2",
+    "version": "3.16.2",
+    "codeSha256": "ee9c0d5bc0a6ca3c4335a41cde4af8f3a7f749875a4965e4c45f70ba6d6a6910",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot"
+    ],
+    "date": "2026-10-26",
+    "title": "Tessera 3.16.2 — empty Sticky retry, inherited refresh visibility threshold and schedule steps",
+    "sourceManifest": "scripts/prepare-runtime3162.mjs",
+    "sourceCommit": "dbf391e365a8641b6f6e1a011233c51b13adc2c3",
+    "changes": [
+      "An empty Sticky retry refused by the refresh interval or the minimum wall-clock gap is rescheduled for the exact remaining time instead of stopping Sticky for the rest of the page view. If the device clock moved back and the retry is still refused, it is rescheduled again, at most three times per retry and only while no other Sticky request was made.",
+      "The configured retry count, maximum refreshes, Sticky close, page visibility and CMP decision still apply; no request is sent earlier than the saved gap after the previous actual request.",
+      "A retry that becomes due on a hidden page, or just as the page is paused, waits for the page to become active again. A gap value computed for one refresh attempt is not reused by a later timer.",
+      "A position, including a filled Sticky, whose Default, group and position refresh settings save no minimum in-view percentage uses the inherited threshold at refresh time: 50% unless the Default refresh, or the ATF refresh when there is no Default refresh, saves another value. Saved percentages, including 0, are unchanged, and the view entry and exit thresholds are the same as in 3.16.1.",
+      "While a queued content refresh is still waiting to be sent, the content timer already uses the next schedule step, so a later shorter step returns to the 3.16.0 request times when the queued request is sent within that step. With very short steps and slower sends it waits as 3.16.1 did. No request is made before the interval the actual refresh count allows, and refresh counts still advance only for actual requests.",
+      "This is the current version for new scripts; a new setup still saves it explicitly. Sites keep their saved exact version, and 3.16.1 stays a stable choice.",
+      "Everything else is identical to 3.16.1. 3.16.1 sources, saved configurations and package bytes remain unchanged."
+    ]
+  },
+  {
+    "id": "tessera-3.16.1",
+    "version": "3.16.1",
+    "codeSha256": "2a7feef5b88968d756bb60421c714ba9e47f782aec90c42b402029c65eb7c25b",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot"
+    ],
+    "date": "2026-10-24",
+    "title": "Tessera 3.16.1 — verified refresh and delivery corrections",
+    "sourceManifest": "scripts/prepare-runtime3161.mjs",
+    "sourceCommit": "b8466a6d582f5085fbb8a03f29b88b42af5770e8",
+    "changes": [
+      "Content refresh follows effective position rules, including the inherited 30-second baseline after explicit selection. Explicitly disabled rules stay disabled. Sticky follows inherited schedules, retries empty responses and resumes after duplicate tab-pause events.",
+      "Minimum wall-clock gap applies from actual GPT dispatch, including the initial request. Automatic-refresh counts advance only for actual allowed requests; request reporting keeps interval and gap semantics explicit.",
+      "Empty, invalid or timed-out TakeOver releases one consent-gated Interstitial fallback. Viewport-disabled TakeOver skips safely and reports current map dimensions.",
+      "Late configured wrappers are discovered for a bounded 20-second window using id, data-ad, data-slot and data-gpt. Configured lazy rules retain request ownership; this is not general infinite-scroll support.",
+      "Lazy targeting is rechecked against current-auction, unexpired native Prebid bids, including Send All Bids keys. One replacement auction is allowed when all prior bids expire; safe GAM-only fallback remains after a consent change.",
+      "Late window.adsKeywords is polled for 2.5 seconds. SChain replacement-sensitive values remain exact, Sticky CSS names are valid, duplicate render reads are removed and generated wrapper syntax is checked as ES2015.",
+      "Existing 3.16.0 sources, saved configurations and package bytes remain unchanged. Selecting this version is explicit; CMP authority, original Outstream restrictions and historical catalog defaults remain intact."
+    ]
+  },
+  {
     "id": "tessera-3.16.0",
     "version": "3.16.0",
     "codeSha256": "624afa6dff60db3f6da1f71ada6d89c55c513d1c72ddbe210b3b2246832c69b9",

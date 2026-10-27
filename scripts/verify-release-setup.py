@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/site-workspace-evidence';out.mkdir(exist_ok=True)
-process=subprocess.Popen(['node','--experimental-strip-types','scripts/site-workspace-browser-fixture.mjs','--release-setup'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/site-workspace-browser-fixture.mjs','--release-setup'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
 requests=[];errors=[]
 def route(request):
     url=urlsplit(request.request.url)

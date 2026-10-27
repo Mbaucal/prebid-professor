@@ -1,3 +1,4 @@
+import { defaultUserIdSettings } from './user-id-config';
 import type {
   CreatePublisherInput,
   CreateSiteInput,
@@ -207,6 +208,7 @@ async function createSiteRecord(
     domain,
     gamPath,
     enablePrebid: true,
+    ...defaultUserIdSettings(),
     adUnits: [],
     bidders: [],
     bidderOverrides: [],

@@ -1,3 +1,4 @@
+import { defaultUserIdSettings } from '../user-id-config.ts';
 import { descriptorForPin, previewInput } from './runtime-catalog.mjs';
 /** Data-only Prebid Download plan. Uses the same normalized input as activation. */
 import { fields, params, normalizePrebidDraft } from './prebid-draft.mjs';
@@ -65,7 +66,7 @@ export function applyPrebidDraft(snapshot, config, draft, options) {
   next.enablePrebid=draft.enablePrebid;
   if(options){
     next.runtimeControls={...next.runtimeControls,floors:{...next.runtimeControls?.floors,enabled:options.floorsEnabled,hardFloor:options.hardFloor,currency:options.currency},currencyConversion:{...next.runtimeControls?.currencyConversion,enabled:options.currencyConversionEnabled}};
-    next.userSync={...(next.userSync??{syncEnabled:false,aliasSyncEnabled:false,syncsPerBidder:0,syncDelay:0,auctionDelay:0,filterSettings:{all:{bidders:'*',filter:'include'}}}),userIds:options.userIds.filter(id=>id.enabled).map(id=>({name:id.name,...id.settings}))};
+    next.userSync={...(next.userSync??defaultUserIdSettings().userSync),userIds:options.userIds.filter(id=>id.enabled).map(id=>({name:id.name,...id.settings}))};
     // Retain disabled values without adding them to the generated runtime.
     next.testPrebidOptions={userIds:options.userIds};
     if(next.userIdConfig)next.userIdConfig={...next.userIdConfig,modules:[

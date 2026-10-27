@@ -2,10 +2,12 @@
 import base64,json,subprocess,zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/site-workspace-evidence';out.mkdir(exist_ok=True)
-process=subprocess.Popen(['node','--experimental-strip-types','scripts/site-workspace-browser-fixture.mjs'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+# The current version for new scripts is the newest stable release record.
+current=next(r for r in json.loads((root/'worker/runtime/runtime-releases.json').read_text()) if r['channel']=='stable')
+process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/site-workspace-browser-fixture.mjs'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
 assert json.loads(process.stdout.readline())['ready']
 errors=[];requests=[]
 def route(request):
@@ -28,8 +30,8 @@ try:
     assert all(r['method']=='GET' for r in requests)
     page.get_by_role('radio',name='GAM / AdX only',exact=False).check()
     assert page.get_by_role('combobox',name='Script version',exact=True).count()==1
-    assert '3.16.0' in page.locator('.script-version-summary').inner_text()
-    assert 'Current version for new scripts' in page.locator('.script-version-summary').inner_text()
+    expect(page.locator('.script-version-summary')).to_contain_text(current['version'])
+    expect(page.locator('.script-version-summary')).to_contain_text('Current version for new scripts')
     page.screenshot(path=str(out/'desktop-script-setup.png'),full_page=True)
     page.get_by_role('button',name='Save script setup',exact=True).click()
     page.get_by_role('button',name='Generate and save package',exact=True).wait_for(state='visible')
@@ -50,10 +52,11 @@ try:
     page.get_by_role('button',name='Cancel',exact=True).click()
     page.get_by_role('button',name='Script setup',exact=True).click()
     page.get_by_role('button',name='Continue to Generate',exact=True).wait_for()
-    assert '3.16.0' in page.locator('.script-version-summary').inner_text()
-    assert 'Current version' in page.locator('.script-version-summary').inner_text()
-    assert page.get_by_role('combobox',name='Script version',exact=True).count()==1
-    assert page.get_by_role('button',name='Use current version',exact=True).count()==0
+    setup=page.get_by_role('region',name='Script setup',exact=True)
+    expect(setup.locator('.script-version-summary')).to_contain_text(current['version'])
+    expect(setup.get_by_role('button',name='Change version',exact=True)).to_have_count(0)
+    expect(setup.locator('select')).to_have_count(1)
+    expect(setup.get_by_role('button',name='Use current version',exact=True)).to_have_count(0)
     page.screenshot(path=str(out/'mobile-versions.png'),full_page=True)
     page.get_by_role('button',name='Generate and releases',exact=True).click()
     page.get_by_label('What changed?',exact=True).fill('Browser package check')
@@ -67,8 +70,8 @@ try:
     assert stored_download.value.suggested_filename.startswith('builtin-draft-')
     with zipfile.ZipFile(stored_download.value.path()) as archive:
         manifest=json.loads(archive.read('manifest.json'))
-        assert manifest['runtime']['runtimeVersion']=='3.16.0'
-        assert manifest['runtime']['runtimeSha256']=='624afa6dff60db3f6da1f71ada6d89c55c513d1c72ddbe210b3b2246832c69b9'
+        assert manifest['runtime']['runtimeVersion']==current['version']=='3.16.2'
+        assert manifest['runtime']['runtimeSha256']==current['codeSha256']
         assert 'deals-plan.json' in archive.namelist()
         assert 'prebid.js' not in archive.namelist()
     assert page.get_by_role('link',name='TEST deployments',exact=True).get_attribute('href')=='/deployments'

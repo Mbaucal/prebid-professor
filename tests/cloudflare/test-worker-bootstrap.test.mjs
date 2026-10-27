@@ -19,7 +19,8 @@ test('has no cron, custom routes, inheritance, build hook, assets, integration o
   assert.deepEqual(config.routes, []);
   assert.equal(config.preview_urls, false);
   assert.equal(config.main, './worker.mjs');
-  assert.deepEqual(Object.keys(config).sort(), ['$schema', 'name', 'account_id', 'main', 'compatibility_date', 'workers_dev', 'preview_urls', 'routes', 'triggers', 'd1_databases', 'r2_buckets', 'observability'].sort());
+  assert.equal(config.keep_names, false);
+  assert.deepEqual(Object.keys(config).sort(), ['$schema', 'name', 'account_id', 'main', 'compatibility_date', 'keep_names', 'workers_dev', 'preview_urls', 'routes', 'triggers', 'd1_databases', 'r2_buckets', 'observability'].sort());
   assert.deepEqual(Object.keys(worker), ['fetch']);
 });
 test('root serves only the bootstrap notice and no application or ad scripts', async () => {

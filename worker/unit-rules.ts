@@ -11,6 +11,15 @@ import type {
 } from '../src/shared/types';
 import { apiError, getActor, json, readJson } from './http';
 import type { DatabaseEnv } from './publishers';
+import { keepUnitRuleIntervals } from './refresh-inheritance';
+import {
+  UNIT_RULE_ROWS_UNCHANGED_SQL,
+  everyStatementChangedOneRow,
+  nextRowVersion,
+  readUnitRuleRows,
+  unitRuleRowsUnchangedArgs,
+} from './unit-rule-rows';
+import type { UnitRuleRowState } from './unit-rule-rows';
 
 type UnitRuleRow = {
   id: string;
@@ -197,7 +206,7 @@ async function normalizeRuleConfig(
   const normalized: UnitRuleConfig = {};
 
   if (Object.prototype.hasOwnProperty.call(value, 'timeout') && value.timeout !== null) {
-    normalized.timeout = integerInRange(value.timeout, 'timeout', 100, 60000);
+    normalized.timeout = integerInRange(value.timeout, 'timeout', 100, 30000);
   }
 
   if (Object.prototype.hasOwnProperty.call(value, 'lazy') && value.lazy !== null) {
@@ -264,47 +273,164 @@ async function fetchUnitRule(
   return row ? toUnitRule(row) : null;
 }
 
-async function syncConfigJson(db: D1Database, siteId: string): Promise<void> {
-  const [configRow, rulesResult] = await Promise.all([
-    db
-      .prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1')
-      .bind(siteId)
-      .first<{ config_json: string }>(),
-    db
-      .prepare(
-        `SELECT rule_key, rule_json
-         FROM unit_rules
-         WHERE publisher_id = ?
-         ORDER BY rule_key COLLATE NOCASE`,
-      )
-      .bind(siteId)
-      .all<{ rule_key: string; rule_json: string }>(),
-  ]);
-
-  if (!configRow) return;
-
-  let config: JsonRecord = {};
-  try {
-    const parsed = JSON.parse(configRow.config_json) as unknown;
-    if (isRecord(parsed)) config = parsed;
-  } catch {
-    config = {};
-  }
-
-  const unitRules: Record<string, UnitRuleConfig> = {};
-  (rulesResult.results ?? []).forEach((row) => {
-    unitRules[row.rule_key] = parseStoredRule(row.rule_json);
+// The committed row, returned without a second read that a later write could race.
+function writtenRule(
+  id: string, siteId: string, ruleKey: string, rule: UnitRuleConfig, createdAt: string, updatedAt: string,
+): UnitRule {
+  return toUnitRule({
+    id, publisher_id: siteId, rule_key: ruleKey, rule_json: JSON.stringify(rule),
+    created_at: createdAt, updated_at: updatedAt,
   });
-  config.unitRules = unitRules;
+}
 
-  await db
-    .prepare(
-      `UPDATE publisher_configs
-       SET config_json = ?, updated_at = ?
-       WHERE publisher_id = ?`,
-    )
-    .bind(JSON.stringify(config), new Date().toISOString(), siteId)
-    .run();
+class RuleConflict extends Error {}
+class RuleGone extends Error {}
+
+const CHANGED_ELSEWHERE = 'Unit rules changed in another tab. Reload before saving.';
+const UPDATE_TARGET_GONE = 'This unit rule no longer exists; it may have been deleted in another tab. Your changes were not saved.';
+const DELETE_TARGET_GONE = 'This unit rule no longer exists; it may have been deleted in another tab.';
+const DUPLICATE_SOURCE_GONE = 'The source rule no longer exists; it may have been deleted in another tab. Nothing was copied.';
+
+// What must still be true when the batch commits; checked on the read snapshot and,
+// through the row guard, again inside the batch that writes config_json.
+type RowExpectation = {
+  // The row this request was built from: same id, rule key, version (updated_at) and content.
+  present?: { rule: UnitRule; goneMessage: string };
+  // A rule key that must not exist yet (create or duplicate target).
+  absentKey?: string;
+};
+
+function checkExpectation(rows: UnitRuleRowState[], expectation: RowExpectation): void {
+  const { present, absentKey } = expectation;
+  if (present) {
+    const row = rows.find((item) => item.id === present.rule.id);
+    if (!row) throw new RuleGone(present.goneMessage);
+    if (row.rule_key !== present.rule.ruleKey || row.updated_at !== present.rule.updatedAt
+      || JSON.stringify(parseStoredRule(row.rule_json)) !== JSON.stringify(present.rule.rule)) {
+      throw new RuleConflict(CHANGED_ELSEWHERE);
+    }
+  }
+  if (absentKey !== undefined && rows.some((item) => item.rule_key === absentKey)) {
+    throw new RuleConflict(`Rule "${absentKey}" already exists on this site.`);
+  }
+}
+
+function ruleErrorResponse(error: unknown): Response | null {
+  if (error instanceof RuleGone) return apiError(error.message, 404);
+  if (error instanceof RuleConflict) return apiError(error.message, 409);
+  return null;
+}
+
+async function prepareConfigUpdate(
+  db: D1Database, siteId: string, ruleKey: string, rule: UnitRuleConfig | null,
+  now: string, sourceRuleKey: string | undefined, expectation: RowExpectation,
+  followInheritedSchedule = false,
+): Promise<{ statement: D1PreparedStatement; kept: string[] }> {
+  const [row, rows, units] = await Promise.all([
+    db.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1').bind(siteId).first<{config_json: string}>(),
+    readUnitRuleRows(db, siteId),
+    db.prepare('SELECT code, type FROM ad_units WHERE publisher_id = ?').bind(siteId).all<{code: string; type: string}>(),
+  ]);
+  if (!row) throw new Error('Publisher config was not found.');
+  checkExpectation(rows, expectation);
+  const config = JSON.parse(row.config_json) as JsonRecord;
+  const savedRules: Record<string, UnitRuleConfig> = {};
+  for (const item of rows) savedRules[item.rule_key] = parseStoredRule(item.rule_json);
+  const unitRules: Record<string, UnitRuleConfig> = { ...savedRules };
+  const previous = unitRules[ruleKey];
+  if (rule) unitRules[ruleKey] = rule; else delete unitRules[ruleKey];
+  config.unitRules = unitRules;
+  const advanced = isRecord(config.advancedUnitRules) ? config.advancedUnitRules : {};
+  const current = isRecord(advanced[ruleKey]) ? { ...advanced[ruleKey] } : null;
+  if (!rule && current) {
+    // Display/loading owns lazy, so deleting refresh must retain that setting.
+    for (const field of ['timeout', 'cmpTimeout', 'refresh']) delete current[field];
+  } else if (sourceRuleKey && isRecord(advanced[sourceRuleKey])) {
+    const source = advanced[sourceRuleKey];
+    const target = current ?? {};
+    for (const field of ['timeout', 'cmpTimeout', 'refresh']) {
+      if (Object.hasOwn(source, field)) target[field] = structuredClone(source[field]);
+      else delete target[field];
+    }
+    advanced[ruleKey] = target;
+  } else if (rule && current) {
+    if (rule.timeout === undefined) delete current.timeout; else current.timeout = rule.timeout;
+    const refresh = isRecord(current.refresh) ? current.refresh : {};
+    const schedule = isRecord(refresh.schedule) ? refresh.schedule : null;
+    const nonFixed = schedule && schedule.mode !== 'fixed';
+    if (nonFixed && JSON.stringify(previous?.refresh) !== JSON.stringify(rule.refresh)) {
+      throw new RuleConflict('This rule uses a sequence or percentage refresh schedule. Open Refresh schedules to change its refresh settings.');
+    }
+    if (!nonFixed) {
+      if (!rule.refresh) delete current.refresh;
+      else current.refresh = {
+        ...refresh, ...rule.refresh,
+        ...(schedule ? {schedule: {...schedule, fixedSeconds: rule.refresh.minSeconds, firstSeconds: rule.refresh.minSeconds, nextSeconds: rule.refresh.minSeconds}} : {}),
+      };
+    }
+  }
+  if (current) {
+    if (Object.keys(current).length) advanced[ruleKey] = current; else delete advanced[ruleKey];
+  }
+  // An inherited Refresh schedule would otherwise replace this rule's (or a
+  // child rule's) chosen Unit rules interval in every generated script.
+  const saved = JSON.parse(row.config_json) as JsonRecord;
+  const kept = keepUnitRuleIntervals(advanced, unitRules, Object.fromEntries((units.results ?? []).map((unit) => [unit.code, unit.type])), ruleKey, {
+    savedRule: Boolean(rule),
+    followInherited: followInheritedSchedule,
+    before: { advanced: isRecord(saved.advancedUnitRules) ? saved.advancedUnitRules : {}, basic: savedRules },
+  });
+  if (isRecord(config.advancedUnitRules) || Object.keys(advanced).length) config.advancedUnitRules = advanced;
+  // config_json is derived from this config snapshot and these rows, so it may only be
+  // written while both are unchanged; the row statements that follow are gated on changes().
+  // The kept intervals are part of this same guarded config write. They also depend on the
+  // saved position's ATF/BTF group, which an ad-unit edit can change without touching any
+  // row when the position has none yet, so its code and group must still be as read.
+  const unitType = (units.results ?? []).find((unit) => unit.code === ruleKey)?.type ?? null;
+  // A create or copy for a position that was renamed or deleted after its target was checked
+  // would otherwise pass the guard (NULL IS NULL) and write under a code that no longer
+  // exists. (An existing row is covered by the row guard: a rename moves it, a delete removes it.)
+  if (rule && expectation.absentKey !== undefined && !RESERVED_RULE_KEYS.has(ruleKey) && unitType === null) {
+    throw new RuleConflict(`${ruleKey} was renamed or deleted in Ad units while this rule was being saved, so nothing was saved. Reload and choose the ad unit again.`);
+  }
+  const statement = db.prepare(
+    `UPDATE publisher_configs SET config_json = ?, config_hash = NULL, updated_at = ?
+     WHERE publisher_id = ? AND config_json = ? AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}
+       AND (SELECT type FROM ad_units WHERE publisher_id = ? AND code = ? LIMIT 1) IS ?`,
+  ).bind(JSON.stringify(config), now, siteId, row.config_json, ...unitRuleRowsUnchangedArgs(siteId, rows), siteId, ruleKey, unitType);
+  return { statement, kept };
+}
+
+/** Audit detail for rules given their own fixed schedule by this save. */
+function keptDetails(kept: string[]): { keptUnitRuleIntervals?: string[] } {
+  return kept.length ? { keptUnitRuleIntervals: kept } : {};
+}
+
+// Runs the guarded config write plus its dependent row and audit statements in one batch.
+// Returns null when every statement applied, otherwise the 404/409 response to send.
+async function applyRuleSave(
+  db: D1Database,
+  siteId: string,
+  statements: D1PreparedStatement[],
+  expectation: RowExpectation,
+): Promise<Response | null> {
+  const results = await db.batch(statements);
+  if (results[0]?.meta.changes !== 1) {
+    // Nothing was written: the guarded config statement matched no row, and every
+    // following statement requires changes() = 1. Explain why from the current rows.
+    try {
+      checkExpectation(await readUnitRuleRows(db, siteId), expectation);
+    } catch (error) {
+      const response = ruleErrorResponse(error);
+      if (response) return response;
+      throw error;
+    }
+    return apiError(CHANGED_ELSEWHERE, 409);
+  }
+  if (!everyStatementChangedOneRow(results, statements.length)) {
+    return apiError('Unit rule save was not fully applied. Reload unit rules before saving again.', 500);
+  }
+  return null;
 }
 
 export async function listUnitRules(env: DatabaseEnv, siteId: string): Promise<Response> {
@@ -359,31 +485,40 @@ export async function createUnitRule(
   const now = new Date().toISOString();
   const actor = getActor(request);
 
+  const expectation: RowExpectation = { absentKey: ruleKey };
+  let kept: string[] = [];
+
   try {
-    await env.DB.batch([
+    const prepared = await prepareConfigUpdate(env.DB, siteId, ruleKey, rule, now, undefined, expectation, input.followInheritedSchedule === true);
+    const configUpdate = prepared.statement;
+    kept = prepared.kept;
+    const refused = await applyRuleSave(env.DB, siteId, [
+      configUpdate,
       env.DB
         .prepare(
           `INSERT INTO unit_rules (id, publisher_id, rule_key, rule_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+           SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
         )
         .bind(id, siteId, ruleKey, JSON.stringify(rule), now, now),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'unit_rule.created', ?, 'unit_rule', ?, ?, ?)`,
+           ) SELECT ?, ?, 'unit_rule.created', ?, 'unit_rule', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
           actor,
           siteId,
           id,
-          JSON.stringify({ ruleKey, sections: Object.keys(rule) }),
+          JSON.stringify({ ruleKey, sections: Object.keys(rule), ...keptDetails(kept) }),
           now,
         ),
-    ]);
-    await syncConfigJson(env.DB, siteId);
+    ], expectation);
+    if (refused) return refused;
   } catch (error) {
+    const ruleError = ruleErrorResponse(error);
+    if (ruleError) return ruleError;
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);
     return apiError(
@@ -393,7 +528,7 @@ export async function createUnitRule(
     );
   }
 
-  return json({ ok: true, unitRule: await fetchUnitRule(env.DB, siteId, id) }, { status: 201 });
+  return json({ ok: true, unitRule: writtenRule(id, siteId, ruleKey, rule, now, now), keptUnitRuleIntervals: kept }, { status: 201 });
 }
 
 export async function updateUnitRule(
@@ -404,13 +539,19 @@ export async function updateUnitRule(
 ): Promise<Response> {
   if (!env.DB) return databaseMissing();
   const current = await fetchUnitRule(env.DB, siteId, unitRuleId);
-  if (!current) return apiError('Unit rule not found.', 404);
+  if (!current) return apiError(UPDATE_TARGET_GONE, 404);
 
   let input: UpdateUnitRuleInput;
   try {
     input = await readJson<UpdateUnitRuleInput>(request);
   } catch (error) {
     return apiError(error instanceof Error ? error.message : 'Invalid JSON body.');
+  }
+  // The editor's own read: a tab opened before another tab saved this rule would put
+  // back values it never changed. `current` (same version) is the batch's expectation,
+  // so the row guard enforces this version again when the batch commits.
+  if (input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt !== current.updatedAt) {
+    return apiError(CHANGED_ELSEWHERE, 409);
   }
 
   let rule: UnitRuleConfig;
@@ -423,32 +564,44 @@ export async function updateUnitRule(
   const now = new Date().toISOString();
   const actor = getActor(request);
 
+  const version = nextRowVersion(current.updatedAt, now);
+  const expectation: RowExpectation = {
+    present: { rule: current, goneMessage: UPDATE_TARGET_GONE },
+  };
+  let kept: string[] = [];
+
   try {
-    await env.DB.batch([
+    const prepared = await prepareConfigUpdate(env.DB, siteId, current.ruleKey, rule, now, undefined, expectation);
+    const configUpdate = prepared.statement;
+    kept = prepared.kept;
+    const refused = await applyRuleSave(env.DB, siteId, [
+      configUpdate,
       env.DB
         .prepare(
           `UPDATE unit_rules
            SET rule_json = ?, updated_at = ?
-           WHERE publisher_id = ? AND id = ?`,
+           WHERE publisher_id = ? AND id = ? AND rule_key = ? AND updated_at = ? AND changes() = 1`,
         )
-        .bind(JSON.stringify(rule), now, siteId, unitRuleId),
+        .bind(JSON.stringify(rule), version, siteId, unitRuleId, current.ruleKey, current.updatedAt),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'unit_rule.updated', ?, 'unit_rule', ?, ?, ?)`,
+           ) SELECT ?, ?, 'unit_rule.updated', ?, 'unit_rule', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
           actor,
           siteId,
           unitRuleId,
-          JSON.stringify({ ruleKey: current.ruleKey, sections: Object.keys(rule) }),
+          JSON.stringify({ ruleKey: current.ruleKey, sections: Object.keys(rule), ...keptDetails(kept) }),
           now,
         ),
-    ]);
-    await syncConfigJson(env.DB, siteId);
+    ], expectation);
+    if (refused) return refused;
   } catch (error) {
+    const ruleError = ruleErrorResponse(error);
+    if (ruleError) return ruleError;
     return apiError(
       'Unit rule update failed.',
       500,
@@ -456,7 +609,7 @@ export async function updateUnitRule(
     );
   }
 
-  return json({ ok: true, unitRule: await fetchUnitRule(env.DB, siteId, unitRuleId) });
+  return json({ ok: true, unitRule: writtenRule(current.id, siteId, current.ruleKey, rule, current.createdAt, version), keptUnitRuleIntervals: kept });
 }
 
 export async function duplicateUnitRule(
@@ -467,7 +620,7 @@ export async function duplicateUnitRule(
 ): Promise<Response> {
   if (!env.DB) return databaseMissing();
   const source = await fetchUnitRule(env.DB, siteId, sourceUnitRuleId);
-  if (!source) return apiError('Source unit rule not found.', 404);
+  if (!source) return apiError(DUPLICATE_SOURCE_GONE, 404);
 
   let input: DuplicateUnitRuleInput;
   try {
@@ -487,31 +640,43 @@ export async function duplicateUnitRule(
   const now = new Date().toISOString();
   const actor = getActor(request);
 
+  const expectation: RowExpectation = {
+    present: { rule: source, goneMessage: DUPLICATE_SOURCE_GONE },
+    absentKey: ruleKey,
+  };
+  let kept: string[] = [];
+
   try {
-    await env.DB.batch([
+    const prepared = await prepareConfigUpdate(env.DB, siteId, ruleKey, source.rule, now, source.ruleKey, expectation);
+    const configUpdate = prepared.statement;
+    kept = prepared.kept;
+    const refused = await applyRuleSave(env.DB, siteId, [
+      configUpdate,
       env.DB
         .prepare(
           `INSERT INTO unit_rules (id, publisher_id, rule_key, rule_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+           SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
         )
         .bind(id, siteId, ruleKey, JSON.stringify(source.rule), now, now),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'unit_rule.duplicated', ?, 'unit_rule', ?, ?, ?)`,
+           ) SELECT ?, ?, 'unit_rule.duplicated', ?, 'unit_rule', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
           actor,
           siteId,
           id,
-          JSON.stringify({ sourceRuleId: source.id, sourceRuleKey: source.ruleKey, ruleKey }),
+          JSON.stringify({ sourceRuleId: source.id, sourceRuleKey: source.ruleKey, ruleKey, ...keptDetails(kept) }),
           now,
         ),
-    ]);
-    await syncConfigJson(env.DB, siteId);
+    ], expectation);
+    if (refused) return refused;
   } catch (error) {
+    const ruleError = ruleErrorResponse(error);
+    if (ruleError) return ruleError;
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);
     return apiError(
@@ -521,7 +686,7 @@ export async function duplicateUnitRule(
     );
   }
 
-  return json({ ok: true, unitRule: await fetchUnitRule(env.DB, siteId, id) }, { status: 201 });
+  return json({ ok: true, unitRule: writtenRule(id, siteId, ruleKey, source.rule, now, now), keptUnitRuleIntervals: kept }, { status: 201 });
 }
 
 export async function deleteUnitRule(
@@ -532,31 +697,44 @@ export async function deleteUnitRule(
 ): Promise<Response> {
   if (!env.DB) return databaseMissing();
   const current = await fetchUnitRule(env.DB, siteId, unitRuleId);
-  if (!current) return apiError('Unit rule not found.', 404);
+  if (!current) return apiError(DELETE_TARGET_GONE, 404);
 
   const actor = getActor(request);
   const now = new Date().toISOString();
 
+  const expectation: RowExpectation = {
+    present: { rule: current, goneMessage: DELETE_TARGET_GONE },
+  };
+  let kept: string[] = [];
+
   try {
-    await env.DB.batch([
-      env.DB.prepare('DELETE FROM unit_rules WHERE publisher_id = ? AND id = ?').bind(siteId, unitRuleId),
+    const prepared = await prepareConfigUpdate(env.DB, siteId, current.ruleKey, null, now, undefined, expectation);
+    const configUpdate = prepared.statement;
+    kept = prepared.kept;
+    const refused = await applyRuleSave(env.DB, siteId, [
+      configUpdate,
+      env.DB
+        .prepare('DELETE FROM unit_rules WHERE publisher_id = ? AND id = ? AND rule_key = ? AND updated_at = ? AND changes() = 1')
+        .bind(siteId, unitRuleId, current.ruleKey, current.updatedAt),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'unit_rule.deleted', ?, 'unit_rule', ?, ?, ?)`,
+           ) SELECT ?, ?, 'unit_rule.deleted', ?, 'unit_rule', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
           actor,
           siteId,
           unitRuleId,
-          JSON.stringify({ ruleKey: current.ruleKey }),
+          JSON.stringify({ ruleKey: current.ruleKey, ...keptDetails(kept) }),
           now,
         ),
-    ]);
-    await syncConfigJson(env.DB, siteId);
+    ], expectation);
+    if (refused) return refused;
   } catch (error) {
+    const ruleError = ruleErrorResponse(error);
+    if (ruleError) return ruleError;
     return apiError(
       'Unit rule could not be deleted.',
       500,
@@ -564,5 +742,5 @@ export async function deleteUnitRule(
     );
   }
 
-  return json({ ok: true, deletedId: unitRuleId });
+  return json({ ok: true, deletedId: unitRuleId, keptUnitRuleIntervals: kept });
 }

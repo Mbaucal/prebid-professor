@@ -1,6 +1,6 @@
 import { dealSettingsResponse } from './site-runtime/deal-settings.mjs';
 import { outstreamSettingsResponse } from './site-runtime/outstream-settings.mjs';
-import { requireRevenueRuntime } from './runtime-316/settings-guard.mjs';
+import { requireRevenueRuntime } from './runtime-3162/settings-guard.mjs';
 import { organizationResponse } from './organization/service.mjs';
 import { gamResponse } from './integrations/gam-service.mjs';
 import { blockStoredDraftCdn } from './runtime/stored-draft-safety.mjs';
