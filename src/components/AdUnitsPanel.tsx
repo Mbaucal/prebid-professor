@@ -53,6 +53,15 @@ function nextCopyCode(code: string): string {
   return `${base}_${current + 1}`;
 }
 
+// Same wording as the Unit rules notice: a copy or ATF/BTF group change gave these
+// positions their own "Same every time" schedule, so their Unit rules interval stays in effect.
+function keptIntervalsNotice(codes: string[]): string | null {
+  if (!codes.length) return null;
+  return codes.length === 1
+    ? `${codes[0]} uses its own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows it as “Same every time”.`
+    : `${codes.join(', ')} use their own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows them as “Same every time”.`;
+}
+
 function formFromAdUnit(adUnit: AdUnit): FormState {
   return {
     code: adUnit.code,
@@ -75,6 +84,7 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [mode, setMode] = useState<FormMode | null>(null);
   const [source, setSource] = useState<AdUnit | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -146,6 +156,7 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
+    setNotice(null);
 
     if (!form.code.trim()) {
       setFormError('Ad unit code is required.');
@@ -164,18 +175,19 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
         notes: form.notes.trim() || null,
       };
 
+      let kept: string[] = [];
       if (mode === 'duplicate' && source) {
-        await api.duplicateAdUnit(publisherId, source.id, {
+        ({ keptUnitRuleIntervals: kept } = await api.duplicateAdUnit(publisherId, source.id, {
           ...common,
           copySizeMapReference: form.copySizeMapReference,
           copyUnitRule: form.copyUnitRule,
           copyBidderAdUnitOverrides: form.copyBidderAdUnitOverrides,
-        });
+        }));
       } else if (mode === 'edit' && source) {
-        await api.updateAdUnit(publisherId, source.id, {
+        ({ keptUnitRuleIntervals: kept } = await api.updateAdUnit(publisherId, source.id, {
           ...common,
           sizeMapKey: form.sizeMapKey.trim() || null,
-        });
+        }));
       } else {
         await api.createAdUnit(publisherId, {
           ...common,
@@ -183,6 +195,7 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
         });
       }
 
+      setNotice(keptIntervalsNotice(kept));
       await load();
       await onChanged?.();
       closeForm();
@@ -198,6 +211,7 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
       `Delete ${adUnit.code}? Its exact ad-unit bidder overrides and unit rule will also be removed.`,
     );
     if (!confirmed) return;
+    setNotice(null);
 
     try {
       await api.deleteAdUnit(publisherId, adUnit.id);
@@ -223,6 +237,7 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
         </div>
 
         {error ? <div className="form-error config-error">{error}</div> : null}
+        {notice ? <p role="status" className="loading-summary-help ad-units-notice">{notice}</p> : null}
         {loading ? <div className="config-loading">Loading ad units from D1…</div> : null}
 
         <details className="inventory-csv"><summary>Import ad units / Download CSV template</summary><BulkImportPanel publisherId={publisherId} kinds={['ad-units']} onChanged={async()=>{await load();await onChanged?.();}}/></details>

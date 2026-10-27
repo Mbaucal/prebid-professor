@@ -406,12 +406,12 @@ async function siteExists(db: D1Database, siteId: string): Promise<boolean> {
   return Boolean(row);
 }
 
-async function readPublisherConfig(db: D1Database, siteId: string): Promise<{ id: string; config: JsonRecord } | null> {
+async function readPublisherConfig(db: D1Database, siteId: string): Promise<{ id: string; config: JsonRecord; configJson: string } | null> {
   const row = await db
     .prepare('SELECT id, config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1')
     .bind(siteId)
     .first<{ id: string; config_json: string }>();
-  return row ? { id: row.id, config: parseStoredConfig(row.config_json) } : null;
+  return row ? { id: row.id, config: parseStoredConfig(row.config_json), configJson: row.config_json } : null;
 }
 
 export async function readRequiredUserIdModules(db: D1Database, siteId: string): Promise<string[]> {
@@ -475,15 +475,19 @@ export async function updateUserIdConfig(
   const now = new Date().toISOString();
 
   try {
-    await env.DB.batch([
+    // The whole config is rewritten from this read, so it may only replace the config it
+    // was built from; otherwise a save that landed in between (unit rules, Refresh
+    // schedules and their kept intervals, consent mode) would be silently undone. The
+    // audit row needs that write.
+    const results = await env.DB.batch([
       env.DB
-        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ?')
-        .bind(JSON.stringify(configJson), now, siteId),
+        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ? AND config_json = ?')
+        .bind(JSON.stringify(configJson), now, siteId, row.configJson),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'user_id_config.updated', ?, 'user_id_config', ?, ?, ?)`,
+           ) SELECT ?, ?, 'user_id_config.updated', ?, 'user_id_config', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
@@ -501,6 +505,9 @@ export async function updateUserIdConfig(
           now,
         ),
     ]);
+    if (results[0]?.meta.changes !== 1) {
+      return apiError('Other site settings were saved at the same time, so nothing was saved. Select Save again.', 409);
+    }
   } catch (error) {
     return apiError(
       'User ID configuration could not be saved.',

@@ -1,11 +1,22 @@
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
+import { inheritedRefresh, keepUnitRuleIntervals, scheduleSource, type RefreshScript } from './refresh-inheritance';
+import {
+  UNIT_RULE_ROWS_UNCHANGED_SQL,
+  everyStatementChangedOneRow,
+  nextRowVersion,
+  readUnitRuleRows,
+  unitRuleRowsUnchangedArgs,
+} from './unit-rule-rows';
 
 type JsonRecord = Record<string, unknown>;
 type RefreshMode = 'fixed' | 'firstThenFixed' | 'percentage' | 'sequence';
 
 const RESERVED_RULE_KEYS = new Set(['__DEFAULT__', '__ATF__', '__BTF__']);
 const REFRESH_MODES = new Set<RefreshMode>(['fixed', 'firstThenFixed', 'percentage', 'sequence']);
+const REFRESH_CHANGED_ELSEWHERE = 'Unit rules or refresh settings changed in another tab. Reload before saving.';
+const targetChangedElsewhere = (ruleKey: string) =>
+  `${ruleKey} was renamed or deleted in Ad units while this was being saved, so nothing was saved. Reload and choose the ad unit again.`;
 
 function databaseMissing(): Response {
   return apiError('D1 database binding is not configured yet.', 503);
@@ -47,6 +58,13 @@ async function ruleTargetExists(db: D1Database, siteId: string, ruleKey: string)
     .bind(siteId, ruleKey)
     .first<{ code: string }>();
   return Boolean(row);
+}
+
+/** Equal as JSON values, whatever the key order. */
+function sameJson(left: unknown, right: unknown): boolean {
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
+    : isRecord(value) ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
+  return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
 }
 
 function parseRecord(value: string | null | undefined): JsonRecord {
@@ -173,13 +191,16 @@ function normalizeRefresh(value: unknown, current: JsonRecord): JsonRecord {
   };
 }
 
-async function readConfig(db: D1Database, siteId: string): Promise<{ raw: JsonRecord; rowId: string } | null> {
+async function readConfig(
+  db: D1Database,
+  siteId: string,
+): Promise<{ raw: JsonRecord; rowId: string; configJson: string } | null> {
   const row = await db
     .prepare('SELECT id, config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1')
     .bind(siteId)
     .first<{ id: string; config_json: string }>();
   if (!row) return null;
-  return { raw: parseRecord(row.config_json), rowId: row.id };
+  return { raw: parseRecord(row.config_json), rowId: row.id, configJson: row.config_json };
 }
 
 function advancedMap(config: JsonRecord): Record<string, JsonRecord> {
@@ -192,59 +213,79 @@ function advancedMap(config: JsonRecord): Record<string, JsonRecord> {
   return result;
 }
 
-async function mirrorLegacyRule(
-  db: D1Database,
-  siteId: string,
-  ruleKey: string,
-  advanced: JsonRecord,
-  now: string,
-): Promise<{ id: string; rule: JsonRecord }> {
-  const row = await db
-    .prepare('SELECT id, rule_json FROM unit_rules WHERE publisher_id = ? AND rule_key = ? LIMIT 1')
-    .bind(siteId, ruleKey)
-    .first<{ id: string; rule_json: string }>();
-
-  const rule = parseRecord(row?.rule_json);
-  const advancedRefresh = isRecord(advanced.refresh) ? advanced.refresh : {};
-  const currentRefresh = isRecord(rule.refresh) ? rule.refresh : {};
-  rule.timeout = advanced.timeout;
-  rule.refresh = {
-    ...currentRefresh,
-    enabled: advancedRefresh.enabled,
-    minSeconds: advancedRefresh.minSeconds,
-    minViewPct: advancedRefresh.minViewPct,
-    requirePreviousViewable: advancedRefresh.requirePreviousViewable,
-    checkEveryMs: advancedRefresh.checkEveryMs,
-  };
-
-  const id = row?.id ?? crypto.randomUUID();
-  await db
-    .prepare(
-      `INSERT INTO unit_rules (id, publisher_id, rule_key, rule_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(publisher_id, rule_key)
-       DO UPDATE SET rule_json = excluded.rule_json, updated_at = excluded.updated_at`,
-    )
-    .bind(id, siteId, ruleKey, JSON.stringify(rule), now, now)
-    .run();
-  return { id, rule };
+/**
+ * The Unit rules row a Refresh schedules save keeps in step (legacy mirror of the editable
+ * fields), from the row read in the snapshot. Only the sections this save sends are mirrored:
+ * a section left out (unchanged, or inherited) keeps the row's own value, or its absence, as
+ * it was (no `refresh: {}` that Unit rules would show as an override).
+ */
+function mirroredLegacyRule(saved: JsonRecord, advanced: JsonRecord, input: JsonRecord): JsonRecord {
+  const rule = { ...saved };
+  if (Object.hasOwn(input, 'timeout')) rule.timeout = advanced.timeout;
+  if (Object.hasOwn(input, 'refresh') && isRecord(advanced.refresh)) {
+    const currentRefresh = isRecord(rule.refresh) ? rule.refresh : {};
+    rule.refresh = {
+      ...currentRefresh,
+      enabled: advanced.refresh.enabled,
+      minSeconds: advanced.refresh.minSeconds,
+      minViewPct: advanced.refresh.minViewPct,
+      requirePreviousViewable: advanced.refresh.requirePreviousViewable,
+      checkEveryMs: advanced.refresh.checkEveryMs,
+    };
+  }
+  return rule;
 }
 
-async function syncConfigUnitRules(db: D1Database, siteId: string, config: JsonRecord): Promise<void> {
-  const rulesResult = await db
-    .prepare('SELECT rule_key, rule_json FROM unit_rules WHERE publisher_id = ? ORDER BY rule_key COLLATE NOCASE')
-    .bind(siteId)
-    .all<{ rule_key: string; rule_json: string }>();
-  const unitRules: Record<string, JsonRecord> = {};
-  for (const row of rulesResult.results ?? []) unitRules[row.rule_key] = parseRecord(row.rule_json);
-  config.unitRules = unitRules;
+/** A Unit rules row as the Refresh tab saves against it: the row id and version go back with the save. */
+type MirroredRow = { id: string; ruleKey: string; updatedAt: string; rule: JsonRecord };
+
+/**
+ * What decides the value an unsaved refresh setting resolves to: the site's selected script (its
+ * saved runtime pin) and its bottom Sticky ad unit, chosen as that script's build chooses it.
+ */
+function refreshScript(config: JsonRecord, codes: string[]): RefreshScript {
+  const selection = config.builtinRuntimeSelection;
+  const pin = isRecord(selection) && isRecord(selection.runtime) ? selection.runtime : null;
+  const controls = isRecord(config.runtimeControls) ? config.runtimeControls : {};
+  const sticky = isRecord(controls.sticky) ? controls.sticky : {};
+  const fallback = codes.includes('Sticky') ? 'Sticky' : null;
+  // A selected script takes any saved value, an empty one meaning none (worker/runtime/preview-snapshot.mjs);
+  // the legacy Generate path takes only a saved text and otherwise falls back to 'Sticky' (worker/releases.ts).
+  const saved = pin ? Object.hasOwn(sticky, 'bottomAdUnitId') : typeof sticky.bottomAdUnitId === 'string';
+  return {
+    runtime: pin && { runtimeId: pin.runtimeId, runtimeVersion: pin.runtimeVersion, capabilities: pin.capabilities },
+    stickyAdUnit: saved ? String(sticky.bottomAdUnitId ?? '').trim() || null : fallback,
+  };
+}
+
+function mirroredRow(row: { id: string; rule_key: string; rule_json: string; updated_at: string }): MirroredRow {
+  return { id: row.id, ruleKey: row.rule_key, updatedAt: row.updated_at, rule: parseRecord(row.rule_json) };
 }
 
 export async function listAdvancedRules(env: DatabaseEnv, siteId: string): Promise<Response> {
   if (!env.DB) return databaseMissing();
   if (!(await siteExists(env.DB, siteId))) return apiError('Site not found.', 404);
-  const config = await readConfig(env.DB, siteId);
-  return json({ ok: true, advancedRules: config ? advancedMap(config.raw) : {} });
+  // config_json, the unit_rules rows and each position's ATF/BTF group are read in one batch
+  // (one D1 transaction), so a form built from this response, the parents it inherits from and
+  // the row version it is saved against always describe the same saved state; a save in
+  // between cannot pair one with the other.
+  const [configResult, rowResult, unitResult] = await env.DB.batch([
+    env.DB.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1').bind(siteId),
+    env.DB
+      .prepare('SELECT id, rule_key, rule_json, updated_at FROM unit_rules WHERE publisher_id = ? ORDER BY rule_key COLLATE NOCASE')
+      .bind(siteId),
+    env.DB.prepare('SELECT code, type FROM ad_units WHERE publisher_id = ?').bind(siteId),
+  ]);
+  const config = (configResult?.results?.[0] as { config_json: string } | undefined)?.config_json;
+  const rows = (rowResult?.results ?? []) as Array<{ id: string; rule_key: string; rule_json: string; updated_at: string }>;
+  const units = (unitResult?.results ?? []) as Array<{ code: string; type: string }>;
+  return json({
+    ok: true,
+    advancedRules: config === undefined ? {} : advancedMap(parseRecord(config)),
+    unitRuleRows: Object.fromEntries(rows.map((row) => [row.rule_key, mirroredRow(row)])),
+    unitTypes: Object.fromEntries(units.map((unit) => [unit.code, unit.type])),
+    ...refreshScript(config === undefined ? {} : parseRecord(config), units.map((unit) => unit.code)),
+  });
 }
 
 export async function updateAdvancedRule(
@@ -295,35 +336,134 @@ export async function updateAdvancedRule(
 
   const now = new Date().toISOString();
   const actor = getActor(request);
+  let kept: string[] = [];
+  let appliesTo: string[] = [];
+  let written: MirroredRow;
 
   try {
-    const mirrored = await mirrorLegacyRule(env.DB, siteId, ruleKey, advanced, now);
+    // The mirrored row, config.unitRules and the advanced record are written in one
+    // batch that applies only while config_json and every unit_rules row still match
+    // what was read here, so a concurrent unit-rule save or delete cannot be
+    // overwritten or resurrected and cannot leave an advanced override without its row.
+    const [rows, unitRows] = await Promise.all([
+      readUnitRuleRows(env.DB, siteId),
+      env.DB
+        .prepare('SELECT code, type, enabled FROM ad_units WHERE publisher_id = ?')
+        .bind(siteId)
+        .all<{ code: string; type: string; enabled: number }>(),
+    ]);
+    const existing = rows.find((row) => row.rule_key === ruleKey);
+    // An ad-unit rename or delete of a position without a row changes neither config_json
+    // nor any unit_rules row, so the guarded write below also requires the position's code
+    // and ATF/BTF group to be as read here (reserved scopes have no ad unit: NULL IS NULL).
+    const unitType = (unitRows.results ?? []).find((unit) => unit.code === ruleKey)?.type ?? null;
+    if (!RESERVED_RULE_KEYS.has(ruleKey) && unitType === null) return apiError(targetChangedElsewhere(ruleKey), 409);
+    // The Unit rules row the Refresh tab loaded for this scope: id and version (null: no row).
+    // Every Unit rules or Refresh save of the scope moves the version, and a deleted and
+    // re-created row has a new id even in the same millisecond, so a stale tab cannot put
+    // back an older schedule or re-create a deleted rule; the row guard rechecks it in the batch.
+    // Callers that send neither field keep the previous contract.
+    if ((Object.hasOwn(input, 'expectedUpdatedAt') && input.expectedUpdatedAt !== (existing?.updated_at ?? null))
+      || (Object.hasOwn(input, 'expectedUnitRuleId') && input.expectedUnitRuleId !== (existing?.id ?? null))) {
+      return apiError(REFRESH_CHANGED_ELSEWHERE, 409);
+    }
+    const mirroredId = existing?.id ?? crypto.randomUUID();
+    const mirroredVersion = existing ? nextRowVersion(existing.updated_at, now) : now;
+    const types = Object.fromEntries((unitRows.results ?? []).map((unit) => [unit.code, unit.type]));
+    const basic = Object.fromEntries(rows.map((row) => [row.rule_key, parseRecord(row.rule_json)]));
+    // A refresh section sent with values filled from the parent scopes or the script carries
+    // the inherited settings it was built from; a change since then to Default, the group,
+    // the ATF refresh the script reads its global values from, the selected script or the
+    // bottom Sticky would otherwise be undone silently by those copies, so the save is refused (409) and the tab rebases.
+    if (Object.hasOwn(input, 'expectedInheritedRefresh')
+      && !sameJson(input.expectedInheritedRefresh, inheritedRefresh({ advanced: allAdvanced, basic }, types, ruleKey, refreshScript(config, Object.keys(types))))) {
+      return apiError(REFRESH_CHANGED_ELSEWHERE, 409);
+    }
+    const mirroredJson = JSON.stringify(mirroredLegacyRule(parseRecord(existing?.rule_json), advanced, input));
+    // Unit rules as the table will hold them after this save, in the table's order
+    // (SQLite's own NOCASE sort, as before). Only the order is taken from this read:
+    // it must hold exactly the rows of the guarded snapshot above, or another save
+    // landed in between and this one is refused before anything is written.
+    const nextRows = await env.DB
+      .prepare(
+        `SELECT rule_key, rule_json FROM unit_rules WHERE publisher_id = ? AND rule_key <> ?
+         UNION ALL SELECT ?, ? ORDER BY rule_key COLLATE NOCASE`,
+      )
+      .bind(siteId, ruleKey, ruleKey, mirroredJson)
+      .all<{ rule_key: string; rule_json: string }>();
+    const snapshot = new Map(rows.map((row) => [row.rule_key, row.rule_json]));
+    snapshot.set(ruleKey, mirroredJson);
+    const ordered = nextRows.results ?? [];
+    if (ordered.length !== snapshot.size || ordered.some((row) => snapshot.get(row.rule_key) !== row.rule_json)) {
+      return apiError(REFRESH_CHANGED_ELSEWHERE, 409);
+    }
+    const before = { advanced: structuredClone(allAdvanced) as Record<string, unknown>, basic: basic as Record<string, unknown> };
+    const unitRules: Record<string, JsonRecord> = {};
+    for (const row of ordered) unitRules[row.rule_key] = parseRecord(row.rule_json);
     allAdvanced[ruleKey] = advanced;
     config.advancedUnitRules = allAdvanced;
-    await syncConfigUnitRules(env.DB, siteId, config);
+    config.unitRules = unitRules;
+    // A chosen child Unit rules interval in effect before this save stays in
+    // effect instead of silently following this schedule; the response names them.
+    // The kept schedules are part of the same guarded config write below.
+    kept = keepUnitRuleIntervals(allAdvanced, unitRules, types, ruleKey, { savedRule: false, before });
+    appliesTo = (unitRows.results ?? [])
+      .filter((unit) => unit.enabled === 1 && unit.type !== 'DRAFT'
+        && scheduleSource({ advanced: allAdvanced, basic: unitRules }, types, unit.code) === ruleKey)
+      .map((unit) => unit.code);
 
-    await env.DB.batch([
+    const statements = [
       env.DB
-        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ?')
-        .bind(JSON.stringify(config), now, siteId),
+        .prepare(
+          `UPDATE publisher_configs SET config_json = ?, updated_at = ?
+           WHERE publisher_id = ? AND config_json = ? AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}
+             AND (SELECT type FROM ad_units WHERE publisher_id = ? AND code = ? LIMIT 1) IS ?`,
+        )
+        .bind(JSON.stringify(config), now, siteId, configRow.configJson, ...unitRuleRowsUnchangedArgs(siteId, rows), siteId, ruleKey, unitType),
+      existing
+        ? env.DB
+            .prepare(
+              `UPDATE unit_rules SET rule_json = ?, updated_at = ?
+               WHERE publisher_id = ? AND id = ? AND updated_at = ? AND changes() = 1`,
+            )
+            .bind(mirroredJson, mirroredVersion, siteId, existing.id, existing.updated_at)
+        : env.DB
+            .prepare(
+              `INSERT INTO unit_rules (id, publisher_id, rule_key, rule_json, created_at, updated_at)
+               SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
+            )
+            .bind(mirroredId, siteId, ruleKey, mirroredJson, now, mirroredVersion),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'unit_rule.advanced_updated', ?, 'advanced_unit_rule', ?, ?, ?)`,
+           ) SELECT ?, ?, 'unit_rule.advanced_updated', ?, 'advanced_unit_rule', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
           actor,
           siteId,
           ruleKey,
-          JSON.stringify({ ruleKey, advanced, mirroredUnitRuleId: mirrored.id }),
+          JSON.stringify({ ruleKey, advanced, mirroredUnitRuleId: mirroredId, ...(kept.length ? { keptUnitRuleIntervals: kept } : {}) }),
           now,
         ),
-    ]);
+    ];
+    const results = await env.DB.batch(statements);
+    if (results[0]?.meta.changes !== 1) {
+      return apiError(REFRESH_CHANGED_ELSEWHERE, 409);
+    }
+    if (!everyStatementChangedOneRow(results, statements.length)) {
+      return apiError('Advanced rule update was not fully applied. Reload before saving again.', 500);
+    }
+    written = mirroredRow({ id: mirroredId, rule_key: ruleKey, rule_json: mirroredJson, updated_at: mirroredVersion });
   } catch (error) {
     return apiError('Advanced rule update failed.', 500, error instanceof Error ? error.message : String(error));
   }
 
-  return json({ ok: true, ruleKey, advancedRule: advanced });
+  // The committed row and version, returned without a second read that a later save could
+  // race: the tab saves its next change against exactly this version.
+  return json({
+    ok: true, ruleKey, advancedRule: advanced, unitRule: written, keptUnitRuleIntervals: kept,
+    keptAdvancedRules: Object.fromEntries(kept.map((key) => [key, allAdvanced[key]])), appliesToAdUnits: appliesTo,
+  });
 }

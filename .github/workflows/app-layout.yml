@@ -34,6 +34,7 @@ jobs:
         run: |
           python scripts/verify-admin-audit-ui.py
           python scripts/verify-admin-audit-ui.py --runtime 3.16.1
+          python scripts/verify-admin-audit-ui.py --runtime 3.16.2
       - uses: actions/upload-artifact@v4
         if: always()
         with:

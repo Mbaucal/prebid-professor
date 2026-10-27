@@ -7,7 +7,7 @@ export {hasEnabledOutstream} from './settings.mjs';
 export function outstreamContext(snapshot) {
   const pin=JSON.parse(snapshot.config.config_json).builtinRuntimeSelection?.runtime;
   const next=contextV2(snapshot);
-  if((pin?.runtimeId==='tessera-3.16.1'&&pin.runtimeVersion==='3.16.1')||(pin?.runtimeId==='tessera-3.16.0'&&pin.runtimeVersion==='3.16.0')||(pin?.runtimeId==='tessera-revenue-preview-3'&&pin.runtimeVersion==='3.16.0-revenue.preview.3'))return {...next,positionScoped:true,responsiveSizing:true};
+  if((pin?.runtimeId==='tessera-3.16.2'&&pin.runtimeVersion==='3.16.2')||(pin?.runtimeId==='tessera-3.16.1'&&pin.runtimeVersion==='3.16.1')||(pin?.runtimeId==='tessera-3.16.0'&&pin.runtimeVersion==='3.16.0')||(pin?.runtimeId==='tessera-revenue-preview-3'&&pin.runtimeVersion==='3.16.0-revenue.preview.3'))return {...next,positionScoped:true,responsiveSizing:true};
   if(pin?.runtimeId==='tessera-revenue-preview-2'&&pin.runtimeVersion==='3.16.0-revenue.preview.2')return {...next,positionScoped:true};
   const previous=contextV1(snapshot);
   return {...previous,blockedReasons:next.blockedReasons,
