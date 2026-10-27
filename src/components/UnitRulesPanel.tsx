@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { api } from '../api';
+import { api, ApiError } from '../api';
+import type { RebaseReview } from '../edit-rebase';
+import { BASELINE_RULE, dialogAfterRefusal, formFromRule, ruleFromForm, type DialogBaseline, type RuleForm } from '../unit-rule-form';
 import { runtimeLabel } from '../site-workspace/runtime-labels';
+import EditRebaseReview from './EditRebaseReview';
 import type {
   AdUnit,
   SizeMap,
@@ -21,6 +24,11 @@ type Props = {
 
 type FormMode = 'create' | 'edit' | 'duplicate';
 
+// 404/409 from a rule save means another tab deleted or changed the rules first.
+function isStaleRuleError(error: unknown): error is ApiError {
+  return error instanceof ApiError && (error.status === 404 || error.status === 409);
+}
+
 type LoadingSummary = {
   runtimeVersion: string | null;
   issue: string | null;
@@ -38,44 +46,11 @@ async function loadLoadingSummary(publisherId: string): Promise<LoadingSummary> 
   return {...data.loadingSummary, refresh: data.refreshSummary};
 }
 
-type RuleForm = {
-  ruleKey: string;
-  overrideTimeout: boolean;
-  timeout: number;
-  overrideLazy: boolean;
-  lazyEnabled: boolean;
-  fetchMarginPx: number;
-  renderMarginPx: number;
-  overrideRefresh: boolean;
-  refreshEnabled: boolean;
-  minSeconds: number;
-  minViewPct: number;
-  requirePreviousViewable: boolean;
-  checkEveryMs: number;
-  conditionalMappings: UnitRuleConditionalMapping[];
-};
-
 const RESERVED_RULES = [
   { key: '__DEFAULT__', label: 'Default', description: 'Base behavior inherited by every ad unit.' },
   { key: '__ATF__', label: 'ATF', description: 'Overrides for all above-the-fold ad units.' },
   { key: '__BTF__', label: 'BTF', description: 'Overrides for all below-the-fold ad units.' },
 ] as const;
-
-const BASELINE_RULE: Required<Pick<UnitRuleConfig, 'timeout' | 'lazy' | 'refresh'>> = {
-  timeout: 2500,
-  lazy: {
-    enabled: false,
-    fetchMarginPx: 500,
-    renderMarginPx: 200,
-  },
-  refresh: {
-    enabled: true,
-    minSeconds: 30,
-    minViewPct: 50,
-    requirePreviousViewable: false,
-    checkEveryMs: 5000,
-  },
-};
 
 function uid(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -147,54 +122,6 @@ function presetForKey(ruleKey: string): UnitRuleConfig {
   return { conditionalMappings: [] };
 }
 
-function formFromRule(ruleKey: string, rule: UnitRuleConfig): RuleForm {
-  return {
-    ruleKey,
-    overrideTimeout: rule.timeout !== undefined,
-    timeout: rule.timeout ?? BASELINE_RULE.timeout,
-    overrideLazy: rule.lazy !== undefined,
-    lazyEnabled: rule.lazy?.enabled ?? BASELINE_RULE.lazy.enabled,
-    fetchMarginPx: rule.lazy?.fetchMarginPx ?? BASELINE_RULE.lazy.fetchMarginPx,
-    renderMarginPx: rule.lazy?.renderMarginPx ?? BASELINE_RULE.lazy.renderMarginPx,
-    overrideRefresh: rule.refresh !== undefined,
-    refreshEnabled: rule.refresh?.enabled ?? BASELINE_RULE.refresh.enabled,
-    minSeconds: rule.refresh?.minSeconds ?? BASELINE_RULE.refresh.minSeconds,
-    minViewPct: rule.refresh?.minViewPct ?? BASELINE_RULE.refresh.minViewPct,
-    requirePreviousViewable:
-      rule.refresh?.requirePreviousViewable ?? BASELINE_RULE.refresh.requirePreviousViewable,
-    checkEveryMs: rule.refresh?.checkEveryMs ?? BASELINE_RULE.refresh.checkEveryMs,
-    conditionalMappings: (rule.conditionalMappings ?? []).map((mapping) => ({
-      ...mapping,
-      conditions: mapping.conditions.map((condition) => ({ ...condition })),
-    })),
-  };
-}
-
-function ruleFromForm(form: RuleForm): UnitRuleConfig {
-  const rule: UnitRuleConfig = {};
-  if (form.overrideTimeout) rule.timeout = Number(form.timeout);
-  if (form.overrideLazy) {
-    rule.lazy = {
-      enabled: form.lazyEnabled,
-      fetchMarginPx: Number(form.fetchMarginPx),
-      renderMarginPx: Number(form.renderMarginPx),
-    };
-  }
-  if (form.overrideRefresh) {
-    rule.refresh = {
-      enabled: form.refreshEnabled,
-      minSeconds: Number(form.minSeconds),
-      minViewPct: Number(form.minViewPct),
-      requirePreviousViewable: form.requirePreviousViewable,
-      checkEveryMs: Number(form.checkEveryMs),
-    };
-  }
-  if (form.conditionalMappings.length) {
-    rule.conditionalMappings = form.conditionalMappings;
-  }
-  return rule;
-}
-
 function mergeEffectiveRule(...rules: Array<UnitRuleConfig | undefined>): UnitRuleConfig {
   const merged: UnitRuleConfig = {
     timeout: BASELINE_RULE.timeout,
@@ -229,6 +156,16 @@ function scopeLabel(ruleKey: string): string {
   return `Exact · ${ruleKey}`;
 }
 
+/** Names rules whose Unit rules interval a save gave its own fixed schedule. */
+function keptIntervalsNotice(keys: string[]): string | null {
+  if (!keys.length) return null;
+  const names = keys.map((key) => key === '__DEFAULT__' ? 'Default' : key === '__ATF__' ? 'ATF group' : key === '__BTF__' ? 'BTF group' : key);
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return names.length === 1
+    ? `${list} uses its own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows it as “Same every time”.`
+    : `${list} use their own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows them as “Same every time”.`;
+}
+
 function timeoutText(rule: UnitRuleConfig): string {
   return rule.timeout === undefined ? 'Inherited' : `${rule.timeout} ms`;
 }
@@ -254,16 +191,21 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
   const [sizeMaps, setSizeMaps] = useState<SizeMap[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [mode, setMode] = useState<FormMode | null>(null);
   const [source, setSource] = useState<UnitRule | null>(null);
   const [form, setForm] = useState<RuleForm>(() => formFromRule('__DEFAULT__', presetForKey('__DEFAULT__')));
   const [formError, setFormError] = useState<string | null>(null);
+  const [rebaseNote, setRebaseNote] = useState<RebaseReview | null>(null);
+  // After a refused save: what the dialog counts as loaded for the next one (see rebasedBaseline).
+  const [rebasedFrom, setRebasedFrom] = useState<DialogBaseline | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [creatingBaseRules, setCreatingBaseRules] = useState(false);
   const [loadingSummary, setLoadingSummary] = useState<LoadingSummary | null>(null);
   const loadSequence = useRef(0);
 
-  const load = useCallback(async () => {
+  // Resolves to the loaded rules, or null when the load failed or a newer load replaced it.
+  const load = useCallback(async (): Promise<UnitRule[] | null> => {
     const sequence = ++loadSequence.current;
     setLoading(true);
     setLoadingSummary(null);
@@ -276,15 +218,17 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
           runtimeVersion: null, units: [], issue: 'Loading behavior is unavailable. Reload to try again.',
         })),
       ]);
-      if (sequence !== loadSequence.current) return;
+      if (sequence !== loadSequence.current) return null;
       setUnitRules(rules);
       setAdUnits(units);
       setSizeMaps(maps);
       setLoadingSummary(summary);
       setError(null);
+      return rules;
     } catch (requestError) {
-      if (sequence !== loadSequence.current) return;
+      if (sequence !== loadSequence.current) return null;
       setError(requestError instanceof Error ? requestError.message : 'Could not load unit rules.');
+      return null;
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
     }
@@ -319,6 +263,8 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setSource(null);
     setForm(formFromRule(target, presetForKey(target)));
     setFormError(null);
+    setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function openEdit(rule: UnitRule) {
@@ -326,6 +272,8 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setSource(rule);
     setForm(formFromRule(rule.ruleKey, rule.rule));
     setFormError(null);
+    setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function openDuplicate(rule: UnitRule) {
@@ -334,6 +282,8 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setSource(rule);
     setForm(formFromRule(target, rule.rule));
     setFormError(null);
+    setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function closeForm() {
@@ -341,6 +291,8 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     setMode(null);
     setSource(null);
     setFormError(null);
+    setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function updateForm<K extends keyof RuleForm>(key: K, value: RuleForm[K]) {
@@ -415,6 +367,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
+    setRebaseNote(null);
 
     if (!form.ruleKey) {
       setFormError('Select a rule target.');
@@ -433,19 +386,52 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     }
 
     setSubmitting(true);
+    setNotice(null);
     try {
-      if (mode === 'edit' && source) {
-        await api.updateUnitRule(publisherId, source.id, { rule });
-      } else if (mode === 'duplicate' && source) {
-        await api.duplicateUnitRule(publisherId, source.id, { ruleKey: form.ruleKey });
-      } else {
-        await api.createUnitRule(publisherId, { ruleKey: form.ruleKey, rule });
-      }
+      const saved = mode === 'edit' && source
+        ? await api.updateUnitRule(publisherId, source.id, { rule, expectedUpdatedAt: source.updatedAt })
+        : mode === 'duplicate' && source
+          ? await api.duplicateUnitRule(publisherId, source.id, { ruleKey: form.ruleKey })
+          : await api.createUnitRule(publisherId, { ruleKey: form.ruleKey, rule });
+      setNotice(keptIntervalsNotice(saved.keptUnitRuleIntervals));
       await load();
       await onChanged?.();
       closeForm();
     } catch (requestError) {
-      setFormError(requestError instanceof Error ? requestError.message : 'Unit rule operation failed.');
+      const message = requestError instanceof Error ? requestError.message : 'Unit rule operation failed.';
+      if (isStaleRuleError(requestError)) {
+        // Another tab changed or deleted the rule and nothing was saved. Refresh the list
+        // behind the dialog, but keep the dialog and every entered value.
+        const rules = await load();
+        // The rule as saved now, with its version from the same list read.
+        const latest = mode === 'edit' && source ? rules?.find((item) => item.id === source.id) : undefined;
+        if (requestError.status === 409 && source && latest && latest.updatedAt !== source.updatedAt) {
+          // Edit the rule as it is saved now: only the fields changed in this dialog stay,
+          // so saving again cannot put back what the other tab replaced. The next save is
+          // checked against this reloaded version, never the one the dialog opened with.
+          const { rebased, review, next } = dialogAfterRefusal(
+            form,
+            rebasedFrom ?? { form: formFromRule(source.ruleKey, source.rule), carried: {} },
+            formFromRule(latest.ruleKey, latest.rule),
+          );
+          setRebasedFrom(next);
+          setSource(latest);
+          setForm(rebased.form);
+          setRebaseNote(review);
+          setFormError(rebased.changed.length
+            ? 'This rule was changed in another tab, so nothing was saved. The dialog now shows the saved rule with your changes applied. Review it and select Save rule again.'
+            : 'This rule was changed in another tab, so nothing was saved. You had not changed anything in this dialog, so it now shows the rule as saved in the other tab.');
+          return;
+        }
+        if (requestError.status === 404 && mode === 'edit') {
+          setMode('create');
+          setSource(null);
+          setRebasedFrom(null);
+          setFormError(`${message} Your entries are kept: select Save rule to create this rule again, or Cancel.`);
+          return;
+        }
+      }
+      setFormError(message);
     } finally {
       setSubmitting(false);
     }
@@ -455,11 +441,15 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     if (!window.confirm(`Delete rule ${scopeLabel(rule.ruleKey)}? Its values will fall back to inherited rules.`)) {
       return;
     }
+    setNotice(null);
     try {
-      await api.deleteUnitRule(publisherId, rule.id);
+      const deleted = await api.deleteUnitRule(publisherId, rule.id);
+      setNotice(keptIntervalsNotice(deleted.keptUnitRuleIntervals));
       await load();
       await onChanged?.();
     } catch (requestError) {
+      // A successful reload clears the panel error, so reload first and report after.
+      if (isStaleRuleError(requestError)) await load();
       setError(requestError instanceof Error ? requestError.message : 'Could not delete unit rule.');
     }
   }
@@ -468,13 +458,19 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
     if (!missingReserved.length) return;
     setCreatingBaseRules(true);
     setError(null);
+    setNotice(null);
     try {
+      const kept: string[] = [];
       for (const item of missingReserved) {
-        await api.createUnitRule(publisherId, {
+        // Presets are starting values: a schedule already saved in Refresh schedules keeps applying.
+        const saved = await api.createUnitRule(publisherId, {
           ruleKey: item.key,
           rule: presetForKey(item.key),
+          followInheritedSchedule: true,
         });
+        kept.push(...saved.keptUnitRuleIntervals);
       }
+      setNotice(keptIntervalsNotice(kept));
       await load();
       await onChanged?.();
     } catch (requestError) {
@@ -537,6 +533,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
         </div>
 
         {error ? <div className="form-error config-error">{error}</div> : null}
+        {notice ? <p role="status" className="loading-summary-help unit-rules-notice">{notice}</p> : null}
         {loading ? <div className="config-loading">Loading unit rules from D1…</div> : null}
 
         <div className="rule-inheritance-strip">
@@ -853,6 +850,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
               </section>
 
               {formError ? <div className="form-error">{formError}</div> : null}
+              {rebaseNote ? <EditRebaseReview review={rebaseNote} /> : null}
               <div className="modal-actions unit-rule-modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeForm} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting || !form.ruleKey} type="submit">

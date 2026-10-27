@@ -13,8 +13,8 @@ export function assertCompilerStrings(value, field = 'Settings', depth = 0) {
 
 export function supportsLiteralSchain(runtime) {
   return runtime?.capabilities?.includes('literal-schain') === true
-    || ((runtime?.runtimeId ?? runtime?.id) === 'tessera-3.16.1'
-      && (runtime?.runtimeVersion ?? runtime?.version) === '3.16.1');
+    || [['tessera-3.16.1', '3.16.1'], ['tessera-3.16.2', '3.16.2']].some(([id, version]) =>
+      (runtime?.runtimeId ?? runtime?.id) === id && (runtime?.runtimeVersion ?? runtime?.version) === version);
 }
 
 export function assertSchainCompatibility(schain, runtime) {

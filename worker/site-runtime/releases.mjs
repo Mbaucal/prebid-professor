@@ -12,7 +12,7 @@ import { refreshSummary } from './refresh-summary.mjs';
 
 const encode=new TextEncoder(),decode=new TextDecoder('utf-8',{fatal:true});
 const ID=/^builtin-release-[a-f0-9]{64}$/;
-const hasDealsPlan=runtime=>[['tessera-3.16.1','3.16.1'],['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version)&&runtime?.capabilities?.includes('prebid-deals');
+const hasDealsPlan=runtime=>[['tessera-3.16.2','3.16.2'],['tessera-3.16.1','3.16.1'],['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version)&&runtime?.capabilities?.includes('prebid-deals');
 const check=(ok,message,status=409)=>{if(!ok)throw Object.assign(new Error(message),{status});};
 const db=env=>env.DB.withSession('first-primary');
 const snapshot=(env,site)=>readPreviewSnapshot(db(env),site,{includePrebid:true});
@@ -24,7 +24,7 @@ export async function packageState(env,site,{testOnly=false}={}){
  const saved=await snapshot(env,site),revision=await digest(saved);let error=null,selected=null;
  try{selected=await readPinnedSiteRuntime({siteId:site,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);}catch(e){error=e.message;}
  const setup=siteSetupState(saved);if(error&&setup.setupMessage)error=setup.setupMessage;
- const warnings=selected?refreshSummary(previewInput(selected.snapshot,selected.descriptor,'20000101_000000'),saved.units,selected.pin).warnings:[];
+ const warnings=selected?refreshSummary(previewInput(selected.snapshot,selected.descriptor,'20000101_000000'),saved.units,selected.pin,saved.rules).warnings:[];
  if(setup.userSyncWarning)warnings.push(setup.userSyncWarning);
  let cacheBlocked=false;try{requireSupportedCacheGenerator(JSON.parse(saved.config.config_json));}catch(e){error=e.message;cacheBlocked=true;}
  const rows=await db(env).prepare("SELECT * FROM releases WHERE publisher_id=? AND version LIKE ? ORDER BY created_at DESC,id DESC LIMIT 50").bind(site,testOnly?'builtin-draft-%':'builtin-release-%').all();
@@ -58,7 +58,7 @@ export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
  }
  const {descriptor}=await describeCandidate(site,candidate);
  const id=`builtin-release-${descriptor.packageSha256}`,files={...candidate.files};
- const stable316=[['tessera-3.16.0','3.16.0'],['tessera-3.16.1','3.16.1']].some(([id,version])=>descriptor.runtime.runtimeId===id&&descriptor.runtime.runtimeVersion===version);
+ const stable316=[['tessera-3.16.0','3.16.0'],['tessera-3.16.1','3.16.1'],['tessera-3.16.2','3.16.2']].some(([id,version])=>descriptor.runtime.runtimeId===id&&descriptor.runtime.runtimeVersion===version);
  // Store the reviewed output as a complete, immutable release with exact source pins.
  const created=new Date().toISOString();
  if(stable316)files['README.txt']=encode.encode(decode.decode(files['README.txt'])+`\nSaved release: ${id}\nUse ads.js once. Stage and review this saved release before production.\n`);

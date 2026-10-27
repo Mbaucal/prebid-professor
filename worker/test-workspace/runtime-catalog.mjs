@@ -1,3 +1,6 @@
+import {descriptor as patch3162} from '../../.generated/runtime-3162-manifest.mjs';
+import {buildArtifactCandidate as patch3162Candidate} from '../runtime-3162/artifact-candidate.mjs';
+import {previewInput as patch3162Input} from '../runtime-3162/snapshot.mjs';
 import {descriptor as patch3161} from '../../.generated/runtime-3161-manifest.mjs';
 import {buildArtifactCandidate as patch3161Candidate} from '../runtime-3161/artifact-candidate.mjs';
 import {previewInput as patch3161Input} from '../runtime-3161/snapshot.mjs';
@@ -13,7 +16,7 @@ import {previewInput as revenueV2Input} from '../runtime-revenue-v2/snapshot.mjs
 import {descriptor as revenue} from '../../.generated/runtime-revenue-manifest.mjs';
 import {buildArtifactCandidate as revenueCandidate} from '../runtime-revenue-v1/artifact-candidate.mjs';
 import {previewInput as revenueInput} from '../runtime-revenue-v1/snapshot.mjs';
-import {requireRevenueRuntime} from '../runtime-3161/settings-guard.mjs';
+import {requireRevenueRuntime} from '../runtime-3162/settings-guard.mjs';
 import {descriptor as readiness} from '../../.generated/runtime-readiness-manifest.mjs';
 import {buildArtifactCandidate as readinessCandidate} from '../runtime-readiness-v1/artifact-candidate.mjs';
 /** All listed engines are bundled; selection never upgrades implicitly. */
@@ -30,7 +33,7 @@ import {outstreamSizingReview,outstreamContext} from '../../shared/outstream/set
 import { prepareSiteRuntimeSelection as prepare, readPinnedSiteRuntime as read, RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
 import {requireSupportedCacheGenerator} from '../site-runtime/prebid-cache-settings.mjs';
 import { takeOverForBuild } from './takeover-settings.mjs';
-export const runtimeCatalog=[validateRuntimeDescriptor(next),reference,validateRuntimeDescriptor(reporting),validateRuntimeDescriptor(readiness),validateRuntimeDescriptor(revenue),validateRuntimeDescriptor(revenueV2),validateRuntimeDescriptor(revenueV3),validateRuntimeDescriptor(stable316),validateRuntimeDescriptor(patch3161)];
+export const runtimeCatalog=[validateRuntimeDescriptor(next),reference,validateRuntimeDescriptor(reporting),validateRuntimeDescriptor(readiness),validateRuntimeDescriptor(revenue),validateRuntimeDescriptor(revenueV2),validateRuntimeDescriptor(revenueV3),validateRuntimeDescriptor(stable316),validateRuntimeDescriptor(patch3161),validateRuntimeDescriptor(patch3162)];
 export const runtimeDescriptor=runtimeCatalog[0];
 export function descriptorForPin(pin){
   const descriptor=runtimeCatalog.find(r=>r.id===pin?.runtimeId&&r.version===pin?.runtimeVersion);
@@ -40,10 +43,10 @@ export function descriptorForPin(pin){
 export function previewInput(snapshot,descriptor,time,takeOver){
   const config=JSON.parse(snapshot.config.config_json);
   requireRevenueRuntime(config,descriptor);
-  if(descriptor.id===patch3161.id||descriptor.id===stable316.id||descriptor.id===revenueV3.id||descriptor.id===revenueV2.id||descriptor.id===revenue.id||descriptor.id===next.id||descriptor.id===reporting.id||descriptor.id===readiness.id){
+  if(descriptor.id===patch3162.id||descriptor.id===patch3161.id||descriptor.id===stable316.id||descriptor.id===revenueV3.id||descriptor.id===revenueV2.id||descriptor.id===revenue.id||descriptor.id===next.id||descriptor.id===reporting.id||descriptor.id===readiness.id){
     const codes=Object.keys(config.runtimeControls?.adPositions??{});
     if(codes.some(code=>snapshot.units.find(unit=>unit.code===code)?.enabled!==1))throw Error('Enable the TakeOver ad position, or explicitly change its display to Standard before disabling it.');
-    const input=(descriptor.id===patch3161.id?patch3161Input:descriptor.id===stable316.id?stable316Input:descriptor.id===revenueV3.id?revenueV3Input:descriptor.id===revenueV2.id?revenueV2Input:descriptor.id===revenue.id?revenueInput:positionsInput)(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
+    const input=(descriptor.id===patch3162.id?patch3162Input:descriptor.id===patch3161.id?patch3161Input:descriptor.id===stable316.id?stable316Input:descriptor.id===revenueV3.id?revenueV3Input:descriptor.id===revenueV2.id?revenueV2Input:descriptor.id===revenue.id?revenueInput:positionsInput)(snapshot,descriptor,time,takeOver??takeOverForBuild(snapshot));
     if(input.overlay?.demand==='site'&&config.enablePrebid!==true)throw Error('This TakeOver uses Prebid + GAM. Enable Prebid or explicitly change its demand to GAM only.');
     if(input.overlay){
       const base=input.overlay.unit.sizeMapName,maps=input.core.sizeMapsRaw;
@@ -57,7 +60,7 @@ export function previewInput(snapshot,descriptor,time,takeOver){
 export const prepareSiteRuntimeSelection=(args,bucket)=>prepare({...args,inputAdapter:previewInput},bucket);
 export function readPinnedSiteRuntime(args,bucket){
   const config=JSON.parse(args.snapshot.config.config_json),pin=config.builtinRuntimeSelection?.runtime;
-  if(config.enablePrebid===true&&((pin?.runtimeId==='tessera-3.16.1'&&pin.runtimeVersion==='3.16.1')||(pin?.runtimeId==='tessera-revenue-preview-3'&&pin.runtimeVersion==='3.16.0-revenue.preview.3')||(pin?.runtimeId==='tessera-3.16.0'&&pin.runtimeVersion==='3.16.0'))){
+  if(config.enablePrebid===true&&((pin?.runtimeId==='tessera-3.16.2'&&pin.runtimeVersion==='3.16.2')||(pin?.runtimeId==='tessera-3.16.1'&&pin.runtimeVersion==='3.16.1')||(pin?.runtimeId==='tessera-revenue-preview-3'&&pin.runtimeVersion==='3.16.0-revenue.preview.3')||(pin?.runtimeId==='tessera-3.16.0'&&pin.runtimeVersion==='3.16.0'))){
     const pending=outstreamSizingReview(config.runtimeControls?.outstream,outstreamContext(args.snapshot));
     if(pending.length)throw new RuntimeSelectionError('outstream_sizes_review_required','Review Outstream sizes in Formats before Generate. '+pending.map(issue=>issue.message).join(' '));
   }
@@ -67,5 +70,5 @@ export async function buildArtifactCandidate(args){
   requireSupportedCacheGenerator(JSON.parse(args.snapshot.config.config_json));
   const descriptor=descriptorForPin(args.pin);
   previewInput(args.snapshot,descriptor,args.buildTimestamp,args.takeOver);
-  return descriptor.id===patch3161.id?patch3161Candidate(args):descriptor.id===stable316.id?stable316Candidate(args):descriptor.id===revenueV3.id?revenueV3Candidate(args):descriptor.id===revenueV2.id?revenueV2Candidate(args):descriptor.id===revenue.id?revenueCandidate(args):descriptor.id===readiness.id?readinessCandidate(args):descriptor.id===reporting.id?reportingCandidate(args):descriptor.id===next.id?positionsCandidate(args):referenceCandidate(args);
+  return descriptor.id===patch3162.id?patch3162Candidate(args):descriptor.id===patch3161.id?patch3161Candidate(args):descriptor.id===stable316.id?stable316Candidate(args):descriptor.id===revenueV3.id?revenueV3Candidate(args):descriptor.id===revenueV2.id?revenueV2Candidate(args):descriptor.id===revenue.id?revenueCandidate(args):descriptor.id===readiness.id?readinessCandidate(args):descriptor.id===reporting.id?reportingCandidate(args):descriptor.id===next.id?positionsCandidate(args):referenceCandidate(args);
 }
