@@ -9,6 +9,8 @@ import {parsePrebidHeader} from '../../worker/runtime/prebid-artifact-check.mjs'
 import {outstreamSettingsResponse} from '../../worker/site-runtime/outstream-settings.mjs';
 import {getDealSettings,saveDealSettings} from '../../worker/site-runtime/deal-settings.mjs';
 import {unzipSync} from 'fflate';
+import {parse} from 'acorn';
+import vm from 'node:vm';
 const fixtures=[];test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function fixture(){const f=workspaceStore();fixtures.push(f);f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
  f.sqlite.prepare("INSERT INTO publishers(id,name,domain,gam_path) VALUES('first','First','first.invalid','/123/first/')").run();
@@ -72,7 +74,7 @@ test('release setup explains the missing file before version selection and keeps
 test('built-in Generate stores original package; channels and rollback reuse its exact bytes',async()=>{
  const f=await fixture(),settings=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
  const a=await generate(f);assert.equal(a.status,'draft');assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,settings);
- const original=await readPackage(f.env,'first',a.id);assert.deepEqual(original.files['ads.js'],original.files['ads.min.js']);
+ const original=await readPackage(f.env,'first',a.id);assert.notDeepEqual(original.files['ads.js'],original.files['ads.min.js']);
  const verified=await verifyPackage(original.files,{site_id:'first',release_id:a.id,release_version:a.id});assert.equal(verified.builtinDraft,false);
  assert.equal(await deploymentManifestPin(f.env.BUILDS,'first',original.release),verified.manifestSha256);
  await assert.rejects(promote(f,a.id,'production'),/Stage/);await promote(f,a.id,'staging');await promote(f,a.id,'production');
@@ -83,6 +85,43 @@ test('built-in Generate stores original package; channels and rollback reuse its
  assert.deepEqual((await readPackage(f.env,'first',a.id)).files,original.files);
  assert.equal((await packageDownload(f.env,'first',a.id)).status,200);
  assert.match(f.sqlite.prepare('SELECT rule_json FROM unit_rules').get().rule_json,/1700/);
+});
+for(const cleanComments of [true,false])test('saved 3.16.2 ZIP retains readable source and SChain with cleanComments='+cleanComments,async()=>{
+ const f=await fixture(),decode=bytes=>new TextDecoder().decode(bytes);
+ const prebid=new Uint8Array(readFileSync('vendor/prebid/tanjug-11.34.0/prebid.js')),header=parsePrebidHeader(decode(prebid));
+ const path='publishers/first/prebid-builds/original/prebid.js';f.objects.set(path,{bytes:prebid,meta:{sha256:await sha256(prebid)}});
+ f.sqlite.prepare("INSERT INTO prebid_builds(id,publisher_id,version,file_key,modules_json,status) VALUES('original','first',?,?,?, 'current')").run(header.version,path,JSON.stringify(header.modules));
+ f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,enabled) VALUES('pubmatic','first','pubmatic',?,1)").run(JSON.stringify({publisherId:'synthetic',adSlot:'base'}));
+ const schain={ver:'1.0',complete:1,nodes:[{asi:'ringier.rs',sid:'20221205191920',hp:1}]};
+ const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+ config.enablePrebid=true;config.runtimeControls.output.cleanComments=cleanComments;
+ config.runtimeControls.schain={enabled:true,version:schain.ver,complete:schain.complete,nodes:schain.nodes};
+ f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(config));
+ const state=await siteRuntimeSettings(f.env,'first'),runtime=state.runtimes.find(item=>item.version==='3.16.2');assert(runtime);
+ await changeSiteRuntime(f.env,'first','tester',{action:'setup',revision:state.revision,runtime:runtime.pin,allowPreview:false,enablePrebid:true});
+ const release=await generate(f),stored=await readPackage(f.env,'first',release.id);
+ const zip=unzipSync(new Uint8Array(await (await packageDownload(f.env,'first',release.id)).arrayBuffer()));
+ const readable=decode(zip['ads.js']),compact=decode(zip['ads.min.js']);
+ assert(readable.split('\n').length>100,'ads.js must remain readable in the saved ZIP');
+ assert.equal(compact.trim().split('\n').length,1,'ads.min.js must remain compact');
+ assert(readable.length>compact.length);
+ assert.equal(readable.includes('SCHAIN (opciono, iz Postavki)'),!cleanComments);
+ assert.deepEqual(JSON.parse(decode(zip['config.json'])).options.schain,schain);
+ for(const name of ['ads.js','ads.min.js']){
+  const source=decode(zip[name]),objects=[];
+  const walk=node=>{
+   if(!node||typeof node!=='object')return;
+   if(node.type==='Property'&&(node.key.name??node.key.value)==='ortb2'&&node.value.type==='ObjectExpression')objects.push(node.value);
+   for(const value of Object.values(node))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);
+  };
+  walk(parse(source,{ecmaVersion:2015}));assert.equal(objects.length,1);
+  const ortb2=vm.runInNewContext('('+source.slice(objects[0].start,objects[0].end)+')',{}, {timeout:1000});
+  assert.deepEqual(JSON.parse(JSON.stringify(ortb2.source.schain)),schain);
+  assert.deepEqual(zip[name],stored.files[name]);assert.equal(await sha256(zip[name]),stored.manifest.files[name].sha256);
+  const response=await packageAssetResponse(new Request('https://tessera.invalid/api/artifact'),f.env,'first',release.id,name);
+  assert.equal(response.status,200);assert.deepEqual(new Uint8Array(await response.arrayBuffer()),zip[name]);
+ }
+ assert.deepEqual(zip['prebid.js'],prebid);
 });
 test('corrupt files and cross-site IDs cannot publish; concurrent channel changes are rejected',async()=>{
  const f=await fixture(),a=await generate(f);await assert.rejects(readPackage(f.env,'second',a.id));
