@@ -89,6 +89,16 @@ globalThis.fetch=async url=>{
   async publish(){let r=run('prepare');assert.equal(r.status,0,r.stderr);assert.equal(await verifyPreparedPages(root,env),'main');r=run('verify-public');assert.equal(r.status,0,r.stderr);
    assert(existsSync(resolve(root,'.generated/pages-release/public-verification.json')));return Object.fromEntries(readdirSync(dist).sort().map(name=>[name,readFileSync(resolve(dist,name))]));}};
 }
+// README tells a manual installer which file to host and lists every other file in this package as not published.
+function assertInstallReadme(files){
+ const readme=decode(files['README.txt']),others=Object.keys(files).filter(n=>!['ads.js','ads.min.js','prebid.js'].includes(n)).sort().join(', ');
+ assert.match(readme,/\nManual installation\nUpload ads\.min\.js and serve it under the public name ads\.js, at the script URL your pages already load\. Tessera's Pages publication does the same\./);
+ assert.match(readme,/ads\.js in this archive is the readable review copy of the same script; do not upload it, and load the Tessera script only once\./);
+ assert(readme.includes('The other files are for review and page setup and are not published with the script: '+others+'.\n'),others);
+ assert.equal(readme.includes('Upload prebid.js unchanged and load it before ads.js.'),Boolean(files['prebid.js']));
+ assert.doesNotMatch(readme,/Use ads\.js once|Use one, never both/);
+ if(/^Tessera 3\.16\./.test(readme))assert(readme.includes('ads.js is the readable review copy of ads.min.js; both have the same parser-validated behavior. Of the two Tessera script copies, host only ads.min.js, under the public name ads.js (see Manual installation below).'));
+}
 const entry=(manifest,name,sourceName)=>({name,byteSize:manifest.files[sourceName??name].byteSize,sha256:manifest.files[sourceName??name].sha256,...(sourceName?{sourceName}:{})});
 // The runner before MBA-332 kept the archived ads.js and prebid.js entries unchanged.
 const earlierEvidence=verified=>({...verified,deliveryProfile:'scripts-v1',files:verified.files.filter(e=>['ads.js','prebid.js'].includes(e.name))});
@@ -104,6 +114,7 @@ for(const cleanComments of [true,false])test('production Pages runner publishes 
  assert.deepEqual(evidence.files,[entry(stored.manifest,'ads.js','ads.min.js')]);
  assert.deepEqual(await snapshot(f),before);
  assert(decode(stored.files['ads.js']).split('\n').length>100,'the saved ZIP keeps readable ads.js');
+ assertInstallReadme(stored.files);
 });
 
 for(const [version,prebid] of [['3.16.0',false],['3.16.1',false],['3.16.2',false],['3.16.2',true]])test(`${version} ${prebid?'Prebid':'GAM-only'} package goes from Generate through reopen, both downloads, prepare, preflight and verify-public; deals-plan.json stays in the archive`,async()=>{
@@ -113,7 +124,7 @@ for(const [version,prebid] of [['3.16.0',false],['3.16.1',false],['3.16.2',false
  assert(names.includes('deals-plan.json')&&names.includes('gam-reporting.json'));
  const plan=JSON.parse(decode(stored.files['deals-plan.json']));assert.equal(plan.schemaVersion,1);assert.equal(plan.siteId,f.site);assert.equal(plan.writeEnabled,false);
  const {server,browser}=await downloads(f,id);
- for(const zip of [server,browser]){assert.deepEqual(Object.keys(zip).sort(),names);for(const name of names)assert.equal(sha(zip[name]),sha(stored.files[name]),name);}
+ for(const zip of [server,browser]){assert.deepEqual(Object.keys(zip).sort(),names);for(const name of names)assert.equal(sha(zip[name]),sha(stored.files[name]),name);assertInstallReadme(zip);}
  const before=await snapshot(f),runner=await pagesRunner(f,id);
  for(const name of names)assert.equal(sha(runner.cdn[runner.input.release_base_url+'/'+name]),sha(server[name]),'runner source equals the downloaded ZIP: '+name);
  const dist=await runner.publish();
