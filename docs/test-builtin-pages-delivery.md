@@ -46,8 +46,9 @@ accepted archive remains intact. Cloudflare receives these original source bytes
 | `prebid.js` | `prebid.js` | Original accepted Prebid build, when enabled |
 | `_headers` | Versioned delivery policy | CORS `*`, nosniff, noindex, `public, max-age=0, must-revalidate` |
 
-Config, source manifest, readable wrapper, CSV, styles and implementation examples
-remain in the authenticated Tessera archive. The wrapper already injects sticky
+Config, source manifest, readable wrapper, CSV, styles, implementation examples
+and supporting data (`gam-reporting.json`, `deals-plan.json`) remain in the
+authenticated Tessera archive. The wrapper already injects sticky
 styles; existing publisher placement CSS stays on the publisher's page. This
 layout does not rewrite the site, its DOM IDs, existing script URLs, or saved
 settings. Tanjug retains `https://tanjug.pages.dev/ads.js` and `/prebid.js` for a

@@ -45,7 +45,8 @@ export async function verifyDeliveryZip(bytes, expected) {
   requireThat(bytes instanceof Uint8Array && bytes.length > 0 && bytes.length <= MAX_ZIP, 'Invalid delivery ZIP size.');
   if (expected.zipSha256) requireThat(await sha256(bytes) === expected.zipSha256, 'Saved delivery ZIP differs.');
   let total = 0, count = 0;
-  const allowed = new Set(['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','manifest.json','min-height.css','sticky.css','prebid.js','gam-reporting.json']);
+  // describeCandidate below decides whether the runtime requires deals-plan.json (MBA-333).
+  const allowed = new Set(['README.txt','ads.js','ads.min.js','config.json','div-export.csv','implementation.html','manifest.json','min-height.css','sticky.css','prebid.js','gam-reporting.json','deals-plan.json']);
   const names = new Set();
   const files = unzipSync(bytes, {filter(entry) {
     requireThat(allowed.has(entry.name) && !names.has(entry.name), 'Unexpected or duplicate ZIP entry.');

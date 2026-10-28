@@ -23,7 +23,7 @@ async function scriptsAt(origin, delivery, fetcher) {
     results.push({name:file.name,sha256:file.sha256,byteSize:file.byteSize,etag,revalidated:true});
   }
   // A new Pages deployment must not retain the old public source/archive files.
-  for (const name of ['ads.min.js','config.json','manifest.json','implementation.html','implementation','README.txt','div-export.csv','sticky.css','min-height.css','_headers']) {
+  for (const name of ['ads.min.js','config.json','manifest.json','implementation.html','implementation','README.txt','div-export.csv','sticky.css','min-height.css','gam-reporting.json','deals-plan.json','_headers']) {
     const response=await fetcher(origin+'/'+name,{method:'GET',headers:{},redirect:'manual',signal:AbortSignal.timeout(20000)});
     await response.body?.cancel();
     requireThat(response.status === 404 && !response.redirected,'An excluded source file is still public: '+name);

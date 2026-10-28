@@ -10,6 +10,10 @@ const HASH = /^[a-f0-9]{64}$/;
 const PART = /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/;
 const REQUIRED = ['ads.js','ads.min.js','prebid.js','config.json','min-height.css','div-export.csv','implementation.html'];
 const ALLOWED = [...REQUIRED, 'sticky.css', 'README.txt', 'gam-reporting.json'];
+// Supporting data that only built-in runtimes with the prebid-deals capability
+// write (MBA-333). Legacy kinds never accept it, and compact delivery keeps it in
+// the saved archive. It is small, so the legacy MAX_TOTAL bound is unchanged.
+const DEALS_PLAN = 'deals-plan.json';
 // Match the legacy Prebid uploader's 20 MiB acceptance limit. Private built-in
 // candidates retain their own smaller storage limits in describeCandidate.
 const MAX_FILE = 20 * 1024 * 1024;
@@ -46,12 +50,15 @@ export function manifestInventory(bytes, expected) {
   requireThat(m.schemaVersion === 1 && m.siteId === expected.site_id && HASH.test(m.configHash), 'Manifest identity is invalid.');
   requireThat(record(m.files), 'Manifest file inventory is missing.');
   const names = Object.keys(m.files).sort();
-  requireThat(names.every(n => ALLOWED.includes(n)), 'Manifest contains an unsupported file name.');
   const builtin = m.kind === 'builtin-runtime-candidate';
+  const complete = m.kind === 'builtin-runtime-release' && m.completeRelease === true;
+  requireThat(names.every(n => ALLOWED.includes(n) || ((builtin || complete) && n === DEALS_PLAN)), 'Manifest contains an unsupported file name.');
   if (!builtin) {
     requireThat(m.releaseId === expected.release_id && m.version === expected.release_version, 'Manifest belongs to another release.');
-    const complete=m.kind==='builtin-runtime-release'&&m.completeRelease===true;
     requireThat(REQUIRED.filter(n=>!(complete&&m.prebidBuild===null&&n==='prebid.js')).every(n => names.includes(n)), 'Required release files are missing.');
+    // Capability form of the platform readPackage rule. The pinned manifest and readPackage
+    // bind the exact runtime; describeCandidate enforces the rule for candidates.
+    if (complete) requireThat(names.includes(DEALS_PLAN) === (Array.isArray(m.runtime?.capabilities) && m.runtime.capabilities.includes('prebid-deals')), 'Deals plan differs from the release runtime.');
   }
   let total = bytes.byteLength;
   const entries = names.map(name => {
@@ -70,6 +77,11 @@ export async function verifyPackage(files, expected) {
   requireThat(same(Object.keys(files).sort(), [...entries.map(e => e.name), 'manifest.json'].sort()), 'Package file set differs from manifest.');
   for (const e of entries) requireThat(files[e.name] instanceof Uint8Array && files[e.name].byteLength === e.byteSize && digest(files[e.name]) === e.sha256, `Release bytes do not match manifest: ${e.name}.`);
   const config = json(files['config.json']);
+  if (files[DEALS_PLAN]) {
+    let plan;
+    try { plan = json(files[DEALS_PLAN]); } catch { plan = null; }
+    requireThat(record(plan) && plan.schemaVersion === 1 && plan.siteId === expected.site_id && plan.writeEnabled === false && Array.isArray(plan.entries), 'Deals plan is invalid.');
+  }
   let packageSha256 = null;
   if (builtin) {
     const {descriptor} = await describeCandidate(expected.site_id, {files});
@@ -134,8 +146,20 @@ export function previewOrigin(value, projectName, branch) {
   requireThat(value === expected, 'Preview URL differs from the selected branch.');
   return expected;
 }
+// Complete built-in releases publish the archived compact wrapper under the stable
+// public name ads.js; the readable ads.js stays in the saved archive. Releases saved
+// before MBA-332 stored identical bytes under both names, so their public bytes and
+// verified inventory are unchanged. sourceName is recorded only when the published
+// bytes differ from the archived file of the same name.
+export const SCRIPT_SOURCES = Object.freeze({'ads.js':'ads.min.js','prebid.js':'prebid.js'});
+export function scriptsDeliveryFiles(files) {
+  requireThat(files['ads.min.js'] instanceof Uint8Array, 'Compact wrapper is missing.');
+  return Object.fromEntries(Object.entries(SCRIPT_SOURCES).filter(([,source])=>files[source]).map(([name,source])=>[name,files[source]]));
+}
 export function scriptsDelivery(verified) {
-  return {...verified,deliveryProfile:'scripts-v1',files:verified.files.filter(e=>['ads.js','prebid.js'].includes(e.name))};
+  const files=Object.entries(SCRIPT_SOURCES).flatMap(([name,source])=>{const e=verified.files.find(f=>f.name===source),own=verified.files.find(f=>f.name===name);return e?[{name,byteSize:e.byteSize,sha256:e.sha256,...(own?.sha256===e.sha256?{}:{sourceName:source})}]:[];});
+  requireThat(files.some(e=>e.name==='ads.js'), 'Compact wrapper is missing.');
+  return {...verified,deliveryProfile:'scripts-v1',files};
 }
 export async function verifyPublicPackage(url, projectName, verified, fetcher=fetch, expectedPreviewBranch) {
   const origin=expectedPreviewBranch === undefined ? deploymentOrigin(url,projectName) : previewOrigin(url,projectName,expectedPreviewBranch);
@@ -210,7 +234,7 @@ async function main() {
     let verified=await verifyPackage(files,input);
     await mkdir(dist,{recursive:true});requireThat((await readdir(dist)).length===0,'Deployment directory must be empty.');
     const compact=inventory.manifest.kind==='builtin-runtime-release'&&inventory.manifest.completeRelease===true;
-    const delivered=compact?Object.fromEntries(Object.entries(files).filter(([name])=>['ads.js','prebid.js'].includes(name))):files;
+    const delivered=compact?scriptsDeliveryFiles(files):files;
     for(const [name,bytes] of Object.entries(delivered))await writeFile(resolve(dist,name),bytes,{flag:'wx'});
     if(compact)verified=scriptsDelivery(verified);
     const headers=PAGES_HEADERS;

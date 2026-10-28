@@ -71,7 +71,7 @@ function publicFetch(mode='ok') {
   const fetcher=async(url,options)=>{
     calls.push({url,options});assert([origin,alias].includes(new URL(url).origin));assert.equal(options.method,'GET');assert(!options.headers.Authorization);
     const name=new URL(url).pathname.slice(1),entry=layout.files.find(f=>f.name===name);
-    if(!entry)return new Response(null,{status:mode==='leak'&&name==='config.json'?200:404});
+    if(!entry)return new Response(null,{status:(mode==='leak'&&name==='config.json')||(mode==='leak-deals'&&name==='deals-plan.json')?200:404});
     assert.equal(options.redirect,'error');
     if(options.headers['If-None-Match'])return new Response(null,{status:mode==='conditional'?200:304});
     const headers={'content-type':'application/javascript','access-control-allow-origin':'*','x-content-type-options':'nosniff','x-robots-tag':'noindex','cache-control':mode==='stale'?'public, max-age=3600':'public, max-age=0, must-revalidate','etag':'"fixture"'};
@@ -87,8 +87,9 @@ test('publisher verification checks immutable and stable preview URLs, condition
   const input={project_name:TARGET.projectName,branch:TARGET.previewBranch},mock=publicFetch();
   const receipt=await verifyDeliveryPublication(origin,input,verified,layout,mock.fetcher);
   assert.equal(receipt.fileCount,2);assert.equal(receipt.previewAliasUrl,alias);assert.equal(receipt.deliverySha256,layout.sha256);
-  assert(receipt.immutable.files.every(f=>f.revalidated));assert(receipt.preview.excludedFilesAbsent);assert.equal(mock.calls.length,28);
-  for(const mode of ['wrong-ads','alias','stale','etag','cors','mime','redirect','conditional','leak'])
+  assert(receipt.immutable.files.every(f=>f.revalidated));assert(receipt.preview.excludedFilesAbsent);assert.equal(mock.calls.length,32);
+  for(const name of ['gam-reporting.json','deals-plan.json'])assert(mock.calls.some(c=>c.url===alias+'/'+name),'supporting data must be probed as absent: '+name);
+  for(const mode of ['wrong-ads','alias','stale','etag','cors','mime','redirect','conditional','leak','leak-deals'])
     await assert.rejects(verifyDeliveryPublication(origin,input,verified,layout,publicFetch(mode).fetcher));
   await assert.rejects(verifyDeliveryPublication(origin,{...input,branch:'main'},verified,layout,()=>assert.fail('No production fetch')));
 });
