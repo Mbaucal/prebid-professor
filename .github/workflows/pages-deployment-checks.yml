@@ -35,6 +35,33 @@ on:
       - scripts/pages-release-verification.mjs
       - worker/site-runtime/releases.mjs
       - tests/runtime/pages-scripts-delivery.test.mjs
+      - worker/runtime/draft-release-store.mjs
+      - worker/runtime/runtime-releases.json
+      - worker/runtime-*/artifact-candidate.mjs
+      - worker/test-workspace/runtime-catalog.mjs
+      - shared/deals/**
+      - src/download/saved-package.mjs
+      - worker/runtime/prebid-artifact-check*.mjs
+      - worker/runtime/artifact-minifier.mjs
+      - worker/runtime/artifact-candidate.mjs
+      - worker/runtime/builtin-preview-service.mjs
+      - worker/runtime/preview-snapshot.mjs
+      - worker/site-runtime/service.mjs
+      - worker/test-workspace/takeover-settings.mjs
+      - worker/test-workspace/boundary.mjs
+      - worker/test-workspace/schema.mjs
+      - worker/artifact-response-headers.ts
+      - tests/support/test-workspace-store.mjs
+      - migrations/**
+      - worker/test-workspace/index.mjs
+      - worker/test-workspace/receipt.mjs
+      - worker/test-workspace/runtime-selection.mjs
+      - worker/test-workspace/selection-transaction.mjs
+      - worker/test-workspace/site-workspace.mjs
+      - worker/test-workspace/site-draft*.mjs
+      - worker/runtime/version-pin.mjs
+      - worker/runtime/artifact-styles.mjs
+      - worker/runtime-reporting-v1/contract.mjs
       - worker/deployment-manifest-pin.mjs
       - worker/external-deployments.ts
       - worker/deployment-callback-urls.ts
@@ -77,6 +104,33 @@ on:
       - scripts/pages-release-verification.mjs
       - worker/site-runtime/releases.mjs
       - tests/runtime/pages-scripts-delivery.test.mjs
+      - worker/runtime/draft-release-store.mjs
+      - worker/runtime/runtime-releases.json
+      - worker/runtime-*/artifact-candidate.mjs
+      - worker/test-workspace/runtime-catalog.mjs
+      - shared/deals/**
+      - src/download/saved-package.mjs
+      - worker/runtime/prebid-artifact-check*.mjs
+      - worker/runtime/artifact-minifier.mjs
+      - worker/runtime/artifact-candidate.mjs
+      - worker/runtime/builtin-preview-service.mjs
+      - worker/runtime/preview-snapshot.mjs
+      - worker/site-runtime/service.mjs
+      - worker/test-workspace/takeover-settings.mjs
+      - worker/test-workspace/boundary.mjs
+      - worker/test-workspace/schema.mjs
+      - worker/artifact-response-headers.ts
+      - tests/support/test-workspace-store.mjs
+      - migrations/**
+      - worker/test-workspace/index.mjs
+      - worker/test-workspace/receipt.mjs
+      - worker/test-workspace/runtime-selection.mjs
+      - worker/test-workspace/selection-transaction.mjs
+      - worker/test-workspace/site-workspace.mjs
+      - worker/test-workspace/site-draft*.mjs
+      - worker/runtime/version-pin.mjs
+      - worker/runtime/artifact-styles.mjs
+      - worker/runtime-reporting-v1/contract.mjs
       - worker/deployment-manifest-pin.mjs
       - worker/external-deployments.ts
       - worker/deployment-callback-urls.ts

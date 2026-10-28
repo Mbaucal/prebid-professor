@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { unzipSync, zipSync } from 'fflate';
+import { unzipSync, zipSync, Zip, ZipPassThrough } from 'fflate';
 import worker from '../../worker/test-workspace/index.mjs';
 import { metadata, zipBase64 } from '../../.generated/tanjug-pilot.mjs';
 import { sha256 } from '../../worker/runtime/prebid-artifact-check.mjs';
@@ -13,7 +13,9 @@ import { prepareDelivery, privateCall, runnerOutcome } from '../../scripts/built
 import { describeDelivery } from '../../worker/test-workspace/delivery-layout.mjs';
 import { verifyPublicPackage } from '../../scripts/pages-release-verification.mjs';
 import { deploymentStore, TARGET, TRANSFER_SECRET } from '../support/deployment-store.mjs';
-import { TEST_EMAIL, TEST_PASSWORD } from '../support/test-workspace-store.mjs';
+import { ORIGIN, TEST_EMAIL, TEST_PASSWORD } from '../support/test-workspace-store.mjs';
+import { verifyDeliveryPublication } from '../../scripts/publisher-delivery-verification.mjs';
+import { downloadStoredPackage } from '../../src/download/saved-package.mjs';
 
 const actor={email:TEST_EMAIL}, commit='a'.repeat(40), runId='123456', url='https://1234abcd.tessera-fixture.pages.dev';
 const zip=new Uint8Array(Buffer.from(zipBase64,'base64'));
@@ -201,4 +203,63 @@ test('new runner keeps legacy guards, validates workflow identity before secrets
   assert(workflow.indexOf('builtin-test-delivery.mjs validate')<workflow.indexOf('TEST_TRANSFER_SECRET:'));
   assert(!workflow.slice(workflow.indexOf('\n  report:')).includes('pages deploy'));
   const legacy=readFileSync(new URL('../../scripts/pages-release-verification.mjs',import.meta.url),'utf8');assert.match(legacy,/Built-in drafts cannot use legacy publication/);
+});
+// A saved 3.16.x test-site draft carries deals-plan.json (MBA-333). TEST keeps it in the private archive,
+// publishes only the reviewed scripts, and a restore after a newer draft republishes the same bytes.
+test('saved 3.16.2 test-site draft with deals-plan.json is downloaded, published as scripts only and restored after a newer draft',async()=>{
+  const f=deploymentStore(),original={fetch:globalThis.fetch,document:globalThis.document,create:URL.createObjectURL,timeout:globalThis.setTimeout};
+  const unstub=()=>{globalThis.fetch=original.fetch;globalThis.document=original.document;URL.createObjectURL=original.create;globalThis.setTimeout=original.timeout;};
+  try {
+    const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);
+    const cookie=login.headers.get('set-cookie').split(';')[0];
+    const api=async(path,body)=>{const r=await worker.fetch(new Request(ORIGIN+path,{method:body===undefined?'GET':'POST',headers:{cookie,...(body===undefined?{}:{origin:ORIGIN,'content-type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)}),f.env);assert.equal(r.status,200,path);return r.json();};
+    await api('/test-api/setup',{confirm:'prepare-empty-test-database'});
+    const save=async version=>{
+      const state=await api('/test-api/runtime-selection'),runtime=state.runtimes.find(r=>r.version===version);assert(runtime,version);
+      await api('/test-api/runtime-selection',{expectedRevision:state.revision,selection:{runtime:runtime.pin,allowPreview:true,enablePrebid:false,prebidBuildId:null}});
+      const generated=await api('/test-api/generate',{acknowledge:true,takeOverEnabled:false});
+      return (await api('/test-api/save',{receipt:generated.receipt,acknowledge:true,note:version})).draft.id;
+    };
+    const first=await save('3.16.2'),newer=await save('3.14.0');
+    // Reopen and download the saved draft through the browser helper, as a TEST user would.
+    let blob;const saved=[];
+    globalThis.fetch=async(path,options)=>{assert.equal(options.credentials,'same-origin');return worker.fetch(new Request(ORIGIN+path,{headers:{cookie}}),f.env);};
+    globalThis.document={body:{append(){}},createElement:()=>({click(){saved.push(blob);},remove(){}})};URL.createObjectURL=value=>{blob=value;return 'blob:local';};globalThis.setTimeout=()=>0;
+    await downloadStoredPackage(first,()=>{});unstub();
+    assert.equal(saved.length,1);const archive=unzipSync(new Uint8Array(await saved[0].arrayBuffer()));
+    assert(archive['deals-plan.json']&&archive['ads.min.js']);
+    await saveTarget(f.env,{expectedRevision:(await readLedger(f.env.BUILDS)).state.revision,siteId:'test-site',target:TARGET});
+    let next=200000;
+    const deliver=async body=>{
+      const {run}=await requestDeployment(f.env,actor,{expectedRevision:(await readLedger(f.env.BUILDS)).state.revision,siteId:'test-site',acknowledge:true,...body},async()=>new Response(null,{status:204}));
+      const id=String(next++),claimed=(await (await runner(f,run,'claim',{inputs:dispatchInputs(run),runId:id,commit})).json()).run;
+      const zip=await readDeliveryZip(f.env.BUILDS,claimed.package);
+      const prepared=await prepareDelivery({run:claimed,input:dispatchInputs(claimed),token:'synthetic',secret:TRANSFER_SECRET,
+        fetcher:async u=>u.endsWith('/package')?new Response(zip):Response.json({success:true,result:{name:TARGET.projectName,production_branch:'main'}})});
+      const published=async(u,o)=>{const bytes=prepared.deploymentFiles[new URL(u).pathname.slice(1)];if(!bytes)return new Response(null,{status:404});if(o.headers['If-None-Match'])return new Response(null,{status:304});
+        return new Response(bytes,{headers:{'content-type':'application/javascript','access-control-allow-origin':'*','x-content-type-options':'nosniff','x-robots-tag':'noindex','cache-control':'public, max-age=0, must-revalidate',etag:'"fixture"'}});};
+      const receipt=await verifyDeliveryPublication(url,dispatchInputs(claimed),prepared.evidence.verified,prepared.evidence.delivery,published);
+      assert(receipt.immutable.excludedFilesAbsent&&receipt.preview.excludedFilesAbsent);
+      await runner(f,claimed,'report',{runId:id,commit,status:'success',deploymentUrl:url,productionBranch:'main',deliverySha256:receipt.deliverySha256});
+      return {run:claimed,zip:unzipSync(zip),deployed:prepared.deploymentFiles};
+    };
+    const a=await deliver({action:'publish',releaseId:first});
+    assert.deepEqual(Object.keys(a.zip).sort(),Object.keys(archive).sort());
+    for(const name of Object.keys(archive))assert.equal(await sha256(a.zip[name]),await sha256(archive[name]),name);
+    assert.deepEqual(Object.keys(a.deployed),['ads.js']);assert.equal(await sha256(a.deployed['ads.js']),await sha256(archive['ads.min.js']));
+    // The same saved archive is refused when its supporting data is changed, duplicated, renamed or missing.
+    const zipOf=entries=>{const chunks=[],out=new Zip((error,data)=>{if(error)throw error;chunks.push(data);});for(const [name,bytes] of entries){const file=new ZipPassThrough(name);out.add(file);file.push(bytes,true);}out.end();return new Uint8Array(Buffer.concat(chunks));};
+    const entries=Object.entries(a.zip),plan=a.zip['deals-plan.json'],changed=plan.slice();changed[changed.length-2]^=1;
+    for(const [name,bytes,message] of [
+      ['changed deals-plan.json',zipOf(entries.map(([n,b])=>[n,n==='deals-plan.json'?changed:b])),/Candidate file checksum mismatch/],
+      ['duplicate deals-plan.json',zipOf([...entries,['deals-plan.json',plan]]),/Unexpected or duplicate ZIP entry/],
+      ...['deals-plan.json.bak','x/deals-plan.json','../deals-plan.json'].map(n=>[`supporting file named ${n}`,zipOf([...entries,[n,plan]]),/Unexpected or duplicate ZIP entry/]),
+      ['missing deals-plan.json',zipOf(entries.filter(([n])=>n!=='deals-plan.json')),/Manifest file inventory differs from candidate/],
+    ])await assert.rejects(verifyDeliveryZip(bytes,{siteId:'test-site',packageSha256:a.run.package.descriptor.packageSha256}),message,name);
+    const b=await deliver({action:'publish',releaseId:newer});assert(!b.zip['deals-plan.json']);
+    const restored=await deliver({action:'restore',restoreId:a.run.id});
+    assert.deepEqual(restored.run.package,a.run.package);assert.deepEqual(restored.run.delivery,a.run.delivery);
+    assert.deepEqual(Object.keys(restored.deployed),['ads.js']);assert.equal(await sha256(restored.deployed['ads.js']),await sha256(a.deployed['ads.js']));
+    assert.deepEqual((await readLedger(f.env.BUILDS)).state.runs.map(r=>[r.action,r.status]),[['restore','success'],['publish','success'],['publish','success']]);
+  } finally {unstub();f.close();}
 });
