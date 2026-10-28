@@ -134,8 +134,20 @@ export function previewOrigin(value, projectName, branch) {
   requireThat(value === expected, 'Preview URL differs from the selected branch.');
   return expected;
 }
+// Complete built-in releases publish the archived compact wrapper under the stable
+// public name ads.js; the readable ads.js stays in the saved archive. Releases saved
+// before MBA-332 stored identical bytes under both names, so their public bytes and
+// verified inventory are unchanged. sourceName is recorded only when the published
+// bytes differ from the archived file of the same name.
+export const SCRIPT_SOURCES = Object.freeze({'ads.js':'ads.min.js','prebid.js':'prebid.js'});
+export function scriptsDeliveryFiles(files) {
+  requireThat(files['ads.min.js'] instanceof Uint8Array, 'Compact wrapper is missing.');
+  return Object.fromEntries(Object.entries(SCRIPT_SOURCES).filter(([,source])=>files[source]).map(([name,source])=>[name,files[source]]));
+}
 export function scriptsDelivery(verified) {
-  return {...verified,deliveryProfile:'scripts-v1',files:verified.files.filter(e=>['ads.js','prebid.js'].includes(e.name))};
+  const files=Object.entries(SCRIPT_SOURCES).flatMap(([name,source])=>{const e=verified.files.find(f=>f.name===source),own=verified.files.find(f=>f.name===name);return e?[{name,byteSize:e.byteSize,sha256:e.sha256,...(own?.sha256===e.sha256?{}:{sourceName:source})}]:[];});
+  requireThat(files.some(e=>e.name==='ads.js'), 'Compact wrapper is missing.');
+  return {...verified,deliveryProfile:'scripts-v1',files};
 }
 export async function verifyPublicPackage(url, projectName, verified, fetcher=fetch, expectedPreviewBranch) {
   const origin=expectedPreviewBranch === undefined ? deploymentOrigin(url,projectName) : previewOrigin(url,projectName,expectedPreviewBranch);
@@ -210,7 +222,7 @@ async function main() {
     let verified=await verifyPackage(files,input);
     await mkdir(dist,{recursive:true});requireThat((await readdir(dist)).length===0,'Deployment directory must be empty.');
     const compact=inventory.manifest.kind==='builtin-runtime-release'&&inventory.manifest.completeRelease===true;
-    const delivered=compact?Object.fromEntries(Object.entries(files).filter(([name])=>['ads.js','prebid.js'].includes(name))):files;
+    const delivered=compact?scriptsDeliveryFiles(files):files;
     for(const [name,bytes] of Object.entries(delivered))await writeFile(resolve(dist,name),bytes,{flag:'wx'});
     if(compact)verified=scriptsDelivery(verified);
     const headers=PAGES_HEADERS;

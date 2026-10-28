@@ -272,12 +272,15 @@ test('compact delivery verifies one or two public scripts and keeps the source m
  const f=await fixture(),release=await generate(f),p=await readPackage(f.env,'first',release.id);
  const source=await verifyPackage(p.files,{site_id:'first',release_id:release.id,release_version:release.version});
  const compact=scriptsDelivery(source);assert.equal(compact.manifestSha256,source.manifestSha256);
- const fetcher=async url=>new Response(p.files[new URL(url).pathname.slice(1)],{headers:{'content-type':'application/javascript','access-control-allow-origin':'*','x-content-type-options':'nosniff','cache-control':'no-store'}});
+ assert.notDeepEqual(p.files['ads.js'],p.files['ads.min.js']);const published={...p.files,'ads.js':p.files['ads.min.js']};
+ const serve=files=>async url=>new Response(files[new URL(url).pathname.slice(1)],{headers:{'content-type':'application/javascript','access-control-allow-origin':'*','x-content-type-options':'nosniff','cache-control':'no-store'}});
+ const fetcher=serve(published);
+ await assert.rejects(verifyPublicPackage('https://0123abcd.first.pages.dev','first',compact,serve(p.files)),/Published file .*ads\.js/);
  assert.equal((await verifyPublicPackage('https://0123abcd.first.pages.dev','first',compact,fetcher)).fileCount,1);
  await assert.rejects(verifyPublicPackage('https://0123abcd.first.pages.dev','first',{...compact,files:[]},fetcher));
  await assert.rejects(verifyPublicPackage('https://0123abcd.first.pages.dev','first',{...compact,manifestSha256:''},fetcher));
- p.files['prebid.js']=new TextEncoder().encode('original prebid bytes');
- compact.files.push({name:'prebid.js',byteSize:p.files['prebid.js'].length,sha256:await sha256(p.files['prebid.js'])});
+ published['prebid.js']=new TextEncoder().encode('original prebid bytes');
+ compact.files.push({name:'prebid.js',byteSize:published['prebid.js'].length,sha256:await sha256(published['prebid.js'])});
  assert.equal((await verifyPublicPackage('https://0123abcd.first.pages.dev','first',compact,fetcher)).fileCount,2);
 });
 test('registered draft source URLs support preview jobs and read only the requested artifact',async()=>{

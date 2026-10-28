@@ -1,31 +1,41 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,rm,cp,symlink} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,readdir,rm,cp,symlink} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {pagesProfile,verifyPagesTools} from '../../scripts/pages-toolchain.mjs';
 import {verifyPreparedPages,preflight} from '../../scripts/pages-release-preflight.mjs';
-import {verifyPackage,scriptsDelivery,PAGES_HEADERS,assertPreparedEvidence} from '../../scripts/pages-release-verification.mjs';
+import {verifyPackage,scriptsDelivery,scriptsDeliveryFiles,PAGES_HEADERS,assertPreparedEvidence} from '../../scripts/pages-release-verification.mjs';
 const repo=resolve(import.meta.dirname,'../..'),sha=x=>createHash('sha256').update(x).digest('hex'),bytes=x=>Buffer.from(typeof x==='string'?x:JSON.stringify(x));
-async function fixture({profile='test',compact=false,channel='staging'}={}){
+async function fixture({profile='test',compact=false,channel='staging',identical=false}={}){
  const root=await mkdtemp(resolve(tmpdir(),'mba217-'));await mkdir(resolve(root,'tools'));
  await cp(resolve(repo,'tools/historical-inputs.json'),resolve(root,'tools/historical-inputs.json'));
  if(profile==='test'){const marker={profile:'test',baselineCommit:'893bf83fbefc29dca966207574f57ce35575e9de'};await writeFile(resolve(root,'tools/test-historical-inputs.json'),JSON.stringify({baselineCommit:marker.baselineCommit}));await writeFile(resolve(root,'tools/target-profile.json'),JSON.stringify(marker));}
  const input={site_id:'fixture',release_id:'11111111-1111-4111-8111-111111111111',release_version:'20260914_010000',correlation_id:'22222222-2222-4222-8222-222222222222',account_id:'a'.repeat(32),project_name:'test-pages',branch:channel==='production'?'main':'staging',channel,github_environment:'CLOUDFLARE_API_TOKEN_FIXTURE',callback_url:'https://prebid-professor.mbaucal.workers.dev/api/deployments/callback',release_base_url:'https://prebid-professor.mbaucal.workers.dev/cdn/fixture/releases/20260914_010000'};
  const config={site:{id:'fixture'},version:input.release_version,enablePrebid:false,demandMode:'gam-adx-only',prebidBuild:null};
- const files={'ads.js':bytes('original ads'),'ads.min.js':bytes('original min'),'prebid.js':bytes('/* Prebid disabled for this release. Google Ad Manager / AdX only. */\n'),'config.json':bytes(config),'min-height.css':bytes('css'),'div-export.csv':bytes('csv'),'implementation.html':bytes('html')};
+ const files={'ads.js':bytes(identical?'original min':'original ads'),'ads.min.js':bytes('original min'),'prebid.js':bytes('/* Prebid disabled for this release. Google Ad Manager / AdX only. */\n'),'config.json':bytes(config),'min-height.css':bytes('css'),'div-export.csv':bytes('csv'),'implementation.html':bytes('html')};
  const manifest={schemaVersion:1,siteId:input.site_id,releaseId:input.release_id,version:input.release_version,configHash:sha(files['config.json']),prebidBuild:null,prebidEnabled:false,demandMode:'gam-adx-only',files:Object.fromEntries(Object.entries(files).map(([n,b])=>[n,{size:b.length,sha256:sha(b)}]))};
  if(compact){manifest.kind='builtin-runtime-release';manifest.completeRelease=true;delete files['prebid.js'];delete manifest.files['prebid.js'];}
- files['manifest.json']=bytes(manifest);input.manifest_sha256=sha(files['manifest.json']);let verified=await verifyPackage(files,input);if(compact)verified=scriptsDelivery(verified);
+ files['manifest.json']=bytes(manifest);input.manifest_sha256=sha(files['manifest.json']);const source=await verifyPackage(files,input),verified=compact?scriptsDelivery(source):source,published=compact?scriptsDeliveryFiles(files):files;
  const env={DEPLOY_INPUTS:JSON.stringify(input),GITHUB_REF:profile==='main'?'refs/heads/main':'refs/heads/feature/isolated-runtime-workspace-v1',GITHUB_REPOSITORY:'Mbaucal/prebid-professor',GITHUB_RUN_ID:'123456',GITHUB_SHA:'a'.repeat(40)};
  const proof={input,runId:env.GITHUB_RUN_ID,commit:env.GITHUB_SHA,verified,project:{accountId:input.account_id,projectName:input.project_name,productionBranch:'main',branch:input.branch,channel}};
  const dir=resolve(root,'.generated/pages-release');await mkdir(resolve(dir,'dist'),{recursive:true});
- for(const f of verified.files)await writeFile(resolve(dir,'dist',f.name),files[f.name]);await writeFile(resolve(dir,'dist/_headers'),PAGES_HEADERS);await writeFile(resolve(dir,'verification.json'),JSON.stringify(proof));
- return{root,dir,env,input,proof,files,close:()=>rm(root,{recursive:true,force:true})};
+ for(const f of verified.files)await writeFile(resolve(dir,'dist',f.name),published[f.name]);await writeFile(resolve(dir,'dist/_headers'),PAGES_HEADERS);await writeFile(resolve(dir,'verification.json'),JSON.stringify(proof));
+ return{root,dir,env,input,proof,files,source,published,close:()=>rm(root,{recursive:true,force:true})};
 }
 for(const spec of [{profile:'test'},{profile:'main'},{profile:'main',channel:'production'},{profile:'test',compact:true}])test('exact prepared package accepted '+JSON.stringify(spec),async()=>{const f=await fixture(spec);try{assert.equal(await verifyPreparedPages(f.root,f.env),spec.profile);}finally{await f.close();}});
+test('scripts-v1 publishes archived ads.min.js as ads.js; identical earlier releases keep byte-identical evidence',async()=>{
+ for(const identical of [true,false]){const f=await fixture({profile:'main',channel:'production',compact:true,identical});try{
+  const before={...f.source,deliveryProfile:'scripts-v1',files:f.source.files.filter(e=>['ads.js','prebid.js'].includes(e.name))};
+  assert.deepEqual(f.proof.verified.files,[{name:'ads.js',byteSize:f.files['ads.min.js'].length,sha256:sha(f.files['ads.min.js']),...(identical?{}:{sourceName:'ads.min.js'})}]);
+  assert.equal(JSON.stringify(f.proof.verified)===JSON.stringify(before),identical);
+  assert.deepEqual(f.published,{'ads.js':f.files['ads.min.js']});assert.equal(await verifyPreparedPages(f.root,f.env),'main');
+  if(!identical){await writeFile(resolve(f.dir,'dist/ads.js'),f.files['ads.js']);await assert.rejects(verifyPreparedPages(f.root,f.env),/Prepared bytes differ: ads.js/);}
+ }finally{await f.close();}}
+ assert.throws(()=>scriptsDelivery({files:[{name:'ads.js',byteSize:1,sha256:'a'.repeat(64)}]}),/Compact wrapper is missing/);
+});
 test('legitimate staging feature refs retain source profile',async()=>{const f=await fixture();try{f.env.GITHUB_REF='refs/heads/feature/review-stage';assert.equal(await pagesProfile(f.root,f.env),'test');}finally{await f.close();}});
 for(const change of ['wrong-marker','missing-test-marker','production-test','wrong-ref','wrong-repo','wrong-baseline'])test('profile refuses '+change,async()=>{const f=await fixture();try{
  if(change==='wrong-marker')await writeFile(resolve(f.root,'tools/target-profile.json'),JSON.stringify({profile:'main',baselineCommit:'685d90b6974133e19e96f7ceb28e60a58b7ce402'}));
@@ -64,7 +74,7 @@ for(const spec of [{profile:'test'},{profile:'test',compact:true},{profile:'main
   await rm(f.dir,{recursive:true});
   const map={};for(const [name,b]of Object.entries(f.files))map[f.input.release_base_url+'/'+name]=Buffer.from(b).toString('base64');
   const publicUrl='https://1234abcd.test-pages.pages.dev';
-  for(const [name,b]of Object.entries(f.files))map[publicUrl+'/'+name]=Buffer.from(b).toString('base64');
+  for(const [name,b]of Object.entries(f.published))map[publicUrl+'/'+name]=Buffer.from(b).toString('base64');
   const dataPath=resolve(f.root,'responses.json'),logPath=resolve(f.root,'requests.log'),mockPath=resolve(f.root,'fetch.mjs');
   await writeFile(dataPath,JSON.stringify(map));await writeFile(logPath,'');
   await writeFile(mockPath,`import {readFileSync,appendFileSync} from 'node:fs';
@@ -74,6 +84,7 @@ globalThis.fetch=async(url,options)=>{appendFileSync(process.env.REQUEST_LOG,url
   const script=resolve(repo,'scripts/pages-release-verification.mjs');
   for(const mode of ['prepare','verify-public']){const r=spawnSync(process.execPath,['--import',mockPath,script,mode],{cwd:f.root,env,encoding:'utf8'});assert.equal(r.status,0,r.stderr);}
   assert.equal(await verifyPreparedPages(f.root,f.env),spec.profile);
+  if(spec.compact){assert.deepEqual((await readdir(resolve(f.dir,'dist'))).sort(),['_headers','ads.js']);assert.deepEqual(await readFile(resolve(f.dir,'dist/ads.js')),f.files['ads.min.js']);}
   const evidence=JSON.parse(await readFile(resolve(f.dir,'public-verification.json'),'utf8'));assert.equal(evidence.verified,true);
   const before=await readFile(logPath,'utf8');const refused=spawnSync(process.execPath,['--import',mockPath,script,'verify-public'],{cwd:f.root,env:{...env,GITHUB_RUN_ID:'999'},encoding:'utf8'});assert.notEqual(refused.status,0);assert.equal(await readFile(logPath,'utf8'),before);
  }finally{await f.close();}
