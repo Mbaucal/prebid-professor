@@ -1,3 +1,4 @@
+import { schainInspectCommand } from '../debug/schain-inspect.mjs';
 import { identityInspectCommand } from '../debug/identity-inspect.mjs';
 import { demandInspectCommand } from '../debug/demand-inspect.mjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -603,36 +604,6 @@ function consentCommand(scope: DebugScope): string {
 }
 
 
-function schainCommand(scope: DebugScope): string {
-  return wrapCommand('SChain state', scope, `
-  var pbjs = window.pbjs;
-  if (!pbjs) {
-    console.error('[PP Debug] Prebid is not available.');
-    return;
-  }
-  var config = typeof pbjs.getConfig === 'function' ? pbjs.getConfig() : {};
-  var configured = config.ortb2 && config.ortb2.source && config.ortb2.source.schain
-    ? config.ortb2.source.schain
-    : config.schain || null;
-  var events = typeof pbjs.getEvents === 'function' ? pbjs.getEvents() : [];
-  var relatedEvents = events.filter(function (event) {
-    try {
-      var text = JSON.stringify(event.args || {});
-      if (text.indexOf('schain') < 0) return false;
-      if (selectedBidder && text.indexOf(selectedBidder) < 0) return false;
-      return true;
-    } catch (_) {
-      return false;
-    }
-  });
-  var report = { configured: configured, relatedEvents: relatedEvents };
-  console.group('[PP Debug] SChain state');
-  console.log('Configured SChain:', configured);
-  console.log('Events containing SChain data:', relatedEvents);
-  console.groupEnd();
-  return report;
-`);
-}
 
 function refreshViewabilityCommand(scope: DebugScope): string {
   return wrapCommand('Refresh and viewability snapshot', scope, `
@@ -836,9 +807,16 @@ function buildCommands(scope: DebugScope): DebugCommand[] {
     {
       id: 'schain',
       category: 'Privacy',
-      title: 'SChain state',
-      description: 'Show the configured SupplyChain object and Prebid events that contain SChain data.',
-      code: schainCommand(scope),
+      title: 'SChain and full requests',
+      description: 'Inspect SChain and full Prebid requests for one ad unit or all, including requests without SChain. Includes local JSON copy and download helpers.',
+      code: schainInspectCommand(scope),
+    },
+    {
+      id: 'schain-network',
+      category: 'Privacy',
+      title: 'SChain network capture',
+      description: 'Capture future OpenX and PubMatic fetch/XHR requests for up to 5 minutes. Includes gzip decoding, a stop helper and full JSON export. Other endpoints require DevTools.',
+      code: schainInspectCommand(scope, true),
     },
     {
       id: 'refresh-viewability',
@@ -1023,7 +1001,7 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
 
       <div className="debug-console-note">
         <strong>Safe workflow:</strong>
-        <span>These commands only read the current page state and print to your local browser console. The live event logger adds temporary Prebid listeners and includes its own stop command.</span>
+        <span>Commands print locally and do not start auctions. Live tools add temporary listeners; SChain network capture also observes supported fetch/XHR calls and stops after 5 minutes. Full request exports may contain identifiers and consent strings. Review before sharing.</span>
       </div>
 
       {grouped.map((group) => (
