@@ -283,7 +283,7 @@ export function inspectSchain(options) {
               const ownMethod = init && Object.getOwnPropertyDescriptor(init, 'method');
               if (ownMethod) method = typeof ownMethod.value === 'string' ? ownMethod.value : 'unavailable';
               else if (init && 'method' in init) method = 'unavailable';
-              if (ownBody && 'value' in ownBody) body = prepareBody(ownBody.value);
+              if (ownBody && 'value' in ownBody && ownBody.value != null) body = prepareBody(ownBody.value);
               else if ((init && 'body' in init) || (isRequest && input.body)) bodyError = true;
             }
           }
