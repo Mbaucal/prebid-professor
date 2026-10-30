@@ -31,6 +31,8 @@ jobs:
       - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/site-draft.test.mjs tests/runtime/test-site-editor-http.test.mjs tests/runtime/ad-position-runtime.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/site-duplication.test.mjs tests/runtime/site-package-flow.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/size-map-csv-template.test.mjs tests/runtime/site-test-page.test.mjs
       - name: Preserve audited rule edits, user sync defaults and exact Prebid files
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/admin-rules-and-sync-audit.test.mjs tests/runtime/admin-unit-rule-concurrency.test.mjs tests/runtime/prebid-digit-modules-flow.test.mjs tests/runtime/compiler-input-compatibility.test.mjs tests/runtime/refresh-summary.test.mjs
+      - name: Verify console SChain evidence and transparent network observation
+        run: node --test tests/runtime/schain-inspect.test.mjs tests/runtime/experiment-inspect.test.mjs
       - run: node scripts/isolated-toolchain.mjs build
       - name: Verify security boundaries in the compiled production Worker
         run: node scripts/verify-artifact-boundary.mjs && node scripts/verify-auth-boundaries.mjs
@@ -56,6 +58,8 @@ jobs:
       - run: node --experimental-strip-types scripts/prepare-test-page-browser-fixture.mjs && python scripts/verify-site-test-page.py
       - run: python scripts/verify-release-setup.py
       - run: python scripts/verify-loading-summary.py
+      - name: Verify copied SChain commands and Debug UI on desktop and mobile
+        run: node scripts/prepare-schain-debug-fixture.mjs && python scripts/verify-schain-debug.py
       - run: node --experimental-strip-types scripts/prepare-position-browser-fixtures.mjs && python scripts/verify-position-runtime.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
@@ -67,6 +71,7 @@ jobs:
             .generated/site-workspace-evidence/
             .generated/test-page-evidence/
             .generated/loading-summary-evidence/
+            .generated/schain-debug-evidence/
             .generated/login-branding-evidence/
             .generated/login-recovery-evidence/
             .generated/test-login-recovery-evidence/
