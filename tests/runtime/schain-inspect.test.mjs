@@ -241,3 +241,15 @@ test('gzip inflation and concurrent capture limits stay explicit and non-blockin
   assert(report.capture.droppedNetwork > 0);
   assert.equal(report.capture.pending, 0);
 });
+
+
+test('null/undefined fetch init body never hides an inherited Request stream', async () => {
+  const f = fixture(); f.run(undefined, true);
+  for (const body of [null, undefined]) {
+    const req = new Request(openx, { method: 'POST', body: 'inherited payload' });
+    f.window.fetch(req, { body });
+    assert.equal(req.bodyUsed, false);
+  }
+  const report = await f.window.__TESSERA_SCHAIN_DEBUG.ready();
+  assert(report.network.every(record => record.body.status.startsWith('unavailable')));
+});
