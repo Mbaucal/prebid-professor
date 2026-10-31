@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { gzipSync } from 'node:zlib';
-import { schainInspectCommand } from '../../src/debug/schain-inspect.mjs';
+import { schainInspectCommand, schainPositionCommand } from '../../src/debug/schain-inspect.mjs';
 
 const chain = { ver: '1.0', complete: 1, nodes: [{ asi: 'seller.example', sid: '123', hp: 1 }] };
 function request(bidder = 'openx', auctionId = 'auction-1', schain = chain) {
@@ -37,6 +37,149 @@ function fixture({ events = [request()], version = '9.18.0', config = { schain: 
 const plain = value => JSON.parse(JSON.stringify(value));
 const openx = 'https://rtb.openx.net/openrtbb/prebidjs';
 const pubmatic = 'https://hbopenbid.pubmatic.com/translator?source=prebid-client&gzip=1';
+const position = (f, target, bidder = '') => vm.runInContext(schainPositionCommand(target, bidder), f.context);
+
+test('position report requires a target and returns only the latest exact bid, without duplicating history or private fields', () => {
+  const a = request(), b = request('openx', 'latest');
+  b.bids[0].userId = { secret: 'not-for-sharing' };
+  b.bids[0].ortb2 = { user: { consent: 'private' } };
+  const f = fixture({ events: [a,b] });
+  assert.equal(position(f, '').status, 'selection-required');
+  assert.equal(f.handlers.size, 0);
+  const report = position(f, ' P1 ', 'openx');
+  assert.equal(report.evidence, 'prebid-only');
+  assert.equal(report.request.auctionId, 'latest');
+  assert.equal(report.request.adUnitCode, 'P1');
+  assert.equal(report.request.originalBatchBids, 2);
+  assert.equal(report.schainCheck.status, 'basic-fields-pass');
+  assert.ok(JSON.stringify(report).length < 3000);
+  assert.doesNotMatch(JSON.stringify(report), /not-for-sharing|"consent"|originalRequest|filteredBids|"P2"/);
+  assert.equal(f.window.__TESSERA_SCHAIN_DEBUG.fullSnapshot().requests.length, 2);
+  assert.equal(b.bids.length, 2);
+  assert.equal(position(f, 'P', 'openx').status, 'not-found');
+  assert.equal(position(f, 'P1', 'openxAlias').status, 'not-found');
+});
+
+test('position matches a full recorded GAM path/GPID exactly, never its suffix', () => {
+  const r = request();
+  r.bids[0].ortb2Imp = { ext: { data: { adserver: { adslot: '/123/site/P1' } } } };
+  r.bids[1].ortb2Imp = { ext: { gpid: '/123/other/P1' } };
+  const f = fixture({ events: [r] });
+  assert.equal(position(f, '/123/site/P1').request.adUnitCode, 'P1');
+  assert.equal(position(f, '/123/other/P1').request.adUnitCode, 'P2');
+  assert.equal(position(f, '/P1').status, 'not-found');
+  assert.equal(position(f, '/123/missing/P1').status, 'not-found');
+});
+
+test('GPT fallback uses the exact slot element ID, rejects duplicate paths, and never overrides a recorded path', () => {
+  const r = request();
+  const f = fixture({ events: [r] });
+  const slots = [{ getSlotElementId: () => 'P1', getAdUnitPath: () => '/123/site/P1' }];
+  f.window.googletag = { pubadsReady: true, pubads: () => ({ getSlots: () => slots }) };
+  assert.equal(position(f, '/123/site/P1').request.matchedBy, 'current GPT path + exact slot element ID');
+  r.bids[0].ortb2Imp = { ext: { gpid: '/123/different/P1' } };
+  assert.equal(position(f, '/123/site/P1').status, 'not-found');
+  delete r.bids[0].ortb2Imp;
+  slots.push({ getSlotElementId: () => 'P2', getAdUnitPath: () => '/123/site/P1' });
+  assert.equal(position(f, '/123/site/P1').status, 'ambiguous-position');
+  assert.equal(position(f, 'P1').status, 'matched');
+});
+
+test('compact report does not turn config presence, missing chain or conflicting chains into a pass', () => {
+  const missing = request('openx', 'a', null);
+  const f = fixture({ events: [missing] });
+  assert.equal(position(f, 'P1').schainCheck.status, 'not-found-in-selected-evidence');
+  missing.bids[0].schain = chain;
+  missing.ortb2 = { source: { schain: { ...chain, complete: 0 } } };
+  const conflict = position(f, 'P1');
+  assert.equal(conflict.schainCheck.status, 'check-failed');
+  assert.equal(conflict.request.schain, null);
+  assert.equal(conflict.request.conflictingSchain.length, 2);
+  missing.ortb2.source.schain = { nodes: chain.nodes, complete: 1, ver: '1.0' };
+  assert.equal(position(f, 'P1').schainCheck.status, 'basic-fields-pass');
+});
+
+test('basic SChain checks reject malformed required fields; incomplete chains are disclosed without claiming commercial validation', () => {
+  for (const bad of [
+    { ...chain, complete: true }, { ...chain, ver: '2.0' }, { ...chain, nodes: [] },
+    ...[{ asi: 'https://seller.example' }, { sid: 123 }, { hp: 0 }, { sid: '' }, { ext: 'bad' }].map(change => ({ ...chain, nodes: [{ ...chain.nodes[0], ...change }] })),
+  ]) assert.equal(position(fixture({ events: [request('openx', 'a', bad)] }), 'P1').schainCheck.status, 'check-failed');
+  const incomplete = position(fixture({ events: [request('openx', 'a', { ...chain, complete: 0 })] }), 'P1');
+  assert.equal(incomplete.schainCheck.status, 'basic-fields-pass');
+  assert.match(incomplete.warnings.join(' '), /incomplete chain/);
+  assert.match(incomplete.limits, /do not verify ads.txt/);
+});
+
+test('compact capture returns only the matching HTTP impression and stops; original multi-position body remains unchanged', async () => {
+  const f = fixture(); position(f, 'P1', 'openx');
+  const payload = { id: 'wire-request', user: { id: 'private-user' }, source: { ext: { schain: chain } },
+    imp: [{ id: 'auction-1-openx-0', banner: { format: [{ w: 300, h: 250 }] } }, { id: 'auction-1-openx-1', ext: { other: 'omit-this' } }] };
+  const body = JSON.stringify(payload);
+  f.window.fetch(openx + '?private=omit-query', { method: 'POST', body });
+  const report = await f.window.__TESSERA_SCHAIN_DEBUG.ready();
+  assert.equal(report.evidence, 'captured-http-call');
+  assert.equal(report.request.requestId, 'wire-request');
+  assert.equal(report.request.impression.id, 'auction-1-openx-0');
+  assert.equal(report.request.originalBatchImpressions, 2);
+  assert.equal(report.schainCheck.status, 'basic-fields-pass');
+  assert.equal(report.capture.active, false);
+  assert.equal(f.window.fetch, f.nativeFetch);
+  assert.equal(f.calls[0].args[1].body, body);
+  assert.doesNotMatch(JSON.stringify(report), /private-user|omit-this|omit-query|"P2"/);
+  assert.equal(f.window.__TESSERA_SCHAIN_DEBUG.fullSnapshot().network[0].body.raw, body);
+  assert.ok(f.logs.every(log => !String(log[1]).includes('full batch; inspect mapping')));
+});
+
+test('an old auction or another position HTTP capture is never attached to the latest selected bid', async () => {
+  const f = fixture({ events: [request(), request('openx', 'latest')] }); position(f, 'P1');
+  for (const id of ['auction-1-openx-0', 'latest-openx-1']) {
+    f.window.fetch(openx, { method: 'POST', body: JSON.stringify({ imp: [{ id }], source: { schain: chain } }) });
+    const report = await f.window.__TESSERA_SCHAIN_DEBUG.ready();
+    assert.equal(report.evidence, 'prebid-only');
+    assert.equal(report.request.auctionId, 'latest');
+    assert.equal(report.capture.active, true);
+  }
+});
+
+test('All bidders can select a mapped supported HTTP request from the latest auction without falsely naming the last adapter', async () => {
+  const f = fixture({ events: [request('openx'), request('teads')] }); position(f, 'P1');
+  assert.equal(f.window.__TESSERA_SCHAIN_DEBUG.snapshot().request.bidder, 'teads');
+  f.window.fetch(openx, { body: JSON.stringify({ imp: [{ id: 'auction-1-openx-0' }], source: { schain: chain } }) });
+  const report = await f.window.__TESSERA_SCHAIN_DEBUG.ready();
+  assert.equal(report.evidence, 'captured-http-call');
+  assert.equal(report.request.bidder, 'openx');
+  assert.equal(report.request.bidId, 'auction-1-openx-0');
+});
+
+test('HTTP absence overrides Prebid presence; a chain on an unrelated impression is not evidence for the selected one', async () => {
+  const f = fixture(); position(f, 'P1');
+  f.window.fetch(openx, { body: JSON.stringify({ imp: [{ id: 'auction-1-openx-0' }, { id: 'auction-1-openx-1', ext: { schain: chain } }] }) });
+  const report = await f.window.__TESSERA_SCHAIN_DEBUG.ready();
+  assert.equal(report.evidence, 'captured-http-call');
+  assert.equal(report.schainCheck.status, 'not-found-in-selected-evidence');
+  assert.equal(report.request.schain, null);
+});
+
+test('compact PubMatic gzip report keeps one decoded impression and no base64 dump', async () => {
+  const f = fixture({ events: [request('pubmatic')] }); position(f, 'P1', 'pubmatic');
+  const xhr = new f.XHR(); xhr.open('POST', pubmatic);
+  xhr.send(gzipSync(JSON.stringify({ source: { schain: chain }, imp: [{ id: 'auction-1-pubmatic-0' }] })));
+  const report = await f.window.__TESSERA_SCHAIN_DEBUG.ready();
+  assert.equal(report.evidence, 'captured-http-call');
+  assert.equal(report.request.decoding, 'decoded gzip');
+  assert.doesNotMatch(JSON.stringify(report), /base64/);
+});
+
+test('ambiguous latest bids and replaced/oversized chain evidence are never a positive short report', () => {
+  const r = request(); r.bids.push({ ...r.bids[0], bidId: 'second' });
+  assert.equal(position(fixture({ events: [r] }), 'P1').status, 'ambiguous-bids');
+  const withFunction = { ...chain, nodes: [{ ...chain.nodes[0], sid() {} }] };
+  assert.equal(position(fixture({ events: [request('openx', 'a', withFunction)] }), 'P1').schainCheck.status, 'check-failed');
+  const large = { ...chain, ext: { long: 'x'.repeat(25000) } };
+  const report = position(fixture({ events: [request('openx', 'a', large)] }), 'P1');
+  assert.equal(report.status, 'evidence-too-large');
+  assert.ok(JSON.stringify(report).length < 1500);
+});
 
 test('Prebid 9: null top-level SChain is not missing when bid-level chain exists; original batch stays intact', () => {
   const f = fixture();

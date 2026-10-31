@@ -3,6 +3,30 @@
 In a site's **Debug Console**, choose **Ad unit scope** (one position or all)
 and optionally **Bidder scope**, then search for `SChain`.
 
+- **SChain position report** is the short, shareable view. Select one position
+  above or enter an exact ad unit name/full GAM path in the card. An explicit
+  entry overrides the selected position for this command only. Optionally select
+  a bidder. It chooses the latest matching auction in retained event order,
+  preferring a mapped HTTP call within that same auction when available;
+  otherwise it shows the latest matching Prebid input. It includes
+  its identifiers, sizes, SChain and basic SChain 1.0 field checks. Empty target
+  disables Copy/Download; no substring or path-suffix matching is used.
+  Recorded GPID/adserver adslot paths are preferred; current GPT path mapping
+  is a fallback using an exact slot element ID, explicitly labeled. Ambiguous
+  positions or multiple bids in the latest batch are reported without guessing.
+  The command also captures future supported HTTP calls, upgrading the report
+  only when the selected bid/auction maps exactly to one impression. It stops
+  after that match or five minutes. Other positions and old-auction payloads
+  cannot upgrade the evidence. Run `.copy()` or `.download()` to share only the
+  short result; `.print()` displays the current result.
+  The export is **selected fields, not the original complete request**. It omits
+  unrelated bids, history, config, user/device data, consent and URL query dumps.
+  It preserves the chain itself and request IDs. `.fullSnapshot()` retains the
+  original full batches separately. `basic-fields-pass` concerns the SChain
+  fields checked here, not the entire OpenRTB request, commercial validity,
+  ads.txt/sellers.json reconciliation or SSP acceptance. `complete=0` is shown
+  as an explicitly incomplete chain; unsupported versions/conflicting chains
+  are never a pass. Large chain evidence requires the full snapshot.
 - **SChain and full requests** copies a one-shot, read-only console command.
   Run it on the publisher page after Prebid loads. It shows recorded
   `bidRequested` inputs, per-position SChain paths and the original full batch.
@@ -25,6 +49,7 @@ Both commands install the following **local** helper:
 ```js
 __TESSERA_SCHAIN_DEBUG.print()       // table and complete current report
 __TESSERA_SCHAIN_DEBUG.snapshot()    // report object
+__TESSERA_SCHAIN_DEBUG.fullSnapshot() // full batches, including in short mode
 await __TESSERA_SCHAIN_DEBUG.ready() // wait for currently pending decoding
 await __TESSERA_SCHAIN_DEBUG.copy()  // JSON clipboard; returns JSON if unavailable
 __TESSERA_SCHAIN_DEBUG.download()    // local tessera-schain-debug.json
@@ -79,3 +104,4 @@ proof is separate from TEST/production deployment verification.
 References:
 - https://docs.prebid.org/dev-docs/modules/schain.html
 - https://docs.prebid.org/dev-docs/publisher-api-reference/getEvents.html
+- https://github.com/InteractiveAdvertisingBureau/openrtb/blob/main/supplychainobject.md
