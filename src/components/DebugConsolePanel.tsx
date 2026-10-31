@@ -937,7 +937,7 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
   const effectiveTarget = positionTarget.trim() || scope.adUnit;
   const commands = useMemo<DebugCommand[]>(() => [{
     id: 'schain-position', category: 'Privacy', title: 'SChain position report',
-    description: 'A short report for one position: latest request, SChain and basic field checks. Uses an exact ad unit name or full GAM path. Watches for a matching OpenX/PubMatic HTTP request and then stops; otherwise stops after 5 minutes. Copy the result with __TESSERA_SCHAIN_DEBUG.copy().',
+    description: 'Run in the Console top context. Shows a request table and all SChain nodes, with the complete selected payload in a collapsed group. Copy the table with __AD_REQUEST_DEBUG.copySummary(); copy or download the full selected request with .copy() or .download(). Watches future OpenX/PubMatic calls and stops after a match or 5 minutes.',
     code: schainPositionCommand(effectiveTarget, scope.bidder),
   }, ...buildCommands(scope)], [scope, effectiveTarget]);
   const filteredCommands = useMemo(() => {
@@ -1063,7 +1063,7 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
                     <span>Ad unit name or GAM path</span>
                     <input value={positionTarget} onChange={event => setPositionTarget(event.target.value)} placeholder={scope.adUnit || '/123456/site/Billboard'} />
                   </label>
-                  <p>{effectiveTarget ? `Position: ${effectiveTarget}. Clear this field to use Ad unit scope above.` : 'Select one Ad unit scope above, or enter its exact name or full GAM path here.'} Select a bidder above for its request. Selected fields only; full original batches remain available separately.</p>
+                  <p>{effectiveTarget ? `Position: ${effectiveTarget}. Clear this field to use Ad unit scope above.` : 'Select one Ad unit scope above, or enter its exact name or full GAM path here.'} Select a bidder above for its request. The table is a summary. The original selected request remains intact, including other positions if sent as a batch. ads.txt and sellers.json are not checked.</p>
                 </> : null}
                 <div className="debug-command-scope">
                   <code>{command.id === 'schain-position' ? effectiveTarget || 'Choose one position' : command.scope === 'page' ? 'Entire page' : scopeUnit}</code>
