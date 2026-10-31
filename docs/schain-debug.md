@@ -3,30 +3,50 @@
 In a site's **Debug Console**, choose **Ad unit scope** (one position or all)
 and optionally **Bidder scope**, then search for `SChain`.
 
-- **SChain position report** is the short, shareable view. Select one position
-  above or enter an exact ad unit name/full GAM path in the card. An explicit
-  entry overrides the selected position for this command only. Optionally select
-  a bidder. It chooses the latest matching auction in retained event order,
-  preferring a mapped HTTP call within that same auction when available;
-  otherwise it shows the latest matching Prebid input. It includes
-  its identifiers, sizes, SChain and basic SChain 1.0 field checks. Empty target
-  disables Copy/Download; no substring or path-suffix matching is used.
-  Recorded GPID/adserver adslot paths are preferred; current GPT path mapping
-  is a fallback using an exact slot element ID, explicitly labeled. Ambiguous
-  positions or multiple bids in the latest batch are reported without guessing.
-  The command also captures future supported HTTP calls, upgrading the report
-  only when the selected bid/auction maps exactly to one impression. It stops
-  after that match or five minutes. Other positions and old-auction payloads
-  cannot upgrade the evidence. Run `.copy()` or `.download()` to share only the
-  short result; `.print()` displays the current result.
-  The export is **selected fields, not the original complete request**. It omits
-  unrelated bids, history, config, user/device data, consent and URL query dumps.
-  It preserves the chain itself and request IDs. `.fullSnapshot()` retains the
-  original full batches separately. `basic-fields-pass` concerns the SChain
-  fields checked here, not the entire OpenRTB request, commercial validity,
-  ads.txt/sellers.json reconciliation or SSP acceptance. `complete=0` is shown
-  as an explicitly incomplete chain; unsupported versions/conflicting chains
-  are never a pass. Large chain evidence requires the full snapshot.
+- **SChain position report** prints a readable request table and a SChain node
+  table. Run it in the DevTools Console **top** context on the publisher page.
+  An iframe (including a cross-origin ad frame) is reported as
+  `wrong-console-context`: no hooks are installed and no request/SChain is
+  checked. Missing Prebid in the top page is `prebid-unavailable`, with a rerun
+  instruction. The inspector never reads or switches to a parent frame.
+
+  Select one position above or enter an exact ad unit name/full GAM path in the
+  card. The explicit entry overrides the selected position for this command.
+  An optional bidder narrows selection. The latest matching retained auction
+  is selected, preferring an exactly mapped supported HTTP call in that same
+  auction; otherwise the report clearly says **Prebid input only**. Exact GPID,
+  adserver adslot or current GPT path + slot element ID are supported. Ambiguous
+  matches are reported without guessing. A chain in configuration is never
+  substituted for a missing chain in the selected request.
+
+  The table shows identifiers, sizes, endpoint/method, SChain presence, its exact
+  field paths and basic SChain 1.0 checks. Every node is visible in a second
+  table. Full chain JSON and the **complete selected original payload** are in
+  collapsed groups. A request with several impressions remains an unchanged
+  batch: filtering it would no longer be the original sent body. HTTP details
+  retain method, URL, query, raw body and decoded body. Headers/browser-added
+  transport fields are not recorded; use DevTools/HAR for those.
+
+  `snapshot()` / `ready()` return the small summary. `details()` / `copy()` /
+  `download()` include that summary and the one selected original request,
+  without all historical requests. Before HTTP capture this is the retained
+  Prebid input, explicitly labeled; unsupported values replaced during capture
+  are disclosed. `copySummary()` copies a readable Markdown table with all
+  node IDs and no full payload. `summaryText()` returns that table as text.
+  The generated command uses `void` so the Console does not duplicate the
+  report after printing the tables. Labels, helper and export filenames are
+  neutral: `__AD_REQUEST_DEBUG`, `ad-request.json` (position mode),
+  `ad-requests.json` (full mode). Previously copied commands are unchanged;
+  copy a fresh command after refreshing the dashboard.
+
+  Capture watches future OpenX/PubMatic calls and stops after the first exactly
+  mapped call or five minutes. It never triggers an auction. No match, unavailable
+  decoding or wrong context is not evidence of missing SChain. `basic-fields-pass`
+  is only a check of the supported SChain fields, not validation of the entire
+  request or the commercial chain. ads.txt, sellers.json, payment relationships
+  and SSP acceptance are explicitly **not checked**; this does not mean missing.
+  `complete=0` is disclosed; unsupported/conflicting chains cannot pass.
+  Very large chain evidence requires the full snapshot.
 - **SChain and full requests** copies a one-shot, read-only console command.
   Run it on the publisher page after Prebid loads. It shows recorded
   `bidRequested` inputs, per-position SChain paths and the original full batch.
@@ -44,16 +64,18 @@ and optionally **Bidder scope**, then search for `SChain`.
   with a position/auction; unmapped or ambiguous batches stay separate from
   a selected position. Identical slot names across refreshes are not enough.
 
-Both commands install the following **local** helper:
+All three commands install the following **local** helper:
 
 ```js
-__TESSERA_SCHAIN_DEBUG.print()       // table and complete current report
-__TESSERA_SCHAIN_DEBUG.snapshot()    // report object
-__TESSERA_SCHAIN_DEBUG.fullSnapshot() // full batches, including in short mode
-await __TESSERA_SCHAIN_DEBUG.ready() // wait for currently pending decoding
-await __TESSERA_SCHAIN_DEBUG.copy()  // JSON clipboard; returns JSON if unavailable
-__TESSERA_SCHAIN_DEBUG.download()    // local tessera-schain-debug.json
-__TESSERA_SCHAIN_DEBUG.stop()        // remove this inspector's live hooks
+__AD_REQUEST_DEBUG.print()       // print the current report
+__AD_REQUEST_DEBUG.snapshot()    // summary in position mode
+__AD_REQUEST_DEBUG.details()     // selected summary + complete original payload
+await __AD_REQUEST_DEBUG.copySummary() // readable table in position mode
+__AD_REQUEST_DEBUG.fullSnapshot() // full batches, including in short mode
+await __AD_REQUEST_DEBUG.ready() // wait for currently pending decoding
+await __AD_REQUEST_DEBUG.copy()  // JSON clipboard; returns JSON if unavailable
+__AD_REQUEST_DEBUG.download()    // local JSON export
+__AD_REQUEST_DEBUG.stop()        // remove this inspector's live hooks
 ```
 
 Full requests can include identifiers and consent strings; review before
@@ -93,7 +115,8 @@ only if that API is still owned by this inspector, preserving later tools.
 The browser check uses the real minified Debug component and intercepts every
 request. It exercises downloaded/copied commands, one/all selection, complete
 batch retention, local JSON exports, clipboard failure, option loading/retry,
-desktop/mobile, native fetch/XHR, unchanged gzip request bytes and cleanup.
+desktop/mobile, same-origin and opaque iframes, neutral tables and full selected
+payload exports, native fetch/XHR, unchanged gzip request bytes and cleanup.
 Evidence is generated under `.generated/schain-debug-evidence/` and retained by
 the existing site editor CI workflow. No paid traffic is generated.
 
@@ -105,3 +128,5 @@ References:
 - https://docs.prebid.org/dev-docs/modules/schain.html
 - https://docs.prebid.org/dev-docs/publisher-api-reference/getEvents.html
 - https://github.com/InteractiveAdvertisingBureau/openrtb/blob/main/supplychainobject.md
+
+Console context reference: https://developer.chrome.com/docs/devtools/console/reference#context
