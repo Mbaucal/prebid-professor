@@ -47,6 +47,9 @@ with sync_playwright() as p:
     page.get_by_label('Find command').fill('SChain')
     card=page.locator('.debug-command-card').filter(has=page.get_by_role('heading',name='SChain and full requests',exact=True))
     wire=page.locator('.debug-command-card').filter(has=page.get_by_role('heading',name='SChain network capture',exact=True))
+    compact=page.locator('.debug-command-card').filter(has=page.get_by_role('heading',name='SChain position report',exact=True))
+    assert compact.get_by_role('button',name='Copy command',exact=True).is_disabled()
+    assert compact.get_by_role('button',name='Download .js',exact=True).is_disabled()
     card.get_by_role('button',name='Copy command',exact=True).click()
     all_code=page.evaluate('window.__copied.at(-1)')
     # Running a copied command in the minified production-style UI must be standalone.
@@ -68,6 +71,29 @@ with sync_playwright() as p:
     with page.expect_download() as d:
         page.evaluate('window.__TESSERA_SCHAIN_DEBUG.download()')
     d.value.save_as(out/'report.json');assert json.loads((out/'report.json').read_text())['requests']
+    # The compact command supports both the existing selector and an explicit GAM path.
+    compact.get_by_role('button',name='Copy command',exact=True).click()
+    selected=page.evaluate(page.evaluate('window.__copied.at(-1)'))
+    assert selected['request']['adUnitCode']=='P1' and 'requests' not in selected
+    page.get_by_label('Ad unit name or GAM path',exact=True).fill('/123/site/P1')
+    page.evaluate("window.__events[0].args.bids[0].ortb2Imp={ext:{gpid:'/123/site/P1'}}")
+    with page.expect_download() as d:
+        compact.get_by_role('button',name='Download .js',exact=True).click()
+    d.value.save_as(out/'debug-schain-position.js')
+    compact_code=(out/'debug-schain-position.js').read_text()
+    short=page.evaluate(compact_code)
+    assert short['request']['matchedBy']=='exact recorded GPID/adslot'
+    assert short['schainCheck']['status']=='basic-fields-pass' and short['evidence']=='prebid-only'
+    page.evaluate("""async payload=>{await fetch('https://rtb.openx.net/openrtbb/prebidjs',{method:'POST',body:JSON.stringify(payload)});} """,payload)
+    short=page.evaluate('window.__TESSERA_SCHAIN_DEBUG.ready()')
+    assert short['evidence']=='captured-http-call' and not short['capture']['active']
+    assert short['request']['impression']['id']=='bid-P1' and short['request']['originalBatchImpressions']==2
+    assert len(json.dumps(short))<3000 and 'P2' not in json.dumps(short)
+    page.evaluate('window.__TESSERA_SCHAIN_DEBUG.copy()')
+    assert json.loads(page.evaluate('window.__copied.at(-1)'))['evidence']=='captured-http-call'
+    with page.expect_download() as d:
+        page.evaluate('window.__TESSERA_SCHAIN_DEBUG.download()')
+    d.value.save_as(out/'position-report.json');assert json.loads((out/'position-report.json').read_text())['request']['adUnitCode']=='P1'
     card.get_by_text('Preview command',exact=True).click()
     assert 'inspect' in card.locator('pre').inner_text().lower()
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
