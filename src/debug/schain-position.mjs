@@ -4,7 +4,7 @@ export function summarizeSchainPosition(report, target, slots = []) {
   const result = {
     report: 'Tessera SChain position report', generatedAt: report.generatedAt,
     prebidVersion: report.prebidVersion, target, bidderFilter: report.scope.bidder || null,
-    selection: 'Latest matching Prebid request in retained event order; choose a bidder to narrow it.',
+    selection: 'Latest matching auction in retained event order; prefer its latest mapped HTTP call, otherwise its latest Prebid input. Choose a bidder to narrow it.',
     status: 'selection-required', evidence: 'none', request: null,
     capture: { active: report.capture.active, pending: report.capture.pending,
       droppedRequests: report.capture.droppedRequests, droppedNetwork: report.capture.droppedNetwork },
@@ -35,7 +35,15 @@ export function summarizeSchainPosition(report, target, slots = []) {
     result.warnings.push('This path identifies multiple positions. Enter one exact adUnitCode.'); return result;
   }
   if (!candidates.length) { result.status = 'not-found'; result.warnings.push('No exact match in retained Prebid history. Check the name/path and bidder, or wait for a natural request.'); return result; }
-  const selected = candidates[candidates.length - 1];
+  let selected = candidates[candidates.length - 1];
+  const latestAuction = selected.request.auctionId;
+  // With All bidders, the last Prebid input may be an unsupported adapter.
+  // Prefer a mapped supported call in the SAME latest auction, not an older one.
+  for (const record of report.network) {
+    const matches = candidates.filter(c => c.request.auctionId === latestAuction && c.request.bidder === record.bidder &&
+      record.matches.some(m => m.bidId === c.item.bidId && m.auctionId === c.request.auctionId && m.adUnitCode === c.item.adUnitCode));
+    if (matches.length === 1) selected = matches[0];
+  }
   const { request, item } = selected;
   const siblings = candidates.filter(c => c.request === request && c.item.adUnitCode === item.adUnitCode);
   if (siblings.length > 1) { result.status = 'ambiguous-bids'; result.warnings.push('The latest batch has multiple bids for this position; inspect the full batch.'); return result; }

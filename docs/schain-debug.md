@@ -6,7 +6,9 @@ and optionally **Bidder scope**, then search for `SChain`.
 - **SChain position report** is the short, shareable view. Select one position
   above or enter an exact ad unit name/full GAM path in the card. An explicit
   entry overrides the selected position for this command only. Optionally select
-  a bidder. It shows one latest matching Prebid bid from retained event order,
+  a bidder. It chooses the latest matching auction in retained event order,
+  preferring a mapped HTTP call within that same auction when available;
+  otherwise it shows the latest matching Prebid input. It includes
   its identifiers, sizes, SChain and basic SChain 1.0 field checks. Empty target
   disables Copy/Download; no substring or path-suffix matching is used.
   Recorded GPID/adserver adslot paths are preferred; current GPT path mapping

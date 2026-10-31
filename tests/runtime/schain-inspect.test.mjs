@@ -141,6 +141,16 @@ test('an old auction or another position HTTP capture is never attached to the l
   }
 });
 
+test('All bidders can select a mapped supported HTTP request from the latest auction without falsely naming the last adapter', async () => {
+  const f = fixture({ events: [request('openx'), request('teads')] }); position(f, 'P1');
+  assert.equal(f.window.__TESSERA_SCHAIN_DEBUG.snapshot().request.bidder, 'teads');
+  f.window.fetch(openx, { body: JSON.stringify({ imp: [{ id: 'auction-1-openx-0' }], source: { schain: chain } }) });
+  const report = await f.window.__TESSERA_SCHAIN_DEBUG.ready();
+  assert.equal(report.evidence, 'captured-http-call');
+  assert.equal(report.request.bidder, 'openx');
+  assert.equal(report.request.bidId, 'auction-1-openx-0');
+});
+
 test('HTTP absence overrides Prebid presence; a chain on an unrelated impression is not evidence for the selected one', async () => {
   const f = fixture(); position(f, 'P1');
   f.window.fetch(openx, { body: JSON.stringify({ imp: [{ id: 'auction-1-openx-0' }, { id: 'auction-1-openx-1', ext: { schain: chain } }] }) });
