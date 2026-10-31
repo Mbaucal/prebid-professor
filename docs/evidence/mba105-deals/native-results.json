@@ -1,0 +1,44 @@
+[
+  {
+    "file": "prebid.js",
+    "width": 1440,
+    "passed": true,
+    "externalRequests": 0,
+    "decision": "synthetic GAM, native Prebid renderAd"
+  },
+  {
+    "file": "prebid.min.js",
+    "width": 1440,
+    "passed": true,
+    "externalRequests": 0,
+    "decision": "synthetic GAM, native Prebid renderAd"
+  },
+  {
+    "file": "gam.js",
+    "width": 1440,
+    "passed": true,
+    "externalRequests": 0,
+    "decision": "synthetic GAM, native Prebid renderAd"
+  },
+  {
+    "file": "prebid.js",
+    "width": 390,
+    "passed": true,
+    "externalRequests": 0,
+    "decision": "synthetic GAM, native Prebid renderAd"
+  },
+  {
+    "file": "prebid.min.js",
+    "width": 390,
+    "passed": true,
+    "externalRequests": 0,
+    "decision": "synthetic GAM, native Prebid renderAd"
+  },
+  {
+    "file": "gam.js",
+    "width": 390,
+    "passed": true,
+    "externalRequests": 0,
+    "decision": "synthetic GAM, native Prebid renderAd"
+  }
+]

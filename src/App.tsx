@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import AgenciesPanel from './components/AgenciesPanel';
+import AgencyOverview from './components/AgencyOverview';
+import { useOrganization, agencyFor, inAgency } from './organization';
+import AppFormDialog from './components/AppFormDialog';
+import AppFrame, { WorkspaceContent } from './components/AppFrame';
+import AuthAccount from './components/AuthAccount';
+import ApiIntegrationsPanel from './components/ApiIntegrationsPanel';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { canonicalDashboardURL, dashboardURL, globalSections as navItems, readDashboardNavigation, resolveDashboardNavigation, siteTabs as publisherTabs, type DashboardNavigation, type NavigationRequest, type GlobalSection, type PublisherTab } from './dashboard-navigation';
 import { api } from './api';
 import AdsTxtPanel from './components/AdsTxtPanel';
 import AuditLogPanel from './components/AuditLogPanel';
@@ -11,6 +19,8 @@ import ExportPanel from './components/ExportPanel';
 import HierarchySidebar from './components/HierarchySidebar';
 import PrebidBuildsPanel from './components/PrebidBuildsPanel';
 import ReleasesPanel from './components/ReleasesPanel';
+import type {ReleaseActionRequest} from './components/ReleaseActionFocus';
+import SiteTestPagePanel from './components/SiteTestPagePanel';
 import MockupBuilderPanel from './components/MockupBuilderPanel';
 import MonitoringReadonlyPanel from './components/MonitoringReadonlyPanel';
 import type {
@@ -21,18 +31,15 @@ import type {
   Site,
 } from './shared/types';
 
-const navItems = ['Publishers', 'Releases', 'Prebid builds', 'Audit log', 'Settings'] as const;
-type GlobalSection = (typeof navItems)[number];
 const globalDescriptions: Record<GlobalSection, string> = {
+  Agencies: 'Organize agencies, publishers and sites, with an optional agency logo.',
+  'API integracije': 'Povežite GAM mreže i kreirajte ad unite iz šablona.',
   Publishers: 'Manage publisher accounts, sites and every site-level configuration workflow.',
   Releases: 'Review immutable releases across all publishers and sites.',
   'Prebid builds': 'Inspect every uploaded Prebid.js build and module manifest.',
   'Audit log': 'Review configuration, release and operational activity recorded in D1.',
   Settings: 'Check runtime health, bindings, security and retention safeguards.',
 };
-const publisherTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Export', 'Mockup', 'Monitoring', 'Debug', 'Ads.txt'] as const;
-
-type PublisherTab = (typeof publisherTabs)[number];
 type ModalMode = 'create-publisher' | 'create-site' | 'edit-site' | 'duplicate-site' | null;
 
 type PublisherForm = {
@@ -105,55 +112,64 @@ function nextCopyId(value: string): string {
 }
 
 export default function App() {
+  const organization = useOrganization();
+  const [navigationRequest, setNavigationRequest] = useState(() => readDashboardNavigation(window.location.search));
+  const navigationRef = useRef(navigationRequest);
+  const hierarchyRequest = useRef(0);
+  const [hierarchyLoaded, setHierarchyLoaded] = useState(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [publishers, setPublishers] = useState<PublisherAccount[]>([]);
   const [hierarchyError, setHierarchyError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<GlobalSection>('Publishers');
-  const [activePublisherId, setActivePublisherId] = useState<string | null>(null);
-  const [activeSiteId, setActiveSiteId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<PublisherTab>('Overview');
+  const [releaseAction,setReleaseAction]=useState<ReleaseActionRequest|null>(null);
+  const releaseSequence=useRef(0);
+  const [configEntry, setConfigEntry] = useState<'ad-units' | 'generator-profiles'>('generator-profiles');
+  const modalSession = useRef(0);
+  const modalBusy = useRef(false);
+  const modalOpener = useRef<HTMLElement | null>(null);
   const [modal, setModal] = useState<ModalMode>(null);
   const [publisherForm, setPublisherForm] = useState<PublisherForm>(emptyPublisherForm);
   const [siteForm, setSiteForm] = useState<SiteForm>(emptySiteForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const loadHierarchy = useCallback(
-    async (preferredPublisherId?: string, preferredSiteId?: string) => {
-      setLoading(true);
-      try {
-        const items = await api.listPublisherAccounts();
-        setPublishers(items);
-        setHierarchyError(null);
+  const commitNavigation = useCallback((navigation: DashboardNavigation, replace = false) => {
+    const url = dashboardURL(window.location.href, navigation);
+    const currentURL = window.location.pathname + window.location.search + window.location.hash;
+    setReleaseAction(null);
+    if (url !== currentURL) {
+      modalSession.current++;
+      modalBusy.current = false;
+      setSubmitting(false);
+      setModal(null);
+      window.history[replace ? 'replaceState' : 'pushState'](null, '', url);
+    }
+    const next = readDashboardNavigation(window.location.search);
+    navigationRef.current = next;
+    setNavigationRequest(next);
+  }, []);
 
-        const allSites = items.flatMap((item) => item.sites);
-        const preferredSite = preferredSiteId
-          ? allSites.find((candidate) => candidate.id === preferredSiteId) ?? null
-          : null;
-        const candidatePublisher = preferredSite?.publisherAccountId
-          ? items.find((item) => item.id === preferredSite.publisherAccountId) ?? null
-          : items.find((item) => item.id === preferredPublisherId) ??
-            items.find((item) => item.id === activePublisherId) ??
-            items[0] ??
-            null;
-        const candidateSite =
-          preferredSite ??
-          candidatePublisher?.sites.find((candidate) => candidate.id === activeSiteId) ??
-          candidatePublisher?.sites[0] ??
-          null;
-
-        setActivePublisherId(candidatePublisher?.id ?? null);
-        setActiveSiteId(candidateSite?.id ?? null);
-      } catch (error) {
-        setHierarchyError(error instanceof Error ? error.message : 'Publisher hierarchy could not be loaded.');
-      } finally {
-        setLoading(false);
+  const loadHierarchy = useCallback(async (preferredPublisherId?: string, preferredSiteId?: string, requestedNavigation: NavigationRequest = navigationRef.current) => {
+    const requestId = ++hierarchyRequest.current;
+    setLoading(true);
+    try {
+      const items = await api.listPublisherAccounts();
+      if (requestId !== hierarchyRequest.current) return;
+      setPublishers(items);
+      setHierarchyLoaded(true);
+      setHierarchyError(null);
+      // A response must not take the user back after they navigated elsewhere.
+      if (preferredPublisherId && navigationRef.current === requestedNavigation) {
+        commitNavigation({...requestedNavigation, publisherId:preferredPublisherId, siteId:preferredSiteId ?? null,
+          tab:preferredSiteId ? requestedNavigation.tab : 'Overview', agencyFilter:preferredPublisherId === requestedNavigation.publisherId ? requestedNavigation.agencyFilter : 'all'});
       }
-    },
-    [activePublisherId, activeSiteId],
-  );
+    } catch (error) {
+      if (requestId === hierarchyRequest.current) setHierarchyError(error instanceof Error ? error.message : 'Publisher hierarchy could not be loaded.');
+    } finally {
+      if (requestId === hierarchyRequest.current) setLoading(false);
+    }
+  }, [commitNavigation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,15 +187,58 @@ export default function App() {
     };
   }, []);
 
-  const publisher = useMemo(
-    () => publishers.find((item) => item.id === activePublisherId) ?? publishers[0] ?? null,
-    [activePublisherId, publishers],
-  );
+  const selection = useMemo(() => resolveDashboardNavigation(navigationRequest, publishers, organization.data), [navigationRequest, publishers, organization.data]);
+  const navigationPending = !hierarchyLoaded || (navigationRequest.agencyFilter !== 'all' && organization.loading);
+  const navigationError = hierarchyError || (navigationRequest.agencyFilter !== 'all' ? organization.error : null) || (!navigationPending ? selection.error : null);
+  const publisher = navigationPending || navigationError ? null : selection.publisher;
+  const site = navigationPending || navigationError ? null : selection.site;
+  const {section:activeSection, tab:activeTab, agencyFilter} = selection.navigation;
+  const agency = agencyFor(organization.data, publisher?.id);
 
-  const site = useMemo(() => {
-    if (!publisher) return null;
-    return publisher.sites.find((item) => item.id === activeSiteId) ?? publisher.sites[0] ?? null;
-  }, [activeSiteId, publisher]);
+  useEffect(() => {
+    const restore = () => {
+      const next = readDashboardNavigation(window.location.search);
+      modalSession.current++;
+      modalBusy.current = false;
+      setSubmitting(false);
+      navigationRef.current = next;
+      setNavigationRequest(next);
+      setModal(null);
+      setReleaseAction(null);
+      setConfigEntry('generator-profiles');
+    };
+    window.addEventListener('popstate', restore);
+    return () => window.removeEventListener('popstate', restore);
+  }, []);
+
+  useEffect(() => {
+    if (!navigationPending && !navigationError && navigationRef.current === navigationRequest && canonicalDashboardURL(window.location.href, navigationRequest, selection.navigation)) {
+      commitNavigation(selection.navigation, true);
+    }
+  }, [navigationPending, navigationError, navigationRequest, selection.navigation, commitNavigation]);
+
+  function navigate(patch: Partial<DashboardNavigation>) {
+    commitNavigation({...selection.navigation, ...patch});
+    setModal(null);
+  }
+  function openReleaseAction(action:'generate'|'publish'){
+    if(!site)return;
+    navigate({tab:'Releases'});
+    setReleaseAction({siteId:site.id,sequence:++releaseSequence.current,action});
+  }
+  function setActiveTab(tab: PublisherTab) { navigate({tab}); }
+  function filterAgency(value: string) {
+    const keep = publisher && inAgency(organization.data, publisher.id, value);
+    navigate({agencyFilter:value, ...(!keep ? {publisherId:null, siteId:null, tab:'Overview'} : {})});
+  }
+  function openAgency(value: string) {
+    const keep = publisher && inAgency(organization.data, publisher.id, value);
+    navigate({section:'Publishers', agencyFilter:value, tab:'Overview', ...(!keep ? {publisherId:null, siteId:null} : {})});
+  }
+  function openAgencyPublisher(id: string) {
+    const account = publishers.find(item => item.id === id);
+    if (account) navigate({section:'Publishers', agencyFilter:'all', publisherId:id, siteId:account.sites[0]?.id ?? null, tab:'Overview'});
+  }
 
   const totalSites = useMemo(
     () => publishers.reduce((sum, item) => sum + item.sitesCount, 0),
@@ -187,45 +246,37 @@ export default function App() {
   );
 
   function selectPublisher(account: PublisherAccount) {
-    setActiveSection('Publishers');
-    setActivePublisherId(account.id);
-    setActiveSiteId(account.sites[0]?.id ?? null);
-    setActiveTab('Overview');
+    navigate({section:'Publishers', publisherId:account.id, siteId:account.sites[0]?.id ?? null, tab:'Overview'});
   }
 
   function selectSite(accountId: string, selectedSite: Site) {
-    setActiveSection('Publishers');
-    setActivePublisherId(accountId);
-    setActiveSiteId(selectedSite.id);
+    navigate({section:'Publishers', publisherId:accountId, siteId:selectedSite.id});
   }
 
-  function selectGlobalSection(section: GlobalSection) {
-    setActiveSection(section);
-    setModal(null);
+  function selectGlobalSection(section: GlobalSection) { navigate({section}); }
+
+  function openSiteWorkspace(publisherAccountId: string, siteId: string, tab: 'Overview' | 'Releases' | 'Prebid.js') {
+    navigate({agencyFilter:'all', publisherId:publisherAccountId, siteId, tab, section:'Publishers'});
   }
 
-  function openSiteWorkspace(
-    publisherAccountId: string,
-    siteId: string,
-    tab: 'Overview' | 'Releases' | 'Prebid.js',
-  ) {
-    setActivePublisherId(publisherAccountId);
-    setActiveSiteId(siteId);
-    setActiveTab(tab);
-    setActiveSection('Publishers');
+  function beginModal(mode: ModalMode) {
+    modalSession.current++;
+    modalBusy.current = false;
+    setSubmitting(false);
+    modalOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setModal(mode);
   }
 
   function openCreatePublisher() {
     setPublisherForm(emptyPublisherForm);
     setFormError(null);
-    setModal('create-publisher');
+    beginModal('create-publisher');
   }
 
   function openCreateSiteForPublisher(publisherAccountId: string) {
-    setActivePublisherId(publisherAccountId);
     setSiteForm({ ...emptySiteForm, publisherAccountId });
     setFormError(null);
-    setModal('create-site');
+    beginModal('create-site');
   }
 
   function openCreateSite() {
@@ -246,7 +297,7 @@ export default function App() {
       copyAdsTxtRequirements: false,
     });
     setFormError(null);
-    setModal('edit-site');
+    beginModal('edit-site');
   }
 
   function openDuplicateSite() {
@@ -265,24 +316,28 @@ export default function App() {
       copyAdsTxtRequirements: true,
     });
     setFormError(null);
-    setModal('duplicate-site');
+    beginModal('duplicate-site');
   }
 
   function closeModal() {
-    if (submitting) return;
+    if (modalBusy.current) return;
     setModal(null);
     setFormError(null);
   }
 
   async function submitPublisher(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (modalBusy.current) return;
     setFormError(null);
     if (!publisherForm.id || !publisherForm.name) {
       setFormError('Publisher ID and name are required.');
       return;
     }
 
+    modalBusy.current = true;
     setSubmitting(true);
+    const session = modalSession.current;
+    const requestedNavigation = navigationRef.current;
     try {
       const created = await api.createPublisherAccount({
         id: publisherForm.id.trim(),
@@ -290,24 +345,30 @@ export default function App() {
         status: publisherForm.status,
         notes: publisherForm.notes.trim() || null,
       });
-      await loadHierarchy(created.id);
-      setModal(null);
+      if (session !== modalSession.current) return;
+      await loadHierarchy(created.id, undefined, requestedNavigation);
+      if (session === modalSession.current) setModal(null);
     } catch (error) {
+      if (session !== modalSession.current) return;
       setFormError(error instanceof Error ? error.message : 'Publisher could not be created.');
     } finally {
-      setSubmitting(false);
+      if (session === modalSession.current) { modalBusy.current = false; setSubmitting(false); }
     }
   }
 
   async function submitSite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (modalBusy.current) return;
     setFormError(null);
     if (!siteForm.id || !siteForm.publisherAccountId || !siteForm.name || !siteForm.domain || !siteForm.gamPath) {
       setFormError('Publisher, Site ID, name, domain and GAM path are required.');
       return;
     }
 
+    modalBusy.current = true;
     setSubmitting(true);
+    const session = modalSession.current;
+    const requestedNavigation = navigationRef.current;
     try {
       const common = {
         publisherAccountId: siteForm.publisherAccountId,
@@ -329,19 +390,22 @@ export default function App() {
               })
             : await api.createSite({ id: siteForm.id.trim(), ...common });
 
-      await loadHierarchy(saved.publisherAccountId ?? siteForm.publisherAccountId, saved.id);
-      setModal(null);
+      if (session !== modalSession.current) return;
+      await loadHierarchy(saved.publisherAccountId ?? siteForm.publisherAccountId, saved.id, requestedNavigation);
+      if (session === modalSession.current) setModal(null);
     } catch (error) {
+      if (session !== modalSession.current) return;
       setFormError(error instanceof Error ? error.message : 'Site could not be saved.');
     } finally {
-      setSubmitting(false);
+      if (session === modalSession.current) { modalBusy.current = false; setSubmitting(false); }
     }
   }
 
   async function moveSiteToPublisher(siteId: string, targetPublisherId: string) {
+    const requestedNavigation = navigationRef.current;
     try {
       const moved = await api.moveSite(siteId, targetPublisherId);
-      await loadHierarchy(targetPublisherId, moved.id);
+      await loadHierarchy(targetPublisherId, moved.id, requestedNavigation);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Site could not be moved.';
       setHierarchyError(message);
@@ -353,10 +417,12 @@ export default function App() {
   async function removeSite() {
     if (!site) return;
     if (!window.confirm(`Delete ${site.name} (${site.domain})? Its config, ad units, bidders, imports and releases will be deleted.`)) return;
+    const requestedNavigation = navigationRef.current;
     try {
       const previousPublisher = site.publisherAccountId ?? publisher?.id;
       await api.deleteSite(site.id);
-      await loadHierarchy(previousPublisher);
+      if (navigationRef.current === requestedNavigation) commitNavigation({...requestedNavigation, publisherId:previousPublisher ?? null, siteId:null, tab:'Overview'});
+      await loadHierarchy();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Site could not be deleted.');
     }
@@ -382,9 +448,10 @@ export default function App() {
             </span>
           </div>
           <p>
-            A publisher is the business/account. Each site keeps its own GAM path, bidders, ad units,
+            Agencies group publisher accounts. Each site keeps its own GAM path, bidders, ad units,
             releases and ads.txt configuration. Drag any site in the sidebar onto another publisher to move it.
           </p>
+          <AgencyOverview agency={agency} data={organization.data} filter={agencyFilter} onFilter={filterAgency} />
           {hierarchyError ? <p className="inline-warning">Hierarchy API: {hierarchyError}</p> : null}
 
           {publisher ? (
@@ -416,7 +483,7 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <button className="empty-site-cta" onClick={openCreateSite} type="button">
+            <button className="empty-site-cta" disabled={!publisher} onClick={openCreateSite} type="button">
               ＋ Add the first site to {publisher?.name ?? 'this publisher'}
             </button>
           )}
@@ -424,9 +491,9 @@ export default function App() {
 
         <article className="panel api-panel">
           <div className="panel-heading">
-            <div><span className="panel-kicker">Current selection</span><h2>Publisher → Site</h2></div>
+            <div><span className="panel-kicker">Current selection</span><h2>Agency → Publisher → Site</h2></div>
           </div>
-          <pre>{JSON.stringify({ publisher: publisher?.id, site: site?.id, health }, null, 2)}</pre>
+          <pre>{JSON.stringify({ agency: agency?.name ?? null, publisher: publisher?.id, site: site?.id, health }, null, 2)}</pre>
         </article>
 
         <article className="panel stats-panel">
@@ -452,6 +519,7 @@ export default function App() {
   }
 
   const publisherWorkspace = activeSection === 'Publishers';
+  const dialogSession = modalSession.current;
   const siteModalOpen = modal === 'create-site' || modal === 'edit-site' || modal === 'duplicate-site';
   const siteModalTitle =
     modal === 'edit-site'
@@ -461,13 +529,9 @@ export default function App() {
         : 'Create site';
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">PP</div>
-          <div><strong>Prebid Professor</strong><span>Ad-tech control plane</span></div>
-        </div>
-
+    <AppFrame
+      account={<AuthAccount />}
+      navigation={
         <nav className="main-nav" aria-label="Main navigation">
           {navItems.map((item) => (
             <button
@@ -480,9 +544,14 @@ export default function App() {
             </button>
           ))}
         </nav>
-
-        {publisherWorkspace ? (
+      }
+      sidebarContent={publisherWorkspace || activeSection === 'Agencies' ? (
           <HierarchySidebar
+            organization={organization.data}
+            organizationError={organization.error}
+            agencyFilter={agencyFilter}
+            onAgencyFilter={filterAgency}
+            onManageAgencies={() => selectGlobalSection('Agencies')}
             activePublisherId={publisher?.id ?? null}
             activeSiteId={site?.id ?? null}
             error={hierarchyError}
@@ -503,18 +572,17 @@ export default function App() {
           </div>
         )}
 
-        <div className="account-card">
-          <div className="avatar">S</div>
-          <div><strong>srdjan</strong><span>admin · signed session</span></div>
-        </div>
-      </aside>
-
+    >
       <main className="workspace">
-        {publisherWorkspace ? (
+        {navigationError ? <section className="panel" role="alert">
+          <h1>Selection unavailable</h1><p>{navigationError}</p>
+          <p>Choose a site or workspace from the navigation to continue.</p>
+          <button className="button secondary" disabled={loading || organization.loading} onClick={() => { void loadHierarchy(); void organization.reload(); }} type="button">Reload hierarchy</button>
+        </section> : navigationPending ? <section className="panel" role="status"><h1>Loading publisher hierarchy…</h1></section> : publisherWorkspace ? (
           <>
         <header className="topbar">
           <div>
-            <span className="eyebrow">Publishers / {publisher?.name ?? 'No publisher'} / {site?.name ?? 'No site'}</span>
+            <span className="eyebrow agency-selection-breadcrumb">{agency?.name ?? 'Without agency'} / {publisher?.name ?? 'No publisher'} / {site?.name ?? 'No site'}</span>
             <h1>{site?.name ?? publisher?.name ?? 'Prebid Professor'}</h1>
             {site ? (
               <div className="publisher-meta">
@@ -537,9 +605,8 @@ export default function App() {
             <button className="button secondary" disabled={!site} onClick={openEditSite} type="button">Edit site</button>
             <button className="button secondary" disabled={!site} onClick={openDuplicateSite} type="button">Duplicate site</button>
             <button className="button danger" disabled={!site} onClick={() => void removeSite()} type="button">Delete site</button>
-            <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Validate</button>
-            <button className="button secondary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Generate</button>
-            <button className="button primary" disabled={!site} onClick={() => setActiveTab('Releases')} type="button">Publish ↗</button>
+            <button className="button secondary" disabled={!site} onClick={() => openReleaseAction('generate')} type="button">Generate</button>
+            <button className="button primary" disabled={!site} onClick={() => openReleaseAction('publish')} type="button">Publish ↗</button>
           </div>
         </header>
 
@@ -557,20 +624,26 @@ export default function App() {
           ))}
         </section>
 
+        <WorkspaceContent pageKey={`${activeSection}:${site?.id ?? publisher?.id}:${activeTab}`}>
         {activeTab === 'Overview' ? renderOverview() : null}
         {activeTab === 'Config' && site ? (
-          <ConfigPanel onChanged={() => loadHierarchy(publisher?.id, site.id)} publisherId={site.id} />
+          <ConfigPanel onGenerate={() => openReleaseAction('generate')} onOpenPrebid={() => setActiveTab('Prebid.js')} key={`${site.id}:${configEntry}`} initialSection={configEntry} onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)} publisherId={site.id} />
         ) : null}
         {activeTab === 'Prebid.js' && site ? (
           <PrebidBuildsPanel publisherId={site.id} siteName={site.name} />
         ) : null}
         {activeTab === 'Releases' && site ? (
-          <ReleasesPanel
-            onChanged={() => loadHierarchy(publisher?.id, site.id)}
+          <ReleasesPanel key={site.id} actionRequest={releaseAction}
+            onNavigate={destination => {
+              if (destination === 'prebid') setActiveTab('Prebid.js');
+              else { setConfigEntry('generator-profiles'); setActiveTab('Config'); }
+            }}
+            onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)}
             publisherId={site.id}
             siteName={site.name}
           />
         ) : null}
+        {activeTab === 'Test page' && site ? <SiteTestPagePanel key={site.id} publisherId={site.id} /> : null}
         {activeTab === 'Export' && site ? <ExportPanel publisherId={site.id} site={site} /> : null}
         {activeTab === 'Mockup' && site ? <MockupBuilderPanel publisherId={site.id} siteName={site.name} /> : null}
         {activeTab === 'Monitoring' && site ? <MonitoringReadonlyPanel site={site} /> : null}
@@ -578,11 +651,12 @@ export default function App() {
           <DebugConsolePanel domain={site.domain} publisherId={site.id} siteName={site.name} />
         ) : null}
         {activeTab === 'Ads.txt' && site ? (
-          <AdsTxtPanel onChanged={() => loadHierarchy(publisher?.id, site.id)} site={site} />
+          <AdsTxtPanel onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)} site={site} />
         ) : null}
-        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Monitoring' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
+        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Test page' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Monitoring' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
           ? renderPlaceholder(activeTab)
           : null}
+        </WorkspaceContent>
           </>
         ) : (
           <>
@@ -594,6 +668,8 @@ export default function App() {
               </div>
               <button className="button secondary" onClick={() => selectGlobalSection('Publishers')} type="button">Open publishers</button>
             </header>
+            <WorkspaceContent pageKey={activeSection}>
+            {activeSection === 'Agencies' ? <AgenciesPanel controller={organization} publishers={publishers} onOpenPublisher={openAgencyPublisher} onOpenAgency={openAgency} /> : null}
             {activeSection === 'Releases' ? (
               <GlobalReleasesPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
             ) : null}
@@ -603,23 +679,25 @@ export default function App() {
             {activeSection === 'Audit log' ? (
               <AuditLogPanel onOpenSite={openSiteWorkspace} publishers={publishers} />
             ) : null}
+            {activeSection === 'API integracije' ? <ApiIntegrationsPanel sites={publishers.flatMap(p => p.sites)} onInventoryChanged={(id)=>{const owner=publishers.find(p=>p.sites.some(s=>s.id===id));return loadHierarchy(owner?.id,id,navigationRequest);}} onOpenSite={(id)=>{const owner=publishers.find(p=>p.sites.some(s=>s.id===id));if(owner){setConfigEntry('ad-units');navigate({agencyFilter:'all',publisherId:owner.id,siteId:id,tab:'Config',section:'Publishers'});}}} /> : null}
             {activeSection === 'Settings' ? <SettingsPanel publishers={publishers} /> : null}
+            </WorkspaceContent>
           </>
         )}
       </main>
 
       {modal === 'create-publisher' ? (
-        <div className="modal-backdrop" onMouseDown={closeModal} role="presentation">
-          <section className="modal-card" onMouseDown={(event) => event.stopPropagation()} role="dialog">
+        <AppFormDialog labelledBy="app-form-title" onDismiss={closeModal} busy={submitting}
+          opener={modalOpener.current} canRestoreFocus={() => modalSession.current === dialogSession}>
             <div className="modal-heading">
-              <div><span className="panel-kicker">Publisher account</span><h2>Create publisher</h2></div>
-              <button className="icon-button" onClick={closeModal} type="button">×</button>
+              <div><span className="panel-kicker">Publisher account</span><h2 id="app-form-title">Create publisher</h2></div>
+              <button aria-label="Close dialog" disabled={submitting} className="icon-button" onClick={closeModal} type="button">×</button>
             </div>
             <form className="publisher-form" onSubmit={submitPublisher}>
               <label>
                 <span>Publisher name</span>
                 <input
-                  autoFocus
+                  data-dialog-initial-focus
                   onChange={(event) => setPublisherForm((current) => ({
                     ...current,
                     name: event.target.value,
@@ -659,22 +737,21 @@ export default function App() {
                   value={publisherForm.notes}
                 />
               </label>
-              {formError ? <div className="form-error">{formError}</div> : null}
+              {formError ? <div className="form-error" role="alert">{formError}</div> : null}
               <div className="modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeModal} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting} type="submit">{submitting ? 'Saving…' : 'Create publisher'}</button>
               </div>
             </form>
-          </section>
-        </div>
+        </AppFormDialog>
       ) : null}
 
       {siteModalOpen ? (
-        <div className="modal-backdrop" onMouseDown={closeModal} role="presentation">
-          <section className="modal-card" onMouseDown={(event) => event.stopPropagation()} role="dialog">
+        <AppFormDialog labelledBy="app-form-title" onDismiss={closeModal} busy={submitting}
+          opener={modalOpener.current} canRestoreFocus={() => modalSession.current === dialogSession}>
             <div className="modal-heading">
-              <div><span className="panel-kicker">Site / domain workflow</span><h2>{siteModalTitle}</h2></div>
-              <button className="icon-button" onClick={closeModal} type="button">×</button>
+              <div><span className="panel-kicker">Site / domain workflow</span><h2 id="app-form-title">{siteModalTitle}</h2></div>
+              <button aria-label="Close dialog" disabled={submitting} className="icon-button" onClick={closeModal} type="button">×</button>
             </div>
             <form className="publisher-form" onSubmit={submitSite}>
               <label>
@@ -691,7 +768,7 @@ export default function App() {
               <label>
                 <span>Site name</span>
                 <input
-                  autoFocus
+                  data-dialog-initial-focus
                   onChange={(event) => setSiteForm((current) => ({
                     ...current,
                     name: event.target.value,
@@ -773,7 +850,7 @@ export default function App() {
                 </div>
               ) : null}
 
-              {formError ? <div className="form-error">{formError}</div> : null}
+              {formError ? <div className="form-error" role="alert">{formError}</div> : null}
               <div className="modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeModal} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting} type="submit">
@@ -787,9 +864,8 @@ export default function App() {
                 </button>
               </div>
             </form>
-          </section>
-        </div>
+        </AppFormDialog>
       ) : null}
-    </div>
+    </AppFrame>
   );
 }

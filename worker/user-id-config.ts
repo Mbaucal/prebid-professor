@@ -1,5 +1,6 @@
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
+import { assertCompilerStrings } from './compiler-input-compatibility.mjs';
 
 type JsonRecord = Record<string, unknown>;
 type StorageType = 'cookie' | 'html5' | 'cookie&html5';
@@ -48,7 +49,7 @@ type CatalogItem = {
   defaultStorage: JsonRecord | null;
 };
 
-const USER_ID_CATALOG: CatalogItem[] = [
+export const USER_ID_CATALOG: CatalogItem[] = [
   {
     name: 'sharedId',
     moduleCode: 'sharedIdSystem',
@@ -213,6 +214,7 @@ function validateKnownModule(module: UserIdModuleConfig, warnings: string[]): vo
     if (!Number.isInteger(partner) || partner <= 0) {
       throw new Error('id5Id.params.partner must be a positive ID5 Partner Number.');
     }
+    module.params.partner = partner;
     const refresh = Number(module.storage?.refreshInSeconds ?? 0);
     if (module.storage && (!Number.isFinite(refresh) || refresh <= 0 || refresh > 7200)) {
       warnings.push('ID5 recommends storage.refreshInSeconds of 7200 seconds or less.');
@@ -259,6 +261,10 @@ function normalizeModule(value: unknown, index: number, warnings: string[]): Use
     value: normalizeObject(value.value, `${name}.value`, true),
     notes: nullableString(value.notes),
   };
+
+  assertCompilerStrings(module.params, `${name}.params`);
+  assertCompilerStrings(module.storage, `${name}.storage`);
+  assertCompilerStrings(module.value, `${name}.value`);
 
   validateKnownModule(module, warnings);
   return module;
@@ -374,6 +380,18 @@ export function compileUserSync(config: UserIdConfig): JsonRecord {
   return userSync;
 }
 
+export function defaultUserIdSettings(): {userIdConfig: UserIdConfig; userSync: JsonRecord} {
+  const userIdConfig = cloneDefault();
+  return { userIdConfig, userSync: compileUserSync(userIdConfig) };
+}
+
+/** Called only on an explicit setup/mode save; never backfill existing sites on read. */
+export function initializeMissingUserSync<T extends JsonRecord>(config: T): T {
+  if (Object.prototype.hasOwnProperty.call(config, 'userSync')) return config;
+  const userIdConfig = isRecord(config.userIdConfig) ? normalizeConfig(config.userIdConfig).config : cloneDefault();
+  return { ...config, userIdConfig, userSync: compileUserSync(userIdConfig) };
+}
+
 function requiredModules(config: UserIdConfig): string[] {
   if (!config.enabled) return [];
   const enabled = config.modules.filter((module) => module.enabled);
@@ -388,12 +406,12 @@ async function siteExists(db: D1Database, siteId: string): Promise<boolean> {
   return Boolean(row);
 }
 
-async function readPublisherConfig(db: D1Database, siteId: string): Promise<{ id: string; config: JsonRecord } | null> {
+async function readPublisherConfig(db: D1Database, siteId: string): Promise<{ id: string; config: JsonRecord; configJson: string } | null> {
   const row = await db
     .prepare('SELECT id, config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1')
     .bind(siteId)
     .first<{ id: string; config_json: string }>();
-  return row ? { id: row.id, config: parseStoredConfig(row.config_json) } : null;
+  return row ? { id: row.id, config: parseStoredConfig(row.config_json), configJson: row.config_json } : null;
 }
 
 export async function readRequiredUserIdModules(db: D1Database, siteId: string): Promise<string[]> {
@@ -412,11 +430,13 @@ export async function getUserIdConfig(env: DatabaseEnv, siteId: string): Promise
 
   return json({
     ok: true,
+    saved: isRecord(row.config.userSync),
     userIdConfig: config,
     userSyncPreview: compileUserSync(config),
     requiredModules: requiredModules(config),
     catalog: USER_ID_CATALOG,
-    warnings: normalizeConfig(config).warnings,
+    warnings: [...normalizeConfig(config).warnings, ...(!isRecord(row.config.userSync) && row.config.enablePrebid !== false
+      ? ['User ID settings have not been saved. Existing generated scripts use cookie sync off. Review these defaults and save before generating a new package.'] : [])],
   });
 }
 
@@ -455,15 +475,19 @@ export async function updateUserIdConfig(
   const now = new Date().toISOString();
 
   try {
-    await env.DB.batch([
+    // The whole config is rewritten from this read, so it may only replace the config it
+    // was built from; otherwise a save that landed in between (unit rules, Refresh
+    // schedules and their kept intervals, consent mode) would be silently undone. The
+    // audit row needs that write.
+    const results = await env.DB.batch([
       env.DB
-        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ?')
-        .bind(JSON.stringify(configJson), now, siteId),
+        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ? AND config_json = ?')
+        .bind(JSON.stringify(configJson), now, siteId, row.configJson),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'user_id_config.updated', ?, 'user_id_config', ?, ?, ?)`,
+           ) SELECT ?, ?, 'user_id_config.updated', ?, 'user_id_config', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
@@ -481,6 +505,9 @@ export async function updateUserIdConfig(
           now,
         ),
     ]);
+    if (results[0]?.meta.changes !== 1) {
+      return apiError('Other site settings were saved at the same time, so nothing was saved. Select Save again.', 409);
+    }
   } catch (error) {
     return apiError(
       'User ID configuration could not be saved.',

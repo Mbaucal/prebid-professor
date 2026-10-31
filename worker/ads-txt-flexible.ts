@@ -1,3 +1,4 @@
+import { copyAuthenticatedActor } from './http';
 import { createAdsTxtRequirement, type AdsTxtEnv } from './ads-txt';
 import { importAdsTxtRequirementsLarge, MAX_ADS_TXT_BULK_ROWS } from './ads-txt-bulk';
 import { apiError } from './http';
@@ -37,11 +38,11 @@ function jsonRequest(request: Request, body: unknown): Request {
   const headers = new Headers(request.headers);
   headers.set('content-type', 'application/json; charset=utf-8');
   headers.delete('content-length');
-  return new Request(request.url, {
+  return copyAuthenticatedActor(request, new Request(request.url, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-  });
+  }));
 }
 
 function manualRows(body: ManualRequirementBody): ManualRow[] {

@@ -1,0 +1,28 @@
+{
+  "scope": "actual dashboard; synthetic API; no hosted mutations",
+  "results": [
+    {
+      "case": "reload preserves selected site and section",
+      "status": "failed",
+      "before": {
+        "site": "site2.example.com",
+        "tab": "Config",
+        "url": "http://127.0.0.1:4182/"
+      },
+      "after": {
+        "site": "site1.example.com",
+        "tab": "Overview",
+        "url": "http://127.0.0.1:4182/"
+      }
+    },
+    {
+      "case": "Publish header action while already on Releases",
+      "status": "review",
+      "detail": "Same Releases section; no additional instruction, selection, focus or publish action. APIs are intentionally synthetic in this check."
+    },
+    {
+      "case": "Escape closes site dialog",
+      "status": "failed"
+    }
+  ]
+}

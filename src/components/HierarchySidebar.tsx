@@ -1,4 +1,6 @@
-import { useEffect, useState, type DragEvent, type FormEvent } from 'react';
+import AgencyHierarchy from './AgencyHierarchy';
+import type { Organization } from '../organization';
+import { useState, type DragEvent, type FormEvent } from 'react';
 import { api } from '../api';
 import type {
   PublisherAccount,
@@ -7,6 +9,11 @@ import type {
 } from '../shared/types';
 
 type Props = {
+  organization: Organization;
+  agencyFilter: string;
+  onAgencyFilter: (value: string) => void;
+  onManageAgencies: () => void;
+  organizationError: string | null;
   publishers: PublisherAccount[];
   activePublisherId: string | null;
   activeSiteId: string | null;
@@ -25,10 +32,9 @@ type PublisherEditForm = {
   notes: string;
 };
 
-const RETURN_TO_PUBLISHER_KEY = 'prebid-professor:return-to-publisher';
-
 export default function HierarchySidebar({
   publishers,
+  organization, agencyFilter, onAgencyFilter, onManageAgencies, organizationError,
   activePublisherId,
   activeSiteId,
   loading,
@@ -39,6 +45,7 @@ export default function HierarchySidebar({
   onAddSite,
   onMoveSite,
 }: Props) {
+  const [collapsedPublishers, setCollapsedPublishers] = useState<Record<string, boolean>>({});
   const [draggedSiteId, setDraggedSiteId] = useState<string | null>(null);
   const [dragOverPublisherId, setDragOverPublisherId] = useState<string | null>(null);
   const [movingSiteId, setMovingSiteId] = useState<string | null>(null);
@@ -54,16 +61,6 @@ export default function HierarchySidebar({
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [deletingPublisher, setDeletingPublisher] = useState(false);
 
-  useEffect(() => {
-    const returnId = sessionStorage.getItem(RETURN_TO_PUBLISHER_KEY);
-    if (!returnId) return;
-
-    const account = publishers.find((publisher) => publisher.id === returnId);
-    if (!account) return;
-
-    sessionStorage.removeItem(RETURN_TO_PUBLISHER_KEY);
-    onSelectPublisher(account);
-  }, [onSelectPublisher, publishers]);
 
   function startDrag(event: DragEvent<HTMLButtonElement>, site: Site) {
     event.dataTransfer.effectAllowed = 'move';
@@ -141,7 +138,7 @@ export default function HierarchySidebar({
     setEditError(null);
 
     try {
-      const updated = await api.updatePublisherAccount(editingPublisher.id, {
+      await api.updatePublisherAccount(editingPublisher.id, {
         name,
         status: editForm.status,
         notes: editForm.notes.trim() || null,
@@ -149,7 +146,6 @@ export default function HierarchySidebar({
 
       // Reload the hierarchy from D1 so the sidebar, breadcrumb, page title and
       // overview all receive the new publisher name in one consistent refresh.
-      sessionStorage.setItem(RETURN_TO_PUBLISHER_KEY, updated.id);
       window.location.reload();
     } catch (requestError) {
       setEditError(
@@ -186,7 +182,6 @@ export default function HierarchySidebar({
 
     try {
       await api.deletePublisherAccount(editingPublisher.id);
-      sessionStorage.removeItem(RETURN_TO_PUBLISHER_KEY);
       window.location.reload();
     } catch (requestError) {
       setEditError(
@@ -201,11 +196,12 @@ export default function HierarchySidebar({
   return (
     <>
       <div className="publisher-nav publisher-tree">
-        <div className="section-label">Publishers</div>
+        <div className="section-label">Agencies / Publishers</div>
+        {organizationError ? <p className="agency-read-error">Agency data: {organizationError}</p> : null}
         {loading ? <div className="publisher-nav-message">Loading publisher hierarchy…</div> : null}
         {error ? <div className="publisher-nav-message error">{error}</div> : null}
 
-        {publishers.map((account) => (
+        <AgencyHierarchy data={organization} publishers={publishers} filter={agencyFilter} onFilter={onAgencyFilter} onManage={onManageAgencies} renderPublisher={(account, searching) => (
           <div
             className={`publisher-tree-group${dragOverPublisherId === account.id ? ' drag-target' : ''}`}
             key={account.id}
@@ -219,6 +215,7 @@ export default function HierarchySidebar({
             onDrop={(event) => void drop(event, account.id)}
           >
             <div className="publisher-account-row">
+              <button type="button" className="publisher-collapse" aria-label={`Toggle sites for ${account.name}`} aria-expanded={searching || !collapsedPublishers[account.id]} onClick={() => setCollapsedPublishers(current => ({...current, [account.id]: !current[account.id]}))}>{searching || !collapsedPublishers[account.id] ? "▾" : "▸"}</button>
               <button
                 className={account.id === activePublisherId ? 'publisher-account-link active' : 'publisher-account-link'}
                 onClick={() => onSelectPublisher(account)}
@@ -242,7 +239,7 @@ export default function HierarchySidebar({
               <div className="site-drop-hint">Drop site here to move it</div>
             ) : null}
 
-            <div className="publisher-site-list">
+            {(searching || !collapsedPublishers[account.id] || dragOverPublisherId === account.id) ? <div className="publisher-site-list">
               {account.sites.map((site) => (
                 <button
                   className={`site-link${site.id === activeSiteId ? ' active' : ''}${draggedSiteId === site.id ? ' dragging' : ''}`}
@@ -261,9 +258,9 @@ export default function HierarchySidebar({
               <button className="site-link add-site-link" onClick={() => onAddSite(account.id)} type="button">
                 ＋ Add site
               </button>
-            </div>
+            </div> : null}
           </div>
-        ))}
+        )} />
 
         <button className="publisher-link muted" onClick={onCreatePublisher} type="button">
           <span>＋ New publisher</span>

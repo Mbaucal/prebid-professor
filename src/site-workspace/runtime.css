@@ -1,0 +1,26 @@
+.site-runtime-panel{background:#fff;border:1px solid #d7dfec;border-radius:14px;padding:24px;color:#202a3b;min-width:0}.site-runtime-panel h2{margin-top:0}.site-runtime-panel p,.site-runtime-panel li{line-height:1.55}.site-runtime-panel label{display:block;font-weight:600;margin:14px 0}.site-runtime-panel input:not([type=checkbox]),.site-runtime-panel select{display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #c9d2df;border-radius:8px;font:inherit;margin-top:7px;background:#fff;color:inherit}.site-runtime-panel button{padding:10px 14px;border:1px solid #c9d2df;border-radius:8px;font:inherit;cursor:pointer;background:#fff;color:#202a3b}.site-runtime-panel button:disabled{opacity:.5;cursor:default}.runtime-actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.runtime-actions button:first-child{background:#fa8a40}.runtime-message,.runtime-error{padding:12px;border-radius:8px;background:#edf6ef}.runtime-error{background:#fff0ed;color:#a52620}.runtime-release,.runtime-position{border-top:1px solid #d7dfec;padding:16px 0}.runtime-release code{overflow-wrap:anywhere}.runtime-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.runtime-edit{border:1px solid #d7dfec;border-radius:10px;margin:16px 0;padding:16px;min-width:0}.runtime-check input{margin-right:8px}.site-runtime-panel :focus-visible{outline:3px solid #ffc195;outline-offset:2px}@media(max-width:600px){.site-runtime-panel{padding:16px}.runtime-grid{grid-template-columns:1fr}}
+
+.script-setup-kicker{font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.05em;color:#7b8799}
+.script-setup h2{margin:8px 0}
+.script-mode-options{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:20px 0}
+.script-mode-options label{display:flex;align-items:flex-start;gap:12px;margin:0;padding:20px;border:1px solid #d7dfec;border-radius:12px;cursor:pointer;font-weight:400}
+.script-mode-options label.selected{border-color:#f47725;background:#fff7f0;box-shadow:0 0 0 1px #f47725}
+.script-mode-options input[type=radio]{width:18px;height:18px;flex:0 0 18px;margin:3px 0 0;accent-color:#ed7025}
+.script-mode-options strong{display:block;font-size:18px;margin-bottom:8px}
+.script-mode-options span span{display:block;font-size:14px;color:#5c6b80;line-height:1.55}
+.script-version-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:18px 0;color:#5c6b80}
+.script-version-summary strong{color:#202a3b}
+.script-setup-footnote{font-size:13px;color:#66758c}
+.script-history{border-top:1px solid #e4e8ef;padding-top:16px;margin-top:18px}
+.script-history>summary{cursor:pointer;font-size:14px;color:#5c6b80}
+.site-runtime-panel>.script-setup{margin:20px 0;background:#fafbfd}
+@media(max-width:680px){.script-mode-options{grid-template-columns:1fr}.script-mode-options label{padding:16px}.script-version-summary{align-items:flex-start}}
+
+.runtime-loading-table-wrap{max-width:100%;overflow-x:auto}.runtime-loading-table{width:100%;border-collapse:collapse;text-align:left;font-size:14px}.runtime-loading-table th{background:#f5f7fa;color:#66758c;font-size:12px;text-transform:uppercase}.runtime-loading-table th,.runtime-loading-table td{padding:14px 12px;border-bottom:1px solid #d7dfec;vertical-align:top}.runtime-loading-table td:first-child{overflow-wrap:anywhere}.runtime-loading-table small{display:block;color:#66758c;line-height:1.5;margin-top:5px}.runtime-loading-table td:last-child{min-width:180px}.runtime-actions button[aria-current=page]{background:#fff0df;border-color:#f47725}
+
+/* Links that perform navigation still share Tessera's button states. */
+.site-runtime-panel a.runtime-test-link,.site-runtime-panel a.runtime-test-link:visited{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px;border:1px solid #c9d2df;border-radius:8px;background:#fff;color:#202a3b;font:inherit;font-weight:600;line-height:1.3;text-decoration:none}
+.site-runtime-panel a.runtime-test-link:hover{background:#f5f7fa;border-color:#919cae;color:#202a3b;text-decoration:none}
+.site-runtime-panel a.runtime-test-link-primary,.site-runtime-panel a.runtime-test-link-primary:visited{background:#ef722d;border-color:#d85e1a;color:#24140a}
+.site-runtime-panel a.runtime-test-link-primary:hover{background:#fa8a40;border-color:#d85e1a;color:#24140a}
+.site-runtime-panel a.runtime-test-link:focus-visible{outline:3px solid #c75410;outline-offset:3px}

@@ -1,3 +1,4 @@
+import { withAuthenticatedActor } from './http';
 import {
   getAuthenticatedUser,
   isSameOriginMutation,
@@ -37,11 +38,7 @@ const legacyApp = baseApp as {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
 };
 
-function withAuthenticatedActor(request: Request, email: string): Request {
-  const headers = new Headers(request.headers);
-  headers.set('x-user-email', email);
-  return new Request(request, { headers });
-}
+
 
 function normalizeVerifiedSameOriginRequest(request: Request): Request {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return request;

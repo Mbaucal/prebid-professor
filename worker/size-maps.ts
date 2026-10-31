@@ -1,3 +1,4 @@
+import { copyAuthenticatedActor } from './http';
 import type {
   CreateSizeMapInput,
   DuplicateSizeMapInput,
@@ -308,11 +309,11 @@ export async function duplicateSizeMap(
     return apiError(error instanceof Error ? error.message : 'Invalid JSON body.');
   }
 
-  const syntheticRequest = new Request(request.url, {
+  const syntheticRequest = copyAuthenticatedActor(request, new Request(request.url, {
     method: 'POST',
     headers: request.headers,
     body: JSON.stringify({ name: input.name, map: source.map }),
-  });
+  }));
   return createSizeMap(syntheticRequest, env, siteId);
 }
 

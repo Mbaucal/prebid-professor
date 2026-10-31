@@ -1,9 +1,13 @@
+import BulkImportPanel from './BulkImportPanel';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AdUnit, AdUnitType } from '../shared/types';
+import OutstreamSettingsPanel from './OutstreamSettingsPanel';
+import SiteRuntimePanel from './SiteRuntimePanel';
 
 type Props = {
   publisherId: string;
+  onOpenSizeMaps?: () => void;
   onChanged?: () => void | Promise<void>;
 };
 
@@ -49,6 +53,15 @@ function nextCopyCode(code: string): string {
   return `${base}_${current + 1}`;
 }
 
+// Same wording as the Unit rules notice: a copy or ATF/BTF group change gave these
+// positions their own "Same every time" schedule, so their Unit rules interval stays in effect.
+function keptIntervalsNotice(codes: string[]): string | null {
+  if (!codes.length) return null;
+  return codes.length === 1
+    ? `${codes[0]} uses its own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows it as “Same every time”.`
+    : `${codes.join(', ')} use their own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows them as “Same every time”.`;
+}
+
 function formFromAdUnit(adUnit: AdUnit): FormState {
   return {
     code: adUnit.code,
@@ -64,10 +77,14 @@ function formFromAdUnit(adUnit: AdUnit): FormState {
   };
 }
 
-export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
+export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }: Props) {
+  const [outstreamUnit,setOutstreamUnit]=useState<string|null>(null);
+  useEffect(()=>setOutstreamUnit(null),[publisherId]);
+  const [runtimeUnit,setRuntimeUnit]=useState<string|null>(null);
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [mode, setMode] = useState<FormMode | null>(null);
   const [source, setSource] = useState<AdUnit | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -139,6 +156,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
+    setNotice(null);
 
     if (!form.code.trim()) {
       setFormError('Ad unit code is required.');
@@ -157,18 +175,19 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
         notes: form.notes.trim() || null,
       };
 
+      let kept: string[] = [];
       if (mode === 'duplicate' && source) {
-        await api.duplicateAdUnit(publisherId, source.id, {
+        ({ keptUnitRuleIntervals: kept } = await api.duplicateAdUnit(publisherId, source.id, {
           ...common,
           copySizeMapReference: form.copySizeMapReference,
           copyUnitRule: form.copyUnitRule,
           copyBidderAdUnitOverrides: form.copyBidderAdUnitOverrides,
-        });
+        }));
       } else if (mode === 'edit' && source) {
-        await api.updateAdUnit(publisherId, source.id, {
+        ({ keptUnitRuleIntervals: kept } = await api.updateAdUnit(publisherId, source.id, {
           ...common,
           sizeMapKey: form.sizeMapKey.trim() || null,
-        });
+        }));
       } else {
         await api.createAdUnit(publisherId, {
           ...common,
@@ -176,6 +195,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
         });
       }
 
+      setNotice(keptIntervalsNotice(kept));
       await load();
       await onChanged?.();
       closeForm();
@@ -191,6 +211,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
       `Delete ${adUnit.code}? Its exact ad-unit bidder overrides and unit rule will also be removed.`,
     );
     if (!confirmed) return;
+    setNotice(null);
 
     try {
       await api.deleteAdUnit(publisherId, adUnit.id);
@@ -216,8 +237,10 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
         </div>
 
         {error ? <div className="form-error config-error">{error}</div> : null}
+        {notice ? <p role="status" className="loading-summary-help ad-units-notice">{notice}</p> : null}
         {loading ? <div className="config-loading">Loading ad units from D1…</div> : null}
 
+        <details className="inventory-csv"><summary>Import ad units / Download CSV template</summary><BulkImportPanel publisherId={publisherId} kinds={['ad-units']} onChanged={async()=>{await load();await onChanged?.();}}/></details>
         <div className="ad-unit-board">
           {columns.map((column) => (
             <article className="ad-unit-column" key={column.type}>
@@ -250,6 +273,8 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
                     {adUnit.notes ? <p>{adUnit.notes}</p> : null}
 
                     <div className="ad-unit-actions">
+                      {adUnit.mediaType==='banner'&&adUnit.type!=='DRAFT'?<button type="button" onClick={()=>setOutstreamUnit(adUnit.code)}>Formats</button>:null}
+                      {adUnit.mediaType==='banner'&&adUnit.type!=='DRAFT'?<button onClick={()=>setRuntimeUnit(adUnit.code)} type="button">Display & loading</button>:null}
                       <button onClick={() => openEdit(adUnit)} type="button">Edit</button>
                       <button onClick={() => openDuplicate(adUnit)} type="button">Duplicate</button>
                       <button className="danger-link" onClick={() => void remove(adUnit)} type="button">
@@ -270,6 +295,9 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
         </div>
       </section>
 
+      {outstreamUnit?<OutstreamSettingsPanel key={publisherId+outstreamUnit} publisherId={publisherId} code={outstreamUnit} onClose={()=>setOutstreamUnit(null)} onSaved={()=>void onChanged?.()} onOpenSizeMaps={onOpenSizeMaps?()=>{setOutstreamUnit(null);onOpenSizeMaps();}:undefined}/>:null}
+      {runtimeUnit?<div className="modal-backdrop"><section className="modal-card ad-unit-modal" role="dialog" aria-modal="true" aria-label={`Display settings for ${runtimeUnit}`}><button className="icon-button" type="button" onClick={()=>setRuntimeUnit(null)} aria-label="Close display settings">×</button>
+        <SiteRuntimePanel key={publisherId+runtimeUnit} publisherId={publisherId} view="positions" unitCode={runtimeUnit} onChanged={onChanged}/></section></div>:null}
       {mode ? (
         <div className="modal-backdrop" onMouseDown={closeForm} role="presentation">
           <section
@@ -328,6 +356,7 @@ export default function AdUnitsPanel({ publisherId, onChanged }: Props) {
                     <option value="video">video</option>
                     <option value="native">native</option>
                   </select>
+                  <small>For Outstream, save this position as Banner, then choose Formats.</small>
                 </label>
               </div>
 

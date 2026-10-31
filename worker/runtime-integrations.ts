@@ -1,5 +1,6 @@
 import { apiError, getActor, json } from './http';
 import type { ReleaseEnv } from './releases';
+import { assertCompilerStrings, assertSchainCompatibility } from './compiler-input-compatibility.mjs';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -31,6 +32,8 @@ type RuntimeIntegrations = {
 
 type ConfigState = {
   config: JsonRecord;
+  /** The stored text this state was read from; the save only replaces exactly this. */
+  configJson?: string;
   integrations: RuntimeIntegrations;
   inheritedFromTemplate: boolean;
 };
@@ -151,6 +154,7 @@ async function readState(env: ReleaseEnv, siteId: string): Promise<ConfigState> 
 
   return {
     config,
+    configJson: row.config_json,
     inheritedFromTemplate: !savedSchain && Boolean(inherited),
     integrations: {
       schain: {
@@ -302,6 +306,11 @@ export async function updateRuntimeIntegrations(
   }
 
   const runtime = isRecord(state.config.runtimeControls) ? state.config.runtimeControls : {};
+  try {
+    assertCompilerStrings(validated.schain, 'SChain');
+    const selection = isRecord(state.config.builtinRuntimeSelection) ? state.config.builtinRuntimeSelection : {};
+    assertSchainCompatibility(validated.schain, selection.runtime);
+  } catch (error) { return apiError(error instanceof Error ? error.message : 'SChain values are not supported by this script version.', 422); }
   const previous = state.integrations;
   runtime.schain = {
     enabled: validated.schain.enabled,
@@ -315,12 +324,15 @@ export async function updateRuntimeIntegrations(
   const actor = getActor(request);
   const now = new Date().toISOString();
   try {
-    await env.DB.batch([
-      env.DB.prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ?')
-        .bind(JSON.stringify(state.config), now, siteId),
+    // The whole config is rewritten from readState, so it may only replace the text it was
+    // built from; otherwise a save that landed in between (unit rules, Refresh schedules,
+    // another consent change) would be silently undone. The audit row needs that write.
+    const results = await env.DB.batch([
+      env.DB.prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ? AND config_json = ?')
+        .bind(JSON.stringify(state.config), now, siteId, state.configJson ?? null),
       env.DB.prepare(`INSERT INTO audit_log (
         id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-      ) VALUES (?, ?, 'runtime_integrations.updated', ?, 'runtime_integrations', ?, ?, ?)`) 
+      ) SELECT ?, ?, 'runtime_integrations.updated', ?, 'runtime_integrations', ?, ?, ? WHERE changes() = 1`)
         .bind(
           crypto.randomUUID(),
           actor,
@@ -330,6 +342,7 @@ export async function updateRuntimeIntegrations(
           now,
         ),
     ]);
+    if (results[0]?.meta.changes !== 1) return apiError('Other site settings were saved at the same time, so nothing was saved. Select Save again.', 409);
   } catch (error) {
     return apiError(
       'Supply-chain and consent settings could not be saved.',

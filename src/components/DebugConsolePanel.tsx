@@ -1,3 +1,6 @@
+import { schainInspectCommand, schainPositionCommand } from '../debug/schain-inspect.mjs';
+import { identityInspectCommand } from '../debug/identity-inspect.mjs';
+import { demandInspectCommand } from '../debug/demand-inspect.mjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { AdUnit, Bidder } from '../shared/types';
@@ -19,6 +22,7 @@ type DebugScope = {
 };
 
 type DebugCommand = {
+  scope?: 'page';
   id: string;
   category: DebugCategory;
   title: string;
@@ -599,65 +603,7 @@ function consentCommand(scope: DebugScope): string {
 `);
 }
 
-function userIdsCommand(scope: DebugScope): string {
-  return wrapCommand('User ID state', scope, `
-  var pbjs = window.pbjs;
-  if (!pbjs) {
-    console.error('[PP Debug] Prebid is not available.');
-    return;
-  }
-  var config = typeof pbjs.getConfig === 'function' ? pbjs.getConfig() : {};
-  var storageKeys = [];
-  try {
-    for (var index = 0; index < localStorage.length; index += 1) {
-      var key = localStorage.key(index);
-      if (key && /id5|criteo|shared|lotame|pubcid|uid2|identity|user.?id/i.test(key)) storageKeys.push(key);
-    }
-  } catch (_) {}
-  var report = {
-    ids: typeof pbjs.getUserIds === 'function' ? pbjs.getUserIds() : null,
-    eids: typeof pbjs.getUserIdsAsEids === 'function' ? pbjs.getUserIdsAsEids() : null,
-    userSyncConfig: config.userSync || null,
-    detectedStorageKeyNames: storageKeys.sort()
-  };
-  console.group('[PP Debug] User ID state');
-  console.log(report);
-  console.info('Only storage key names are listed; localStorage values are not read by this command.');
-  console.groupEnd();
-  return report;
-`);
-}
 
-function schainCommand(scope: DebugScope): string {
-  return wrapCommand('SChain state', scope, `
-  var pbjs = window.pbjs;
-  if (!pbjs) {
-    console.error('[PP Debug] Prebid is not available.');
-    return;
-  }
-  var config = typeof pbjs.getConfig === 'function' ? pbjs.getConfig() : {};
-  var configured = config.ortb2 && config.ortb2.source && config.ortb2.source.schain
-    ? config.ortb2.source.schain
-    : config.schain || null;
-  var events = typeof pbjs.getEvents === 'function' ? pbjs.getEvents() : [];
-  var relatedEvents = events.filter(function (event) {
-    try {
-      var text = JSON.stringify(event.args || {});
-      if (text.indexOf('schain') < 0) return false;
-      if (selectedBidder && text.indexOf(selectedBidder) < 0) return false;
-      return true;
-    } catch (_) {
-      return false;
-    }
-  });
-  var report = { configured: configured, relatedEvents: relatedEvents };
-  console.group('[PP Debug] SChain state');
-  console.log('Configured SChain:', configured);
-  console.log('Events containing SChain data:', relatedEvents);
-  console.groupEnd();
-  return report;
-`);
-}
 
 function refreshViewabilityCommand(scope: DebugScope): string {
   return wrapCommand('Refresh and viewability snapshot', scope, `
@@ -826,6 +772,11 @@ function buildCommands(scope: DebugScope): DebugCommand[] {
       code: winningBidsCommand(scope),
     },
     {
+      id: 'demand-signals', category: 'Prebid', title: 'GPID and bidder targeting',
+      description: 'Inspect Send All Bids and latest GPID metadata per bidder and position.',
+      code: demandInspectCommand, scope:'page',
+    },
+    {
       id: 'prebid-config',
       category: 'Prebid',
       title: 'Prebid configuration',
@@ -849,16 +800,23 @@ function buildCommands(scope: DebugScope): DebugCommand[] {
     {
       id: 'user-ids',
       category: 'Privacy',
-      title: 'User ID state',
-      description: 'Print Prebid User ID and EID state plus matching localStorage key names without reading stored values.',
-      code: userIdsCommand(scope),
+      title: 'Identity / EID presence',
+      description: 'Compare identity presence in the first retained and latest bidder requests. Shows source and counts, without user ID values.',
+      code: identityInspectCommand(scope),
     },
     {
       id: 'schain',
       category: 'Privacy',
-      title: 'SChain state',
-      description: 'Show the configured SupplyChain object and Prebid events that contain SChain data.',
-      code: schainCommand(scope),
+      title: 'SChain and full requests',
+      description: 'Inspect SChain and full Prebid requests for one ad unit or all, including requests without SChain. Includes local JSON copy and download helpers.',
+      code: schainInspectCommand(scope),
+    },
+    {
+      id: 'schain-network',
+      category: 'Privacy',
+      title: 'SChain network capture',
+      description: 'Capture future OpenX and PubMatic fetch/XHR requests for up to 5 minutes. Includes gzip decoding, a stop helper and full JSON export. Other endpoints require DevTools.',
+      code: schainInspectCommand(scope, true),
     },
     {
       id: 'refresh-viewability',
@@ -905,6 +863,7 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
   const [selectedBidder, setSelectedBidder] = useState(ALL);
   const [customBidder, setCustomBidder] = useState('');
   const [query, setQuery] = useState('');
+  const [positionTarget, setPositionTarget] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -946,7 +905,12 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
     bidder: selectedBidder === ALL ? '' : selectedBidder === CUSTOM ? customBidder.trim() : selectedBidder,
   }), [customAdUnit, customBidder, domain, publisherId, selectedAdUnit, selectedBidder, siteName]);
 
-  const commands = useMemo(() => buildCommands(scope), [scope]);
+  const effectiveTarget = positionTarget.trim() || scope.adUnit;
+  const commands = useMemo<DebugCommand[]>(() => [{
+    id: 'schain-position', category: 'Privacy', title: 'SChain position report',
+    description: 'Run in the Console top context. Shows a request table and all SChain nodes, with the complete selected payload in a collapsed group. Copy the table with __AD_REQUEST_DEBUG.copySummary(); copy or download the full selected request with .copy() or .download(). Watches future OpenX/PubMatic calls and stops after a match or 5 minutes.',
+    code: schainPositionCommand(effectiveTarget, scope.bidder),
+  }, ...buildCommands(scope)], [scope, effectiveTarget]);
   const filteredCommands = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return commands;
@@ -1043,7 +1007,7 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
 
       <div className="debug-console-note">
         <strong>Safe workflow:</strong>
-        <span>These commands only read the current page state and print to your local browser console. The live event logger adds temporary Prebid listeners and includes its own stop command.</span>
+        <span>Commands print locally and do not start auctions. Live tools add temporary listeners; SChain network capture also observes supported fetch/XHR calls and stops after 5 minutes. Full request exports may contain identifiers and consent strings. Review before sharing.</span>
       </div>
 
       {grouped.map((group) => (
@@ -1060,20 +1024,27 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
                     <span>{command.category}</span>
                     <h4>{command.title}</h4>
                   </div>
-                  <button className={copiedId === command.id ? 'button success' : 'button secondary'} onClick={() => void copyCommand(command)} type="button">
+                  <button disabled={command.id === 'schain-position' && !effectiveTarget} className={copiedId === command.id ? 'button success' : 'button secondary'} onClick={() => void copyCommand(command)} type="button">
                     {copiedId === command.id ? '✓ Copied' : 'Copy command'}
                   </button>
                 </div>
                 <p>{command.description}</p>
+                {command.id === 'schain-position' ? <>
+                  <label className="debug-position-target">
+                    <span>Ad unit name or GAM path</span>
+                    <input value={positionTarget} onChange={event => setPositionTarget(event.target.value)} placeholder={scope.adUnit || '/123456/site/Billboard'} />
+                  </label>
+                  <p>{effectiveTarget ? `Position: ${effectiveTarget}. Clear this field to use Ad unit scope above.` : 'Select one Ad unit scope above, or enter its exact name or full GAM path here.'} Select a bidder above for its request. The table is a summary. The original selected request remains intact, including other positions if sent as a batch. ads.txt and sellers.json are not checked.</p>
+                </> : null}
                 <div className="debug-command-scope">
-                  <code>{scopeUnit}</code>
-                  <code>{scopeBidder}</code>
+                  <code>{command.id === 'schain-position' ? effectiveTarget || 'Choose one position' : command.scope === 'page' ? 'Entire page' : scopeUnit}</code>
+                  <code>{command.scope === 'page' ? 'All bidders' : scopeBidder}</code>
                 </div>
                 <details className="debug-command-preview">
                   <summary>Preview command</summary>
                   <pre>{command.code}</pre>
                 </details>
-                <button className="debug-download-button" onClick={() => downloadCommand(command, publisherId)} type="button">Download .js</button>
+                <button disabled={command.id === 'schain-position' && !effectiveTarget} className="debug-download-button" onClick={() => downloadCommand(command, publisherId)} type="button">Download .js</button>
               </article>
             ))}
           </div>

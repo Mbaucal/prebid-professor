@@ -1,0 +1,58 @@
+{
+  "scope": "LOCAL compiled workerd + Miniflare D1/R2; NOT hosted Cloudflare",
+  "compiledSha256": "30d6a2409558d89fea6f5463f934bdba3983936a4f782d4094d4de25552a799f",
+  "checks": [
+    {
+      "name": "Compiled settings GET preserves existing runtimes and default, adds opt-in 3.14 and has no implicit saved selection",
+      "passed": true
+    },
+    {
+      "name": "Compiled settings writer requires Preview opt-in",
+      "passed": true
+    },
+    {
+      "name": "Atomic JSON snapshot assertion and selection write work on Miniflare D1",
+      "passed": true
+    },
+    {
+      "name": "A stale reviewed revision is rejected by compiled settings API",
+      "passed": true
+    },
+    {
+      "name": "Fresh repeated selection is a no-op",
+      "passed": true
+    },
+    {
+      "name": "One successful choice has exactly one audit entry",
+      "passed": true
+    },
+    {
+      "name": "Transaction leaves no assertion rows behind",
+      "passed": true
+    },
+    {
+      "name": "Compiled Generate uses the exact saved pin",
+      "passed": true
+    },
+    {
+      "name": "Compiled reporting package includes its contract",
+      "passed": true
+    },
+    {
+      "name": "Exact persisted runtime selection survives workerd restart",
+      "passed": true
+    },
+    {
+      "name": "Stored package remains byte-identical after selection and restart",
+      "passed": true
+    },
+    {
+      "name": "No outbound fetch was attempted",
+      "passed": true
+    }
+  ],
+  "passed": 12,
+  "failed": 0,
+  "outbound": 0,
+  "hostedTest": false
+}

@@ -1,0 +1,11 @@
+export type TemplateOptions=Record<string,number|string>;
+export type CreativeTemplate={id:string;name:string;summary:string;kind:'standard'|'overlay';size:string;defaults:TemplateOptions;fields:string[];safeFrame:boolean};
+export const TEMPLATE_VERSION:string;
+export const CREATIVE_RUNTIME_VERSION:string;
+export const templates:CreativeTemplate[];
+export function getTemplate(id:string):CreativeTemplate;
+export function normalizeOptions(id:string,options?:TemplateOptions):TemplateOptions;
+export function exportFilename(id:string):string;
+export function exportJson(id:string,options?:TemplateOptions):string;
+export function instructions(id:string,options?:TemplateOptions):string;
+export function gamTemplate(id:string,options?:TemplateOptions):Record<string,unknown>;

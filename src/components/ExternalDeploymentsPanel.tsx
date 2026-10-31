@@ -383,7 +383,7 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
           <div className="external-target-fields">
             <label>
               <span>Target name</span>
-              <input onChange={(event) => updateForm('name', event.target.value)} placeholder="Politika production CDN" required value={form.name} />
+              <input onChange={(event) => updateForm('name', event.target.value)} placeholder="Publisher production CDN" required value={form.name} />
             </label>
             <label>
               <span>Cloudflare Account ID</span>
@@ -391,11 +391,11 @@ export default function ExternalDeploymentsPanel({ publisherId, releases }: Prop
             </label>
             <label>
               <span>Pages project name</span>
-              <input onChange={(event) => updateForm('projectName', event.target.value.toLowerCase())} placeholder="politika" required value={form.projectName} />
+              <input onChange={(event) => updateForm('projectName', event.target.value.toLowerCase())} placeholder="publisher-cdn" required value={form.projectName} />
             </label>
             <label>
               <span>GitHub repository secret name</span>
-              <input onChange={(event) => updateForm('githubEnvironment', event.target.value)} placeholder="CLOUDFLARE_API_TOKEN_POLITIKA" required value={form.githubEnvironment} />
+              <input onChange={(event) => updateForm('githubEnvironment', event.target.value)} placeholder="CLOUDFLARE_API_TOKEN_PUBLISHER" required value={form.githubEnvironment} />
               <small>Enter the exact Repository secret name that contains the target account's Cloudflare API token. Never paste the token value here.</small>
             </label>
             <label>

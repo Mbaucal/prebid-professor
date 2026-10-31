@@ -21,6 +21,17 @@
   font-weight: 800;
 }
 
+.advanced-inherited-note {
+  margin: 0 0 12px;
+  color: #6a5a1f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.advanced-field-grid label > small.advanced-inherited-note {
+  color: #6a5a1f;
+}
+
 .advanced-refresh-layout {
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
