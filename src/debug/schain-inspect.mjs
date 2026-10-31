@@ -1,7 +1,9 @@
 /** Standalone page-console inspector. Keep all dependencies inside this function:
  * the dashboard serializes it, and executes nothing on the publisher's behalf.
  */
-export function inspectSchain(options) {
+import { summarizeSchainPosition } from './schain-position.mjs';
+
+export function inspectSchain(options, positionReport) {
   'use strict';
   options = options || {};
   const scope = { adUnit: options.adUnit || '', bidder: options.bidder || '' };
@@ -79,8 +81,8 @@ export function inspectSchain(options) {
     }
   }
 
-  const config = read(() => clone(pbjs?.getConfig?.() || {}).value, {}, 'Global configuration');
-  const bidderConfig = read(() => {
+  const config = options.compact ? {} : read(() => clone(pbjs?.getConfig?.() || {}).value, {}, 'Global configuration');
+  const bidderConfig = options.compact ? null : read(() => {
     if (typeof pbjs?.getBidderConfig !== 'function') return null;
     return clone(pbjs.getBidderConfig()).value;
   }, null, 'Bidder configuration');
@@ -243,7 +245,11 @@ export function inspectSchain(options) {
         retainedBytes += size;
         record.body = decoded;
         record.schain = [...networkChains(decoded.value, 'body'), ...networkChains(parseText(meta.url.search.slice(1)).value, 'query')];
-        console.log('[Tessera] Captured ad request (full batch; inspect mapping)', mapNetwork(record));
+        if (!options.compact) console.log('[Tessera] Captured ad request (full batch; inspect mapping)', mapNetwork(record));
+        else if (active && snapshot().evidence === 'captured-http-call') {
+          stop();
+          print();
+        }
       } catch { record.body = { status: 'unavailable: decoding failed' }; }
       finally { reservedBytes -= reservation; }
     })();
@@ -325,7 +331,7 @@ export function inspectSchain(options) {
     timer = setTimeout(stop, 5 * 60 * 1000);
   }
 
-  function snapshot() {
+  function fullSnapshot() {
     const mapped = network.map(mapNetwork);
     return { schemaVersion: 1, startedAt, generatedAt: new Date().toISOString(), scope,
       prebidVersion: pbjs?.version || null, configured,
@@ -346,8 +352,22 @@ export function inspectSchain(options) {
       ] };
   }
 
+  function snapshot() {
+    if (!options.compact || typeof positionReport !== 'function') return fullSnapshot();
+    const slots = read(() => {
+      if (!window.googletag?.pubadsReady) return [];
+      return window.googletag.pubads().getSlots().map(slot => ({ elementId: slot.getSlotElementId(), path: slot.getAdUnitPath() }));
+    }, [], 'GPT slot mapping');
+    return positionReport(fullSnapshot(), options.target, slots);
+  }
+
   function print() {
     const report = snapshot();
+    if (options.compact) {
+      console.log('[Tessera] SChain position report', report);
+      console.info('Copy/share: __TESSERA_SCHAIN_DEBUG.copy() or .download(). Latest result: .print(). Full batches: .fullSnapshot(). Stop: .stop().');
+      return report;
+    }
     console.group('[Tessera] SChain and requests');
     console.table(report.requests.flatMap(request => request.filteredBids.map(bid => ({
       auctionId: request.auctionId, bidder: request.bidder, adUnit: bid.adUnitCode,
@@ -360,7 +380,7 @@ export function inspectSchain(options) {
     return report;
   }
 
-  const api = { snapshot, print, stop,
+  const api = { snapshot, fullSnapshot, print, stop,
     async ready() { await Promise.allSettled([...pending]); return snapshot(); },
     async copy() {
       const json = JSON.stringify(snapshot(), null, 2);
@@ -372,17 +392,23 @@ export function inspectSchain(options) {
     download() {
       const url = URL.createObjectURL(new Blob([JSON.stringify(snapshot(), null, 2)], { type: 'application/json' }));
       const link = document.createElement('a');
-      link.href = url; link.download = 'tessera-schain-debug.json';
+      link.href = url; link.download = options.compact ? 'tessera-schain-position.json' : 'tessera-schain-debug.json';
       document.body.appendChild(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
   };
   window.__TESSERA_SCHAIN_DEBUG = api;
-  if (options.captureNetwork) startCapture();
+  if (options.captureNetwork && (!options.compact || options.target)) startCapture();
   return print();
 }
 
 export function schainInspectCommand(scope, captureNetwork = false) {
   return '/* Tessera SChain / request inspector */\n(' + inspectSchain.toString() + ')(' +
     JSON.stringify({ adUnit: scope.adUnit || '', bidder: scope.bidder || '', captureNetwork }) + ');\n';
+}
+
+export function schainPositionCommand(target, bidder = '') {
+  return '/* Tessera SChain: one position, selected fields, latest retained request */\n(' + inspectSchain.toString() + ')(' +
+    JSON.stringify({ adUnit: '', bidder, target: target.trim(), compact: true, captureNetwork: true }) + ', ' +
+    summarizeSchainPosition.toString() + ');\n';
 }
