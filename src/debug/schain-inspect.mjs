@@ -22,12 +22,16 @@ export function inspectSchain(options, positionReport) {
   const pending = new Set();
   const cleanups = [];
   const startedAt = new Date().toISOString();
-  const pbjs = window.pbjs;
+  let frame = 'unknown';
+  try { frame = window.top && window.top !== window ? 'iframe' : 'top'; } catch { /* no cross-frame access */ }
+  const pbjs = frame === 'top' ? window.pbjs : undefined;
+  const blockedReason = frame !== 'top' ? 'wrong-console-context' : !pbjs || typeof pbjs.getEvents !== 'function' ? 'prebid-unavailable' : null;
+  const environment = { frame, prebidAvailable: Boolean(pbjs), historyAvailable: typeof pbjs?.getEvents === 'function' };
   const warn = message => { if (!warnings.includes(message)) warnings.push(message); };
   const read = (fn, fallback, label) => {
     try { return fn(); } catch { warn(label + ' unavailable'); return fallback; }
   };
-  if (window.__TESSERA_SCHAIN_DEBUG?.stop) window.__TESSERA_SCHAIN_DEBUG.stop();
+  if (window.__AD_REQUEST_DEBUG?.stop) window.__AD_REQUEST_DEBUG.stop();
 
   function clone(value) {
     const ancestors = [];
@@ -81,8 +85,8 @@ export function inspectSchain(options, positionReport) {
     }
   }
 
-  const config = options.compact ? {} : read(() => clone(pbjs?.getConfig?.() || {}).value, {}, 'Global configuration');
-  const bidderConfig = options.compact ? null : read(() => {
+  const config = options.compact || blockedReason ? {} : read(() => clone(pbjs?.getConfig?.() || {}).value, {}, 'Global configuration');
+  const bidderConfig = options.compact || blockedReason ? null : read(() => {
     if (typeof pbjs?.getBidderConfig !== 'function') return null;
     return clone(pbjs.getBidderConfig()).value;
   }, null, 'Bidder configuration');
@@ -92,9 +96,10 @@ export function inspectSchain(options, positionReport) {
     bidders: Object.entries(bidderConfig || {}).filter(([bidder]) => !scope.bidder || bidder === scope.bidder)
       .map(([bidder, value]) => ({ bidder, schain: chains(value?.config || value, 'bidderConfig.' + bidder + '.') })),
   };
-  if (!pbjs) warn('Prebid is not loaded. Run the snapshot again after it loads.');
-  else if (typeof pbjs.getEvents !== 'function') warn('Prebid event history is unavailable.');
-  const history = read(() => pbjs?.getEvents?.() || [], [], 'Prebid history');
+  if (frame !== 'top') warn('Wrong Console context: an iframe is selected. Choose top in the DevTools Console context menu and run this command again. No request or SChain was checked.');
+  else if (!pbjs) warn('Prebid is not loaded in the top page. Wait for it to load and rerun. No request or SChain was checked.');
+  else if (typeof pbjs.getEvents !== 'function') warn('Prebid event history is unavailable. No request or SChain was checked; rerun after Prebid loads.');
+  const history = blockedReason ? [] : read(() => pbjs?.getEvents?.() || [], [], 'Prebid history');
   if (!Array.isArray(history)) warn('Prebid event history has an unsupported format.');
   for (const event of Array.isArray(history) ? history : []) {
     if (event?.eventType === 'bidRequested') read(() => storeRequest(event.args, event.elapsedTime, 'prebid-history'), null, 'Prebid event');
@@ -245,7 +250,7 @@ export function inspectSchain(options, positionReport) {
         retainedBytes += size;
         record.body = decoded;
         record.schain = [...networkChains(decoded.value, 'body'), ...networkChains(parseText(meta.url.search.slice(1)).value, 'query')];
-        if (!options.compact) console.log('[Tessera] Captured ad request (full batch; inspect mapping)', mapNetwork(record));
+        if (!options.compact) console.log('Captured ad request (full batch; inspect mapping)', mapNetwork(record));
         else if (active && snapshot().evidence === 'captured-http-call') {
           stop();
           print();
@@ -334,7 +339,7 @@ export function inspectSchain(options, positionReport) {
   function fullSnapshot() {
     const mapped = network.map(mapNetwork);
     return { schemaVersion: 1, startedAt, generatedAt: new Date().toISOString(), scope,
-      prebidVersion: pbjs?.version || null, configured,
+      prebidVersion: pbjs?.version || null, environment, blockedReason, configured,
       requests: requests.map(requestReport),
       network: mapped.filter(record => !scope.adUnit || record.matches.some(m => m.adUnitCode === scope.adUnit)),
       // Keep unmapped batches available without pretending they belong to the selected unit.
@@ -352,63 +357,124 @@ export function inspectSchain(options, positionReport) {
       ] };
   }
 
-  function snapshot() {
+  function snapshot(includeDetails = false) {
     if (!options.compact || typeof positionReport !== 'function') return fullSnapshot();
-    const slots = read(() => {
+    const slots = blockedReason ? [] : read(() => {
       if (!window.googletag?.pubadsReady) return [];
       return window.googletag.pubads().getSlots().map(slot => ({ elementId: slot.getSlotElementId(), path: slot.getAdUnitPath() }));
     }, [], 'GPT slot mapping');
-    return positionReport(fullSnapshot(), options.target, slots);
+    return positionReport(fullSnapshot(), options.target, slots, includeDetails);
+  }
+
+  function rows(report) {
+    const req = report.request;
+    return [
+      ['Ad unit', req?.adUnitCode || report.target || 'Not selected'],
+      ['GAM path / GPID', req?.paths?.join(', ') || 'Not recorded'],
+      ['Bidder', req?.bidder || report.bidderFilter || 'Not identified'],
+      ['Console context', report.environment?.frame || 'Unknown'],
+      ['Prebid version', report.prebidVersion || 'Not available'],
+      ['Request status', report.status],
+      ['Evidence', report.evidence === 'captured-http-call' ? 'Captured HTTP call' : report.evidence === 'prebid-only' ? 'Prebid input only; HTTP not captured' : 'No request inspected'],
+      ['SChain', req?.schain ? 'Present' : report.schainCheck.status === 'not-found-in-selected-evidence' ? 'Not found in selected evidence' : report.schainCheck.status === 'check-failed' ? 'Conflicting or invalid values; see errors' : 'Not checked'],
+      ['SChain field check', report.schainCheck.status],
+      ['SChain field path', req?.schainPaths?.join(', ') || 'Not available'],
+      ['Request ID', req?.requestId || 'Not recorded'],
+      ['Auction ID', req?.auctionId || 'Not recorded'],
+      ['Bid / impression ID', req?.bidId || 'Not recorded'],
+      ['Sizes', req ? JSON.stringify(req.impression.sizes) : 'Not recorded'],
+      ['Endpoint', req?.endpoint || 'HTTP not captured'],
+      ['Method', req?.method || 'HTTP not captured'],
+      ['ads.txt / sellers.json', 'Not checked (does not mean missing)'],
+      ['SSP acceptance', 'Not checked'],
+    ].map(([Field, Value]) => ({ Field, Value }));
+  }
+
+  function summaryText(report = snapshot()) {
+    if (!options.compact) return JSON.stringify(report, null, 2);
+    const cell = value => String(value ?? '').replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ');
+    const table = (headers, data) => [headers, headers.map(() => '---'), ...data].map(row => '| ' + row.map(cell).join(' | ') + ' |').join('\n');
+    let text = 'Ad request report\n\n' + table(['Field', 'Value'], rows(report).map(row => [row.Field, row.Value]));
+    const chain = report.request?.schain;
+    if (chain) {
+      text += '\n\nSChain version: ' + chain.ver + '; complete: ' + chain.complete;
+      if (Array.isArray(chain.nodes)) text += '\n\n' + table(['Node', 'asi', 'sid', 'hp'], chain.nodes.map((n, i) => [i + 1, n?.asi, n?.sid, n?.hp]));
+    }
+    text += '\n\n' + [...report.schainCheck.errors, ...report.warnings].join('\n');
+    return text;
   }
 
   function print() {
     const report = snapshot();
     if (options.compact) {
-      console.log('[Tessera] SChain position report', report);
-      console.info('Copy/share: __TESSERA_SCHAIN_DEBUG.copy() or .download(). Latest result: .print(). Full batches: .fullSnapshot(). Stop: .stop().');
+      console.group('Ad request report');
+      console.table(rows(report));
+      const chain = report.request?.schain;
+      if (chain) {
+        console.log('SChain — version:', chain.ver, 'complete:', chain.complete);
+        if (Array.isArray(chain.nodes)) console.table(chain.nodes.map((node, i) => ({ node: i + 1, ...node })));
+        console.groupCollapsed('SChain JSON and exact field paths');
+        console.log(report.request.schainPaths, chain);
+        console.groupEnd();
+      }
+      for (const message of [...report.schainCheck.errors, ...report.warnings]) console.info(message);
+      const original = snapshot(true).originalRequest;
+      if (original) {
+        console.groupCollapsed(original.kind === 'captured-http-call' ? 'Complete captured HTTP body (original batch)' : 'Complete Prebid input (HTTP not captured)');
+        console.info(original.note);
+        console.log(original);
+        console.groupEnd();
+      }
+      console.info('Share table: __AD_REQUEST_DEBUG.copySummary(). Full selected request: .copy() or .download(). Details: .details(). Update: .print(). Stop: .stop().');
+      console.groupEnd();
       return report;
     }
-    console.group('[Tessera] SChain and requests');
+    console.group('SChain and requests');
     console.table(report.requests.flatMap(request => request.filteredBids.map(bid => ({
       auctionId: request.auctionId, bidder: request.bidder, adUnit: bid.adUnitCode,
       schain: bid.schainStatus, paths: bid.schain.map(s => s.path).join(', '),
     }))));
     console.log(report);
     if (!report.requests.length) console.info('No matching Prebid requests in the available history. Check the scope or run again after an auction.');
-    console.info('Helpers: __TESSERA_SCHAIN_DEBUG.print(), .snapshot(), .copy(), .download(), .stop()');
+    console.info('Helpers: __AD_REQUEST_DEBUG.print(), .snapshot(), .copy(), .download(), .stop()');
     console.groupEnd();
     return report;
   }
 
-  const api = { snapshot, fullSnapshot, print, stop,
+  async function copyText(text) {
+    if (typeof copy === 'function') { copy(text); return; }
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(text); return; } catch { /* manual fallback */ }
+    }
+    console.info('Clipboard unavailable. Copy the returned text or use .download().');
+    return text;
+  }
+
+  const api = { snapshot, fullSnapshot, print, stop, summaryText,
+    details() { return snapshot(true); },
+    async copySummary() { return copyText(summaryText()); },
     async ready() { await Promise.allSettled([...pending]); return snapshot(); },
-    async copy() {
-      const json = JSON.stringify(snapshot(), null, 2);
-      if (typeof copy === 'function') { copy(json); return; }
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) { await navigator.clipboard.writeText(json); return; }
-      console.info('Clipboard unavailable. Use .download() or copy the returned JSON.');
-      return json;
-    },
+    async copy() { return copyText(JSON.stringify(snapshot(true), null, 2)); },
     download() {
-      const url = URL.createObjectURL(new Blob([JSON.stringify(snapshot(), null, 2)], { type: 'application/json' }));
+      const url = URL.createObjectURL(new Blob([JSON.stringify(snapshot(true), null, 2)], { type: 'application/json' }));
       const link = document.createElement('a');
-      link.href = url; link.download = options.compact ? 'tessera-schain-position.json' : 'tessera-schain-debug.json';
+      link.href = url; link.download = options.compact ? 'ad-request.json' : 'ad-requests.json';
       document.body.appendChild(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
   };
-  window.__TESSERA_SCHAIN_DEBUG = api;
-  if (options.captureNetwork && (!options.compact || options.target)) startCapture();
+  window.__AD_REQUEST_DEBUG = api;
+  if (!blockedReason && options.captureNetwork && (!options.compact || options.target)) startCapture();
   return print();
 }
 
 export function schainInspectCommand(scope, captureNetwork = false) {
-  return '/* Tessera SChain / request inspector */\n(' + inspectSchain.toString() + ')(' +
+  return '/* SChain / request inspector */\n(' + inspectSchain.toString() + ')(' +
     JSON.stringify({ adUnit: scope.adUnit || '', bidder: scope.bidder || '', captureNetwork }) + ');\n';
 }
 
 export function schainPositionCommand(target, bidder = '') {
-  return '/* Tessera SChain: one position, selected fields, latest retained request */\n(' + inspectSchain.toString() + ')(' +
+  return '/* Ad request inspector: select top in the Console context menu */\nvoid (' + inspectSchain.toString() + ')(' +
     JSON.stringify({ adUnit: '', bidder, target: target.trim(), compact: true, captureNetwork: true }) + ', ' +
     summarizeSchainPosition.toString() + ');\n';
 }

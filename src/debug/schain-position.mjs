@@ -1,16 +1,20 @@
 /** Pure, standalone projection. Serialized into the publisher console command. */
-export function summarizeSchainPosition(report, target, slots = []) {
+export function summarizeSchainPosition(report, target, slots = [], includeDetails = false) {
   target = typeof target === 'string' ? target.trim() : '';
   const result = {
-    report: 'Tessera SChain position report', generatedAt: report.generatedAt,
+    report: 'Ad request report', generatedAt: report.generatedAt,
     prebidVersion: report.prebidVersion, target, bidderFilter: report.scope.bidder || null,
     selection: 'Latest matching auction in retained event order; prefer its latest mapped HTTP call, otherwise its latest Prebid input. Choose a bidder to narrow it.',
     status: 'selection-required', evidence: 'none', request: null,
+    environment: report.environment,
+    schainCheck: { status: 'not-checked', errors: [] },
+    otherChecks: { adsTxt: 'not-checked', sellersJson: 'not-checked', paymentRelationships: 'not-checked', sspAcceptance: 'not-checked' },
     capture: { active: report.capture.active, pending: report.capture.pending,
       droppedRequests: report.capture.droppedRequests, droppedNetwork: report.capture.droppedNetwork },
     warnings: [...report.warnings],
-    limits: 'Selected fields only, not the complete original request. Basic SChain checks do not verify ads.txt, sellers.json, payment relationships or SSP acceptance.',
+    limits: 'Summary fields are an extract. details(), copy() and download() include the selected original payload when available. Basic SChain checks do not verify ads.txt, sellers.json, payment relationships or SSP acceptance. Not checked does not mean missing.',
   };
+  if (report.blockedReason) { result.status = report.blockedReason; return result; }
   if (!target) { result.warnings.push('Choose one ad unit name or full GAM path.'); return result; }
   const isPath = target.startsWith('/');
   const string = value => typeof value === 'string' && value.length > 0;
@@ -117,6 +121,17 @@ export function summarizeSchainPosition(report, target, slots = []) {
       gpid: impression?.ext?.gpid || null, adslot: impression?.ext?.data?.adserver?.adslot || null },
     schainPaths: found.map(s => s.path), schain: chain,
     ...(variants.length > 1 ? { conflictingSchain: found } : {}),
+  };
+  if (includeDetails) result.originalRequest = http ? {
+    kind: 'captured-http-call', observedAt: http.observedAt, method: http.method, url: http.url,
+    query: http.query, body: http.body, selectedImpressionId: item.bidId,
+    batchSize: impressions.length,
+    note: 'Original captured body, unchanged. A batch may include other positions. Headers and browser-added transport fields are not recorded; use DevTools for those.',
+  } : {
+    kind: 'prebid-input', observedAt: request.observedAt, serialization: request.serialization,
+    selectedBidId: item.bidId, batchSize: request.originalRequest.bids?.length || 0,
+    body: request.originalRequest,
+    note: 'Complete retained Prebid batch, not the outgoing HTTP payload. Non-JSON values may be marked as replaced.',
   };
   if (!http) result.warnings.push('No decoded HTTP payload mapped to this exact bid. Prebid input is not proof of transmission.');
   else result.warnings.push('Observed page fetch/XHR call; delivery and SSP acceptance are not verified.');
