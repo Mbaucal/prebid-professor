@@ -1,5 +1,5 @@
 import { experimentInspectCommand } from '../debug/experiment-inspect.mjs';
-import { schainInspectCommand } from '../debug/schain-inspect.mjs';
+import { schainInspectCommand, schainPositionCommand } from '../debug/schain-inspect.mjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { AdUnit, Bidder } from '../shared/types';
@@ -892,6 +892,7 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
   const [selectedBidder, setSelectedBidder] = useState(ALL);
   const [customBidder, setCustomBidder] = useState('');
   const [query, setQuery] = useState('');
+  const [positionTarget, setPositionTarget] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -933,7 +934,12 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
     bidder: selectedBidder === ALL ? '' : selectedBidder === CUSTOM ? customBidder.trim() : selectedBidder,
   }), [customAdUnit, customBidder, domain, publisherId, selectedAdUnit, selectedBidder, siteName]);
 
-  const commands = useMemo(() => buildCommands(scope), [scope]);
+  const effectiveTarget = positionTarget.trim() || scope.adUnit;
+  const commands = useMemo<DebugCommand[]>(() => [{
+    id: 'schain-position', category: 'Privacy', title: 'SChain position report',
+    description: 'A short report for one position: latest request, SChain and basic field checks. Uses an exact ad unit name or full GAM path. Watches for a matching OpenX/PubMatic HTTP request and then stops; otherwise stops after 5 minutes. Copy the result with __TESSERA_SCHAIN_DEBUG.copy().',
+    code: schainPositionCommand(effectiveTarget, scope.bidder),
+  }, ...buildCommands(scope)], [scope, effectiveTarget]);
   const filteredCommands = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return commands;
@@ -1047,20 +1053,27 @@ export default function DebugConsolePanel({ publisherId, siteName, domain }: Pro
                     <span>{command.category}</span>
                     <h4>{command.title}</h4>
                   </div>
-                  <button className={copiedId === command.id ? 'button success' : 'button secondary'} onClick={() => void copyCommand(command)} type="button">
+                  <button disabled={command.id === 'schain-position' && !effectiveTarget} className={copiedId === command.id ? 'button success' : 'button secondary'} onClick={() => void copyCommand(command)} type="button">
                     {copiedId === command.id ? '✓ Copied' : 'Copy command'}
                   </button>
                 </div>
                 <p>{command.description}</p>
+                {command.id === 'schain-position' ? <>
+                  <label className="debug-position-target">
+                    <span>Ad unit name or GAM path</span>
+                    <input value={positionTarget} onChange={event => setPositionTarget(event.target.value)} placeholder={scope.adUnit || '/123456/site/Billboard'} />
+                  </label>
+                  <p>{effectiveTarget ? `Position: ${effectiveTarget}. Clear this field to use Ad unit scope above.` : 'Select one Ad unit scope above, or enter its exact name or full GAM path here.'} Select a bidder above for its request. Selected fields only; full original batches remain available separately.</p>
+                </> : null}
                 <div className="debug-command-scope">
-                  <code>{command.scope === 'page' ? 'Entire page' : scopeUnit}</code>
+                  <code>{command.id === 'schain-position' ? effectiveTarget || 'Choose one position' : command.scope === 'page' ? 'Entire page' : scopeUnit}</code>
                   <code>{command.scope === 'page' ? 'All bidders' : scopeBidder}</code>
                 </div>
                 <details className="debug-command-preview">
                   <summary>Preview command</summary>
                   <pre>{command.code}</pre>
                 </details>
-                <button className="debug-download-button" onClick={() => downloadCommand(command, publisherId)} type="button">Download .js</button>
+                <button disabled={command.id === 'schain-position' && !effectiveTarget} className="debug-download-button" onClick={() => downloadCommand(command, publisherId)} type="button">Download .js</button>
               </article>
             ))}
           </div>
