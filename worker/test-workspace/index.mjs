@@ -1,3 +1,4 @@
+import {countryResponse} from '../geo-country.mjs';
 import {inventoryImportResponse} from './inventory-imports.mjs';
 import {creativeTemplatesResponse} from './creative-templates.mjs';
 import {agenciesResponse} from './agencies.mjs';
@@ -232,6 +233,8 @@ async function route(request,env) {
 }
 export default {
   async fetch(request,env) {
+    const country = countryResponse(request);
+    if (country) return country;
     try { return await route(request,env); }
     catch(error) {
       if(error instanceof WorkspaceError || error instanceof RuntimeSelectionError || error instanceof SelectionWriteError)return json({error:error.message},error.status);
