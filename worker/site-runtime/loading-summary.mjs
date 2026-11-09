@@ -15,7 +15,7 @@ export function describeUnitLoading(input, unit) {
   const group = unit.type === 'ATF' ? '__ATF__' : '__BTF__';
   let rule = null, source = '';
   for (const [key, label] of [['__DEFAULT__', 'Default rule'], [group, `${unit.type} group`], [unit.code, 'Ad unit override']]) {
-    const value = input.lazyRules?.[key];
+    const value = Object.hasOwn(input.lazyRules ?? {}, key) ? input.lazyRules[key] : undefined;
     if (value) { rule = { ...rule, ...value }; source = label; }
   }
   if (rule) {

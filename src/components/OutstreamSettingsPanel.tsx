@@ -7,6 +7,14 @@ const equalSize=(a:number[]|undefined,b:number[])=>a?.length===2&&a.every((value
 const sizeLabel=(size:number[])=>size.join(' × ');
 const rowLabel=(map:SizeMap,row:SizeRow)=>`${map.name} · from ${row.viewport[0]}px wide${row.viewport[1]?` / ${row.viewport[1]}px high`:''}`;
 const defaults:Settings={format:'banner',playerSize:[640,360],minDuration:5,maxDuration:30,playbackMethod:2,placement:3,plcmt:4,partner:{bidder:'pubmatic',adapter:'pubmatic',outstreamAU:'',activationConfirmed:false},cacheUrl:'https://prebid.adnxs.com/pbc/v1/cache'};
+export function outstreamDraft(value:Payload,code:string):Settings {
+  const saved=Object.hasOwn(value.outstream.units,code)?value.outstream.units[code]:undefined;
+  const next={...defaults,...saved,partner:{...defaults.partner!,...saved?.partner}};
+  if(saved?.playerSizing==='size-map'||value.responsiveSizing&&(!saved||saved.format==='banner')){
+    const {playerSize,...rest}=next;return {...rest,playerSizing:'size-map',playerSizes:saved?.playerSizes??{}};
+  }
+  return next;
+}
 export default function OutstreamSettingsPanel({publisherId,code,onClose,onSaved,endpoint,onOpenSizeMaps}:{publisherId:string;code:string;onClose:()=>void;onSaved:()=>void;endpoint?:string;onOpenSizeMaps?:()=>void}) {
   const dialog=useRef<HTMLElement>(null),[data,setData]=useState<Payload|null>(null),[draft,setDraft]=useState<Settings>(defaults),[busy,setBusy]=useState(true),[error,setError]=useState(''),[message,setMessage]=useState('');
   const alive=useRef(true),feedback=useRef<HTMLParagraphElement>(null);
@@ -14,11 +22,7 @@ export default function OutstreamSettingsPanel({publisherId,code,onClose,onSaved
   useEffect(()=>{alive.current=true;const previous=document.activeElement as HTMLElement|null;dialog.current?.focus();return()=>{alive.current=false;previous?.focus();};},[]);
   async function request(body?:unknown){const response=await fetch(endpoint??`/api/publishers/${encodeURIComponent(publisherId)}/outstream-settings`,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',...(body?{headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{})});const value=await response.json() as Payload&{error?:string};if(!response.ok)throw Error(value.error||'Could not load format settings.');return value;}
   function accept(value:Payload){
-    setData(value);const saved=value.outstream.units[code];
-    const next={...defaults,...saved,partner:{...defaults.partner!,...saved?.partner}};
-    if(saved?.playerSizing==='size-map'||value.responsiveSizing&&(!saved||saved.format==='banner')){
-      const {playerSize,...rest}=next;setDraft({...rest,playerSizing:'size-map',playerSizes:saved?.playerSizes??{}});
-    }else setDraft(next);
+    setData(value);setDraft(outstreamDraft(value,code));
   }
   async function load(){setBusy(true);setError('');setMessage('');try{const value=await request();if(alive.current)accept(value);}catch(e){if(alive.current)setError((e as Error).message);}finally{if(alive.current)setBusy(false);}}
   useEffect(()=>{void load();},[publisherId,code,endpoint]);
