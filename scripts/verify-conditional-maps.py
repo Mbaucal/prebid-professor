@@ -32,7 +32,20 @@ with sync_playwright() as p:
     page.add_script_tag(content=mock)
     if pending:
      page.evaluate('''()=>{window.__tcfapi=(cmd,v,cb)=>{if(cmd==='addEventListener'||cmd==='getTCData')cb({gdprApplies:true,eventStatus:'cmpuishown',cmpStatus:'loaded',listenerId:1},true);};}''')
+    # Native IntersectionObserver delivery is tied to browser rendering, not the
+    # mocked clock. Observe that boundary before advancing auction timers.
+    if variant=='lazy':
+     page.evaluate('''()=>{window.__ruleIntersections=[];const Native=window.IntersectionObserver;
+       window.IntersectionObserver=class extends Native{constructor(callback,options){super((entries,observer)=>{
+         window.__ruleIntersections.push(...entries.map(e=>({id:e.target.id,visible:e.isIntersecting})));callback(entries,observer);
+       },options);}};}''')
     page.add_script_tag(content=(out/(variant+suffix)).read_text())
+    if variant=='lazy':
+     for turn in range(40):
+      page.clock.run_for(100)
+      page.wait_for_timeout(25)
+      if page.evaluate('__ruleIntersections.some(e=>e.id==="P2"&&e.visible)'):break
+     assert page.evaluate('__ruleIntersections.some(e=>e.id==="P2"&&e.visible)'),('Native observer did not enter P2',width,suffix)
     page.clock.run_for(15000)
     data=page.evaluate('''()=>({slots:__testAds.slots.map(s=>({id:s.id,map:s.mapping})),requests:__testAds.observations.requests,
       bids:__testAds.observations.bids.flatMap(r=>r.adUnits||[]).map(u=>({id:u.code,sizes:u.mediaTypes?.banner?.sizes})),

@@ -23,7 +23,7 @@
       "literal-schain"
     ],
     "date": "2026-11-09",
-    "title": "Tessera 3.17.0 \u2014 page key-value rules for Banner and Sticky",
+    "title": "Tessera 3.17.0 — page key-value rules for Banner and Sticky",
     "sourceManifest": "scripts/prepare-runtime317.mjs",
     "sourceCommit": "3fafca5bfcea8155fdc3cf9e424411da9af561fc",
     "changes": [
@@ -55,7 +55,7 @@
       "outstream-pilot"
     ],
     "date": "2026-10-26",
-    "title": "Tessera 3.16.2 \u2014 empty Sticky retry, inherited refresh visibility threshold and schedule steps",
+    "title": "Tessera 3.16.2 — empty Sticky retry, inherited refresh visibility threshold and schedule steps",
     "sourceManifest": "scripts/prepare-runtime3162.mjs",
     "sourceCommit": "dbf391e365a8641b6f6e1a011233c51b13adc2c3",
     "changes": [
@@ -89,7 +89,7 @@
       "outstream-pilot"
     ],
     "date": "2026-10-24",
-    "title": "Tessera 3.16.1 \u2014 verified refresh and delivery corrections",
+    "title": "Tessera 3.16.1 — verified refresh and delivery corrections",
     "sourceManifest": "scripts/prepare-runtime3161.mjs",
     "sourceCommit": "b8466a6d582f5085fbb8a03f29b88b42af5770e8",
     "changes": [
