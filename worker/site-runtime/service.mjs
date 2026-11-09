@@ -5,7 +5,7 @@ import { digest } from '../runtime/preview-snapshot.mjs';
 import { pinRuntime } from '../runtime/version-pin.mjs';
 import { describeRuntimeReleases, runtimeReleaseHistory } from '../runtime/runtime-release-history.mjs';
 import { runtimeCatalog, descriptorForPin, previewInput, prepareSiteRuntimeSelection, readPinnedSiteRuntime, buildArtifactCandidate } from '../test-workspace/runtime-catalog.mjs';
-import { readPositions, normalizeOverlay, normalizeLazy } from '../runtime-next/position-settings.mjs';
+import { readPositions, normalizeOverlay, normalizeLazy } from './position-settings.mjs';
 import { takeOverForBuild } from '../test-workspace/takeover-settings.mjs';
 import { zipSync } from 'fflate';
 import { siteSetupState } from './setup-state.mjs';
