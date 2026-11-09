@@ -2,8 +2,11 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import DealsPanel from '../components/DealsPanel';
 import OutstreamSettingsPanel from '../components/OutstreamSettingsPanel';
+import UnitRulesPanel from '../components/UnitRulesPanel';
 import '../ad-units.css';
 import '../publisher-workflows.css';
+import '../unit-rules.css';
+import './test-unit-rules.css';
 import SiteRuntimePanel from '../components/SiteRuntimePanel';
 import ScriptSetupPanel from '../components/ScriptSetupPanel';
 import SitePackagesPanel from '../components/SitePackagesPanel';
@@ -21,17 +24,18 @@ function Formats() {
   </section>;
 }
 function Workspace() {
-  const [view,setView]=useState<'versions'|'positions'|'packages'|'test-page'|'deals'|'formats'>(()=>window.location.hash==='#formats'?'formats':window.location.hash==='#test-page'?'test-page':['#packages','#workflow'].includes(window.location.hash)?'packages':'versions');
+  const [view,setView]=useState<'versions'|'positions'|'packages'|'test-page'|'deals'|'formats'|'rules'>(()=>window.location.hash==='#rules'?'rules':window.location.hash==='#formats'?'formats':window.location.hash==='#test-page'?'test-page':['#packages','#workflow'].includes(window.location.hash)?'packages':'versions');
   return <main style={{maxWidth:1000,margin:'24px auto',padding:16}}>
     <h1>Tessera · TEST site workspace</h1><p>This workspace uses your saved TEST copy. Production sites are unchanged.</p>
     <nav className="runtime-actions">
       <a href="/api-integrations">API integracije</a>
       <button onClick={()=>setView('versions')}>Script setup</button><button onClick={()=>setView('positions')}>Ad positions</button>
+      <button onClick={()=>setView('rules')}>Unit rules</button>
       <a href="/site-settings">Units and size maps</a><a href="/prebid-settings">Prebid and bidders</a><button onClick={()=>setView('packages')}>Generate and releases</button>
       <button onClick={()=>setView('deals')}>Deals</button><button onClick={()=>setView('formats')}>Formats</button>
       <button onClick={()=>setView('test-page')}>Test page</button>
     </nav>
-    {view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
+    {view==='rules'?<div className="test-unit-rules"><UnitRulesPanel publisherId="test-site"/></div>:view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Workspace/>);

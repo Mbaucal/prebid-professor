@@ -126,17 +126,17 @@ export async function changeSiteRuntime(env,siteId,actor,body){
  previewInput(next,descriptor,'20000101_000000');
  return commitSiteConfiguration(env,saved,next.config.config_json,actor);
 }
-export async function siteRuntimeBundle(env,siteId,body){
+export async function siteRuntimeBundle(env,siteId,body,{testOnly=false}={}){
  keys(body,['action','revision','acknowledge']);if(body.action!=='bundle'||body.acknowledge!==true)fail('Review this candidate before downloading.');
  const saved=await read(env,siteId);if(body.revision!==await digest(saved))fail('Site settings changed. Reload before generating.',409);
  const selected=await readPinnedSiteRuntime({siteId,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);
  const timestamp=new Date().toISOString().replace(/[-:]/g,'').replace('T','_').slice(0,15);
- const candidate=await buildArtifactCandidate({snapshot:selected.snapshot,pin:selected.pin,prebid:selected.prebid,takeOver:takeOverForBuild(saved),buildTimestamp:timestamp});
+ const candidate=await buildArtifactCandidate({snapshot:selected.snapshot,pin:selected.pin,prebid:selected.prebid,takeOver:takeOverForBuild(saved),buildTimestamp:timestamp,countryTarget:testOnly?'test':'main'});
  if(await digest(await read(env,siteId))!==body.revision)fail('Site settings changed during generation. Generate again.',409);
  const zip=zipSync(Object.fromEntries(Object.entries(candidate.files).map(([name,bytes])=>[name,[bytes,{level:0,mtime:new Date('1980-01-01T00:00:00Z')}]])),{level:0});
  return new Response(zip,{headers:{'content-type':'application/zip','cache-control':'private, no-store','x-content-type-options':'nosniff','content-disposition':`attachment; filename="${siteId}-${selected.descriptor.version}-candidate.zip"`}});
 }
-export async function siteRuntimeResponse(request,env,siteId,actor){
+export async function siteRuntimeResponse(request,env,siteId,actor,options={}){
  const headers={'content-type':'application/json; charset=utf-8','cache-control':'private, no-store','x-content-type-options':'nosniff'};
  const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
  try{
@@ -147,6 +147,6 @@ export async function siteRuntimeResponse(request,env,siteId,actor){
   let size=0;const chunks=[];try{for(;;){const item=await reader.read();if(item.done)break;size+=item.value.length;if(size>24000){await reader.cancel();fail('Request exceeds 24 KB.',413);}chunks.push(item.value);}}finally{reader.releaseLock();}
   const bytes=new Uint8Array(size);let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.length;}
   let body;try{body=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{fail('Invalid JSON.',400);}
-  return body?.action==='bundle'?await siteRuntimeBundle(env,siteId,body):json(await changeSiteRuntime(env,siteId,actor,body));
+  return body?.action==='bundle'?await siteRuntimeBundle(env,siteId,body,options):json(await changeSiteRuntime(env,siteId,actor,body));
  }catch(e){return json({error:e.status?e.message:'These saved settings need review before using this script version.'},e.status??422);}
 }

@@ -20,6 +20,7 @@ import {
   unitRuleRowsUnchangedArgs,
 } from './unit-rule-rows';
 import type { UnitRuleRowState } from './unit-rule-rows';
+import { normalizeCountry } from '../shared/geo-country.mjs';
 
 type UnitRuleRow = {
   id: string;
@@ -32,7 +33,7 @@ type UnitRuleRow = {
 
 type JsonRecord = Record<string, unknown>;
 
-const RESERVED_RULE_KEYS = new Set(['__DEFAULT__', '__ATF__', '__BTF__']);
+const RESERVED_RULE_KEYS = new Set(['__DEFAULT__', '__ATF__', '__BTF__', '__INTERSTITIAL__']);
 const CONDITION_OPERATORS = new Set<UnitRuleConditionOperator>([
   'equals',
   'notEquals',
@@ -132,7 +133,7 @@ function normalizeCondition(value: unknown, mappingIndex: number, conditionIndex
 
   const key = String(value.key ?? '').trim();
   const operator = String(value.operator ?? 'equals') as UnitRuleConditionOperator;
-  const conditionValue = String(value.value ?? '').trim();
+  let conditionValue = String(value.value ?? '').trim();
 
   if (!key) throw new Error(`Mapping ${mappingIndex + 1}, condition ${conditionIndex + 1}: key is required.`);
   if (!CONDITION_OPERATORS.has(operator)) {
@@ -140,6 +141,15 @@ function normalizeCondition(value: unknown, mappingIndex: number, conditionIndex
   }
   if (!['exists', 'notExists'].includes(operator) && !conditionValue) {
     throw new Error(`Mapping ${mappingIndex + 1}, condition ${conditionIndex + 1}: value is required.`);
+  }
+  if (key === 'geo_country') {
+    if (!['equals', 'notEquals', 'exists', 'notExists'].includes(operator)) {
+      throw new Error(`Mapping ${mappingIndex + 1}, condition ${conditionIndex + 1}: country uses equals, does not equal, exists or does not exist.`);
+    }
+    if (!['exists', 'notExists'].includes(operator)) {
+      conditionValue = conditionValue.toUpperCase();
+      if (!normalizeCountry(conditionValue)) throw new Error(`Mapping ${mappingIndex + 1}, condition ${conditionIndex + 1}: use a country code such as RS, DE or AT.`);
+    }
   }
 
   return {
@@ -254,6 +264,16 @@ async function normalizeRuleConfig(
   }
 
   return normalized;
+}
+
+function validateRuleScope(ruleKey: string, rule: UnitRuleConfig): void {
+  if (ruleKey !== '__INTERSTITIAL__') return;
+  if (rule.timeout !== undefined || rule.lazy !== undefined || rule.refresh !== undefined) {
+    throw new Error('Interstitial fallback supports conditional slot rules only, without timeout, lazy-load or refresh overrides.');
+  }
+  if (rule.conditionalMappings?.some((mapping) => mapping.sizeMapKey)) {
+    throw new Error('Interstitial fallback has no size map. Use Enable slot or Disable slot.');
+  }
 }
 
 async function fetchUnitRule(
@@ -477,6 +497,7 @@ export async function createUnitRule(
   try {
     ruleKey = await normalizeRuleKey(env.DB, siteId, input.ruleKey);
     rule = await normalizeRuleConfig(env.DB, siteId, input.rule ?? {});
+    validateRuleScope(ruleKey, rule);
   } catch (error) {
     return apiError(error instanceof Error ? error.message : 'Unit rule validation failed.', 422);
   }
@@ -557,6 +578,7 @@ export async function updateUnitRule(
   let rule: UnitRuleConfig;
   try {
     rule = await normalizeRuleConfig(env.DB, siteId, input.rule ?? current.rule);
+    validateRuleScope(current.ruleKey, rule);
   } catch (error) {
     return apiError(error instanceof Error ? error.message : 'Unit rule validation failed.', 422);
   }
@@ -632,6 +654,7 @@ export async function duplicateUnitRule(
   let ruleKey: string;
   try {
     ruleKey = await normalizeRuleKey(env.DB, siteId, input.ruleKey);
+    validateRuleScope(ruleKey, source.rule);
   } catch (error) {
     return apiError(error instanceof Error ? error.message : 'Unit rule validation failed.', 422);
   }

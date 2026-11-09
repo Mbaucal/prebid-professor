@@ -28,6 +28,7 @@ import { tanjugPilotResponse } from './tanjug-pilot.mjs';
 import { deploymentResponse, runnerPath, runnerResponse } from './deployments.mjs';
 import { adsVersionsPreviewResponse } from './ads-versions-preview.mjs';
 import { siteWorkspaceResponse } from './site-workspace.mjs';
+import { isTestUnitRuleItemPath, unitRulesResponse } from './unit-rules.mjs';
 
 // HTML form navigation under no-referrer sends Origin:null. same-origin keeps
 // legitimate form Origin while still suppressing cross-origin referrers.
@@ -54,7 +55,7 @@ async function candidate(settings, buildTimestamp, takeOverEnabled, bucket) {
   const resolved=await selectedWorkspaceRuntime(settings,bucket);
   const {prebidBuilds,...configuration}=settings;
   return buildArtifactCandidate({snapshot:configuration,pin:resolved.pin,
-    buildTimestamp,takeOver:takeOverForBuild(settings,takeOverEnabled),prebid:resolved.prebid});
+    buildTimestamp,countryTarget:'test',takeOver:takeOverForBuild(settings,takeOverEnabled),prebid:resolved.prebid});
 }
 async function list(env) {
   const result=await env.DB.withSession('first-primary').prepare('SELECT release_id,package_sha256,state,created_at,note,descriptor_json FROM builtin_draft_uploads WHERE publisher_id=? ORDER BY created_at DESC,release_id LIMIT 20').bind(TEST_SITE).all();
@@ -67,7 +68,8 @@ async function list(env) {
 }
 async function route(request,env) {
   const {origin,auth}=workspaceBoundary(request,env);
-  if (!['GET','POST'].includes(request.method)) throw new WorkspaceError(405,'Method not allowed.');
+  if (!['GET','POST'].includes(request.method)
+    && !(['PATCH','DELETE'].includes(request.method) && isTestUnitRuleItemPath(new URL(request.url).pathname))) throw new WorkspaceError(405,'Method not allowed.');
   if (runnerPath(new URL(request.url).pathname)) return runnerResponse(request,env,headers);
   sameOrigin(request,origin);
   const url=new URL(request.url), path=url.pathname;
@@ -104,6 +106,8 @@ async function route(request,env) {
   if (!actor) return path.startsWith('/test-api/')||path.startsWith('/api/') ? json({error:'Test sign-in required.'},401)
     : new Response(null,{status:303,headers:{...headers,location:'/login'}});
   if (path==='/api/auth/logout' && request.method==='POST') return handleLogout(request);
+  const unitRules = await unitRulesResponse(request,env,actor,headers);
+  if (unitRules) return unitRules;
   const agencies = await agenciesResponse(request,env,actor,headers);
   if (agencies) return agencies;
   const layoutPreview = layoutPreviewResponse(request, headers);
