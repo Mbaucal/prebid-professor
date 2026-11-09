@@ -805,7 +805,7 @@ export default function UnitRulesPanel({ publisherId, onChanged, onOpenRefresh }
                   <div>
                     <span className="rule-section-kicker">Key-values</span>
                     <h3>Conditional size-map and slot rules</h3>
-                    <p>Example: when pageType equals home, use Billboard_Home. Higher priority runs first.</p>
+                    <p>Script 3.17.0 applies these rules to Banner and Sticky positions using window.adsKeywords on the page. Set keywords before ads.js. Example: category equals Naslovna selects naslovna_P2; no match keeps the assigned map. Higher priority runs first. TakeOver and Outstream keep their reviewed size maps.</p>
                   </div>
                   <button className="button secondary" onClick={addMapping} type="button">＋ Mapping</button>
                 </div>
