@@ -77,6 +77,8 @@ jobs:
           node --test ../../tests/runtime/test-toolchain-seal.test.mjs
       - name: Require the active config to compile to the exact Worker bytes tested below
         run: node scripts/check-test-activation.mjs --compare-bundles
+      - name: Public country signal on the actual compiled TEST Worker
+        run: node scripts/verify-geo-country.mjs --workspace
       - name: Verify compiled Worker with LOCAL Miniflare D1 and R2 including restart
         env:
           WRANGLER_SEND_METRICS: 'false'
@@ -112,6 +114,7 @@ jobs:
         with:
           name: test-workspace-evidence
           path: |
+            .generated/geo-evidence/workspace-results.json
             .generated/toolchain-evidence/*.json
             .generated/test-workspace-evidence/*.json
             .generated/test-workspace-evidence/*.png

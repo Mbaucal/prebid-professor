@@ -1,4 +1,5 @@
 import { dealSettingsResponse } from './site-runtime/deal-settings.mjs';
+import { countryResponse } from './geo-country.mjs';
 import { outstreamSettingsResponse } from './site-runtime/outstream-settings.mjs';
 import { requireRevenueRuntime } from './runtime-3162/settings-guard.mjs';
 import { organizationResponse } from './organization/service.mjs';
@@ -21,6 +22,8 @@ const downstream = baseApp as {
 };
 export default {
   async fetch(request, env, ctx): Promise<Response> {
+    const country = countryResponse(request);
+    if (country) return country;
     try { const cdn = await builtInCdn(request,env); if(cdn)return cdn; }
     catch { return new Response('Release file unavailable',{status:404,headers:{'cache-control':'no-store'}}); }
     const draftBlock = blockStoredDraftCdn(request);
