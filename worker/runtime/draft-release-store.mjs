@@ -147,8 +147,9 @@ export async function saveDraftRelease(store, { siteId, candidate, actor, note =
   requireThat(await db.prepare('SELECT id FROM publishers WHERE id = ?').bind(siteId).first(), 'Site not found in isolated store.');
   await db.prepare(`INSERT INTO builtin_draft_uploads
     (release_id,publisher_id,package_sha256,descriptor_json,state,created_by,created_at,note)
-    VALUES (?,?,?,?,'uploading',?,?,?) ON CONFLICT (publisher_id,package_sha256) DO NOTHING`)
-    .bind(id,siteId,descriptor.packageSha256,descriptorText,actor,new Date().toISOString(),note.trim() || null).run();
+    SELECT ?,?,?,?,'uploading',?,?,? WHERE NOT EXISTS (SELECT 1 FROM audit_log WHERE id=?)
+    ON CONFLICT (publisher_id,package_sha256) DO NOTHING`)
+    .bind(id,siteId,descriptor.packageSha256,descriptorText,actor,new Date().toISOString(),note.trim() || null,`test-cleanup-${id}`).run();
   const row = await intent(db,siteId,id);
   requireThat(row && row.descriptor_json === descriptorText, 'Draft reservation could not be verified.');
   // Even an already stored draft must pass byte verification before reporting success.
@@ -163,6 +164,7 @@ export async function saveDraftRelease(store, { siteId, candidate, actor, note =
     descriptor.prebidBuild ? fileKey(siteId,id,'prebid.js') : null, fileKey(siteId,id,'config.json'),
     fileKey(siteId,id,'manifest.json'),row.note,row.created_by,row.created_at];
   const result = await db.batch([
+    assertSQL(db,`cleanup-${assertionId}`,'NOT EXISTS (SELECT 1 FROM audit_log WHERE id=?)',[`test-cleanup-${id}`]),
     assertSQL(db,assertionId,`EXISTS (SELECT 1 FROM builtin_draft_uploads WHERE release_id = ? AND publisher_id = ?
       AND descriptor_json = ? AND created_by = ? AND created_at = ? AND note IS ?)`,
       [id,siteId,descriptorText,row.created_by,row.created_at,row.note]),
@@ -177,8 +179,9 @@ export async function saveDraftRelease(store, { siteId, candidate, actor, note =
         runtimeVersion: descriptor.runtime.runtimeVersion, fileCount: descriptor.files.length, publishable: false }),row.created_at),
     db.prepare("UPDATE builtin_draft_uploads SET state = 'stored' WHERE release_id = ? AND publisher_id = ?").bind(id,siteId),
     db.prepare('DELETE FROM builtin_draft_assertions WHERE id = ?').bind(assertionId),
+    db.prepare('DELETE FROM builtin_draft_assertions WHERE id = ?').bind(`cleanup-${assertionId}`),
   ]);
-  return { created: result[1].meta.changes === 1, draft: publicDraft({ ...row, state: 'stored' },descriptor) };
+  return { created: result[2].meta.changes === 1, draft: publicDraft({ ...row, state: 'stored' },descriptor) };
 }
 
 /** Does not regenerate anything or require that the historical runtime is current.

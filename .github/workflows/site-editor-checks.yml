@@ -52,6 +52,7 @@ jobs:
         run: python scripts/verify-login-recovery.py && python scripts/verify-login-recovery.py --test-workspace
       - run: python scripts/verify-site-editor.py
       - run: python scripts/verify-site-workspace.py
+      - run: python scripts/verify-package-cleanup.py
       - run: node --experimental-strip-types scripts/prepare-test-page-browser-fixture.mjs && python scripts/verify-site-test-page.py
       - run: python scripts/verify-release-setup.py
       - run: python scripts/verify-loading-summary.py
@@ -66,6 +67,7 @@ jobs:
             .generated/site-editor-evidence/
             .generated/position-evidence/
             .generated/site-workspace-evidence/
+            .generated/package-cleanup-evidence/
             .generated/test-page-evidence/
             .generated/loading-summary-evidence/
             .generated/schain-debug-evidence/
