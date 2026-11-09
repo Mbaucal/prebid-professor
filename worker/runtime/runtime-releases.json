@@ -1,5 +1,42 @@
 [
   {
+    "id": "tessera-3.19.0",
+    "version": "3.19.0",
+    "codeSha256": "a93924a8f0b800dc109bbe68c6fe61cd387b3e84c04db97fabeb15e23659be95",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules"
+    ],
+    "date": "2026-11-09",
+    "title": "Tessera 3.19.0 — country rules and GAM targeting",
+    "sourceManifest": "scripts/prepare-runtime319.mjs",
+    "sourceCommit": "b3de0051644b2c8d4d50481f4669c33fa9c70bd3",
+    "changes": [
+      "Use geo_country in existing size-map and slot rules. Only dependent positions wait for the bounded country result.",
+      "Send the detected country to GAM without delaying other positions or forcing refresh. Unknown stays absent.",
+      "Add optional rules to the existing TakeOver Interstitial fallback; external codeless is configured in GAM. Existing site pins and packages remain unchanged."
+    ]
+  },
+  {
     "id": "tessera-3.18.0",
     "version": "3.18.0",
     "codeSha256": "e3fc576e7acc0a6e2c4868e06ce19e510fd693f12dbd5e318c969f569c6debae",

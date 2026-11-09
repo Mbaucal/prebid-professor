@@ -152,6 +152,7 @@ function scopeLabel(ruleKey: string): string {
   if (ruleKey === '__DEFAULT__') return 'Default';
   if (ruleKey === '__ATF__') return 'ATF group';
   if (ruleKey === '__BTF__') return 'BTF group';
+  if (ruleKey === '__INTERSTITIAL__') return 'Interstitial fallback';
   return `Exact · ${ruleKey}`;
 }
 
@@ -246,6 +247,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
   const targetOptions = useMemo(() => {
     return [
       ...RESERVED_RULES.map((item) => ({ key: item.key, label: item.label })),
+      { key: '__INTERSTITIAL__', label: 'Interstitial fallback' },
       ...adUnits.map((unit) => ({ key: unit.code, label: `${unit.code} · ${unit.type}` })),
     ];
   }, [adUnits]);
@@ -255,6 +257,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
   }, [rulesByKey, targetOptions]);
 
   const missingReserved = RESERVED_RULES.filter((item) => !rulesByKey.has(item.key));
+  const isInterstitial = form.ruleKey === '__INTERSTITIAL__';
 
   function openCreate(ruleKey?: string) {
     const target = ruleKey ?? availableTargetOptions[0]?.key ?? '';
@@ -298,8 +301,31 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function addCountryMapping() {
+    const mapping = emptyMapping();
+    mapping.name = 'Country mapping';
+    mapping.conditions = [{ id: uid(), key: 'geo_country', operator: 'equals', value: 'RS' }];
+    if (isInterstitial) mapping.slotAction = 'disable';
+    updateForm('conditionalMappings', [...form.conditionalMappings, mapping]);
+  }
+
+  function addOnlySerbiaPreset() {
+    const mapping = emptyMapping();
+    mapping.name = 'Only Serbia';
+    mapping.priority = 10000;
+    mapping.match = 'any';
+    mapping.slotAction = 'disable';
+    mapping.conditions = [
+      { id: uid(), key: 'geo_country', operator: 'notEquals', value: 'RS' },
+      { id: uid(), key: 'geo_country', operator: 'notExists', value: '' },
+    ];
+    updateForm('conditionalMappings', [mapping, ...form.conditionalMappings]);
+  }
+
   function addMapping() {
-    updateForm('conditionalMappings', [...form.conditionalMappings, emptyMapping()]);
+    const mapping = emptyMapping();
+    if (isInterstitial) mapping.slotAction = 'disable';
+    updateForm('conditionalMappings', [...form.conditionalMappings, mapping]);
   }
 
   function updateMapping(mappingId: string, patch: Partial<UnitRuleConditionalMapping>) {
@@ -374,6 +400,11 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
     }
 
     const rule = ruleFromForm(form);
+    if (isInterstitial && mode !== 'duplicate') {
+      delete rule.timeout;
+      delete rule.lazy;
+      delete rule.refresh;
+    }
     if (
       rule.timeout === undefined &&
       rule.lazy === undefined &&
@@ -594,15 +625,17 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 <div className="unit-rule-heading">
                   <div>
                     <span className="rule-scope-chip exact">Exact</span>
-                    <h3>{rule.ruleKey}</h3>
-                    <p>Overrides inherited behavior only for this ad unit.</p>
+                    <h3>{rule.ruleKey === '__INTERSTITIAL__' ? 'Interstitial fallback' : rule.ruleKey}</h3>
+                    <p>{rule.ruleKey === '__INTERSTITIAL__' ? 'Controls only the script-managed TakeOver fallback.' : 'Overrides inherited behavior only for this ad unit.'}</p>
                   </div>
                   <span className="rule-status configured">configured</span>
                 </div>
                 <div className="rule-summary-list">
-                  <div><span>Timeout</span><strong>{timeoutText(rule.rule)}</strong></div>
-                  <div><span>Lazy</span><strong>{lazyText(rule.rule)}</strong></div>
-                  <div><span>Refresh</span><strong>{refreshText(rule.rule)}</strong></div>
+                  {rule.ruleKey !== '__INTERSTITIAL__' ? <>
+                    <div><span>Timeout</span><strong>{timeoutText(rule.rule)}</strong></div>
+                    <div><span>Lazy</span><strong>{lazyText(rule.rule)}</strong></div>
+                    <div><span>Refresh</span><strong>{refreshText(rule.rule)}</strong></div>
+                  </> : null}
                   <div><span>Key-value mappings</span><strong>{rule.rule.conditionalMappings?.length ?? 0}</strong></div>
                 </div>
                 <div className="ad-unit-actions">
@@ -696,7 +729,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 <div>
                   <span className="rule-section-kicker">Target</span>
                   <h3>Inheritance scope</h3>
-                  <p>Exact ad-unit rules are applied after Default and ATF/BTF rules.</p>
+                  <p>{isInterstitial ? 'Applies only to the Interstitial fallback requested by this script after TakeOver. It does not activate a standalone Interstitial. Configure independently loaded GAM codeless Interstitials in GAM.' : 'Exact ad-unit rules are applied after Default and ATF/BTF rules.'}</p>
                 </div>
                 <label>
                   <span>Rule target</span>
@@ -719,6 +752,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 </label>
               </section>
 
+              {!isInterstitial ? <>
               <section className="rule-form-section">
                 <div className="rule-section-heading">
                   <div>
@@ -798,15 +832,24 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 ) : <div className="inherit-note">This scope inherits refresh behavior from its parent rule.</div>}
               </section>
 
+              </> : null}
+
               <section className="rule-form-section conditional-section">
                 <div className="rule-section-heading">
                   <div>
                     <span className="rule-section-kicker">Key-values</span>
-                    <h3>Conditional size-map and slot rules</h3>
-                    <p>Script 3.17.0 applies these rules to Banner and Sticky positions using window.adsKeywords on the page. Set keywords before ads.js. Example: category equals Naslovna selects naslovna_P2; no match keeps the assigned map. Higher priority runs first. TakeOver and Outstream keep their reviewed size maps.</p>
+                    <h3>{isInterstitial ? 'Conditional Interstitial fallback' : 'Conditional size-map and slot rules'}</h3>
+                    <p>Script 3.19.0 adds geo_country from country detection. Example: geo_country equals DE selects a map for Germany. Only positions with country conditions wait for that result. Page keys such as category still come from window.adsKeywords, set before ads.js. Higher priority runs first; no match keeps the assigned map and state.</p>
+                    {isInterstitial ? <p>This rule controls the script-managed TakeOver fallback only. Independently loaded GAM codeless Interstitials need their own GAM targeting. Known country is also sent to GAM as geo_country.</p> : <p>Banner and Sticky support size-map changes. TakeOver and Outstream keep their reviewed size maps.</p>}
+                    <p>The Only Serbia preset disables this position for other or unknown countries. Keep it ahead of other matching rules; an Enable action alone does not restrict a position to a country.</p>
                   </div>
-                  <button className="button secondary" onClick={addMapping} type="button">＋ Mapping</button>
                 </div>
+                <div className="runtime-actions">
+                  <button className="button secondary" onClick={addMapping} type="button">＋ Mapping</button>
+                  <button className="button secondary" onClick={addCountryMapping} type="button">＋ Country mapping</button>
+                  <button className="button secondary" onClick={addOnlySerbiaPreset} type="button">Only Serbia preset</button>
+                </div>
+                <datalist id={`rule-keys-${publisherId}`}><option value="category" /><option value="pageType" /><option value="geo_country" /></datalist>
 
                 <div className="conditional-mapping-list">
                   {form.conditionalMappings.map((mapping, mappingIndex) => (
@@ -825,9 +868,9 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                       <div className="condition-list">
                         {mapping.conditions.map((condition, conditionIndex) => (
                           <div className="condition-row" key={condition.id}>
-                            <label><span>Key</span><input onChange={(event) => updateCondition(mapping.id, condition.id, { key: event.target.value })} placeholder="pageType" value={condition.key} /></label>
-                            <label><span>Operator</span><select onChange={(event) => updateCondition(mapping.id, condition.id, { operator: event.target.value as UnitRuleConditionOperator })} value={condition.operator}><option value="equals">equals</option><option value="notEquals">does not equal</option><option value="contains">contains</option><option value="notContains">does not contain</option><option value="exists">exists</option><option value="notExists">does not exist</option></select></label>
-                            <label><span>Value</span><input disabled={condition.operator === 'exists' || condition.operator === 'notExists'} onChange={(event) => updateCondition(mapping.id, condition.id, { value: event.target.value })} placeholder="home" value={condition.value} /></label>
+                            <label><span>Key</span><input onChange={(event) => updateCondition(mapping.id, condition.id, { key: event.target.value, ...(event.target.value === 'geo_country' && ['contains', 'notContains'].includes(condition.operator) ? { operator: 'equals' } : {}) })} list={`rule-keys-${publisherId}`} placeholder="category or geo_country" value={condition.key} /></label>
+                            <label><span>Operator</span><select onChange={(event) => updateCondition(mapping.id, condition.id, { operator: event.target.value as UnitRuleConditionOperator })} value={condition.operator}><option value="equals">equals</option><option value="notEquals">does not equal</option>{condition.key !== 'geo_country' ? <><option value="contains">contains</option><option value="notContains">does not contain</option></> : null}<option value="exists">exists</option><option value="notExists">does not exist</option></select></label>
+                            <label><span>Value</span><input disabled={condition.operator === 'exists' || condition.operator === 'notExists'} onChange={(event) => updateCondition(mapping.id, condition.id, { value: condition.key === 'geo_country' ? event.target.value.toUpperCase() : event.target.value })} placeholder={condition.key === 'geo_country' ? 'RS' : 'Naslovna'} value={condition.value} /></label>
                             <button aria-label={`Remove condition ${conditionIndex + 1}`} className="condition-remove" disabled={mapping.conditions.length === 1} onClick={() => removeCondition(mapping.id, condition.id)} type="button">×</button>
                           </div>
                         ))}
@@ -835,7 +878,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                       </div>
 
                       <div className="mapping-action-grid">
-                        <label><span>Use size map</span><select onChange={(event) => updateMapping(mapping.id, { sizeMapKey: event.target.value || null })} value={mapping.sizeMapKey ?? ''}><option value="">Keep inherited map</option>{sizeMaps.map((map) => <option key={map.id} value={map.name}>{map.name}</option>)}</select></label>
+                        {!isInterstitial ? <label><span>Use size map</span><select onChange={(event) => updateMapping(mapping.id, { sizeMapKey: event.target.value || null })} value={mapping.sizeMapKey ?? ''}><option value="">Keep inherited map</option>{sizeMaps.map((map) => <option key={map.id} value={map.name}>{map.name}</option>)}</select></label> : null}
                         <label><span>Slot action</span><select onChange={(event) => updateMapping(mapping.id, { slotAction: event.target.value as UnitRuleSlotAction })} value={mapping.slotAction}><option value="inherit">Keep inherited state</option><option value="enable">Enable slot</option><option value="disable">Disable slot</option></select></label>
                       </div>
                     </article>

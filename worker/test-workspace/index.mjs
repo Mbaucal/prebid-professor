@@ -31,6 +31,7 @@ import { tanjugPilotResponse } from './tanjug-pilot.mjs';
 import { deploymentResponse, runnerPath, runnerResponse } from './deployments.mjs';
 import { adsVersionsPreviewResponse } from './ads-versions-preview.mjs';
 import { siteWorkspaceResponse } from './site-workspace.mjs';
+import { isTestUnitRuleItemPath, unitRulesResponse } from './unit-rules.mjs';
 import {namedScriptMethodAllowed,namedScriptsResponse} from './named-scripts.mjs';
 
 // HTML form navigation under no-referrer sends Origin:null. same-origin keeps
@@ -71,7 +72,7 @@ async function list(env) {
 }
 async function route(request,env) {
   const {origin,auth}=workspaceBoundary(request,env);
-  if (!['GET','POST'].includes(request.method)&&!namedScriptMethodAllowed(request)) throw new WorkspaceError(405,'Method not allowed.');
+  if (!['GET','POST'].includes(request.method)&&!namedScriptMethodAllowed(request)&&!(['PATCH','DELETE'].includes(request.method)&&isTestUnitRuleItemPath(new URL(request.url).pathname))) throw new WorkspaceError(405,'Method not allowed.');
   if (runnerPath(new URL(request.url).pathname)) return runnerResponse(request,env,headers);
   sameOrigin(request,origin);
   const url=new URL(request.url), path=url.pathname;
@@ -108,6 +109,8 @@ async function route(request,env) {
   if (!actor) return path.startsWith('/test-api/')||path.startsWith('/api/') ? json({error:'Test sign-in required.'},401)
     : new Response(null,{status:303,headers:{...headers,location:'/login'}});
   if (path==='/api/auth/logout' && request.method==='POST') return handleLogout(request);
+  const unitRules=await unitRulesResponse(request,env,actor,headers);
+  if(unitRules)return unitRules;
   const namedScripts=await namedScriptsResponse(request,env,actor,headers);
   if(namedScripts)return namedScripts;
   const inventoryImport=await inventoryImportResponse(request,env,headers);

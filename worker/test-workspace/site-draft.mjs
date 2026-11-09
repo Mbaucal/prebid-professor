@@ -126,7 +126,7 @@ export async function planSiteDraft(saved,input) {
   if(await digest(before)!==expected)fail('Settings changed. Reload saved settings before trying again.',409);
   const unitCodes=new Set(draft.units.map((u)=>u.code));
   for(const key of [...before.rules.map((r)=>r.rule_key),...Object.keys(config.advancedUnitRules??{})]){
-    if(!['__DEFAULT__','__ATF__','__BTF__'].includes(key)&&!unitCodes.has(key))fail('A removed position still has saved rules. Keep it disabled until its rules are reviewed.');
+    if(!['__DEFAULT__','__ATF__','__BTF__','__INTERSTITIAL__'].includes(key)&&!unitCodes.has(key))fail('A removed position still has saved rules. Keep it disabled until its rules are reviewed.');
   }
   for(const override of before.overrides){
     if(override.scope_type==='adunit'&&override.enabled===1&&!draft.units.some((u)=>u.code===override.scope_key&&u.enabled))fail('An enabled bidder override uses this position. Disable or remove that override first.');
