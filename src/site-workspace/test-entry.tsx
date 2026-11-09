@@ -2,8 +2,11 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import DealsPanel from '../components/DealsPanel';
 import OutstreamSettingsPanel from '../components/OutstreamSettingsPanel';
+import UnitRulesPanel from '../components/UnitRulesPanel';
 import '../ad-units.css';
 import '../publisher-workflows.css';
+import '../unit-rules.css';
+import './test-unit-rules.css';
 import SiteRuntimePanel from '../components/SiteRuntimePanel';
 import ScriptSetupPanel from '../components/ScriptSetupPanel';
 import SitePackagesPanel from '../components/SitePackagesPanel';
@@ -21,11 +24,11 @@ function Formats() {
     {selected?<OutstreamSettingsPanel key={selected} publisherId="test-site" code={selected} endpoint="/test-api/outstream-settings" onClose={()=>setSelected(null)} onSaved={()=>{}}/>:null}
   </section>;
 }
-type View = 'versions'|'positions'|'packages'|'test-page'|'loading'|'deals'|'formats';
+type View = 'versions'|'positions'|'packages'|'test-page'|'loading'|'deals'|'formats'|'rules';
 function currentView(): View {
   const hash = window.location.hash.slice(1);
   if (hash === 'workflow') return 'packages';
-  return ['positions', 'packages', 'test-page', 'loading', 'deals', 'formats'].includes(hash) ? hash as View : 'versions';
+  return ['positions', 'packages', 'test-page', 'loading', 'deals', 'formats', 'rules'].includes(hash) ? hash as View : 'versions';
 }
 function Workspace() {
   const [view,updateView]=useState<View>(currentView);
@@ -40,12 +43,13 @@ function Workspace() {
     <nav className="runtime-actions">
       <a href="/api-integrations">API integracije</a><a href="/creative-templates">Creative templates</a>
       <button onClick={()=>setView('versions')}>Script setup</button><button onClick={()=>setView('positions')}>Ad positions</button>
+      <button onClick={()=>setView('rules')}>Unit rules</button>
       <a href="/site-settings">Units and size maps</a><a href="/prebid-settings">Prebid and bidders</a><button onClick={()=>setView('packages')}>Generate and releases</button>
       <button onClick={()=>setView('deals')}>Deals</button><button onClick={()=>setView('formats')}>Formats</button>
       <button aria-current={view==='loading'?'page':undefined} onClick={()=>setView('loading')}>Loading rules</button>
       <button onClick={()=>setView('test-page')}>Test page</button>
     </nav>
-    {view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='loading'?<SiteLoadingSummaryPanel endpoint="/test-api/site-runtime"/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
+    {view==='rules'?<div className="test-unit-rules"><UnitRulesPanel publisherId="test-site"/></div>:view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='loading'?<SiteLoadingSummaryPanel endpoint="/test-api/site-runtime"/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Workspace/>);
