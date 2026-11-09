@@ -8,61 +8,63 @@ export function normalizeCountry(value) {
 
 /** Self-contained factory: also serialized into the optional browser helper. */
 export function createCountrySignal(options) {
-  const root = options.root;
-  const normalize = options.normalizeCountry;
-  const timeoutMs = 1500;
-  const now = () => root.performance?.now?.() ?? Date.now();
-  let snapshot = Object.freeze({version:1, status:'idle', country:null, source:null, reason:null, elapsedMs:0});
-  let promise;
+  // ES2015 source is shared by the optional helper and the generated ads runtime.
+  var root = options.root;
+  var normalize = options.normalizeCountry;
+  var timeoutMs = 1500;
+  function now() { return root.performance && typeof root.performance.now === 'function' ? root.performance.now() : Date.now(); }
+  var snapshot = Object.freeze({version:1, status:'idle', country:null, source:null, reason:null, elapsedMs:0});
+  var promise;
   function ready() {
     if (promise) return promise;
     // Assign before starting fetch: even reentrant consumers share this promise.
-    let resolve;
-    promise = new Promise(done => { resolve = done; });
-    const started = now();
-    let timer;
-    let controller;
-    let settled = false;
-    snapshot = Object.freeze({...snapshot, status:'pending'});
-    const elapsed = () => Math.max(0, Math.round(now() - started));
-    const finish = (country, reason) => {
+    var resolve;
+    promise = new Promise(function(done) { resolve = done; });
+    var started = now();
+    var timer;
+    var controller;
+    var settled = false;
+    snapshot = Object.freeze({version:1, status:'pending', country:null, source:null, reason:null, elapsedMs:0});
+    function elapsed() { return Math.max(0, Math.round(now() - started)); }
+    function finish(country, reason) {
       if (settled) return;
       settled = true;
       if (timer !== undefined) root.clearTimeout(timer);
       snapshot = Object.freeze({version:1, status:country ? 'known' : 'unknown', country,
         source:country ? 'cloudflare' : null, reason, elapsedMs:elapsed()});
       resolve(snapshot);
-    };
-    const fail = reason => { finish(null, reason); try { controller?.abort(); } catch {} };
+    }
+    function fail(reason) { finish(null, reason); try { if (controller) controller.abort(); } catch (ignored) {} }
     if (typeof root.fetch !== 'function') { finish(null, 'unsupported'); return promise; }
     try {
       if (typeof root.AbortController === 'function') controller = new root.AbortController();
-      timer = root.setTimeout(() => fail('timeout'), timeoutMs);
-      const init = {method:'GET', mode:'cors', credentials:'omit', cache:'no-store',
+      timer = root.setTimeout(function() { fail('timeout'); }, timeoutMs);
+      var init = {method:'GET', mode:'cors', credentials:'omit', cache:'no-store',
         redirect:'error', referrerPolicy:'no-referrer'};
       if (controller) init.signal = controller.signal;
-      Promise.resolve(root.fetch(options.endpoint, init)).then(async response => {
+      Promise.resolve(root.fetch(options.endpoint, init)).then(function(response) {
         if (settled) return;
         if (!response.ok) { fail('http-error'); return; }
         if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') || '')) {
           fail('invalid-response'); return;
         }
-        const text = await response.text();
+        return response.text();
+      }).then(function(text) {
         if (settled) return;
         if (elapsed() >= timeoutMs) { fail('timeout'); return; }
         if (text.length > 2048) { fail('invalid-response'); return; }
-        let data;
-        try { data = JSON.parse(text); } catch { fail('invalid-response'); return; }
+        var data;
+        try { data = JSON.parse(text); } catch (ignored) { fail('invalid-response'); return; }
         if (!data || data.version !== 1 || data.source !== 'cloudflare') { fail('invalid-response'); return; }
-        const country = normalize(data.country);
+        var country = normalize(data.country);
         if (data.status === 'known' && country) finish(country, null);
         else if (data.status === 'unknown' && data.country === null) finish(null, 'unavailable');
         else fail('invalid-response');
-      }).catch(() => { if (!settled) fail('network-error'); });
-    } catch { fail('network-error'); }
+      }).catch(function() { if (!settled) fail('network-error'); });
+    } catch (ignored) { fail('network-error'); }
     return promise;
   }
-  return Object.freeze({version:1, getSnapshot:() => snapshot, ready});
+  return Object.freeze({version:1, getSnapshot:function() { return snapshot; }, ready:ready});
 }
 
 export function countryClientSource(endpoint) {
