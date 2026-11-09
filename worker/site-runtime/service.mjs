@@ -120,7 +120,9 @@ export async function changeSiteRuntime(env,siteId,actor,body){
  if(p.display==='sticky'){if(!unit.enabled)fail('Enable this ad unit before selecting bottom Sticky.');config.runtimeControls.sticky.bottomAdUnitId=p.code;}
  else if(oldSticky===p.code)config.runtimeControls.sticky.bottomAdUnitId='';
  config.runtimeControls.adPositions=positions;
- config.advancedUnitRules??={};config.advancedUnitRules[p.code]??={};
+ // GAM codes can match Object.prototype names. Treat them as ordinary own keys.
+ config.advancedUnitRules=Object.assign(Object.create(null),config.advancedUnitRules??{});
+ config.advancedUnitRules[p.code]??={};
  config.advancedUnitRules[p.code].lazy=normalizeLazy(p.lazy);
  const next={...saved,config:{config_json:JSON.stringify(config)}};
  previewInput(next,descriptor,'20000101_000000');

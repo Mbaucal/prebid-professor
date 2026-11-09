@@ -110,6 +110,24 @@ test('loading summary reads saved display overrides and never writes configurati
  assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,audits);
 });
+test('position lazy settings preserve prototype-shaped GAM codes as own entries',async()=>{
+ const targets=[Object.prototype,Object,Object.prototype.toString];
+ const before=targets.map(target=>Object.getOwnPropertyDescriptors(target));
+ const lazy={enabled:true,fetchMarginPx:500,renderMarginPx:100};
+ for(const code of ['__proto__','constructor','toString']){
+  const {f}=await setup();
+  f.sqlite.prepare("UPDATE ad_units SET code=? WHERE code='Billboard'").run(code);
+  let state=await siteRuntimeSettings(f.env,'test-site');
+  await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:state.revision,runtime:state.currentRuntime.pin,allowPreview:false,enablePrebid:false});
+  state=await siteRuntimeSettings(f.env,'test-site');
+  await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:state.revision,position:{code,display:'standard',overlay:null,lazy}});
+  const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+  assert(Object.hasOwn(config.advancedUnitRules,code),code+' must be a persisted own key');
+  assert.deepEqual(config.advancedUnitRules[code].lazy,lazy);
+  assert.deepEqual((await siteRuntimeSettings(f.env,'test-site')).positions.find(unit=>unit.code===code).lazy,lazy);
+  targets.forEach((target,index)=>assert.deepEqual(Object.getOwnPropertyDescriptors(target),before[index],code+' must not mutate shared prototypes or functions'));
+ }
+});
 test('one explicit setup saves GAM-only mode and a built-in version without a template or Prebid file',async()=>{
  const {f}=await setup();
  const original=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);

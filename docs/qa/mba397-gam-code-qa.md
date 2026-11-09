@@ -59,3 +59,25 @@ environment has Playwright without its browser, and the browser download
 returned a truncated/invalid archive. This is an environment limitation, not a
 passing browser check or a product failure. The generated runtime/browser
 review must be reported separately before release.
+
+## Integrated native browser evidence
+
+The local browser installation limit above was resolved by running the same
+committed fixtures in the existing Chromium CI job. At PR180 head
+`73c54de9844640faa7e76820797827fe2d51643d`,
+[Artifact candidate tests](https://github.com/Mbaucal/prebid-professor/actions/runs/42709130691)
+passed, including **20 generated packages and 80 native Chromium scenarios**:
+
+- GAM-only and Prebid, readable and minified files, 1440px and 390px viewports.
+- Exact GPT slot paths and Prebid codes, including per-position bidder overrides.
+- Actual exported HTML containers and CSV HTML parsing, native CSS selectors,
+  conditional map placeholder heights, and Sticky positioning.
+- BTF lazy discovery through native IntersectionObserver, integrated TakeOver
+  and standalone legacy TakeOver IDs.
+- Prototype-shaped identifiers remain ordinary keys; no prototype mutation,
+  JavaScript errors, event-attribute injection, or external requests.
+
+This runs generated code in a real browser with synthetic ad libraries and
+blocked external traffic. It does not claim live Google/SSP acceptance or a
+hosted publisher deployment. The remaining full CI and TEST deployment checks
+are tracked in MBA-397; this isolated passing job is not a production release.
