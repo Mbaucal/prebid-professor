@@ -37,7 +37,7 @@ with sync_playwright() as p:
     expect(page.get_by_text('Saved for the next generated script. Existing scripts are unchanged.',exact=True)).to_be_visible()
    def edit_desktop(value):
     page.locator('.size-map-card').filter(has=page.get_by_role('heading',name='display',exact=True)).get_by_role('button',name='Edit',exact=True).click()
-    page.get_by_role('dialog').get_by_label('Sizes',exact=True).nth(1).fill(value)
+    page.get_by_role('dialog').get_by_label('Breakpoint 2 sizes',exact=True).fill(value)
     page.get_by_role('button',name='Save size map',exact=True).click()
     expect(page.get_by_role('dialog')).to_have_count(0)
    try:
