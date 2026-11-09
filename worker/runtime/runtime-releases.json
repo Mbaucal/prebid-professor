@@ -1,5 +1,40 @@
 [
   {
+    "id": "tessera-3.18.0",
+    "version": "3.18.0",
+    "codeSha256": "e3fc576e7acc0a6e2c4868e06ce19e510fd693f12dbd5e318c969f569c6debae",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal"
+    ],
+    "date": "2026-11-09",
+    "title": "Tessera 3.18.0 — background country recognition",
+    "sourceManifest": "scripts/prepare-runtime318.mjs",
+    "sourceCommit": "40c55229ecf232674100137d5728bb37b3edf749",
+    "changes": [
+      "Selecting this version enables one background Cloudflare country lookup per document, shared through window.__AD_GEO.getSnapshot() and ready(). The result describes the network exit, including VPN/proxy exits.",
+      "Ads never wait for country detection. A 1500 ms deadline covers both fetch and body; missing data, blocked requests, invalid responses and errors settle to unknown. No retry, cookies, localStorage or shared cache is used.",
+      "Country is available for diagnostics and future features. This version does not use it to change CMP decisions, bidders, targeting, size maps or refresh. Duplicate helper loads reuse the same result; a new page load is needed after switching VPN.",
+      "Includes the 3.17.0 category-based Banner/Sticky map rules and all inherited consent, refresh and SChain behavior. Existing saved scripts and site selections stay unchanged until an explicit version selection and a newly generated package."
+    ]
+  },
+  {
     "id": "tessera-3.17.0",
     "version": "3.17.0",
     "codeSha256": "1082c1c4c6803852687c80827c9fa23ad952fa2fc09d8f5379111bf109e9f51d",

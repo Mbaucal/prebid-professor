@@ -20,7 +20,7 @@ export async function siteWorkspaceResponse(request,env,actor,headers){
   assertWorkspaceSiteScope(await readPreviewSnapshot(env.DB.withSession('first-primary'),'test-site',{includePrebid:true}));
   if(url.pathname==='/test-api/deals')return dealSettingsResponse(request,env,TEST_SITE,actor.email);
   if(url.pathname==='/test-api/outstream-settings')return outstreamSettingsResponse(request,env,TEST_SITE,actor.email);
-  return url.pathname==='/test-api/site-packages'?packageResponse(request,env,'test-site',actor.email,{testOnly:true}):siteRuntimeResponse(request,env,'test-site',actor.email);
+  return url.pathname==='/test-api/site-packages'?packageResponse(request,env,'test-site',actor.email,{testOnly:true}):siteRuntimeResponse(request,env,'test-site',actor.email,{testOnly:true});
  }
  if(request.method!=='GET')return new Response('Method not allowed',{status:405,headers});
  if(url.pathname.endsWith('.js'))return new Response(workspaceJs,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});

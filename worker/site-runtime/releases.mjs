@@ -11,7 +11,7 @@ import { refreshSummary } from './refresh-summary.mjs';
 
 const encode=new TextEncoder(),decode=new TextDecoder('utf-8',{fatal:true});
 const ID=/^builtin-release-[a-f0-9]{64}$/;
-const hasDealsPlan=runtime=>[['tessera-3.17.0','3.17.0'],['tessera-3.16.2','3.16.2'],['tessera-3.16.1','3.16.1'],['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version)&&runtime?.capabilities?.includes('prebid-deals');
+const hasDealsPlan=runtime=>[['tessera-3.18.0','3.18.0'],['tessera-3.17.0','3.17.0'],['tessera-3.16.2','3.16.2'],['tessera-3.16.1','3.16.1'],['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version)&&runtime?.capabilities?.includes('prebid-deals');
 const check=(ok,message,status=409)=>{if(!ok)throw Object.assign(new Error(message),{status});};
 const db=env=>env.DB.withSession('first-primary');
 const snapshot=(env,site)=>readPreviewSnapshot(db(env),site,{includePrebid:true});
@@ -35,10 +35,10 @@ export async function packageState(env,site,{testOnly=false}={}){
    ORDER BY CASE WHEN r.status='production' OR EXISTS(SELECT 1 FROM audit_log a WHERE a.publisher_id=r.publisher_id AND a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id) THEN 0 ELSE 1 END,was_production DESC,r.created_at DESC,r.id DESC LIMIT 50`).bind(site).all();
  return {site:saved.site,enablePrebid:JSON.parse(saved.config.config_json).enablePrebid===true,revision,ready:!error,error,warnings,nextStep:error?setup.nextStep:null,runtime:selected?.pin??null,testOnly,releases:rows.results.map(payload),earlierReleases:earlier.results.map(r=>({...payload(r),canRestore:r.status==='archived'&&Boolean(r.was_production)}))};
 }
-async function build(env,site,revision,stamp){
+async function build(env,site,revision,stamp,testOnly){
  const saved=await snapshot(env,site);check(await digest(saved)===revision,'Settings changed. Reload before generating.');
  const selected=await readPinnedSiteRuntime({siteId:site,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);
- const candidate=await buildArtifactCandidate({snapshot:selected.snapshot,pin:selected.pin,prebid:selected.prebid,takeOver:takeOverForBuild(saved),buildTimestamp:stamp});
+ const candidate=await buildArtifactCandidate({snapshot:selected.snapshot,pin:selected.pin,prebid:selected.prebid,takeOver:takeOverForBuild(saved),buildTimestamp:stamp,countryTarget:testOnly?'test':'main'});
  check(await digest(await snapshot(env,site))===revision,'Settings changed during generation. Generate again.');
  await describeCandidate(site,candidate);
  return {candidate,saved};
@@ -48,7 +48,7 @@ export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
  check(body&&Object.keys(body).sort().join('|')==='notes|revision','Use the displayed generation fields.',422);
  check(typeof body.notes==='string'&&body.notes.length<=160,'Use a release note of up to 160 characters.',422);
  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace('T','_').slice(0,15);
- const {candidate,saved}=await build(env,site,body.revision,stamp);
+ const {candidate,saved}=await build(env,site,body.revision,stamp,testOnly);
  if(testOnly){
   check(site==='test-site','Only the existing TEST site is allowed.',403);
   const result=await saveDraftRelease({isolation:'explicit-test-store',db:env.DB,bucket:env.BUILDS},{siteId:site,candidate,actor,note:body.notes});
@@ -56,7 +56,7 @@ export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
  }
  const {descriptor}=await describeCandidate(site,candidate);
  const id=`builtin-release-${descriptor.packageSha256}`,files={...candidate.files};
- const stable316=[['tessera-3.16.0','3.16.0'],['tessera-3.16.1','3.16.1'],['tessera-3.16.2','3.16.2'],['tessera-3.17.0','3.17.0']].some(([id,version])=>descriptor.runtime.runtimeId===id&&descriptor.runtime.runtimeVersion===version);
+ const stable316=[['tessera-3.16.0','3.16.0'],['tessera-3.16.1','3.16.1'],['tessera-3.16.2','3.16.2'],['tessera-3.17.0','3.17.0'],['tessera-3.18.0','3.18.0']].some(([id,version])=>descriptor.runtime.runtimeId===id&&descriptor.runtime.runtimeVersion===version);
  // Store the reviewed output as a complete, immutable release with exact source pins.
  const created=new Date().toISOString();
  if(stable316)files['README.txt']=encode.encode(decode.decode(files['README.txt'])+`\nSaved release: ${id}\nUse ads.js once. Stage and review this saved release before production.\n`);
