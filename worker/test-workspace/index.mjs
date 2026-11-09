@@ -54,7 +54,7 @@ async function candidate(settings, buildTimestamp, takeOverEnabled, bucket) {
   const resolved=await selectedWorkspaceRuntime(settings,bucket);
   const {prebidBuilds,...configuration}=settings;
   return buildArtifactCandidate({snapshot:configuration,pin:resolved.pin,
-    buildTimestamp,takeOver:takeOverForBuild(settings,takeOverEnabled),prebid:resolved.prebid});
+    buildTimestamp,countryTarget:'test',takeOver:takeOverForBuild(settings,takeOverEnabled),prebid:resolved.prebid});
 }
 async function list(env) {
   const result=await env.DB.withSession('first-primary').prepare('SELECT release_id,package_sha256,state,created_at,note,descriptor_json FROM builtin_draft_uploads WHERE publisher_id=? ORDER BY created_at DESC,release_id LIMIT 20').bind(TEST_SITE).all();

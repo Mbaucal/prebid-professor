@@ -1,9 +1,9 @@
 # Country signal v1 (MBA-25)
 
 This is an independent country signal. It does not change CMP, Prebid, GPT,
-bidder selection, refresh or any existing publisher package. The first consumer
-in a generated ads runtime must be introduced as a new explicitly selected
-runtime version after this foundation is verified.
+bidder selection, refresh or any existing publisher package. Runtime 3.18.0 adds
+the lookup to newly generated scripts only after an explicit version selection.
+Older selected versions and previously saved packages remain unchanged.
 
 ## Public endpoints
 
@@ -30,10 +30,11 @@ used geolocation code XK are supported; no region/GDPR policy is inferred.
 ## Shared browser API
 
 Load the helper from the verified deployment origin with an async script and
-`crossorigin="anonymous"`. It is optional and is not inserted into existing ads.js.
+`crossorigin="anonymous"`. Existing scripts do not gain it automatically. Runtime
+3.18.0 embeds the same helper directly in ads.js; no separate helper tag is needed.
 
 ```js
-// After the optional helper has loaded:
+// After ads.js 3.18.0 (or the optional helper) has loaded:
 console.table([window.__AD_GEO.getSnapshot()]);
 window.__AD_GEO.ready().then(result => console.table([result]));
 ```
@@ -87,3 +88,40 @@ global geolocation accuracy. TEST precedes production activation.
 
 Documentation reviewed 2026-11-09. Existing runtime source hashes, release records
 and saved packages remain unchanged.
+
+## Generated runtime 3.18.0
+
+Choose 3.18.0 in Script setup, save, and generate a new package. Country lookup
+starts in an isolated block before the inherited 3.17 ad runtime and never delays
+that runtime. No new targeting keys, bidder filters, consent policy, responsive
+map rule or refresh policy are derived from the result. The existing CMP still
+decides when ads may start.
+
+All package-generation routes choose the endpoint from server-owned environment
+context: MAIN uses `https://prebid-professor.mbaucal.workers.dev/geo/v1/country`;
+TEST uses `https://prebid-professor-test.mbaucal.workers.dev/geo/v1/country`. The
+selected endpoint is included in config.json and README.txt. Sites with a CSP
+need the corresponding origin in connect-src. A blocked call returns unknown.
+
+Automated runtime and package checks:
+
+```sh
+node scripts/prepare-builtin-runtime.mjs
+node scripts/prepare-test-workspace.mjs
+node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/geo-runtime.test.mjs tests/runtime/geo-package-routes.test.mjs
+node scripts/prepare-geo-runtime-fixtures.mjs
+python scripts/verify-geo-runtime.py
+python scripts/verify-geo-runtime-ui.py
+```
+
+The 88 full-script cases cover readable/minified, GAM/Prebid and desktop/mobile
+output, known/unknown countries, deadline and failure paths, existing globals,
+CMP waiting and later refresh. They intercept all network calls and use synthetic
+demand. The admin test saves an explicit version and checks the downloaded ZIP.
+The route regression checks all TEST generation paths, MAIN default, refusal of
+client endpoint overrides and byte-preservation of an older saved ZIP.
+
+Manual hosted probe (TEST endpoint only, synthetic ads, no paid traffic):
+`python scripts/verify-geo-hosted.py --test`. This is opt-in, not CI. Its recorded
+result must be inspected; a completed probe with unknown/network-error does not
+prove a successful live lookup.

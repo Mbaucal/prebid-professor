@@ -137,6 +137,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
       {selected?.pin.capabilities?.includes('consent-readiness') ? <p className="script-prebid-note">
         Waits for your CMP decision before requesting ads. If Prebid fails to load, Google ads are requested only after consent is resolved.
       </p> : null}
+      {selected?.pin.capabilities?.includes('country-signal') ? <p className="script-prebid-note">Country detection runs in the background once per page. If the country is unavailable, ads continue normally. The country is available for diagnostics; it does not change consent or ad delivery.</p> : null}
       {selected?.pin.capabilities?.includes('gam-request-reporting') ? <p className="script-prebid-note">
         GAM reporting: refresh count, bucket, interval and policy. {prebid ? 'Also includes current-auction bid counts and timeout.' : 'No Prebid auction values are sent in GAM / AdX only mode.'} Key definitions are included in the downloaded package. Enable key-value reporting in GAM to use them in reports.
       </p> : null}
