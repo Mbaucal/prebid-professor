@@ -1,0 +1,25 @@
+name: Inspect or clear authorized TEST packages (MBA-396)
+on:
+  push:
+    branches: [ops/mba396-test-package-cleanup]
+    paths: [ops/runtime-test/package-cleanup.json, scripts/test-package-cleanup.mjs, .github/workflows/test-package-cleanup.yml]
+permissions:
+  contents: read
+concurrency:
+  group: test-package-cleanup-mba396
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.3
+      - name: Inspect explicitly isolated TEST package storage
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/test-package-cleanup.mjs
