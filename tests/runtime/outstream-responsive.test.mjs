@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {unzipSync} from 'fflate';
+import {build} from 'esbuild';
 import {normalizeOutstream,buildOutstreamInput,playerSizeMaps} from '../../shared/outstream/settings-v3.mjs';
 import {normalizeOutstream as normalizeSelected,outstreamContext} from '../../shared/outstream/selected-settings.mjs';
 import {outstreamPlayerSize,applyOutstreamUnit,installOutstreamRenderGuard} from '../../worker/runtime-outstream-v2/browser-functions.mjs';
@@ -14,6 +15,23 @@ const rows=[{viewport:[0,0],sizes:[[300,250]]},{viewport:[768,0],sizes:[[728,90]
 const context=()=>({units:[{code:'Billboard',media_type:'banner',type:'BTF',enabled:1,size_map_key:'display'}],maps:[{name:'display',map_json:JSON.stringify(rows)}],bidders:[{bidder:'pubmatic',enabled:1}],enablePrebid:true,prebidVersion:'11.34.0',modules:['pubmaticBidAdapter']});
 const value=setting=>({schemaVersion:1,units:{Billboard:structuredClone(setting)}});
 function snapshot(setting=responsive){const ctx=context();return {...ctx,prebidBuilds:[{version:'11.34.0',modules_json:'["pubmaticBidAdapter"]'}],config:{config_json:JSON.stringify({enablePrebid:true,runtimeControls:{outstream:value(setting)}})}};}
+
+test('Outstream form defaults and saved choices treat prototype-shaped GAM codes as own entries',async()=>{
+ const compiled=await build({entryPoints:['src/components/OutstreamSettingsPanel.tsx'],bundle:true,write:false,platform:'node',format:'esm'});
+ const {outstreamDraft}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+ const payload={outstream:{schemaVersion:1,units:{}},responsiveSizing:true};
+ const expected=outstreamDraft(payload,'P1');
+ assert.equal(expected.playerSizing,'size-map');assert.equal(expected.playerSize,undefined);
+ for(const code of ['__proto__','constructor','toString']){
+  assert.deepEqual(outstreamDraft(payload,code),expected,code+' must receive ordinary unsaved defaults');
+  for(const setting of [fixed,responsive]){
+   const saved={...payload,outstream:{schemaVersion:1,units:Object.fromEntries([[code,setting]])}};
+   const before=structuredClone(saved),draft=outstreamDraft(saved,code);
+   assert.deepEqual(draft,outstreamDraft({...payload,outstream:{schemaVersion:1,units:{P1:setting}}},'P1'));
+   assert.deepEqual(saved,before,'opening the form cannot mutate saved format settings');
+  }
+ }
+});
 
 test('responsive intent derives sole eligible map sizes and freezes resolved snapshot without changing banners',()=>{
  const ctx=context(),before=structuredClone(ctx),normalized=normalizeOutstream(value(responsive),ctx);

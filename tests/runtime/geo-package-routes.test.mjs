@@ -4,7 +4,7 @@ import worker from '../../worker/test-workspace/index.mjs';
 import {workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD} from '../../tests/support/test-workspace-store.mjs';
 import {siteRuntimeBundle} from '../../worker/site-runtime/service.mjs';
 import test from 'node:test';
-for(const version of ['3.18.0','3.19.0','3.20.0'])test(`all ${version} package routes bind GEO to the server environment and preserve historical ZIPs`,async()=>{
+for(const version of ['3.18.0','3.19.0','3.20.0','3.19.1'])test(`all ${version} package routes bind GEO to the server environment and preserve historical ZIPs`,async()=>{
 const f=workspaceStore(),decode=new TextDecoder();
 const MAIN='https://prebid-professor.mbaucal.workers.dev/geo/v1/country';
 const TEST='https://prebid-professor-test.mbaucal.workers.dev/geo/v1/country';

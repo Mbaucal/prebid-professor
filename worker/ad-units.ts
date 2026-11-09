@@ -1,3 +1,4 @@
+import { validateAdUnitCode } from '../shared/gam/ad-unit-code.mjs';
 import type {
   AdUnit,
   AdUnitType,
@@ -37,11 +38,14 @@ function databaseMissing(): Response {
 async function positionGuard(db:D1Database,siteId:string,code:string){
   const row=await db.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=? LIMIT 1').bind(siteId).first<{config_json:string}>();
   const config=JSON.parse(row?.config_json??'{}');
-  const outstream=config.runtimeControls?.outstream?.units?.[code];
+  const outstreamUnits=config.runtimeControls?.outstream?.units??{};
+  const outstream=Object.hasOwn(outstreamUnits,code)?outstreamUnits[code]:undefined;
+  const positions=config.runtimeControls?.adPositions??{};
+  const advanced=config.advancedUnitRules??{};
   const dealScope=config.runtimeControls?.deals?.entries?.some((entry:{positions?:unknown[]})=>entry.positions?.includes(code));
-  return { configJson: row?.config_json ?? null, revenueReferenced: Boolean((outstream&&outstream.format!=='banner')||dealScope), configured: Boolean(config.runtimeControls?.adPositions?.[code])
+  return { configJson: row?.config_json ?? null, revenueReferenced: Boolean((outstream&&outstream.format!=='banner')||dealScope), configured: Boolean(Object.hasOwn(positions,code)&&positions[code])
     || config.runtimeControls?.sticky?.bottomAdUnitId === code
-    || config.advancedUnitRules?.[code]?.lazy != null };
+    || (Object.hasOwn(advanced,code)&&advanced[code]?.lazy != null) };
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -117,7 +121,7 @@ function carriedRuleConfig(
   const leftover = carry.to !== carry.from && Object.hasOwn(saved, carry.to);
   let changed = false;
   // The rows as they will be after the batch.
-  const unitRules: JsonRecord = {};
+  const unitRules: JsonRecord = Object.create(null);
   for (const row of rows) {
     unitRules[carry.kind === 'edit' && row.rule_key === carry.from ? carry.to : row.rule_key] = parseRule(row.rule_json);
   }
@@ -131,12 +135,12 @@ function carriedRuleConfig(
       changed = true;
     }
   }
-  let advanced: JsonRecord = { ...saved };
+  let advanced: JsonRecord = Object.assign(Object.create(null), saved);
   if (!leftover && carry.kind === 'edit' && carry.from !== carry.to && Object.hasOwn(saved, carry.from)) {
     // The whole record moves under the new code.
     advanced = withEntry(saved, carry.from, carry.to, saved[carry.from]);
     changed = true;
-  } else if (!leftover && carry.kind === 'copy' && carriedRow && isRecord(saved[carry.from])) {
+  } else if (!leftover && carry.kind === 'copy' && carriedRow && Object.hasOwn(saved, carry.from) && isRecord(saved[carry.from])) {
     const source = saved[carry.from] as JsonRecord;
     const copied: JsonRecord = {};
     for (const field of RULE_OWNED_FIELDS) if (Object.hasOwn(source, field)) copied[field] = structuredClone(source[field]);
@@ -199,15 +203,7 @@ function normalizeCode(value: unknown): string {
 }
 
 function validateCode(code: string): string[] {
-  const errors: string[] = [];
-
-  if (!code) {
-    errors.push('code is required.');
-  } else if (!/^[A-Za-z][A-Za-z0-9_:\-]{0,127}$/.test(code)) {
-    errors.push('code must start with a letter and use only letters, numbers, underscore, dash or colon.');
-  }
-
-  return errors;
+  return validateAdUnitCode(code);
 }
 
 async function publisherExists(db: D1Database, publisherId: string): Promise<boolean> {
@@ -365,7 +361,7 @@ export async function updateAdUnit(
   }
 
   const code = input.code === undefined ? current.code : normalizeCode(input.code);
-  const errors = validateCode(code);
+  const errors = code === current.code ? [] : validateCode(code);
   if (errors.length) return apiError('Ad unit validation failed.', 422, errors);
 
   const type = input.type === undefined ? current.type : normalizeType(input.type);

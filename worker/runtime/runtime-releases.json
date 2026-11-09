@@ -1,5 +1,43 @@
 [
   {
+    "id": "tessera-3.19.1",
+    "version": "3.19.1",
+    "codeSha256": "7b5306c280c1644ee15a23f254940ff4d356355030b9603da67e2e125d37cdec",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules",
+      "gam-code-compatibility"
+    ],
+    "date": "2026-11-09",
+    "title": "Tessera 3.19.1 — exact GAM ad unit codes",
+    "sourceManifest": "scripts/prepare-runtime3191.mjs",
+    "sourceCommit": "aaa9527a8abaa31a7ebf6301ba5f599b2afa78f8",
+    "changes": [
+      "Preserve GAM codes containing periods, leading numbers, Unicode and supported punctuation through imports, GPT, Prebid and exported markup.",
+      "Escape HTML and CSS without changing the saved GAM identity; historical scripts and saved packages remain unchanged.",
+      "Use this patch explicitly for existing GAM codes rejected by older script versions. No publisher is upgraded automatically."
+    ]
+  },
+  {
     "id": "tessera-3.20.0",
     "version": "3.20.0",
     "codeSha256": "41d542a0adf9ae22ca557bd4fd36d26dfacd52eee9be5f95a20501e3dd6a4aee",

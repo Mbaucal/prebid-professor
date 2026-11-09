@@ -27,6 +27,20 @@ test('missing rules use built-in ATF/BTF defaults, not an invented Disabled valu
   assert.equal(describe(f, 'Billboard').label, 'Automatic · Sticky');
 });
 
+test('prototype-shaped GAM codes inherit BTF loading until an own lazy override is saved', () => {
+  const runtime=runtimeCatalog.find(r=>r.version==='3.19.1');
+  for(const code of ['__proto__','constructor','toString']){
+    const f=fixture();f.saved.units.find(u=>u.code==='P1').code=code;
+    f.saved.config.config_json=JSON.stringify(f.config);
+    const unit=f.saved.units.find(u=>u.code===code);
+    assert.equal(describeUnitLoading(previewInput(f.saved,runtime,'20260922_120000'),unit).label,'Automatic · BTF lazy load');
+    f.config.advancedUnitRules=Object.fromEntries([[code,{lazy:{enabled:true,fetchMarginPx:700,renderMarginPx:100}}]]);
+    f.saved.config.config_json=JSON.stringify(f.config);
+    const result=describeUnitLoading(previewInput(f.saved,runtime,'20260922_120000'),unit);
+    assert.equal(result.label,'Lazy load');assert.equal(result.source,'Ad unit override');assert.match(result.detail,/100px/);
+  }
+});
+
 test('display overrides and null inheritance agree with the actual compiler and browser resolver', () => {
   const f = fixture(true);
   f.saved.rules = [
