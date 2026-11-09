@@ -13,6 +13,7 @@ on:
       - src/components/SizeMapsCompatPanel.tsx
       - src/download/**
       - src/components/ScriptSetupPanel.tsx
+      - src/components/UnitRulesPanel.tsx
       - src/components/SiteRuntimePanel.tsx
       - src/site-workspace/**
       - scripts/**
@@ -61,13 +62,14 @@ jobs:
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-runtime3162-browser-fixtures.mjs
           node scripts/prepare-conditional-maps-fixtures.mjs
           node scripts/prepare-geo-runtime-fixtures.mjs
+          node scripts/prepare-country-rules-fixtures.mjs
       - name: Consent, deadline, reporting and pending-slot regressions
         run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
       - name: Country signal, deadlines and actual compiled public routes
         run: |
           node --test tests/runtime/geo-country.test.mjs
           node scripts/verify-geo-country.mjs
-          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/geo-runtime.test.mjs tests/runtime/geo-package-routes.test.mjs
+          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/geo-runtime.test.mjs tests/runtime/geo-package-routes.test.mjs tests/runtime/country-rules.test.mjs tests/runtime/country-rules-routes.test.mjs tests/runtime/geo-rules-admin.test.mjs tests/runtime/test-workspace-unit-rules.test.mjs
       - name: Verified 3.16.1 corrections, preserved history and saved-package contracts
         run: |
           node scripts/check-runtime-release-history.mjs HEAD^
@@ -89,6 +91,9 @@ jobs:
       - name: Country lookup never blocks generated ads or admin package delivery
         run: |
           python scripts/verify-geo-runtime.py
+          python scripts/verify-country-rules.py
+          python scripts/verify-geo-rules-admin-ui.py
+          python scripts/verify-test-unit-rules-ui.py
           python scripts/verify-geo-runtime-ui.py
       - name: Generated scripts with real Prebid and intercepted CMP/GPT
         run: |
@@ -143,8 +148,11 @@ jobs:
           name: consent-readiness-evidence
           path: |
             .generated/geo-evidence/compiled-results.json
-            .generated/geo-runtime-evidence/*.json
-            .generated/geo-runtime-evidence/*.png
+            .generated/geo-runtime-evidence/
+            .generated/country-rules-evidence/*.json
+            .generated/country-rules-evidence/*.png
+            .generated/geo-rules-admin-evidence/
+            .generated/test-unit-rules-evidence/
             .generated/readiness-evidence/browser-results.json
             .generated/readiness-evidence/boundary-results.json
             .generated/readiness-setup-evidence/*.json
