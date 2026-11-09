@@ -61,6 +61,10 @@ jobs:
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-runtime3162-browser-fixtures.mjs
       - name: Consent, deadline, reporting and pending-slot regressions
         run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
+      - name: Country signal, deadlines and actual compiled public routes
+        run: |
+          node --test tests/runtime/geo-country.test.mjs
+          node scripts/verify-geo-country.mjs
       - name: Verified 3.16.1 corrections, preserved history and saved-package contracts
         run: |
           node scripts/check-runtime-release-history.mjs HEAD^
@@ -125,6 +129,7 @@ jobs:
         with:
           name: consent-readiness-evidence
           path: |
+            .generated/geo-evidence/compiled-results.json
             .generated/readiness-evidence/browser-results.json
             .generated/readiness-evidence/boundary-results.json
             .generated/readiness-setup-evidence/*.json
