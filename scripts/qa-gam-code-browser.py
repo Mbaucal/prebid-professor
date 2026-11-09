@@ -33,7 +33,17 @@ with sync_playwright() as pw:
      now=datetime(2026,11,9,23,tzinfo=timezone.utc);page.clock.install(time=now);page.clock.pause_at(now+timedelta(seconds=1))
      page.add_style_tag(content=(pkg/'min-height.css').read_text())
      page.add_script_tag(content=mock)
+     if case['kind']=='lazy':
+      page.evaluate('''()=>{window.__codeIntersections=[];const Native=window.IntersectionObserver;
+       window.IntersectionObserver=class extends Native{constructor(callback,options){super((entries,observer)=>{
+        window.__codeIntersections.push(...entries.map(entry=>({id:entry.target.id,visible:entry.isIntersecting})));callback(entries,observer);
+       },options);}};}''')
      page.add_script_tag(content=(pkg/name).read_text())
+     if case['kind']=='lazy':
+      for turn in range(40):
+       page.clock.run_for(100);page.wait_for_timeout(25)
+       if page.evaluate('codes=>codes.every(code=>__codeIntersections.some(entry=>entry.id===code&&entry.visible))',case['codes']):break
+      assert page.evaluate('codes=>codes.every(code=>__codeIntersections.some(entry=>entry.id===code&&entry.visible))',case['codes']),('Native observer did not discover exact lazy IDs',case['codes'])
      page.clock.run_for(15000);page.evaluate('window.scrollTo(0,600)');page.clock.run_for(1000);page.wait_for_timeout(50);page.clock.run_for(100)
      actual=page.evaluate('''()=>({requests:__testAds.observations.requests,bids:__testAds.observations.bids.flatMap(r=>r.adUnits||[]),
       slots:__testAds.slots.map(s=>({id:s.id,path:s.path})),protos:{object:Object.getPrototypeOf({})===Object.prototype,array:Object.getPrototypeOf([])===Array.prototype},ids:[...document.querySelectorAll('[id]')].map(x=>x.id)})''')

@@ -41,6 +41,11 @@ for(const mode of ['gam','prebid']){
   configure(t,c=>c.runtimeControls.adPositions=Object.fromEntries([[code,{demand:mode==='prebid'?'site':'gam',desktopMinWidth:1024,desktopSeconds:0,mobileSeconds:0,countdown:false,frequencyMinutes:0}]]));
   plan.push({name:'overlay-'+mode+'-'+plan.length,mode,s:t,kind:'overlay',codes:['Control',code],overlay:code});
  }
+ {
+  const t=snapshot(mode==='prebid'),lazyCodes=['m.InText_1','lazy\"\\<:!()*','__proto__'];t.units=lazyCodes.map(code=>({...unit(code),type:'BTF'}));
+  t.rules=[{rule_key:'__DEFAULT__',rule_json:JSON.stringify({refresh:{enabled:false},lazy:{enabled:true,fetchMarginPx:500,renderMarginPx:0}})}];
+  plan.push({name:'lazy-'+mode,mode,s:t,kind:'lazy',codes:lazyCodes});
+ }
  for(const code of ['m.Legacy','legacy\"\\<:!()*']){
   const t=snapshot(mode==='prebid');t.units=[unit('Control')];
   const takeOver={enabled:true,adUnitCode:code,codelessAdUnitPath:'/123/test/Interstitial',desktopSize:[800,600],mobileSize:[300,250],desktopMinWidth:1024,autoCloseDesktopSec:0,autoCloseMobileSec:0};
