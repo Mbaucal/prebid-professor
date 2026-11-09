@@ -9,10 +9,11 @@ import {requireSupportedCacheGenerator} from './prebid-cache-settings.mjs';
 import { siteSetupState } from './setup-state.mjs';
 import { artifactResponseHeaders } from '../artifact-response-headers.ts';
 import { refreshSummary } from './refresh-summary.mjs';
+import { assertPinnedRuntime } from '../runtime/version-pin.mjs';
 
 const encode=new TextEncoder(),decode=new TextDecoder('utf-8',{fatal:true});
 const ID=/^builtin-release-[a-f0-9]{64}$/;
-const hasDealsPlan=runtime=>[['tessera-3.19.0','3.19.0'],['tessera-3.18.0','3.18.0'],['tessera-3.17.0','3.17.0'],['tessera-3.16.2','3.16.2'],['tessera-3.16.1','3.16.1'],['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version)&&runtime?.capabilities?.includes('prebid-deals');
+const hasDealsPlan=runtime=>[['tessera-3.20.0','3.20.0'],['tessera-3.19.0','3.19.0'],['tessera-3.18.0','3.18.0'],['tessera-3.17.0','3.17.0'],['tessera-3.16.2','3.16.2'],['tessera-3.16.1','3.16.1'],['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version)&&runtime?.capabilities?.includes('prebid-deals');
 const check=(ok,message,status=409)=>{if(!ok)throw Object.assign(new Error(message),{status});};
 const db=env=>env.DB.withSession('first-primary');
 const snapshot=(env,site)=>readPreviewSnapshot(db(env),site,{includePrebid:true});
@@ -23,6 +24,15 @@ const payload=row=>({id:row.id,version:row.version,status:row.status,notes:row.n
 export async function packageState(env,site,{testOnly=false}={}){
  const saved=await snapshot(env,site),revision=await digest(saved);let error=null,selected=null;
  try{selected=await readPinnedSiteRuntime({siteId:site,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);}catch(e){error=e.message;}
+ // A configuration error does not erase a valid saved script choice. Display
+ // only a catalog-verified pin; readiness still requires the complete check.
+ let displayPin=selected?.pin??null;
+ if(!displayPin){try{
+  const pin=JSON.parse(saved.config.config_json).builtinRuntimeSelection?.runtime;
+  const descriptor=runtimeCatalog.find(r=>r.id===pin?.runtimeId&&r.version===pin?.runtimeVersion);
+  assertPinnedRuntime(pin,descriptor,{configSchemaVersion:1,capabilities:['config-preview']});
+  displayPin=pin;
+ }catch{}}
  const setup=siteSetupState(saved);if(error&&setup.setupMessage)error=setup.setupMessage;
  const warnings=selected?refreshSummary(previewInput(selected.snapshot,selected.descriptor,'20000101_000000'),saved.units,selected.pin,saved.rules).warnings:[];
  if(setup.userSyncWarning)warnings.push(setup.userSyncWarning);
@@ -35,7 +45,7 @@ export async function packageState(env,site,{testOnly=false}={}){
      (a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id))) AS was_production
    FROM releases r WHERE r.publisher_id=? AND r.id NOT LIKE 'builtin-%' AND r.version NOT LIKE 'builtin-%'
    ORDER BY CASE WHEN r.status='production' OR EXISTS(SELECT 1 FROM audit_log a WHERE a.publisher_id=r.publisher_id AND a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id) THEN 0 ELSE 1 END,was_production DESC,r.created_at DESC,r.id DESC LIMIT 50`).bind(site).all();
- return {site:saved.site,enablePrebid:JSON.parse(saved.config.config_json).enablePrebid===true,revision,ready:!error,error,warnings,nextStep:cacheBlocked?'demand':error?setup.nextStep:null,runtime:selected?.pin??null,testOnly,releases:rows.results.map(payload),earlierReleases:earlier.results.map(r=>({...payload(r),canRestore:r.status==='archived'&&Boolean(r.was_production)}))};
+ return {site:saved.site,enablePrebid:JSON.parse(saved.config.config_json).enablePrebid===true,revision,ready:!error,error,warnings,nextStep:cacheBlocked?'demand':error?setup.nextStep:null,runtime:displayPin,testOnly,releases:rows.results.map(payload),earlierReleases:earlier.results.map(r=>({...payload(r),canRestore:r.status==='archived'&&Boolean(r.was_production)}))};
 }
 async function build(env,site,revision,stamp,testOnly){
  const saved=await snapshot(env,site);check(await digest(saved)===revision,'Settings changed. Reload before generating.');
@@ -58,7 +68,7 @@ export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
  }
  const {descriptor}=await describeCandidate(site,candidate);
  const id=`builtin-release-${descriptor.packageSha256}`,files={...candidate.files};
- const stable316=[['tessera-3.16.0','3.16.0'],['tessera-3.16.1','3.16.1'],['tessera-3.16.2','3.16.2'],['tessera-3.17.0','3.17.0'],['tessera-3.18.0','3.18.0'],['tessera-3.19.0','3.19.0']].some(([id,version])=>descriptor.runtime.runtimeId===id&&descriptor.runtime.runtimeVersion===version);
+ const stable316=[['tessera-3.16.0','3.16.0'],['tessera-3.16.1','3.16.1'],['tessera-3.16.2','3.16.2'],['tessera-3.17.0','3.17.0'],['tessera-3.18.0','3.18.0'],['tessera-3.19.0','3.19.0'],['tessera-3.20.0','3.20.0']].some(([id,version])=>descriptor.runtime.runtimeId===id&&descriptor.runtime.runtimeVersion===version);
  // Store the reviewed output as a complete, immutable release with exact source pins.
  const created=new Date().toISOString();
  // Manual hosting matches Pages publication: the compact wrapper keeps the public name ads.js.

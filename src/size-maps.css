@@ -78,6 +78,11 @@
   font-weight: 800;
 }
 
+.viewport-height-label {
+  display: block;
+  margin-top: 4px;
+}
+
 .size-chip-list {
   display: flex;
   flex-wrap: wrap;
@@ -223,6 +228,59 @@
   opacity: 0.35;
 }
 
+.size-map-compat-editor .breakpoint-form-row {
+  grid-template-columns: minmax(145px, 180px) minmax(0, 1fr) 40px;
+}
+
+.size-map-reservation-help {
+  margin: 0;
+  color: #526174;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.breakpoint-reserved-height,
+.breakpoint-viewport-height {
+  grid-column: 1 / -1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.breakpoint-reserved-height {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 3px 12px;
+  padding-top: 10px;
+  border-top: 1px solid #e3e8ef;
+  color: #465161;
+}
+
+.breakpoint-reserved-height output {
+  color: #166534;
+  font-weight: 800;
+}
+
+.breakpoint-reserved-height small {
+  grid-column: 1 / -1;
+  color: #667181;
+}
+
+.breakpoint-viewport-height summary {
+  cursor: pointer;
+  color: #465161;
+  font-weight: 700;
+}
+
+.breakpoint-viewport-height label {
+  margin-top: 10px;
+}
+
+.breakpoint-viewport-height input {
+  width: min(100%, 180px);
+}
+
 @media (max-width: 1180px) {
   .breakpoint-form-row {
     grid-template-columns: 100px 100px minmax(320px, 1fr) 38px;
@@ -275,5 +333,18 @@
 
   .breakpoint-remove {
     width: 100%;
+  }
+
+  .size-map-compat-editor .breakpoint-form-row,
+  .breakpoint-reserved-height {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .size-map-compat-editor .breakpoint-editor-heading {
+    flex-direction: column;
+  }
+
+  .size-map-compat-editor .breakpoint-editor-heading button {
+    align-self: stretch;
   }
 }

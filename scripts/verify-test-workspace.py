@@ -59,7 +59,7 @@ def exercise(page):
         page.locator('#allow-preview').check()
         expect(page.locator('#release-history article')).to_have_count(14)
         expect(page.locator('#release-history article[data-available="true"]')).to_have_count(13)
-        expect(page.locator('#release-history article > h3')).to_contain_text(['3.19.0','3.18.0','3.17.0','3.16.2','3.16.1','3.16.0','3.16.0-revenue.preview.3','3.16.0-revenue.preview.2','3.16.0-revenue.preview.1','3.14.0','3.13.0','3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.9.1-tessera.preview.2'])
+        expect(page.locator('#release-history article > h3')).to_contain_text(['3.20.0','3.19.0','3.18.0','3.17.0','3.16.2','3.16.1','3.16.0','3.16.0-revenue.preview.3','3.16.0-revenue.preview.2','3.16.0-revenue.preview.1','3.14.0','3.13.0','3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.9.1-tessera.preview.2'])
         expect(page.locator('#release-history article[data-available="false"]')).to_contain_text('Earlier build')
         writes_before=sum(event['method']=='POST' for event in http_events)
         page.get_by_role('link',name='View version history').click()

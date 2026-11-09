@@ -1,5 +1,45 @@
 [
   {
+    "id": "tessera-3.20.0",
+    "version": "3.20.0",
+    "codeSha256": "41d542a0adf9ae22ca557bd4fd36d26dfacd52eee9be5f95a20501e3dd6a4aee",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules",
+      "viewport-height-size-maps"
+    ],
+    "date": "2026-11-09",
+    "title": "Tessera 3.20.0 — consistent viewport maps and clearer validation",
+    "sourceManifest": "scripts/prepare-runtime320.mjs",
+    "sourceCommit": "0da8624fa8e1fe360a3f5edb69a06d752ea4a61d",
+    "changes": [
+      "GPT, Prebid and reserved CSS select the same width and height breakpoint. Sticky, page-type and conditional maps retain their configured size limits.",
+      "An unmatched map has no eligible sizes; empty rows remain disabled. Existing saved maps are preserved and any added empty baseline is documented in the generated package.",
+      "Never-requested ATF Banner and Bottom Sticky can start after an eligible viewport change through the existing consent and lazy-loading gates. Resize does not refresh served or closed positions.",
+      "Bidder overrides belonging to disabled or draft positions do not block generation. They remain saved for reactivation; genuinely missing positions still require correction.",
+      "Browser viewport conditions are separate from CSS reserved height. Existing site selections, runtime sources and packages remain unchanged until a new version is selected."
+    ]
+  },
+  {
     "id": "tessera-3.19.0",
     "version": "3.19.0",
     "codeSha256": "a93924a8f0b800dc109bbe68c6fe61cd387b3e84c04db97fabeb15e23659be95",

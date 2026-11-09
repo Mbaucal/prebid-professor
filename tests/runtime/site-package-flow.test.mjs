@@ -86,6 +86,24 @@ test('built-in Generate stores original package; channels and rollback reuse its
  assert.equal((await packageDownload(f.env,'first',a.id)).status,200);
  assert.match(f.sqlite.prepare('SELECT rule_json FROM unit_rules').get().rule_json,/1700/);
 });
+test('package readiness retains a verified old script choice and actionable map error without changing saved data',async()=>{
+ const f=await fixture(),settings=await siteRuntimeSettings(f.env,'first');
+ const old=settings.runtimes.find(r=>r.version==='3.19.0');assert(old);
+ await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:settings.revision,runtime:old.pin,allowPreview:true});
+ f.sqlite.prepare('UPDATE size_maps SET map_json=?').run(JSON.stringify([{viewport:[0,0],sizes:[[300,250]]},{viewport:[768,600],sizes:[[300,600]]}]));
+ const before=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
+ const maps=f.sqlite.prepare('SELECT map_json FROM size_maps').get().map_json;
+ const state=await packageState(f.env,'first');
+ assert.equal(state.ready,false);assert.equal(state.nextStep,null);assert.deepEqual(state.runtime,old.pin);
+ assert.match(state.error,/Billboard: map display, row 2 requires browser height 600px/);
+ await assert.rejects(generate(f),/map display, row 2 requires browser height 600px/);
+ assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
+ assert.equal(f.sqlite.prepare('SELECT map_json FROM size_maps').get().map_json,maps);
+ assert.equal(f.objects.size,0);
+ const bad=JSON.parse(before);bad.builtinRuntimeSelection.runtime.runtimeSha256='0'.repeat(64);
+ f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(bad));
+ const invalid=await packageState(f.env,'first');assert.equal(invalid.ready,false);assert.equal(invalid.runtime,null);
+});
 for(const cleanComments of [true,false])test('saved 3.16.2 ZIP retains readable source and SChain with cleanComments='+cleanComments,async()=>{
  const f=await fixture(),decode=bytes=>new TextDecoder().decode(bytes);
  const prebid=new Uint8Array(readFileSync('vendor/prebid/tanjug-11.34.0/prebid.js')),header=parsePrebidHeader(decode(prebid));
