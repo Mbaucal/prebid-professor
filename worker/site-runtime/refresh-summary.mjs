@@ -6,12 +6,12 @@ const parseRule = value => {try {return typeof value === 'string' ? JSON.parse(v
 export function refreshSummary(input, units, runtime, basicRules = []) {
   const warnings = [];
   if (!input) return {units: [], warnings};
-  const rules = input.core.adUnitRules;
+  const rules = Object.assign(Object.create(null), input.core.adUnitRules);
   const blocked = [];
   const selected = ([id, version]) => (runtime?.runtimeId ?? runtime?.id) === id && (runtime?.runtimeVersion ?? runtime?.version) === version;
   // 3.16.2 checks a position without its own saved percentage against the
   // script's inherited threshold (Default refresh, else ATF refresh, else 50%).
-  const inheritedViewPct = (selected(['tessera-3.19.0', '3.19.0']) || selected(['tessera-3.18.0', '3.18.0']) || selected(['tessera-3.16.2', '3.16.2']) || selected(['tessera-3.17.0', '3.17.0'])) ? Number(input.core.globalRefresh.minViewPct ?? 50) : null;
+  const inheritedViewPct = (selected(['tessera-3.19.1', '3.19.1']) || selected(['tessera-3.19.0', '3.19.0']) || selected(['tessera-3.18.0', '3.18.0']) || selected(['tessera-3.16.2', '3.16.2']) || selected(['tessera-3.17.0', '3.17.0'])) ? Number(input.core.globalRefresh.minViewPct ?? 50) : null;
   const inheritedNote = input.core.globalRefresh.minViewPct == null ? `its default ${inheritedViewPct}%`
     : `the ${inheritedViewPct}% saved in the ${rules.__DEFAULT__?.refresh != null ? 'Default' : 'ATF'} refresh rule`;
   // Version-pin capabilities are a frozen schema; the newly registered source
@@ -21,9 +21,9 @@ export function refreshSummary(input, units, runtime, basicRules = []) {
   // global minimum time, before it the global minimum wall-clock gap, else the dwell time. On
   // an ATF-only site that is the ATF refresh, so a BTF position runs at the ATF interval.
   const fallbackSeconds = refreshFallbacks(input.core.globalRefresh, hasWallClockGap).minSeconds;
-  const notes = {};
+  const notes = Object.create(null);
   // Sentences a row keeps when an interval note replaces its first one.
-  const extra = {};
+  const extra = Object.create(null);
   const rows = units.map(unit => {
     const group = unit.type === 'ATF' ? '__ATF__' : '__BTF__';
     const scopes = [rules.__DEFAULT__, rules[group], rules[unit.code]].filter(Boolean);

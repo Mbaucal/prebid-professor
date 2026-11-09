@@ -3,7 +3,9 @@ export function formatMinimumHeightCss(css: string): string {
   const source = css.replace(/\/\*[\s\S]*?\*\//g, ' ').trim();
   const widths = new Map<number, Map<string, number>>();
   const lastWidth = new Map<string, number>();
-  const selectorPattern = /^#[A-Za-z](?:[A-Za-z0-9_-]|\\:)*$/;
+  // An ID selector may contain escaped GAM punctuation and an escaped leading digit.
+  // Reject selector operators; unfamiliar/custom CSS still keeps its original bytes.
+  const selectorPattern = /^#(?:[_A-Za-z\u0080-\uFFFF]|-(?=[_A-Za-z\u0080-\uFFFF\\-])|\\(?:[0-9A-Fa-f]{1,6}[ \t\r\n\f]?|[^\r\n\f]))(?:[_A-Za-z0-9\u0080-\uFFFF-]|\\(?:[0-9A-Fa-f]{1,6}[ \t\r\n\f]?|[^\r\n\f]))*$/u;
   let offset = 0;
 
   function skipSpace() {

@@ -1,3 +1,4 @@
+import { escapeCssId, escapeHtml } from '../shared/gam/ad-unit-code.mjs';
 import { isStoredBuiltinDraft, STORED_DRAFT_BLOCK } from './runtime/stored-draft-safety.mjs';
 import { artifactResponseHeaders } from './artifact-response-headers';
 import { apiError, getActor, json } from './http';
@@ -516,7 +517,9 @@ function runtimeData(snapshot: Snapshot) {
 }
 
 function cssEscape(value: string): string {
-  return value.replace(/([^A-Za-z0-9_-])/g, '\\$1');
+  // Keep legacy saved IDs readable while applying proper CSS escaping to GAM codes.
+  if (/^[A-Za-z][A-Za-z0-9_:-]{100,127}$/.test(value)) return value.replace(/([^A-Za-z0-9_-])/g, '\\$1');
+  return escapeCssId(value).slice(1);
 }
 function activeBreakpoint(map: SizeMapBreakpoint[], width: number): SizeMapBreakpoint | null {
   let selected: SizeMapBreakpoint | null = null;
@@ -724,16 +727,16 @@ function divCsv(snapshot: Snapshot): string {
   const rows = [['Ad unit name', 'Div', 'class']];
   for (const unit of snapshot.adUnits.filter((row) => row.enabled === 1 && row.type !== 'DRAFT')) {
     const className = unit.type === 'BTF' ? 'wrapperAd lazyAd' : 'wrapperAd';
-    rows.push([unit.code, `<div id="${unit.code}" class="${className}"></div>`, className]);
+    rows.push([unit.code, `<div id="${escapeHtml(unit.code)}" class="${className}"></div>`, className]);
   }
   return `${rows.map((row) => row.map(csvCell).join(',')).join('\n')}\n`;
 }
 function implementationHtml(snapshot: Snapshot, origin: string): string {
   const divs = snapshot.adUnits.filter((unit) => unit.enabled === 1 && unit.type !== 'DRAFT').map((unit) => {
     const className = unit.type === 'BTF' ? 'wrapperAd lazyAd' : 'wrapperAd';
-    return `<!-- ${unit.code} -->\n<div id="${unit.code}" class="${className}"></div>`;
+    return `<!-- ${escapeHtml(unit.code).replace(/--/g, '&#45;&#45;')} -->\n<div id="${escapeHtml(unit.code)}" class="${className}"></div>`;
   }).join('\n\n');
-  return `<!-- Prebid Professor implementation for ${snapshot.site.name} -->\n<link rel="stylesheet" href="${origin}/cdn/${snapshot.site.id}/current/min-height.css">\n<!-- ads.min.js injects sticky base styles. sticky.css is an optional handoff and override artifact. -->\n<script src="${origin}/cdn/${snapshot.site.id}/current/prebid.js"></script>\n<script src="${origin}/cdn/${snapshot.site.id}/current/ads.min.js"></script>\n\n${divs}\n`;
+  return `<!-- Prebid Professor implementation for ${escapeHtml(snapshot.site.name).replace(/--/g, '&#45;&#45;')} -->\n<link rel="stylesheet" href="${origin}/cdn/${snapshot.site.id}/current/min-height.css">\n<!-- ads.min.js injects sticky base styles. sticky.css is an optional handoff and override artifact. -->\n<script src="${origin}/cdn/${snapshot.site.id}/current/prebid.js"></script>\n<script src="${origin}/cdn/${snapshot.site.id}/current/ads.min.js"></script>\n\n${divs}\n`;
 }
 
 async function putArtifact(bucket: R2Bucket, key: string, body: string | ArrayBuffer, fileName: string, metadata: Record<string, string>) {

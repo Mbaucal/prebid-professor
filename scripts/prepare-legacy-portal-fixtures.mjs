@@ -10,6 +10,7 @@ import { compileRuntime } from '../worker/runtime-compiler.ts';
 import { compileReferenceBuild } from '../worker/runtime/reference-bridge.mjs';
 import { fixture } from '../tests/runtime/bridge-fixture.mjs';
 import { patchLegacyStickyPortal, patchLegacyStickyPortalCss } from '../worker/legacy-sticky-portal.mjs';
+import { escapeCssId } from '../shared/gam/ad-unit-code.mjs';
 
 const f = fixture();
 f.options.enablePrebid = false;
@@ -40,14 +41,14 @@ const names = ['isRecord', 'cssEscape', 'cssCommentText', 'stickyCss'];
 const cssFunctions = cssAst.body.filter(n => n.type === 'FunctionDeclaration' && names.includes(n.id.name));
 if (cssFunctions.length !== names.length) throw Error('Legacy CSS helper structure changed.');
 // Executes only trusted repository functions, never uploaded scripts or advertiser content.
-const cssProducer = Function('patchLegacyStickyPortalCss', cssFunctions.map(n => cssSource.slice(n.start, n.end)).join('\n') + ';return stickyCss;');
+const cssProducer = Function('patchLegacyStickyPortalCss', 'escapeCssId', cssFunctions.map(n => cssSource.slice(n.start, n.end)).join('\n') + ';return stickyCss;');
 const cssInput = { site: { name: 'Local portal test', domain: 'example.invalid' }, config: {
   runtimeControls: { sticky: { bottomAdUnitId: 'Sticky', topAdUnitId: '', allowClosePortal: true } },
 }, adUnits: [{ code: 'Sticky', enabled: 1 }] };
 // Isolate the baseline appearance from the new repair. The positive fixture
 // comes from the actual producer with its real helper, not a copied CSS string.
-const css = cssProducer(source => source)(cssInput);
-const fixedCss = cssProducer(patchLegacyStickyPortalCss)(cssInput);
+const css = cssProducer(source => source, escapeCssId)(cssInput);
+const fixedCss = cssProducer(patchLegacyStickyPortalCss, escapeCssId)(cssInput);
 assert.equal(fixedCss, patchLegacyStickyPortalCss(css, true));
 const directory = '.generated/legacy-portal-evidence';
 await mkdir(directory, { recursive: true });

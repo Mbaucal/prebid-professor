@@ -354,13 +354,13 @@ async function prepareConfigUpdate(
   if (!row) throw new Error('Publisher config was not found.');
   checkExpectation(rows, expectation);
   const config = JSON.parse(row.config_json) as JsonRecord;
-  const savedRules: Record<string, UnitRuleConfig> = {};
+  const savedRules: Record<string, UnitRuleConfig> = Object.create(null);
   for (const item of rows) savedRules[item.rule_key] = parseStoredRule(item.rule_json);
-  const unitRules: Record<string, UnitRuleConfig> = { ...savedRules };
+  const unitRules: Record<string, UnitRuleConfig> = Object.assign(Object.create(null), savedRules);
   const previous = unitRules[ruleKey];
   if (rule) unitRules[ruleKey] = rule; else delete unitRules[ruleKey];
   config.unitRules = unitRules;
-  const advanced = isRecord(config.advancedUnitRules) ? config.advancedUnitRules : {};
+  const advanced = Object.assign(Object.create(null), isRecord(config.advancedUnitRules) ? config.advancedUnitRules : {});
   const current = isRecord(advanced[ruleKey]) ? { ...advanced[ruleKey] } : null;
   if (!rule && current) {
     // Display/loading owns lazy, so deleting refresh must retain that setting.

@@ -1,3 +1,4 @@
+import { validateAdUnitCode } from '../shared/gam/ad-unit-code.mjs';
 import type {
   CsvImportInput,
   CsvImportKind,
@@ -213,9 +214,8 @@ async function buildAdUnits(db: D1Database, publisherId: string, csv: string): P
     let enabled = true;
     let sortOrder = 0;
 
-    if (!/^[A-Za-z][A-Za-z0-9_:\-]{0,127}$/.test(code)) {
-      errors.push('code must start with a letter and use letters, numbers, underscore, dash or colon.');
-    }
+    // Existing legacy IDs remain editable without changing their saved identity.
+    if (!(existing.has(code) && /^[A-Za-z][A-Za-z0-9_:\-]{100,127}$/.test(code))) errors.push(...validateAdUnitCode(code));
     if (!['ATF', 'BTF', 'DRAFT'].includes(type)) errors.push('type must be ATF, BTF or DRAFT.');
     if (seen.has(code)) errors.push(`Duplicate ad unit code "${code}" inside this CSV.`);
     if (code) seen.add(code);

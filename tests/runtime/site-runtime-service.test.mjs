@@ -54,14 +54,14 @@ test('one current recommendation leaves historical catalog, unconfigured site an
  const audits=f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n;
  const state=await siteRuntimeSettings(f.env,'test-site');
  assert.equal(state.selected,null);
- assert.equal(state.currentRuntime.version,'3.19.0');
- assert.equal(state.currentRuntime.pin.runtimeId,'tessera-3.19.0');
+ assert.equal(state.currentRuntime.version,'3.19.1');
+ assert.equal(state.currentRuntime.pin.runtimeId,'tessera-3.19.1');
  assert.notEqual(state.currentRuntime.pin.runtimeSha256,'c257412bbcfa4e004a4e56dd320b4c043bdfc4b755bde7cdfa32b09ce4a189da');
  assert.deepEqual(state.currentRuntime,state.runtimes.find(item=>item.version===state.currentRuntime.version));
  assert.equal(state.currentRuntime.channel,'stable');
  assert(state.runtimes.every(item=>['stable','preview'].includes(item.channel)));
  assert.equal(state.runtimes.find(item=>item.version==='3.16.0-revenue.preview.3').channel,'preview');
- assert.deepEqual(state.runtimes.map(item=>item.version),['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.13.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3','3.16.0','3.16.1','3.16.2','3.17.0','3.18.0','3.19.0']);
+ assert.deepEqual(state.runtimes.map(item=>item.version),['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.13.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3','3.16.0','3.16.1','3.16.2','3.17.0','3.18.0','3.19.0','3.19.1']);
  assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,audits);
  assert.equal(f.log.gets.length,0);assert.equal(f.log.puts.length,0);
@@ -79,7 +79,7 @@ test('new setup explicitly saves the current pin and generates its exact runtime
 test('a saved 3.16.1 pin keeps generating 3.16.1 after 3.18.0 becomes the current recommendation',async()=>{
  const {f}=await setup();let state=await siteRuntimeSettings(f.env,'test-site');
  const previous=state.runtimes.find(item=>item.version==='3.16.1');
- assert.equal(previous.channel,'stable');assert.equal(state.currentRuntime.version,'3.19.0');
+ assert.equal(previous.channel,'stable');assert.equal(state.currentRuntime.version,'3.19.1');
  await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:state.revision,runtime:previous.pin,allowPreview:false,enablePrebid:false});
  const before=f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json;
  state=await siteRuntimeSettings(f.env,'test-site');
@@ -109,6 +109,24 @@ test('loading summary reads saved display overrides and never writes configurati
  assert.equal(row.label,'Lazy load');assert.equal(row.source,'Ad unit override');assert.match(row.detail,/100px/);
  assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,audits);
+});
+test('position lazy settings preserve prototype-shaped GAM codes as own entries',async()=>{
+ const targets=[Object.prototype,Object,Object.prototype.toString];
+ const before=targets.map(target=>Object.getOwnPropertyDescriptors(target));
+ const lazy={enabled:true,fetchMarginPx:500,renderMarginPx:100};
+ for(const code of ['__proto__','constructor','toString']){
+  const {f}=await setup();
+  f.sqlite.prepare("UPDATE ad_units SET code=? WHERE code='Billboard'").run(code);
+  let state=await siteRuntimeSettings(f.env,'test-site');
+  await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'setup',revision:state.revision,runtime:state.currentRuntime.pin,allowPreview:false,enablePrebid:false});
+  state=await siteRuntimeSettings(f.env,'test-site');
+  await changeSiteRuntime(f.env,'test-site',TEST_EMAIL,{action:'position',revision:state.revision,position:{code,display:'standard',overlay:null,lazy}});
+  const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+  assert(Object.hasOwn(config.advancedUnitRules,code),code+' must be a persisted own key');
+  assert.deepEqual(config.advancedUnitRules[code].lazy,lazy);
+  assert.deepEqual((await siteRuntimeSettings(f.env,'test-site')).positions.find(unit=>unit.code===code).lazy,lazy);
+  targets.forEach((target,index)=>assert.deepEqual(Object.getOwnPropertyDescriptors(target),before[index],code+' must not mutate shared prototypes or functions'));
+ }
 });
 test('one explicit setup saves GAM-only mode and a built-in version without a template or Prebid file',async()=>{
  const {f}=await setup();

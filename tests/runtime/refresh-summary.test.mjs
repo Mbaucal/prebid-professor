@@ -6,6 +6,19 @@ import {runtimeCatalog,previewInput} from '../../worker/test-workspace/runtime-c
 const old=runtimeCatalog.find(r=>r.version==='3.16.0');
 const make=()=>{const snapshot=positionFixture(false),config=JSON.parse(snapshot.config.config_json);delete config.runtimeControls.adPositions;snapshot.units=snapshot.units.filter(u=>u.code!=='Overlay');snapshot.rules=[];snapshot.config.config_json=JSON.stringify(config);return snapshot;};
 const summarize=(s,r=old)=>refreshSummary(previewInput(s,r,'20261024_120000'),s.units,r);
+test('prototype-shaped GAM codes show the same inherited refresh explanation as ordinary codes',()=>{
+ const runtime=runtimeCatalog.find(r=>r.version==='3.19.1');
+ for(const refresh of [{enabled:true,minSeconds:30},{enabled:true,minSeconds:30,minViewPct:50}]){
+  const baseline=make();baseline.rules=[{rule_key:'__DEFAULT__',rule_json:JSON.stringify({refresh})}];
+  const expected=summarize(baseline,runtime).units.find(u=>u.code==='P1');
+  for(const code of ['__proto__','constructor','toString']){
+   const saved=structuredClone(baseline);saved.units.find(u=>u.code==='P1').code=code;
+   const actual=summarize(saved,runtime).units.find(u=>u.code===code);
+   assert.deepEqual(actual,{...expected,code});
+   assert.doesNotMatch(actual.detail,/\[object Object\]|native code|function/);
+  }
+ }
+});
 test('older script shows Disabled when a content override cannot bypass the global refresh switch',()=>{
  const s=make();s.rules=[{rule_key:'P1',rule_json:JSON.stringify({timeout:1200,refresh:{enabled:true,minSeconds:15,minViewPct:75}})}];const before=JSON.stringify(s),summary=summarize(s);assert.equal(summary.units.find(u=>u.code==='P1').label,'Disabled');assert.equal(summary.units.find(u=>u.code==='P1').timeout,1200);assert.match(summary.warnings[0],/global switch.*P1/);assert.match(summary.units.find(u=>u.code==='P1').detail,/not applied/);assert.equal(JSON.stringify(s),before);
 });

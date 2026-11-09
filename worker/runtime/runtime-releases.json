@@ -1,5 +1,43 @@
 [
   {
+    "id": "tessera-3.19.1",
+    "version": "3.19.1",
+    "codeSha256": "7b5306c280c1644ee15a23f254940ff4d356355030b9603da67e2e125d37cdec",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules",
+      "gam-code-compatibility"
+    ],
+    "date": "2026-11-09",
+    "title": "Tessera 3.19.1 \u2014 exact GAM ad unit codes",
+    "sourceManifest": "scripts/prepare-runtime3191.mjs",
+    "sourceCommit": "8794c0cb097fbc011afe3c65d358f0bbc9041fdd",
+    "changes": [
+      "Preserve GAM codes containing periods, leading numbers, Unicode and supported punctuation through imports, GPT, Prebid and exported markup.",
+      "Escape HTML and CSS without changing the saved GAM identity; historical scripts and saved packages remain unchanged.",
+      "Use this patch explicitly for existing GAM codes rejected by older script versions. No publisher is upgraded automatically."
+    ]
+  },
+  {
     "id": "tessera-3.19.0",
     "version": "3.19.0",
     "codeSha256": "a93924a8f0b800dc109bbe68c6fe61cd387b3e84c04db97fabeb15e23659be95",
@@ -27,7 +65,7 @@
       "interstitial-fallback-rules"
     ],
     "date": "2026-11-09",
-    "title": "Tessera 3.19.0 — country rules and GAM targeting",
+    "title": "Tessera 3.19.0 \u2014 country rules and GAM targeting",
     "sourceManifest": "scripts/prepare-runtime319.mjs",
     "sourceCommit": "b3de0051644b2c8d4d50481f4669c33fa9c70bd3",
     "changes": [
@@ -61,7 +99,7 @@
       "country-signal"
     ],
     "date": "2026-11-09",
-    "title": "Tessera 3.18.0 — background country recognition",
+    "title": "Tessera 3.18.0 \u2014 background country recognition",
     "sourceManifest": "scripts/prepare-runtime318.mjs",
     "sourceCommit": "40c55229ecf232674100137d5728bb37b3edf749",
     "changes": [
@@ -95,7 +133,7 @@
       "literal-schain"
     ],
     "date": "2026-11-09",
-    "title": "Tessera 3.17.0 — page key-value rules for Banner and Sticky",
+    "title": "Tessera 3.17.0 \u2014 page key-value rules for Banner and Sticky",
     "sourceManifest": "scripts/prepare-runtime317.mjs",
     "sourceCommit": "3fafca5bfcea8155fdc3cf9e424411da9af561fc",
     "changes": [
@@ -127,7 +165,7 @@
       "outstream-pilot"
     ],
     "date": "2026-10-26",
-    "title": "Tessera 3.16.2 — empty Sticky retry, inherited refresh visibility threshold and schedule steps",
+    "title": "Tessera 3.16.2 \u2014 empty Sticky retry, inherited refresh visibility threshold and schedule steps",
     "sourceManifest": "scripts/prepare-runtime3162.mjs",
     "sourceCommit": "dbf391e365a8641b6f6e1a011233c51b13adc2c3",
     "changes": [
@@ -161,7 +199,7 @@
       "outstream-pilot"
     ],
     "date": "2026-10-24",
-    "title": "Tessera 3.16.1 — verified refresh and delivery corrections",
+    "title": "Tessera 3.16.1 \u2014 verified refresh and delivery corrections",
     "sourceManifest": "scripts/prepare-runtime3161.mjs",
     "sourceCommit": "b8466a6d582f5085fbb8a03f29b88b42af5770e8",
     "changes": [
