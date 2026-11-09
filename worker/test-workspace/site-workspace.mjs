@@ -8,19 +8,26 @@ import { assertWorkspaceSiteScope } from './site-draft.mjs';
 import { dealSettingsResponse } from '../site-runtime/deal-settings.mjs';
 import { outstreamSettingsResponse } from '../site-runtime/outstream-settings.mjs';
 import { TEST_SITE } from './boundary.mjs';
+import {cleanupResponse,cleanupState} from './package-cleanup.mjs';
 // Entered only after the TEST host, authentication and same-origin guards.
 export async function siteWorkspaceResponse(request,env,actor,headers){
  const url=new URL(request.url);
  const testPage=url.pathname.match(/^\/test-api\/site-test-page\/(builtin-draft-[a-f0-9]{64})$/);
  if(testPage)return packageTestPageResponse(request,env,'test-site',testPage[1],{testOnly:true});
- if(!['/site-workspace','/site-workspace.js','/test-api/site-runtime','/test-api/site-packages','/test-api/deals','/test-api/outstream-settings'].includes(url.pathname))return null;
+ if(!['/site-workspace','/site-workspace.js','/test-api/site-runtime','/test-api/site-packages','/test-api/package-cleanup','/test-api/deals','/test-api/outstream-settings'].includes(url.pathname))return null;
  if(url.search)return new Response('Not found',{status:404,headers});
- if(['/test-api/site-runtime','/test-api/site-packages','/test-api/deals','/test-api/outstream-settings'].includes(url.pathname)){
+ if(['/test-api/site-runtime','/test-api/site-packages','/test-api/package-cleanup','/test-api/deals','/test-api/outstream-settings'].includes(url.pathname)){
   if(!(await inspectTestSchema(env.DB)).ready)return new Response(JSON.stringify({error:'Prepare TEST data first.'}),{status:409,headers:{...headers,'content-type':'application/json'}});
+  if(url.pathname==='/test-api/package-cleanup')return cleanupResponse(request,env,actor.email,headers);
   assertWorkspaceSiteScope(await readPreviewSnapshot(env.DB.withSession('first-primary'),'test-site',{includePrebid:true}));
   if(url.pathname==='/test-api/deals')return dealSettingsResponse(request,env,TEST_SITE,actor.email);
   if(url.pathname==='/test-api/outstream-settings')return outstreamSettingsResponse(request,env,TEST_SITE,actor.email);
-  return url.pathname==='/test-api/site-packages'?packageResponse(request,env,'test-site',actor.email,{testOnly:true}):siteRuntimeResponse(request,env,'test-site',actor.email,{testOnly:true});
+  if(url.pathname==='/test-api/site-packages'){
+   const response=await packageResponse(request,env,TEST_SITE,actor.email,{testOnly:true});
+   if(request.method==='GET'&&response.ok)return new Response(JSON.stringify({...await response.json(),cleanup:await cleanupState(env)}),{status:response.status,headers:response.headers});
+   return response;
+  }
+  return siteRuntimeResponse(request,env,TEST_SITE,actor.email,{testOnly:true});
  }
  if(request.method!=='GET')return new Response('Method not allowed',{status:405,headers});
  if(url.pathname.endsWith('.js'))return new Response(workspaceJs,{headers:{...headers,'content-type':'application/javascript; charset=utf-8'}});

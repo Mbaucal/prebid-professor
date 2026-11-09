@@ -6,6 +6,10 @@ import { packageResponse } from '../worker/site-runtime/releases.mjs';
 import { workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD } from '../tests/support/test-workspace-store.mjs';
 const revenueMode=process.argv.includes('--revenue');
 const f=workspaceStore({prebidFiles:revenueMode});
+if(process.argv.includes('--cleanup')){
+ f.env.BUILDS.delete=async keys=>{for(const key of keys)f.objects.delete(key);};
+ f.env.BUILDS.head=async key=>f.objects.has(key)?{key}:null;
+}
 globalThis.fetch=()=>{throw Error('External network is forbidden in this fixture');};
 let cookie;
 if(revenueMode){({cookie}=await(await import('../tests/support/revenue-workspace-fixture.mjs')).initializeRevenueWorkspace(f,{runtimeId:'tessera-revenue-preview-2',legacyTakeOver:true}));}

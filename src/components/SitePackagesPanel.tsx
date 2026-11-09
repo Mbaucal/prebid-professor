@@ -11,6 +11,7 @@ type PackageState = {
  revision:string;channelRevision:string;ready:boolean;error:string|null;nextStep:string|null;
  testOnly:boolean;releases:Release[];earlierReleases:Release[];
  warnings?:string[];
+ cleanup?:{count:number;limit:number;deletable:number;protectedCount:number;pending:number;revision:string};
 };
 type Props={publisherId:string;endpoint?:string;settingsEndpoint?:string;onChanged?:()=>void|Promise<void>;onNavigate?:(destination:'prebid'|'versions')=>void};
 export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint,onChanged,onNavigate}:Props){
@@ -23,6 +24,15 @@ export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint
  async function run(fn:()=>Promise<void>){if(busy)return;setBusy(true);setFailed(false);try{await fn();}catch(e){setMessage(e instanceof Error?e.message:'Package action failed.');setFailed(true);}finally{setBusy(false);}}
  async function generate(){await request({action:'generate',revision:state!.revision,notes});setNotes('');await reload();setMessage('Package saved in Releases. Your settings are unchanged.');await onChanged?.();}
  async function download(id:string){await downloadStoredPackage(id,setMessage,state!.testOnly?{}:{siteId:publisherId});}
+ async function clearGenerated(){
+  const cleanup=state?.cleanup;if(!cleanup||!state?.testOnly)return;
+  if(cleanup.deletable&&!window.confirm(`Delete ${cleanup.deletable} generated TEST packages? Their saved ZIPs and test pages will no longer be available. Site settings and existing deployments stay unchanged.`))return;
+  const response=await fetch('/test-api/package-cleanup',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({revision:cleanup.revision,acknowledge:true})});
+  if(!response.ok)throw Error((await response.json() as {error?:string}).error||'Could not delete generated packages.');
+  const result=await response.json() as {deleted:number;count:number;limit:number;pending:number};
+  await reload();await onChanged?.();
+  setMessage(`${result.deleted} generated packages deleted. ${result.count} of ${result.limit} spaces used.${result.pending?' Some stored files still need cleanup. Use Retry file cleanup.':''}`);
+ }
  async function restoreEarlier(r:Release){
   if(!r.canRestore||!window.confirm(`Restore previously published version ${r.version} to Tessera's current channel?`))return;
   const response=await fetch(`/api/publishers/${encodeURIComponent(publisherId)}/releases/${encodeURIComponent(r.id)}/rollback`,{method:'POST',credentials:'same-origin'});
@@ -45,6 +55,7 @@ export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint
  </>}
  {editingSetup && state.ready ? <button disabled={busy} onClick={()=>setEditingSetup(false)}>Cancel setup changes</button> : null}
  <h3>2. Generate your script</h3>
+ {state.testOnly&&state.cleanup?<div className="runtime-actions"><span>{state.cleanup.count} of {state.cleanup.limit} package spaces used{state.cleanup.protectedCount?` · ${state.cleanup.protectedCount} incomplete uploads retained`:''}</span><button disabled={busy||(!state.cleanup.deletable&&!state.cleanup.pending)} onClick={()=>void run(clearGenerated)}>{state.cleanup.pending&&!state.cleanup.deletable?'Retry file cleanup':'Delete all generated packages'}</button></div>:null}
  {state.warnings?.map(warning=><p role="status" className="script-prebid-note" key={warning}>{warning}</p>)}
  <p>Create a ZIP from your saved ad units and size maps, then download it below.</p>
  <label>What changed?<input maxLength={160} value={notes} disabled={busy} onChange={e=>setNotes(e.target.value)} placeholder="Short release note"/></label>
