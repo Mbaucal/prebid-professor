@@ -91,6 +91,9 @@ def exercise(page):
     second=page.context.new_page()
     second.goto(origin+'/prebid-settings')
     expect(second.locator('#editor')).to_be_enabled()
+    # Finish its initial debounced preflight before the other tab changes the
+    # revision. Otherwise that read can detect staleness before the save under test.
+    expect(second.locator('#plan-state')).to_contain_text('modules selected automatically')
     page.locator('#ack').uncheck()
     with page.expect_download() as exported:
         page.locator('#download-config').click()
