@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/readiness-setup-evidence';out.mkdir(parents=True,exist_ok=True)
 origin='https://main-revenue.fixture.invalid';endpoint='/api/publishers/main-site/builtin-site-settings'
-current='3.19.0';checks=[]
+current='3.20.0';checks=[]
 with sync_playwright() as playwright:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
  executable=os.environ.get('CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROMIUM_PATH')
@@ -70,7 +70,7 @@ with sync_playwright() as playwright:
      expect(panel.locator('select')).to_have_count(1);expect(selector).to_be_visible()
      labels=selector.locator('option').all_text_contents()
      fresh=[label.split(' · ')[0] for label in labels if 'Saved earlier build' not in label]
-     assert fresh==['3.19.0','3.18.0','3.17.0','3.16.2','3.16.1','3.16.0','3.15.0','3.14.0','3.13.0'],labels
+     assert fresh==['3.20.0','3.19.0','3.18.0','3.17.0','3.16.2','3.16.1','3.16.0','3.15.0','3.14.0','3.13.0'],labels
      expect(panel).not_to_contain_text('revenue.preview');expect(panel).not_to_contain_text('tessera-revenue-preview')
     def choose(version):
      expect(selector).to_be_visible()

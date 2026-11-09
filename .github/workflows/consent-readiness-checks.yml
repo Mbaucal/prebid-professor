@@ -62,6 +62,7 @@ jobs:
           node scripts/prepare-conditional-maps-fixtures.mjs
           node scripts/prepare-geo-runtime-fixtures.mjs
           node scripts/prepare-country-rules-fixtures.mjs
+          node --experimental-strip-types scripts/qa-size-map-fixtures.mjs 320 --require-pass
       - name: Consent, deadline, reporting and pending-slot regressions
         run: node --experimental-strip-types --test tests/runtime/consent-readiness.test.mjs
       - name: Country signal, deadlines and actual compiled public routes
@@ -75,6 +76,8 @@ jobs:
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3161-fixes.test.mjs tests/runtime/runtime3161-readiness.test.mjs tests/runtime/runtime3161-artifact.test.mjs tests/runtime/refresh-counting.test.mjs
       - name: Explicit 3.16.2 empty Sticky retry, inherited refresh visibility threshold and schedule steps
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3162-sticky-gap.test.mjs tests/runtime/runtime3162-refresh.test.mjs tests/runtime/runtime3162-artifact.test.mjs
+      - name: Viewport selection and bounded initial-request recovery
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/viewport-size-maps.test.mjs
       - name: Conditional map generation and saved package contracts
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/conditional-maps.test.mjs
       - name: Deals and Outstream contracts, routes and exact package integration
@@ -83,6 +86,8 @@ jobs:
         run: |
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
+      - name: Independent viewport-map parity on generated readable and compact scripts
+        run: python scripts/qa-size-map-browser.py 320 --require-pass
       - name: Conditional maps in Chromium and actual admin save/recovery
         run: |
           python scripts/verify-conditional-maps.py
@@ -137,6 +142,7 @@ jobs:
         with:
           name: consent-readiness-evidence
           path: |
+            .generated/qa-size-map-320/
             .generated/geo-evidence/compiled-results.json
             .generated/geo-runtime-evidence/
             .generated/country-rules-evidence/*.json

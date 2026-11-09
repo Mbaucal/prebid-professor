@@ -1,4 +1,5 @@
 /** Mutable admin preflight. Historical compiler bytes remain unchanged. */
+import { assertSizeMapCompatibility } from './site-runtime/size-map-compatibility.mjs';
 export function assertCompilerStrings(value, field = 'Settings', depth = 0) {
   if (depth > 32) throw new Error(`${field} is too deeply nested.`);
   if (typeof value === 'string' && /[\u2028\u2029]/.test(value)) {
@@ -27,6 +28,7 @@ export function assertSchainCompatibility(schain, runtime) {
 }
 
 export function assertSnapshotCompilerCompatibility(snapshot, runtime) {
+  assertSizeMapCompatibility(snapshot, runtime);
   const config = JSON.parse(snapshot.config.config_json);
   for (const row of snapshot.bidders ?? []) assertCompilerStrings(JSON.parse(row.params_json), `Bidder ${row.bidder}.params`);
   for (const row of snapshot.overrides ?? []) assertCompilerStrings(JSON.parse(row.params_json), `Bidder override ${row.bidder}/${row.scope_key}.params`);

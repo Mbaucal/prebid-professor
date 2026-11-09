@@ -33,7 +33,7 @@ jobs:
       - name: Verify login redirects and publisher HTML isolation
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/auth-redirect.test.mjs tests/runtime/login-rate-limit.test.mjs tests/runtime/test-login-security.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/release-html-security.test.mjs
       - name: Preserve audited rule edits, user sync defaults and exact Prebid files
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/admin-rules-and-sync-audit.test.mjs tests/runtime/admin-unit-rule-concurrency.test.mjs tests/runtime/prebid-digit-modules-flow.test.mjs tests/runtime/compiler-input-compatibility.test.mjs tests/runtime/refresh-summary.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/admin-rules-and-sync-audit.test.mjs tests/runtime/admin-unit-rule-concurrency.test.mjs tests/runtime/prebid-digit-modules-flow.test.mjs tests/runtime/compiler-input-compatibility.test.mjs tests/runtime/refresh-summary.test.mjs tests/runtime/size-map-compatibility.test.mjs tests/runtime/generator-guard-audit.test.mjs tests/runtime/inactive-override-package-qa.test.mjs
       - name: Verify security boundaries in the compiled production Worker
         run: node scripts/verify-artifact-boundary.mjs && node scripts/verify-auth-boundaries.mjs
       - run: node scripts/verify-site-duplication-workerd.mjs
@@ -50,6 +50,11 @@ jobs:
       - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
       - name: Verify keyboard login, rate limit and retry on desktop and mobile
         run: python scripts/verify-login-recovery.py && python scripts/verify-login-recovery.py --test-workspace
+      - name: Size-map and runtime-control editing, errors and recovery
+        run: |
+          python scripts/verify-size-map-heights-ui.py
+          python scripts/verify-runtime-controls-validation-ui.py
+          python scripts/verify-inactive-media-ui-qa.py
       - run: python scripts/verify-site-editor.py
       - run: python scripts/verify-site-workspace.py
       - run: python scripts/verify-package-cleanup.py
@@ -64,6 +69,9 @@ jobs:
         with:
           name: site-editor-evidence
           path: |
+            .generated/size-map-height-ui/
+            .generated/runtime-controls-validation-ui/
+            .generated/inactive-media-ui-qa/
             .generated/site-editor-evidence/
             .generated/position-evidence/
             .generated/site-workspace-evidence/
