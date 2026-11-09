@@ -1,5 +1,40 @@
 [
   {
+    "id": "tessera-3.17.0",
+    "version": "3.17.0",
+    "codeSha256": "1082c1c4c6803852687c80827c9fa23ad952fa2fc09d8f5379111bf109e9f51d",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain"
+    ],
+    "date": "2026-11-09",
+    "title": "Tessera 3.17.0 \u2014 page key-value rules for Banner and Sticky",
+    "sourceManifest": "scripts/prepare-runtime317.mjs",
+    "sourceCommit": "3fafca5bfcea8155fdc3cf9e424411da9af561fc",
+    "changes": [
+      "Saved key-value mappings are evaluated on the publisher page using window.adsKeywords, including category. Generating a package does not require a future page value. Default, ATF/BTF and exact position rules support ALL/ANY and the six existing comparison operators.",
+      "The first matching enabled rule selects the same responsive map for GPT, Prebid and placeholders. Higher priority runs first; ties retain default/group/exact and saved order. No match uses the directly assigned base map; missing values match only notExists.",
+      "The position keeps its decision for the page, including refresh. Set keywords before ads.js. Disabled rules do nothing. Disable slot prevents its GPT slot and Prebid request; Enable does not override disabled inventory.",
+      "This version supports conditional Banner and Sticky rules. TakeOver and Outstream retain their reviewed responsive maps and receive a specific message if conditional rules apply.",
+      "Existing CMP, readiness, refresh and SChain behavior is retained from 3.16.2. Older runtime source identities, saved site versions and package bytes remain unchanged. Selecting 3.17.0 and generating a new package are explicit actions."
+    ]
+  },
+  {
     "id": "tessera-3.16.2",
     "version": "3.16.2",
     "codeSha256": "ee9c0d5bc0a6ca3c4335a41cde4af8f3a7f749875a4965e4c45f70ba6d6a6910",
@@ -20,7 +55,7 @@
       "outstream-pilot"
     ],
     "date": "2026-10-26",
-    "title": "Tessera 3.16.2 — empty Sticky retry, inherited refresh visibility threshold and schedule steps",
+    "title": "Tessera 3.16.2 \u2014 empty Sticky retry, inherited refresh visibility threshold and schedule steps",
     "sourceManifest": "scripts/prepare-runtime3162.mjs",
     "sourceCommit": "dbf391e365a8641b6f6e1a011233c51b13adc2c3",
     "changes": [
@@ -54,7 +89,7 @@
       "outstream-pilot"
     ],
     "date": "2026-10-24",
-    "title": "Tessera 3.16.1 — verified refresh and delivery corrections",
+    "title": "Tessera 3.16.1 \u2014 verified refresh and delivery corrections",
     "sourceManifest": "scripts/prepare-runtime3161.mjs",
     "sourceCommit": "b8466a6d582f5085fbb8a03f29b88b42af5770e8",
     "changes": [
