@@ -356,7 +356,7 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
                     <option value="video">video</option>
                     <option value="native">native</option>
                   </select>
-                  <small>For Outstream, save this position as Banner, then choose Formats.</small>
+                  <small>Built-in scripts use Banner. For Outstream, save this position as Banner, then choose Formats. Video and Native require a compatible custom template.</small>
                 </label>
               </div>
 
@@ -434,7 +434,7 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
                 />
               </label>
 
-              {formError ? <div className="form-error">{formError}</div> : null}
+              {formError ? <div role="alert" className="form-error">{formError}</div> : null}
 
               <div className="modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeForm} type="button">

@@ -60,6 +60,13 @@ function parseRule(value: string): JsonRecord {
   }
 }
 
+function unsupportedBuiltinMedia(configJson: string | null, mediaType: string, enabled: boolean, type: AdUnitType): Response | null {
+  if (!configJson || !enabled || type === 'DRAFT' || mediaType === 'banner') return null;
+  const config = parseRule(configJson);
+  if (!config.builtinRuntimeSelection) return null;
+  return apiError('The selected built-in script supports Banner ad units. For Outstream, choose Banner and configure Formats. Video and Native require a compatible custom template; keep this position disabled or in Draft until supported.', 422);
+}
+
 /** JSON with object keys sorted, so a different key order alone is not a change. */
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
@@ -283,6 +290,11 @@ export async function createAdUnit(
   const actor = getActor(request);
   const now = new Date().toISOString();
 
+  const configRow = await env.DB.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=? LIMIT 1')
+    .bind(publisherId).first<{config_json:string}>();
+  const mediaIssue = unsupportedBuiltinMedia(configRow?.config_json ?? null, mediaType, enabled === 1, type);
+  if (mediaIssue) return mediaIssue;
+
   try {
     await env.DB.batch([
       env.DB
@@ -370,6 +382,10 @@ export async function updateAdUnit(
       : Number(input.sortOrder);
   const notes = input.notes === undefined ? current.notes : normalizeNullableString(input.notes);
   const guard = await positionGuard(env.DB,publisherId,current.code);
+  if (mediaType !== current.mediaType || (!current.enabled && enabled) || (current.type === 'DRAFT' && type !== 'DRAFT')) {
+    const mediaIssue = unsupportedBuiltinMedia(guard.configJson, mediaType, enabled, type);
+    if (mediaIssue) return mediaIssue;
+  }
   if((code!==current.code||type==='DRAFT'||mediaType!=='banner'||!enabled)&&guard.revenueReferenced)return apiError('Remove this position from Deals and set its format to Banner before renaming, disabling or changing its media/group.',409);
   if((code!==current.code||type==='DRAFT'||mediaType!=='banner'||!enabled)&&guard.configured)return apiError('Set this position to Standard and group loading before renaming, disabling or changing its media/group.',409);
   const actor = getActor(request);
@@ -506,6 +522,8 @@ export async function duplicateAdUnit(
     readUnitRuleRows(env.DB, publisherId),
   ]);
   const configJson = configRow?.config_json ?? null;
+  const mediaIssue = unsupportedBuiltinMedia(configJson, mediaType, enabled, type);
+  if (mediaIssue) return mediaIssue;
   const carried = carriedRuleConfig(configJson, rows, {
     kind: 'copy', from: source.code, to: code, type, copyRule: copyUnitRule,
   });

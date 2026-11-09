@@ -4,7 +4,7 @@ import worker from '../../worker/test-workspace/index.mjs';
 import {workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD} from '../../tests/support/test-workspace-store.mjs';
 import {siteRuntimeBundle} from '../../worker/site-runtime/service.mjs';
 import test from 'node:test';
-test('all package routes bind GEO to the server environment and preserve historical ZIPs',async()=>{
+for(const version of ['3.18.0','3.19.0','3.20.0'])test(`all ${version} package routes bind GEO to the server environment and preserve historical ZIPs`,async()=>{
 const f=workspaceStore(),decode=new TextDecoder();
 const MAIN='https://prebid-professor.mbaucal.workers.dev/geo/v1/country';
 const TEST='https://prebid-professor-test.mbaucal.workers.dev/geo/v1/country';
@@ -22,9 +22,9 @@ try{
  function inspect(bytes,label,expected){const files=unzipSync(bytes),config=JSON.parse(decode.decode(files['config.json']));const actual=config.countrySignal?.endpoint;rows.push({label,actual,expected,pass:actual===expected});if(expected){for(const name of ['ads.js','ads.min.js']){assert(decode.decode(files[name]).includes(actual));assert(!decode.decode(files[name]).includes(actual===MAIN?TEST:MAIN));}}return files;}
  await req('/test-api/setup',{confirm:'prepare-empty-test-database'});
  await select('3.17.0');const old=await generate(),before=await download(old.id);inspect(before,'saved 3.17',undefined);
- await select('3.18.0');
+ await select(version);
  const newRelease=await generate();inspect(await download(newRelease.id),'TEST site-packages Generate',TEST);
- assert.deepEqual(await download(old.id),before);rows.push({label:'saved 3.17 ZIP byte-preserved after 3.18 Generate',pass:true});
+ assert.deepEqual(await download(old.id),before);rows.push({label:`saved 3.17 ZIP byte-preserved after ${version} Generate`,pass:true});
  let s=await settings();inspect(new Uint8Array(await(await req('/test-api/site-runtime',{action:'bundle',revision:s.revision,acknowledge:true})).arrayBuffer()),'TEST site-runtime candidate bundle',TEST);
  inspect(new Uint8Array(await(await siteRuntimeBundle(f.env,'test-site',{action:'bundle',revision:s.revision,acknowledge:true})).arrayBuffer()),'MAIN server default candidate',MAIN);
  const legacy=await(await req('/test-api/generate',{acknowledge:true,takeOverEnabled:false})).json();assert(legacy.adsJs.includes(TEST));assert(!legacy.adsJs.includes(MAIN));rows.push({label:'legacy TEST generate',pass:true});
