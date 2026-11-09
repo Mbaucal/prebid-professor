@@ -1,3 +1,4 @@
+import { validateAdUnitCode } from '../../shared/gam/ad-unit-code.mjs';
 /** TEST candidate configuration, never publisher setup or a publishing endpoint.
  * Only test-site is writable; arbitrary site IDs, source, integrations and Prebid
  * uploads are not part of this contract. No fetching, SQL, or code execution here.
@@ -5,7 +6,7 @@
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { WorkspaceError, TEST_SITE } from './boundary.mjs';
 import { normalizeTakeOver, savedTakeOver } from './takeover-settings.mjs';
-import { readPositions, normalizeOverlay, normalizeLazy } from '../runtime-next/position-settings.mjs';
+import { readPositions, normalizeOverlay, normalizeLazy } from '../site-runtime/position-settings.mjs';
 const forbidden = new Set(['__proto__','prototype','constructor']);
 const namePattern = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const markerKey = 'testSiteDraft';
@@ -67,7 +68,8 @@ export function normalizeSiteDraft(draft) {
   }).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);
   const ids=new Set();
   const units=array(draft.units,100,'Ad positions').map((unit)=>{
-    record(unit,['code','type','sizeMap','enabled',...['display','overlay','lazy'].filter(k=>Object.hasOwn(unit,k))],'ad position');const code=identifier(unit.code,'ad position ID');
+    record(unit,['code','type','sizeMap','enabled',...['display','overlay','lazy'].filter(k=>Object.hasOwn(unit,k))],'ad position');const code=unit.code;
+    const codeErrors=validateAdUnitCode(code);if(codeErrors.length)fail(codeErrors.join(' '));
     const integrated=unit.display==='takeover';
     if(unit.display!==undefined&&!['standard','sticky','takeover'].includes(unit.display))fail('Choose Standard, Sticky or TakeOver.');
     if(ids.has(code)||code==='Interstitial'||(!integrated&&unit.type!=='DRAFT'&&(code==='TakeOver'||code===takeOver?.adUnitCode))||code.startsWith('adsx-')||code.startsWith('close_sticky'))fail('Ad position IDs must be unique. TakeOver and its Interstitial fallback need separate GAM ad units.');ids.add(code);
@@ -106,10 +108,11 @@ export function readSiteDraft(saved) {
   const draft={site:{name:saved.site.name,domain:saved.site.domain,gamPath:saved.site.gam_path},
     units:saved.units.map((u)=>{if(u.media_type!=='banner')fail('This editor supports banner positions only.',409);
       const basic=JSON.parse(saved.rules.find(r=>r.rule_key===u.code)?.rule_json??'{}');
-      const advanced=config.advancedUnitRules?.[u.code]??{};
+      const savedAdvanced=config.advancedUnitRules??{};
+      const advanced=Object.hasOwn(savedAdvanced,u.code)?savedAdvanced[u.code]:{};
       const lazy=Object.hasOwn(advanced,'lazy')?advanced.lazy:basic.lazy;
       return {code:u.code,type:u.type,sizeMap:u.size_map_key,enabled:u.enabled===1,
-        ...(positions[u.code]?{display:'takeover',overlay:positions[u.code]}:{}),...(lazy!==undefined?{lazy}:{})};}),
+        ...(Object.hasOwn(positions,u.code)?{display:'takeover',overlay:positions[u.code]}:{}),...(lazy!==undefined?{lazy}:{})};}),
     maps,takeOver:savedTakeOver(config),bottomStickyId:Object.hasOwn(config.runtimeControls?.sticky??{},'bottomAdUnitId')
       ? (config.runtimeControls.sticky.bottomAdUnitId||'') : (saved.units.some((u)=>u.enabled===1&&u.code==='Sticky')?'Sticky':'')};
   return normalizeSiteDraft(draft);
@@ -134,12 +137,14 @@ export async function planSiteDraft(saved,input) {
   config.runtimeControls??={};config.runtimeControls.sticky??={};config.runtimeControls.sticky.bottomAdUnitId=draft.bottomStickyId;
   const previousPositions=readPositions(config,before.units);
   for(const unit of draft.units){
-    if(previousPositions[unit.code]&&unit.display===undefined)fail('Reload the ad position editor before changing these settings.',409);
+    if(Object.hasOwn(previousPositions,unit.code)&&previousPositions[unit.code]&&unit.display===undefined)fail('Reload the ad position editor before changing these settings.',409);
   }
   const positions=Object.fromEntries(draft.units.filter(u=>u.display==='takeover').map(u=>[u.code,u.overlay]));
   if(Object.keys(positions).length||Object.hasOwn(config.runtimeControls,'adPositions'))config.runtimeControls.adPositions=positions;
   for(const unit of draft.units)if(Object.hasOwn(unit,'lazy')){
-    config.advancedUnitRules??={};config.advancedUnitRules[unit.code]??={};config.advancedUnitRules[unit.code].lazy=unit.lazy;
+    config.advancedUnitRules??={};
+    if(!Object.hasOwn(config.advancedUnitRules,unit.code))Object.defineProperty(config.advancedUnitRules,unit.code,{value:{},enumerable:true,writable:true,configurable:true});
+    config.advancedUnitRules[unit.code].lazy=unit.lazy;
   }
   if(draft.takeOver)config.runtimeControls.takeOver=draft.takeOver;
   // Older editor tabs omit TakeOver; retain it and still validate position collisions.

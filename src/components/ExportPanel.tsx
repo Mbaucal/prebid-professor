@@ -1,3 +1,4 @@
+import { escapeHtml } from '../../shared/gam/ad-unit-code.mjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { zipSync } from 'fflate';
 import { api } from '../api';
@@ -142,7 +143,7 @@ function divMarkup(units: AdUnit[]): string {
   return units
     .map((unit) => {
       const className = classForUnit(unit);
-      return `<!-- ${unit.code} -->\n<div id="${unit.code}" class="${className}"></div>`;
+      return `<!-- ${escapeHtml(unit.code).replace(/--/g, '&#45;&#45;')} -->\n<div id="${escapeHtml(unit.code)}" class="${className}"></div>`;
     })
     .join('\n\n');
 }
@@ -155,7 +156,7 @@ function divCsv(units: AdUnit[]): string {
   const rows = [['Ad unit name', 'Div', 'class']];
   for (const unit of units) {
     const className = classForUnit(unit);
-    rows.push([unit.code, `<div id="${unit.code}" class="${className}"></div>`, className]);
+    rows.push([unit.code, `<div id="${escapeHtml(unit.code)}" class="${className}"></div>`, className]);
   }
   return `${rows.map((row) => row.map(csvCell).join(',')).join('\n')}\n`;
 }

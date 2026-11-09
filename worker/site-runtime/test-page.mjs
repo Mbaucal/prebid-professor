@@ -1,3 +1,4 @@
+import { validateAdUnitCode } from '../../shared/gam/ad-unit-code.mjs';
 import { readPackage } from './releases.mjs';
 import { testPageStyles } from './test-page-styles.mjs';
 import { testPageScript } from '../../.generated/test-page-client.mjs';
@@ -31,7 +32,7 @@ export function packageTestModel(files, siteId, releaseId) {
   check(config.siteId === siteId && config.core && Array.isArray(config.core.explicitUnits), 'Package test configuration does not match this site.');
   const units = config.core.explicitUnits;
   check(units.length > 0 && units.length <= 500 && new Set(units.map(u => u.id)).size === units.length, 'Package positions are empty or duplicated.');
-  check(units.every(u => typeof u.id === 'string' && /^[A-Za-z][A-Za-z0-9_:-]*$/.test(u.id) && ['ATF','BTF'].includes(u.type)), 'Package positions are invalid.');
+  check(units.every(u => (validateAdUnitCode(u.id).length === 0 || (typeof u.id === 'string' && /^[A-Za-z][A-Za-z0-9_:-]{100,127}$/.test(u.id))) && ['ATF','BTF'].includes(u.type)), 'Package positions are invalid.');
   check(typeof config.core.gamPath === 'string' && config.core.sizeMapsRaw && typeof config.core.sizeMapsRaw === 'object', 'Package GAM path or size maps are missing.');
   let adUnitPath = config.core.gamPath.trim();
   if (adUnitPath && !adUnitPath.startsWith('/')) adUnitPath = '/' + adUnitPath;

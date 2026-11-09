@@ -8,6 +8,9 @@ import {outstreamSettingsResponse} from '../../worker/site-runtime/outstream-set
 import {getDealSettings,saveDealSettings} from '../../worker/site-runtime/deal-settings.mjs';
 import {unzipSync} from 'fflate';
 import {deploymentManifestPin} from '../../worker/deployment-manifest-pin.mjs';
+import {parse} from 'acorn';
+import vm from 'node:vm';
+import {applyCsvImport} from '../../worker/imports.ts';
 const fixtures=[];test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
 async function fixture(){const f=workspaceStore();fixtures.push(f);f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
  f.sqlite.prepare("INSERT INTO publishers(id,name,domain,gam_path) VALUES('first','First','first.invalid','/123/first/')").run();
@@ -19,6 +22,68 @@ async function fixture(){const f=workspaceStore();fixtures.push(f);f.sqlite.exec
  const s=await siteRuntimeSettings(f.env,'first');await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:s.revision,runtime:s.runtimes[0].pin,allowPreview:true});return f;}
 async function generate(f,note='First package'){const s=await siteRuntimeSettings(f.env,'first');return (await generatePackage(f.env,'first','tester',{revision:s.revision,notes:note})).release;}
 async function promote(f,id,action){return changePackageChannel(f.env,'first',id,'tester',action,{acknowledge:true,channelRevision:await channelRevision(f.env,'first')});}
+test('3.19.1 stores, reopens and verifies exact imported GAM codes while preserving the prior package',async()=>{
+ const f=await fixture(),decode=bytes=>new TextDecoder().decode(bytes);
+ const previous=await generate(f,'Existing package before code compatibility');
+ const before=await readPackage(f.env,'first',previous.id);
+ const previousZip=new Uint8Array(await(await packageDownload(f.env,'first',previous.id)).arrayBuffer());
+ const state=await siteRuntimeSettings(f.env,'first'),runtime=state.runtimes.find(item=>item.version==='3.19.1');assert(runtime);
+ await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:state.revision,runtime:runtime.pin,allowPreview:false});
+ const codes=['m.box_3','m"quoted','123_banner'];
+ const cell=value=>'"'+String(value).replaceAll('"','""')+'"';
+ const csv='code,type,mediaType,sizeMapKey,enabled,sortOrder\n'+codes.map((code,index)=>[code,'BTF','banner','display','true',index+1].map(cell).join(',')).join('\n');
+ const imported=await applyCsvImport(new Request('https://tessera.invalid/api/publishers/first/imports',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kind:'ad-units',csv})}),f.env,'first');
+ assert.equal(imported.status,200,await imported.clone().text());
+ const savedCodes=f.sqlite.prepare('SELECT code FROM ad_units ORDER BY sort_order').all().map(row=>row.code);
+ assert.deepEqual(savedCodes,['Billboard',...codes]);
+ const release=await generate(f,'Exact GAM code package'),stored=await readPackage(f.env,'first',release.id);
+ assert.equal(stored.manifest.runtime.runtimeVersion,'3.19.1');assert.equal(stored.manifest.runtime.runtimeSha256,runtime.pin.runtimeSha256);
+ const publicConfig=JSON.parse(decode(stored.files['config.json']));
+ assert.deepEqual(publicConfig.core.explicitUnits.map(unit=>unit.id),savedCodes);
+ // Packaging can rename local bindings. Inspect the inventory objects in both
+ // parser-validated forms instead of depending on a compiler variable name.
+ for(const name of ['ads.js','ads.min.js']){
+  const inventories=[];
+  function visit(node){if(!node||typeof node!=='object')return;if(node.type==='ArrayExpression'){
+   const ids=node.elements.map(element=>element?.type==='ObjectExpression'?element.properties.find(property=>(property.key?.name??property.key?.value)==='id')?.value?.value:undefined);
+   if(ids.length&&ids.every(id=>typeof id==='string'))inventories.push(ids);
+  }for(const value of Object.values(node))if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')visit(value);}
+  visit(parse(decode(stored.files[name]),{ecmaVersion:2015}));
+  assert(inventories.some(ids=>JSON.stringify(ids)===JSON.stringify(savedCodes)),name+' preserves the exact saved inventory');
+ }
+ assert(decode(stored.files['implementation.html']).includes('id="m&quot;quoted"'));
+ assert(decode(stored.files['implementation.html']).includes('id="m.box_3"'));
+ assert(decode(stored.files['min-height.css']).includes('#m\\.box_3'));
+ assert(decode(stored.files['min-height.css']).includes('#\\31 23_banner'));
+ for(const bytes of Object.values(stored.files))assert(!decode(bytes).includes('TesseraGamCode'),'compiler aliases must not appear in exported package');
+ await verifyPackage(stored.files,{site_id:'first',release_id:release.id,release_version:release.version});
+ const downloaded=await packageDownload(f.env,'first',release.id);assert.equal(downloaded.status,200);
+ const zip=unzipSync(new Uint8Array(await downloaded.arrayBuffer()));assert.deepEqual(zip,stored.files);
+ await verifyPackage(zip,{site_id:'first',release_id:release.id,release_version:release.version});
+ // TEST must accept the new archived plan without relaxing its file boundary.
+ for(const corruption of ['capability','missing-plan','invalid-plan','unknown-file']){
+  const files=structuredClone(zip),manifest=JSON.parse(decode(files['manifest.json']));
+  if(corruption==='capability')manifest.runtime.capabilities=manifest.runtime.capabilities.filter(value=>value!=='prebid-deals');
+  if(corruption==='missing-plan'){delete files['deals-plan.json'];delete manifest.files['deals-plan.json'];}
+  if(corruption==='invalid-plan'){
+   const plan=JSON.parse(decode(files['deals-plan.json']));plan.writeEnabled=true;
+   files['deals-plan.json']=new TextEncoder().encode(JSON.stringify(plan));
+   manifest.files['deals-plan.json']={size:files['deals-plan.json'].byteLength,sha256:await sha256(files['deals-plan.json'])};
+  }
+  if(corruption==='unknown-file'){
+   files['unapproved.json']=new TextEncoder().encode('{}');
+   manifest.files['unapproved.json']={size:2,sha256:await sha256(files['unapproved.json'])};
+  }
+  files['manifest.json']=new TextEncoder().encode(JSON.stringify(manifest));
+  await assert.rejects(verifyPackage(files,{site_id:'first',release_id:release.id,release_version:release.version}),
+   corruption==='invalid-plan'?/Deals plan is invalid/:corruption==='unknown-file'?/unsupported file name/:/Deals plan differs/);
+ }
+ assert.deepEqual((await readPackage(f.env,'first',release.id)).files,stored.files,'reopen uses saved bytes');
+ assert.deepEqual((await readPackage(f.env,'first',previous.id)).files,before.files);
+ assert.deepEqual(new Uint8Array(await(await packageDownload(f.env,'first',previous.id)).arrayBuffer()),previousZip);
+ assert.equal(f.sqlite.prepare('SELECT current_release_id FROM publishers').get().current_release_id,null);
+ assert.deepEqual(f.sqlite.prepare('SELECT code FROM ad_units ORDER BY sort_order').all().map(row=>row.code),savedCodes);
+});
 test('publisher HTML is isolated on immutable, channel and authenticated artifact URLs without changing package bytes',async()=>{
  const f=await fixture(),release=await generate(f),original=await readPackage(f.env,'first',release.id);
  const check=async(response,method='GET')=>{
