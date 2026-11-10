@@ -132,7 +132,7 @@ export async function planSiteDraft(saved,input) {
     if(!['__DEFAULT__','__ATF__','__BTF__','__INTERSTITIAL__'].includes(key)&&!unitCodes.has(key))fail('A removed position still has saved rules. Keep it disabled until its rules are reviewed.');
   }
   for(const override of before.overrides){
-    if(override.scope_type==='adunit'&&override.enabled===1&&!draft.units.some((u)=>u.code===override.scope_key&&u.enabled))fail('An enabled bidder override uses this position. Disable or remove that override first.');
+    if(override.scope_type==='adunit'&&override.enabled===1&&!unitCodes.has(override.scope_key))fail('A removed position still has an enabled bidder override. Keep the position disabled or remove that override first.');
   }
   config.runtimeControls??={};config.runtimeControls.sticky??={};config.runtimeControls.sticky.bottomAdUnitId=draft.bottomStickyId;
   const previousPositions=readPositions(config,before.units);
