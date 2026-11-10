@@ -33,6 +33,7 @@ test('the seven historical records and receipt stay immutable beneath stable 3.1
  const receipt=await readReceipt(root,'test'),baseline=await readFile(resolve(root,'tools/test-runtime-history.json'));
  const current=JSON.parse(await readFile(resolve(root,'worker/runtime/runtime-releases.json'))),old=JSON.parse(baseline);
  const added=[
+  ['tessera-3.20.1','3.20.1'],
   ['tessera-3.19.1','3.19.1'],
   ['tessera-3.20.0','3.20.0'],
   ['tessera-3.19.0','3.19.0'],
