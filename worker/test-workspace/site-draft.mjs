@@ -72,8 +72,9 @@ export function normalizeSiteDraft(draft) {
     const codeErrors=validateAdUnitCode(code);if(codeErrors.length)fail(codeErrors.join(' '));
     const integrated=unit.display==='takeover';
     if(unit.display!==undefined&&!['standard','sticky','takeover'].includes(unit.display))fail('Choose Standard, Sticky or TakeOver.');
-    if(ids.has(code)||code==='Interstitial'||(!integrated&&(code==='TakeOver'||code===takeOver?.adUnitCode))||code.startsWith('adsx-')||code.startsWith('close_sticky'))fail('Ad position IDs must be unique. TakeOver and its Interstitial fallback need separate GAM ad units.');ids.add(code);
-    if(!['ATF','BTF'].includes(unit.type)||typeof unit.enabled!=='boolean')fail('Choose ATF/BTF and an enabled state for each position.');
+    if(ids.has(code)||code==='Interstitial'||(!integrated&&unit.type!=='DRAFT'&&(code==='TakeOver'||code===takeOver?.adUnitCode))||code.startsWith('adsx-')||code.startsWith('close_sticky'))fail('Ad position IDs must be unique. TakeOver and its Interstitial fallback need separate GAM ad units.');ids.add(code);
+    if(!['ATF','BTF','DRAFT'].includes(unit.type)||typeof unit.enabled!=='boolean')fail('Choose ATF/BTF/DRAFT and an enabled state for each position.');
+    if(unit.type==='DRAFT'&&unit.display&&unit.display!=='standard')fail('Choose ATF or BTF before enabling Sticky or TakeOver display.');
     if(!names.has(unit.sizeMap))fail('Every ad position must reference an existing size map.');
     if(unit.enabled&&!maps.find((m)=>m.name===unit.sizeMap).breakpoints.some((r)=>r.sizes.length))fail('An enabled ad position needs at least one size.');
     let overlay,lazy;
@@ -86,9 +87,9 @@ export function normalizeSiteDraft(draft) {
     }
     return {code,type:unit.type,sizeMap:unit.sizeMap,enabled:unit.enabled,...(unit.display!==undefined?{display:unit.display}:{}),...(overlay?{overlay}:{}),...(Object.hasOwn(unit,'lazy')?{lazy}:{})};
   });
-  if(!units.some((u)=>u.enabled))fail('Keep at least one enabled ad position.');
+  if(!units.some((u)=>u.enabled&&u.type!=='DRAFT'))fail('Keep at least one enabled ad position.');
   const bottomStickyId=draft.bottomStickyId;
-  if(typeof bottomStickyId!=='string'||(bottomStickyId&&!units.some((u)=>u.code===bottomStickyId&&u.enabled)))fail('Choose an enabled position for bottom sticky, or leave it off.');
+  if(typeof bottomStickyId!=='string'||(bottomStickyId&&!units.some((u)=>u.code===bottomStickyId&&u.enabled&&u.type!=='DRAFT')))fail('Choose an enabled position for bottom sticky, or leave it off.');
   if(takeOver?.adUnitCode==='Interstitial')fail('TakeOver must use a different GAM ad unit from its Interstitial fallback.');
   if(units.filter(u=>u.display==='takeover').length>1)fail('Use one TakeOver position per site.');
   if(units.some(u=>u.display==='takeover'&&u.code===bottomStickyId))fail('TakeOver cannot also be bottom Sticky.');
@@ -131,7 +132,7 @@ export async function planSiteDraft(saved,input) {
     if(!['__DEFAULT__','__ATF__','__BTF__','__INTERSTITIAL__'].includes(key)&&!unitCodes.has(key))fail('A removed position still has saved rules. Keep it disabled until its rules are reviewed.');
   }
   for(const override of before.overrides){
-    if(override.scope_type==='adunit'&&override.enabled===1&&!draft.units.some((u)=>u.code===override.scope_key&&u.enabled))fail('An enabled bidder override uses this position. Disable or remove that override first.');
+    if(override.scope_type==='adunit'&&override.enabled===1&&!unitCodes.has(override.scope_key))fail('A removed position still has an enabled bidder override. Keep the position disabled or remove that override first.');
   }
   config.runtimeControls??={};config.runtimeControls.sticky??={};config.runtimeControls.sticky.bottomAdUnitId=draft.bottomStickyId;
   const previousPositions=readPositions(config,before.units);
@@ -156,4 +157,4 @@ export async function planSiteDraft(saved,input) {
   if(await digest(before)!==expected)fail('Settings changed. Reload saved settings before trying again.',409);
   return {before,after,draft,changed:await digest(before)!==await digest(after)};
 }
-function afterTakeOverConflict(draft,config){const takeover=savedTakeOver(config);return takeover.adUnitCode==='Interstitial'||draft.units.some(u=>u.code===takeover.adUnitCode&&u.display!=='takeover');}
+function afterTakeOverConflict(draft,config){const takeover=savedTakeOver(config);return takeover.adUnitCode==='Interstitial'||draft.units.some(u=>u.type!=='DRAFT'&&u.code===takeover.adUnitCode&&u.display!=='takeover');}

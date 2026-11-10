@@ -50,6 +50,22 @@ for(const [name,change] of [
 ])test('TakeOver rejects '+name,async()=>{const x=await fixture(),d=readSiteDraft(x.snapshot());change(d.takeOver);assert.throws(()=>normalizeSiteDraft(d));assert.equal(x.audit(),0);});
 test('invalid persisted TakeOver is reported without replacing it with defaults',async()=>{const x=await fixture(),s=x.snapshot(),c=JSON.parse(s.config.config_json);c.runtimeControls??={};c.runtimeControls.takeOver=null;s.config.config_json=JSON.stringify(c);assert.throws(()=>readSiteDraft(s),/Saved TakeOver settings need review/);assert.equal(JSON.parse(s.config.config_json).runtimeControls.takeOver,null);});
 test('site draft is a strict editable projection, not raw saved configuration',async()=>{const x=await fixture(),d=readSiteDraft(x.snapshot());assert.equal(d.site.domain,'example.invalid');assert.equal(d.units.length,2);assert(!JSON.stringify(d).includes('unrelated'));assert.equal(d.maps[0].breakpoints[0].minWidth,0);});
+test('saved DRAFT positions round-trip without activating inventory or losing exact codes',async()=>{
+ const x=await fixture(),d=readSiteDraft(x.snapshot()),before=x.snapshot();
+ d.units.push({code:'m.box_5',type:'DRAFT',sizeMap:'display',enabled:false},{code:'__proto__',type:'DRAFT',sizeMap:'display',enabled:true});
+ await x.save(await x.plan(d));
+ const reopened=readSiteDraft(x.snapshot());
+ assert.deepEqual(reopened.units.slice(-2),d.units.slice(-2));
+ assert.deepEqual(x.snapshot().bidders,before.bidders);assert.equal(x.log.puts.length,0);
+ const retained=x.snapshot(),audit=x.audit();
+ for(const change of [
+  s=>{s.units=s.units.filter(u=>u.type==='DRAFT');s.bottomStickyId='';},
+  s=>{s.bottomStickyId='__proto__';},
+  s=>{s.units.find(u=>u.code==='__proto__').display='sticky';},
+  s=>{s.units.find(u=>u.code==='__proto__').display='takeover';},
+ ]){const invalid=copy(reopened);change(invalid);await assert.rejects(x.plan(invalid),/enabled ad position|enabled position for bottom sticky|Choose ATF or BTF/);}
+ assert.deepEqual(x.snapshot(),retained);assert.equal(x.audit(),audit);
+});
 test('full draft edits save atomically without overwriting non-editor fields',async()=>{const x=await fixture(),before=x.snapshot(),d=readSiteDraft(before);d.site={name:'Pilot copy',domain:'news.example.invalid',gamPath:'123/pilot'};d.units.push({code:'InText1',type:'BTF',sizeMap:'display',enabled:true});d.maps[0].breakpoints.push({minWidth:768,sizes:[[728,90]]});const plan=await x.plan(d);const r=await x.save(plan);assert.deepEqual(r,{persisted:true,changed:true,publishable:false});assert.deepEqual(x.snapshot(),plan.after);assert.equal(x.snapshot().site.gam_path,'/123/pilot/');assert.equal(JSON.parse(x.snapshot().config.config_json).unrelated.keep,'unchanged');assert.equal(x.audit(),1);assert.equal(x.log.puts.length,0);});
 test('site edit does not alter existing notes or record IDs for retained rows',async()=>{const x=await fixture();x.sqlite.exec("UPDATE ad_units SET notes='keep' WHERE code='Billboard'");const ids=x.sqlite.prepare('SELECT id,code,created_at,notes FROM ad_units ORDER BY code').all();await x.save(await x.plan());assert.deepEqual(x.sqlite.prepare('SELECT id,code,created_at,notes FROM ad_units ORDER BY code').all(),ids);});
 test('repeat save of the same normalized draft is a no-op',async()=>{const x=await fixture();await x.save(await x.plan());const before=x.snapshot();const r=await x.save(await x.plan());assert.equal(r.changed,false);assert.equal(x.audit(),1);assert.deepEqual(x.snapshot(),before);});
