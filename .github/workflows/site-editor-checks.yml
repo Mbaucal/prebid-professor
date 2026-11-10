@@ -58,6 +58,7 @@ jobs:
           python scripts/verify-size-map-heights-ui.py
           python scripts/verify-runtime-controls-validation-ui.py
           python scripts/verify-inactive-media-ui-qa.py
+          python scripts/verify-draft-inventory-ui.py
       - run: python scripts/verify-site-editor.py
       - run: python scripts/verify-site-workspace.py
       - run: node --experimental-strip-types scripts/prepare-test-page-browser-fixture.mjs && python scripts/verify-site-test-page.py
@@ -74,6 +75,7 @@ jobs:
             .generated/size-map-height-ui/
             .generated/runtime-controls-validation-ui/
             .generated/inactive-media-ui-qa/
+            .generated/draft-inventory-ui/
             .generated/site-editor-evidence/
             .generated/position-evidence/
             .generated/site-workspace-evidence/
