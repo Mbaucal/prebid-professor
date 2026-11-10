@@ -1,7 +1,7 @@
 import { dealSettingsResponse } from './site-runtime/deal-settings.mjs';
 import { countryResponse } from './geo-country.mjs';
 import { outstreamSettingsResponse } from './site-runtime/outstream-settings.mjs';
-import { requireRevenueRuntime } from './runtime-320/settings-guard.mjs';
+import { requireRevenueRuntime } from './runtime-3201/settings-guard.mjs';
 import { organizationResponse } from './organization/service.mjs';
 import { gamResponse } from './integrations/gam-service.mjs';
 import { blockStoredDraftCdn } from './runtime/stored-draft-safety.mjs';

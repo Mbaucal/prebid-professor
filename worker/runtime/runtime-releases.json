@@ -1,5 +1,45 @@
 [
   {
+    "id": "tessera-3.20.1",
+    "version": "3.20.1",
+    "codeSha256": "3fb755b152d8e2e061745fb692265919caa50ee6419a0e5503f7f1f5b8bc9c50",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules",
+      "viewport-height-size-maps",
+      "gam-code-compatibility"
+    ],
+    "date": "2026-11-10",
+    "title": "Tessera 3.20.1 — viewport maps with exact GAM codes",
+    "sourceManifest": "scripts/prepare-runtime3201.mjs",
+    "sourceCommit": "f8362f48237d7065b2a9291f381431e6539ac4df",
+    "changes": [
+      "Combines width-and-height viewport maps, conditional category and GEO maps, and consent-gated initial resize recovery with exact GAM ad unit codes.",
+      "Keeps periods, leading numbers, Unicode and supported punctuation intact in GPT, Prebid, HTML, CSS and stored packages.",
+      "Inactive ad unit bidder overrides stay saved for reactivation and are omitted only from generated active inventory.",
+      "Existing script choices and packages remain unchanged. Select and save 3.20.1 explicitly to use the combined behavior."
+    ]
+  },
+  {
     "id": "tessera-3.19.1",
     "version": "3.19.1",
     "codeSha256": "7b5306c280c1644ee15a23f254940ff4d356355030b9603da67e2e125d37cdec",
