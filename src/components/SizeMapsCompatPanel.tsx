@@ -3,6 +3,7 @@ import { api } from '../api';
 import BulkImportPanel from './BulkImportPanel';
 import OutstreamSettingsPanel from './OutstreamSettingsPanel';
 import type { AdUnit, SizeMap } from '../shared/types';
+import { reservedHeightSummary } from '../shared/size-map-height-summary';
 
 type Props = {
   publisherId: string;
@@ -115,15 +116,12 @@ function nextCopyName(name: string): string {
   return `${base}_${next}`;
 }
 
-function maxFixedHeight(sizes: FlexibleSize[]): number {
-  return sizes.reduce((max, size) => (size === 'fluid' ? max : Math.max(max, size[1])), 0);
-}
-
-function breakpointHeightLabel(sizes: FlexibleSize[]): string {
-  if (!sizes.length) return 'slot disabled';
-  const height = maxFixedHeight(sizes);
-  if (height) return `min-height ${height}px`;
-  return 'fluid height';
+function previewReservedHeight(value: string, index: number) {
+  try {
+    return reservedHeightSummary(parseSizes(value, index + 1));
+  } catch {
+    return null;
+  }
 }
 
 export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
@@ -332,8 +330,8 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                   {item.map.map((breakpoint) => (
                     <div className={`size-map-breakpoint${breakpoint.sizes.length ? '' : ' disabled-breakpoint'}`} key={`${breakpoint.minViewPort[0]}-${breakpoint.minViewPort[1]}`}>
                       <div className="viewport-label">
-                        ≥ {breakpoint.minViewPort[0]}px
-                        {breakpoint.minViewPort[1] ? ` × ${breakpoint.minViewPort[1]}px` : ''}
+                        Width ≥ {breakpoint.minViewPort[0]}px
+                        {breakpoint.minViewPort[1] ? <span className="viewport-height-label">Height ≥ {breakpoint.minViewPort[1]}px</span> : null}
                       </div>
                       <div className="size-chip-list">
                         {breakpoint.sizes.map((size) =>
@@ -345,7 +343,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                         )}
                         {!breakpoint.sizes.length ? <span className="size-map-disabled-chip">No ad at this viewport</span> : null}
                       </div>
-                      <span className="height-chip">{breakpointHeightLabel(breakpoint.sizes)}</span>
+                      <span className="height-chip" title={reservedHeightSummary(breakpoint.sizes).detail}>Reserve {reservedHeightSummary(breakpoint.sizes).label}</span>
                     </div>
                   ))}
                 </div>
@@ -371,11 +369,11 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
       {reviewingFormat ? <OutstreamSettingsPanel key={publisherId+reviewingFormat} publisherId={publisherId} code={reviewingFormat} onClose={()=>setReviewingFormat(null)} onOpenSizeMaps={()=>setReviewingFormat(null)} onSaved={()=>{void loadFormatReview();void onChanged?.();}}/> : null}
       {mode ? (
         <div className="modal-backdrop" onMouseDown={closeForm} role="presentation">
-          <section className="modal-card size-map-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
+          <section aria-labelledby="size-map-editor-title" className="modal-card size-map-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
             <div className="modal-heading">
               <div>
                 <span className="panel-kicker">Responsive size workflow</span>
-                <h2>{mode === 'create' ? 'Create size map' : mode === 'duplicate' ? `Duplicate ${source?.name ?? 'size map'}` : `Edit ${source?.name ?? 'size map'}`}</h2>
+                <h2 id="size-map-editor-title">{mode === 'create' ? 'Create size map' : mode === 'duplicate' ? `Duplicate ${source?.name ?? 'size map'}` : `Edit ${source?.name ?? 'size map'}`}</h2>
               </div>
               <button className="icon-button" onClick={closeForm} type="button">×</button>
             </div>
@@ -387,38 +385,50 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                 <small>Renaming a map updates all ad units that reference it.</small>
               </label>
 
-              <div className="breakpoint-editor">
+              <div className="breakpoint-editor size-map-compat-editor">
                 <div className="breakpoint-editor-heading">
                   <div>
                     <span>Breakpoints</span>
-                    <small>Use 970x250 | fluid. Leave Sizes empty when no ad should serve at that viewport.</small>
+                    <small>Viewport width chooses when a row applies. Sizes lists the allowed creatives, for example 970x250 | fluid. Leave Sizes empty when no ad should serve.</small>
                   </div>
-                  {mode !== 'duplicate' ? <button className="button secondary" onClick={addBreakpoint} type="button">＋ Breakpoint</button> : null}
+                  {mode !== 'duplicate' ? <button className="button secondary" onClick={addBreakpoint} type="button">Add breakpoint</button> : null}
                 </div>
 
-                {rows.map((row, index) => (
+                <p className="size-map-reservation-help">Reserved ad height is calculated from Sizes for standard slots and exported as CSS min-height. Sticky and overlay positions use their own layout. It is separate from the browser viewport height.</p>
+                {rows.map((row, index) => {
+                  const reserve = previewReservedHeight(row.sizesText, index);
+                  return (
                   <div className="breakpoint-form-row" key={row.id}>
                     <label>
-                      <span>Min width</span>
-                      <input disabled={mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minWidth: Number(event.target.value) })} type="number" value={row.minWidth} />
-                    </label>
-                    <label>
-                      <span>Min height</span>
-                      <input disabled={mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minHeight: Number(event.target.value) })} type="number" value={row.minHeight} />
+                      <span>Viewport width ≥ (px)</span>
+                      <input aria-label={`Breakpoint ${index + 1} minimum browser viewport width`} disabled={mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minWidth: Number(event.target.value) })} type="number" value={row.minWidth} />
                     </label>
                     <label className="sizes-field">
                       <span>Sizes</span>
-                      <input disabled={mode === 'duplicate'} onChange={(event) => updateRow(row.id, { sizesText: event.target.value })} placeholder="970x250 | 728x90 | fluid · or leave empty" value={row.sizesText} />
+                      <input aria-label={`Breakpoint ${index + 1} sizes`} disabled={mode === 'duplicate'} onChange={(event) => updateRow(row.id, { sizesText: event.target.value })} placeholder="970x250 | 728x90 | fluid · or leave empty" value={row.sizesText} />
                     </label>
                     {mode !== 'duplicate' ? (
                       <button aria-label={`Remove breakpoint ${index + 1}`} className="breakpoint-remove" disabled={rows.length === 1} onClick={() => removeBreakpoint(row.id)} type="button">×</button>
                     ) : null}
+                    <div className="breakpoint-reserved-height" aria-live="polite">
+                      <span>Reserved ad height / CSS min-height</span>
+                      <output aria-label={`Breakpoint ${index + 1} reserved ad height`}>{reserve?.label ?? 'Enter valid Sizes to calculate'}</output>
+                      <small>{reserve?.detail ?? 'Use fixed dimensions such as 300x250, fluid, or an empty field.'}</small>
+                    </div>
+                    <details className="breakpoint-viewport-height" open={row.minHeight > 0 || undefined}>
+                      <summary>Advanced: browser viewport height{row.minHeight ? ` ≥ ${row.minHeight}px` : ''}</summary>
+                      <label>
+                        <span>Minimum browser viewport height (px)</span>
+                        <input aria-label={`Breakpoint ${index + 1} minimum browser viewport height`} disabled={mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minHeight: Number(event.target.value) })} type="number" value={row.minHeight} />
+                        <small>Additional condition on the browser window, not reserved ad space. Keep 0 for width-only rules. Nonzero values require a script and ad format that support viewport-height rules.</small>
+                      </label>
+                    </details>
                   </div>
-                ))}
+                );})}
               </div>
 
               {mode === 'duplicate' ? <div className="form-options">The copied map keeps all {source?.map.length ?? 0} breakpoint(s). Save it first, then edit if needed.</div> : null}
-              {formError ? <div className="form-error">{formError}</div> : null}
+              {formError ? <div role="alert" className="form-error">{formError}</div> : null}
               <div className="modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeForm} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting} type="submit">

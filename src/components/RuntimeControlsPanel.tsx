@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type Props = {
   publisherId: string;
@@ -8,6 +8,7 @@ type Props = {
 type RuntimeControlsPayload = {
   ok: true;
   bottomManagedByPositions?: boolean;
+  unsupportedStickyControls?: boolean;
   controls: {
     sticky: {
       bottomAdUnitId: string | null;
@@ -97,12 +98,19 @@ function formFromPayload(payload: RuntimeControlsPayload): FormState {
   };
 }
 
+function floorValue(rawValue: string, label: string): number {
+  const value = Number(rawValue);
+  if (!rawValue.trim() || !Number.isFinite(value) || value < 0 || value > 1000) {
+    throw new Error(`${label} must be a number between 0 and 1000.`);
+  }
+  return value;
+}
+
 function numberMap(input: Record<string, string>): Record<string, number> {
   const output: Record<string, number> = {};
   for (const [key, rawValue] of Object.entries(input)) {
     if (!rawValue.trim()) continue;
-    const value = Number(rawValue);
-    if (Number.isFinite(value) && value >= 0) output[key] = value;
+    output[key] = floorValue(rawValue, `Bidder floor "${key}"`);
   }
   return output;
 }
@@ -114,6 +122,14 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const errorNotice = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (error) {
+      errorNotice.current?.scrollIntoView({ block: 'center' });
+      errorNotice.current?.focus({ preventScroll: true });
+    }
+  }, [error]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -148,20 +164,17 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
     setError(null);
     setMessage(null);
 
-    const rules: Record<string, number> = {};
-    for (const row of form.floorRules) {
-      const key = row.key.trim();
-      if (!key || !row.value.trim()) continue;
-      const value = Number(row.value);
-      if (!Number.isFinite(value) || value < 0) {
-        setSaving(false);
-        setError(`Floor rule "${key || 'unnamed'}" must have a non-negative numeric value.`);
-        return;
-      }
-      rules[key] = value;
-    }
-
     try {
+      const hardFloor = floorValue(form.hardFloor, 'Global hard floor');
+      const bidderFloors = numberMap(form.bidderFloors);
+      const rules: Record<string, number> = {};
+      for (const [index, row] of form.floorRules.entries()) {
+        const key = row.key.trim();
+        if (!key && !row.value.trim()) continue;
+        if (!key) throw new Error(`Floor rule ${index + 1} needs a rule key.`);
+        if (Object.hasOwn(rules, key)) throw new Error(`Floor rule "${key}" is duplicated. Keep one value for each rule key.`);
+        rules[key] = floorValue(row.value, `Floor rule "${key}"`);
+      }
       const next = await requestJson<RuntimeControlsPayload>(
         `/api/publishers/${encodeURIComponent(publisherId)}/runtime-controls`,
         {
@@ -176,8 +189,8 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
             floors: {
               enabled: form.floorsEnabled,
               currency: form.currency.trim().toUpperCase(),
-              hardFloor: Number(form.hardFloor),
-              bidderFloors: numberMap(form.bidderFloors),
+              hardFloor,
+              bidderFloors,
               rules,
             },
             output: {
@@ -188,7 +201,9 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
       );
       setPayload(next);
       setForm(formFromPayload(next));
-      setMessage('Runtime controls saved. The next generated release will use these values.');
+      setMessage(next.unsupportedStickyControls && (next.controls.sticky.topAdUnitId || next.controls.sticky.allowClosePortal)
+        ? 'Runtime controls saved. Disable the unsupported Sticky settings before generating.'
+        : 'Runtime controls saved. The next generated release will use these values.');
       await onChanged?.();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Runtime controls could not be saved.');
@@ -225,8 +240,8 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
         <button className="button secondary" onClick={() => void load()} type="button">Refresh</button>
       </div>
 
-      {error ? <div className="form-error config-error">{error}</div> : null}
-      {message ? <div className="runtime-controls-message">{message}</div> : null}
+      {error ? <div ref={errorNotice} tabIndex={-1} role="alert" className="form-error config-error">{error}</div> : null}
+      {message ? <div role="status" className="runtime-controls-message">{message}</div> : null}
       {!form.floorsConfigured ? (
         <div className="runtime-controls-message">
           Floor controls have not been saved for this site. The current generator template keeps its existing legacy floor behavior until you click Save runtime controls.
@@ -238,6 +253,12 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
           <div className="runtime-controls-card-heading">
             <div><span className="panel-kicker">Sticky ads</span><h3>Reusable sticky positions</h3></div>
           </div>
+
+          {payload.unsupportedStickyControls ? <p className={`runtime-controls-compatibility${form.topAdUnitId || form.allowClosePortal ? ' needs-review' : ''}`} role="status">
+            {form.topAdUnitId || form.allowClosePortal
+              ? 'Saved Top Sticky or close-button portal settings are not supported by this script. Disable them before generating. Other settings can still be saved.'
+              : 'Top Sticky and the close-button portal option are unavailable for this script. Bottom Sticky is managed under Ad units.'}
+          </p> : null}
 
           <div className="runtime-controls-fields two-columns">
             <label>
@@ -258,21 +279,24 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
             <label>
               <span>Top sticky ad unit</span>
               <select
+                disabled={saving || Boolean(payload.unsupportedStickyControls && !payload.controls.sticky.topAdUnitId)}
                 onChange={(event) => setForm((current) => current ? { ...current, topAdUnitId: event.target.value } : current)}
                 value={form.topAdUnitId}
               >
                 <option value="">Disabled</option>
+                {payload.controls.sticky.topAdUnitId && !payload.adUnits.some(unit => unit.code === payload.controls.sticky.topAdUnitId) ? <option value={payload.controls.sticky.topAdUnitId}>{payload.controls.sticky.topAdUnitId} · saved</option> : null}
                 {payload.adUnits.map((unit) => (
-                  <option key={unit.code} value={unit.code}>{unit.code}{unit.enabled ? '' : ' · disabled'}</option>
+                  <option disabled={payload.unsupportedStickyControls && unit.code !== payload.controls.sticky.topAdUnitId} key={unit.code} value={unit.code}>{unit.code}{unit.enabled ? '' : ' · disabled'}</option>
                 ))}
               </select>
-              <small>Leave empty unless a future publisher explicitly uses a top sticky position.</small>
+              <small>{payload.unsupportedStickyControls ? 'Existing values are retained until you explicitly choose Disabled and save.' : 'Leave empty unless the publisher uses a top sticky position.'}</small>
             </label>
           </div>
 
           <label className="runtime-controls-check">
             <input
               checked={form.allowClosePortal}
+              disabled={saving || Boolean(payload.unsupportedStickyControls && !payload.controls.sticky.allowClosePortal)}
               onChange={(event) => setForm((current) => current ? { ...current, allowClosePortal: event.target.checked } : current)}
               type="checkbox"
             />
@@ -335,6 +359,7 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
             <span>Global hard floor</span>
             <input
               min="0"
+              max="1000"
               onChange={(event) => setForm((current) => current ? { ...current, hardFloor: event.target.value } : current)}
               step="0.01"
               type="number"
@@ -357,6 +382,7 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
                 <span>{bidder.bidder}{bidder.enabled ? '' : ' · saved, excluded'}</span>
                 <input
                   min="0"
+                  max="1000"
                   onChange={(event) => setForm((current) => current ? {
                     ...current,
                     bidderFloors: { ...current.bidderFloors, [bidder.bidder]: event.target.value },
@@ -387,9 +413,10 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
           </div>
 
           <div className="runtime-floor-rules">
-            {form.floorRules.map((row) => (
+            {form.floorRules.map((row, index) => (
               <div className="runtime-floor-rule-row" key={row.id}>
                 <input
+                  aria-label={`Floor rule ${index + 1} key`}
                   onChange={(event) => setForm((current) => current ? {
                     ...current,
                     floorRules: current.floorRules.map((candidate) => candidate.id === row.id
@@ -400,7 +427,9 @@ export default function RuntimeControlsPanel({ publisherId, onChanged }: Props) 
                   value={row.key}
                 />
                 <input
+                  aria-label={`Floor rule ${index + 1} value`}
                   min="0"
+                  max="1000"
                   onChange={(event) => setForm((current) => current ? {
                     ...current,
                     floorRules: current.floorRules.map((candidate) => candidate.id === row.id

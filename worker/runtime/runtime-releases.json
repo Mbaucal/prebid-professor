@@ -1,5 +1,85 @@
 [
   {
+    "id": "tessera-3.20.1",
+    "version": "3.20.1",
+    "codeSha256": "3fb755b152d8e2e061745fb692265919caa50ee6419a0e5503f7f1f5b8bc9c50",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules",
+      "viewport-height-size-maps",
+      "gam-code-compatibility"
+    ],
+    "date": "2026-11-10",
+    "title": "Tessera 3.20.1 — viewport maps with exact GAM codes",
+    "sourceManifest": "scripts/prepare-runtime3201.mjs",
+    "sourceCommit": "590de87ad5734fb2b7f83e3de159d22d427ffbdb",
+    "changes": [
+      "Combines width-and-height viewport maps, conditional category and GEO maps, and consent-gated initial resize recovery with exact GAM ad unit codes.",
+      "Keeps periods, leading numbers, Unicode and supported punctuation intact in GPT, Prebid, HTML, CSS and stored packages.",
+      "Inactive ad unit bidder overrides stay saved for reactivation and are omitted only from generated active inventory.",
+      "Existing script choices and packages remain unchanged. Select and save 3.20.1 explicitly to use the combined behavior."
+    ]
+  },
+  {
+    "id": "tessera-3.20.0",
+    "version": "3.20.0",
+    "codeSha256": "41d542a0adf9ae22ca557bd4fd36d26dfacd52eee9be5f95a20501e3dd6a4aee",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules",
+      "viewport-height-size-maps"
+    ],
+    "date": "2026-11-09",
+    "title": "Tessera 3.20.0 — consistent viewport maps and clearer validation",
+    "sourceManifest": "scripts/prepare-runtime320.mjs",
+    "sourceCommit": "0da8624fa8e1fe360a3f5edb69a06d752ea4a61d",
+    "changes": [
+      "GPT, Prebid and reserved CSS select the same width and height breakpoint. Sticky, page-type and conditional maps retain their configured size limits.",
+      "An unmatched map has no eligible sizes; empty rows remain disabled. Existing saved maps are preserved and any added empty baseline is documented in the generated package.",
+      "Never-requested ATF Banner and Bottom Sticky can start after an eligible viewport change through the existing consent and lazy-loading gates. Resize does not refresh served or closed positions.",
+      "Bidder overrides belonging to disabled or draft positions do not block generation. They remain saved for reactivation; genuinely missing positions still require correction.",
+      "Browser viewport conditions are separate from CSS reserved height. Existing site selections, runtime sources and packages remain unchanged until a new version is selected."
+    ]
+  },
+  {
     "id": "tessera-3.19.1",
     "version": "3.19.1",
     "codeSha256": "7b5306c280c1644ee15a23f254940ff4d356355030b9603da67e2e125d37cdec",
@@ -28,7 +108,7 @@
       "gam-code-compatibility"
     ],
     "date": "2026-11-09",
-    "title": "Tessera 3.19.1 \u2014 exact GAM ad unit codes",
+    "title": "Tessera 3.19.1 — exact GAM ad unit codes",
     "sourceManifest": "scripts/prepare-runtime3191.mjs",
     "sourceCommit": "8794c0cb097fbc011afe3c65d358f0bbc9041fdd",
     "changes": [
@@ -65,7 +145,7 @@
       "interstitial-fallback-rules"
     ],
     "date": "2026-11-09",
-    "title": "Tessera 3.19.0 \u2014 country rules and GAM targeting",
+    "title": "Tessera 3.19.0 — country rules and GAM targeting",
     "sourceManifest": "scripts/prepare-runtime319.mjs",
     "sourceCommit": "b3de0051644b2c8d4d50481f4669c33fa9c70bd3",
     "changes": [
@@ -99,7 +179,7 @@
       "country-signal"
     ],
     "date": "2026-11-09",
-    "title": "Tessera 3.18.0 \u2014 background country recognition",
+    "title": "Tessera 3.18.0 — background country recognition",
     "sourceManifest": "scripts/prepare-runtime318.mjs",
     "sourceCommit": "40c55229ecf232674100137d5728bb37b3edf749",
     "changes": [
@@ -133,7 +213,7 @@
       "literal-schain"
     ],
     "date": "2026-11-09",
-    "title": "Tessera 3.17.0 \u2014 page key-value rules for Banner and Sticky",
+    "title": "Tessera 3.17.0 — page key-value rules for Banner and Sticky",
     "sourceManifest": "scripts/prepare-runtime317.mjs",
     "sourceCommit": "3fafca5bfcea8155fdc3cf9e424411da9af561fc",
     "changes": [
@@ -165,7 +245,7 @@
       "outstream-pilot"
     ],
     "date": "2026-10-26",
-    "title": "Tessera 3.16.2 \u2014 empty Sticky retry, inherited refresh visibility threshold and schedule steps",
+    "title": "Tessera 3.16.2 — empty Sticky retry, inherited refresh visibility threshold and schedule steps",
     "sourceManifest": "scripts/prepare-runtime3162.mjs",
     "sourceCommit": "dbf391e365a8641b6f6e1a011233c51b13adc2c3",
     "changes": [
@@ -199,7 +279,7 @@
       "outstream-pilot"
     ],
     "date": "2026-10-24",
-    "title": "Tessera 3.16.1 \u2014 verified refresh and delivery corrections",
+    "title": "Tessera 3.16.1 — verified refresh and delivery corrections",
     "sourceManifest": "scripts/prepare-runtime3161.mjs",
     "sourceCommit": "b8466a6d582f5085fbb8a03f29b88b42af5770e8",
     "changes": [

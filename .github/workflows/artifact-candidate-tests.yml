@@ -43,7 +43,9 @@ jobs:
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/gam-code-import-regression.test.mjs tests/runtime/gam-code-compatibility.test.mjs
           node --experimental-strip-types scripts/qa-gam-code-packages.mjs . .generated/qa-gam-codes
+          node --experimental-strip-types scripts/qa-gam-code-packages.mjs . .generated/qa-gam-codes3201 3201
           python scripts/qa-gam-code-browser.py . .generated/qa-gam-codes
+          python scripts/qa-gam-code-browser.py . .generated/qa-gam-codes3201
       - name: Retain regression evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -51,6 +53,7 @@ jobs:
           name: artifact-candidate-evidence
           path: |
             .generated/qa-gam-codes/
+            .generated/qa-gam-codes3201/
             .generated/artifact-candidate-verification/*-report.json
             .generated/artifact-candidate-verification/readable/*-report.json
             .generated/artifact-candidate-verification/readable/*.png

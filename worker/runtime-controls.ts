@@ -60,6 +60,24 @@ function normalizeNumberMap(value: unknown): Record<string, number> {
   return output;
 }
 
+function validateFloorMap(value: unknown, label: string): Record<string, number> | Response {
+  if (value === undefined) return {};
+  if (!isRecord(value)) return apiError(`${label} must be a map of numeric values between 0 and 1000.`, 422);
+  const result: Record<string, number> = {};
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    const key = rawKey.trim();
+    const numeric = (typeof rawValue === 'number' || (typeof rawValue === 'string' && rawValue.trim() !== '')) ? Number(rawValue) : NaN;
+    if (!key || ['__proto__', 'constructor', 'prototype'].includes(key) || Object.hasOwn(result, key)) {
+      return apiError(`${label}: use unique, non-empty keys.`, 422);
+    }
+    if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1000) {
+      return apiError(`${label} "${key}" must be a number between 0 and 1000.`, 422);
+    }
+    result[key] = numeric;
+  }
+  return result;
+}
+
 function nullableString(value: unknown): string | null {
   const normalized = String(value ?? '').trim();
   return normalized || null;
@@ -167,8 +185,10 @@ function validateControls(body: JsonRecord, adUnitCodes: Set<string>): RuntimeCo
     return apiError('Global floor must be a number between 0 and 1000.', 422);
   }
 
-  const bidderFloors = normalizeNumberMap(floorsInput.bidderFloors);
-  const rules = normalizeNumberMap(floorsInput.rules);
+  const bidderFloors = validateFloorMap(floorsInput.bidderFloors, 'Bidder floor');
+  if (bidderFloors instanceof Response) return bidderFloors;
+  const rules = validateFloorMap(floorsInput.rules, 'Floor rule');
+  if (rules instanceof Response) return rules;
 
   return {
     sticky: {
@@ -195,6 +215,7 @@ async function buildPayload(db: D1Database, siteId: string, config: JsonRecord) 
   return {
     ok: true,
     bottomManagedByPositions: Boolean(config.builtinRuntimeSelection),
+    unsupportedStickyControls: Boolean(config.builtinRuntimeSelection),
     controls: controlsFromConfig(config, references.adUnits.map((unit) => unit.code)),
     ...references,
     floorRuleSchema: {
@@ -244,6 +265,12 @@ export async function updateRuntimeControls(
   } } : body;
   const controls = validateControls(input, new Set(references.adUnits.map((unit) => unit.code)));
   if (controls instanceof Response) return controls;
+  if (config.builtinRuntimeSelection && (
+    (controls.sticky.topAdUnitId && controls.sticky.topAdUnitId !== previous.sticky.topAdUnitId)
+    || (controls.sticky.allowClosePortal && !previous.sticky.allowClosePortal)
+  )) {
+    return apiError('The selected built-in script does not support Top sticky or close-button portal. Use Bottom Sticky under Ad units → Display & loading. Existing saved values are kept; remove an unsupported setting explicitly before Generate.', 422);
+  }
 
   // Preserve versioned position/TakeOver options owned by the ad-unit editor.
   config.runtimeControls = { ...(isRecord(config.runtimeControls)?config.runtimeControls:{}), ...controls };
