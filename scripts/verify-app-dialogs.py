@@ -1,5 +1,5 @@
 """Actual React dialogs; all writes are held synthetic API responses, never live."""
-import json, subprocess
+import json, subprocess, time
 from pathlib import Path
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright, expect
@@ -26,6 +26,18 @@ try:
     if path=='/api/organization':r.fulfill(json={'agencies':[],'memberships':[]});return
     r.continue_()
    page.route('**/*',route)
+   def submit_held(dialog,method,path):
+    # The React saving state can paint before Playwright dispatches the route callback.
+    # Wait for the exact intercepted write, keeping its response held for the UI checks.
+    assert not pending,pending
+    with page.expect_request(lambda request: request.method==method and urlparse(request.url).path==path):
+     dialog.locator('button[type=submit]').click()
+    deadline=time.monotonic()+5
+    while not pending and time.monotonic()<deadline:page.wait_for_timeout(10)
+    assert len(pending)==1,f'Expected one held {method} {path}, received {len(pending)}'
+    held=pending.pop()
+    assert held.request.method==method and urlparse(held.request.url).path==path
+    return held
    def record(name):
     assert not errors,errors
     assert not external,external
@@ -63,29 +75,28 @@ try:
     d.get_by_label('Publisher name' if mode=='publisher' else 'Site name',exact=True).fill('New fixture')
     if mode=='create':
      d.get_by_label('Domain',exact=True).fill('fixture.invalid');d.get_by_label('GAM path',exact=True).fill('/123/fixture/')
-    d.locator('button[type=submit]').click();expect(d.get_by_role('button',name='Saving…')).to_be_disabled()
+    held=submit_held(d,'POST','/api/publisher-accounts' if mode=='publisher' else '/api/sites');expect(d.get_by_role('button',name='Saving…')).to_be_disabled()
     page.keyboard.press('Escape');expect(d).to_be_visible()
-    pending.pop().fulfill(status=503,json={'error':'Synthetic create unavailable'})
+    held.fulfill(status=503,json={'error':'Synthetic create unavailable'})
     expect(d.get_by_role('alert')).to_contain_text('Synthetic create unavailable')
     expect(d.get_by_label('Publisher name' if mode=='publisher' else 'Site name',exact=True)).to_have_value('New fixture')
     d.get_by_role('button',name='Cancel',exact=True).click();expect(opener).to_be_focused();record(mode+'-held-error')
    start();opener,d=open_mode('edit');d.get_by_label('Site name',exact=True).fill('Retained value')
-   d.get_by_role('button',name='Save site').click();expect(d.get_by_role('button',name='Saving…')).to_be_disabled()
-   assert len(pending)==1
+   held=submit_held(d,'PATCH','/api/sites/site-a');expect(d.get_by_role('button',name='Saving…')).to_be_disabled()
    page.keyboard.press('Escape');expect(d).to_be_visible()
    expect(d.get_by_role('button',name='Close dialog')).to_be_disabled();expect(d.get_by_role('button',name='Cancel')).to_be_disabled()
    d.click(position={'x':2,'y':2});expect(d).to_be_visible();record('held-save-lock')
-   pending.pop().fulfill(status=503,json={'error':'Synthetic save unavailable'})
+   held.fulfill(status=503,json={'error':'Synthetic save unavailable'})
    expect(d.get_by_role('alert')).to_contain_text('Synthetic save unavailable');expect(d.get_by_label('Site name',exact=True)).to_have_value('Retained value')
    expect(d.get_by_role('button',name='Save site')).to_be_enabled();page.screenshot(path=str(out/f'error-{width}.png'));record('error-retains-values')
-   d.get_by_role('button',name='Save site').click();expect(d.get_by_role('button',name='Saving…')).to_be_visible()
-   pending.pop().fulfill(json={'site':site('site-a')});expect(d).to_have_count(0);expect(opener).to_be_focused();record('success-return')
+   held=submit_held(d,'PATCH','/api/sites/site-a');expect(d.get_by_role('button',name='Saving…')).to_be_visible()
+   held.fulfill(json={'site':site('site-a')});expect(d).to_have_count(0);expect(opener).to_be_focused();record('success-return')
    # Real popstate route change while an old request is held; a new dialog owns all state.
    for outcome in ['error','success']:
     start();page.evaluate("history.pushState(null,'','?section=publishers&publisher=publisher-a&site=site-b&tab=overview'); dispatchEvent(new PopStateEvent('popstate'))")
     expect(page.locator('.workspace h1')).to_have_text('site-b.example.com')
     page.go_back();expect(page.locator('.workspace h1')).to_have_text('site-a.example.com')
-    opener,d=open_mode('edit');d.get_by_role('button',name='Save site').click();expect(d.get_by_role('button',name='Saving…')).to_be_visible();old=pending.pop()
+    opener,d=open_mode('edit');old=submit_held(d,'PATCH','/api/sites/site-a');expect(d.get_by_role('button',name='Saving…')).to_be_visible()
     opener.evaluate("element => { window.staleOpenerFocus=0; element.addEventListener('focus', () => window.staleOpenerFocus++); }")
     page.go_forward();expect(page.locator('.workspace h1')).to_have_text('site-b.example.com');expect(page.get_by_role('dialog')).to_have_count(0)
     assert page.evaluate('window.staleOpenerFocus')==0
