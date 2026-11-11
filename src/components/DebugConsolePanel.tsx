@@ -1,3 +1,4 @@
+import {contextualSignalsInspectCommand} from '../debug/contextual-signals-inspect.mjs';
 import { experimentInspectCommand } from '../debug/experiment-inspect.mjs';
 import { schainInspectCommand, schainPositionCommand } from '../debug/schain-inspect.mjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -832,6 +833,14 @@ function buildCommands(scope: DebugScope): DebugCommand[] {
       title: 'User ID state',
       description: 'Print Prebid User ID and EID state plus matching localStorage key names without reading stored values.',
       code: userIdsCommand(scope),
+    },
+    {
+      id: 'contextual-signals',
+      category: 'Prebid',
+      title: 'Contextual signals / PPS',
+      description: 'Read configured IAB versions, category mappings and auction enrichment. This does not confirm SSP receipt or acceptance.',
+      code: contextualSignalsInspectCommand(),
+      scope: 'page',
     },
     {
       id: 'schain',

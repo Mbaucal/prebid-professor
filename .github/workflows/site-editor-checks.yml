@@ -2,7 +2,7 @@ name: TEST site editor checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [tools/**, package.json, package-lock.json, ops/runtime-test/**, wrangler.jsonc, worker/**, src/**, public/**, index.html, shared/inventory/**, tests/**, scripts/**, .github/workflows/site-editor-checks.yml]
+    paths: [tools/**, package.json, package-lock.json, ops/runtime-test/**, wrangler.jsonc, worker/**, src/**, public/**, index.html, shared/inventory/**, shared/contextual-signals/**, tests/**, scripts/**, .github/workflows/site-editor-checks.yml]
   push:
     branches: [main, feature/isolated-runtime-workspace-v1]
 permissions:
@@ -31,6 +31,8 @@ jobs:
       - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/site-draft.test.mjs tests/runtime/test-site-editor-http.test.mjs tests/runtime/ad-position-runtime.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/site-duplication.test.mjs tests/runtime/site-package-flow.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/size-map-csv-template.test.mjs tests/runtime/site-test-page.test.mjs
       - name: Preserve audited rule edits, user sync defaults and exact Prebid files
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/admin-rules-and-sync-audit.test.mjs tests/runtime/admin-unit-rule-concurrency.test.mjs tests/runtime/prebid-digit-modules-flow.test.mjs tests/runtime/compiler-input-compatibility.test.mjs tests/runtime/refresh-summary.test.mjs tests/runtime/size-map-compatibility.test.mjs tests/runtime/generator-guard-audit.test.mjs tests/runtime/inactive-override-package-qa.test.mjs tests/runtime/runtime3201-package-qa.test.mjs tests/runtime/outstream-runtime-eligibility.test.mjs
+      - name: Verify contextual taxonomy settings, auction isolation and build integration
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/contextual-signals-*.test.mjs
       - name: Verify console SChain evidence and transparent network observation
         run: node --test tests/runtime/schain-inspect.test.mjs tests/runtime/experiment-inspect.test.mjs
       - run: node scripts/isolated-toolchain.mjs build
@@ -59,6 +61,8 @@ jobs:
           python scripts/verify-runtime-controls-validation-ui.py
           python scripts/verify-inactive-media-ui-qa.py
           python scripts/verify-draft-inventory-ui.py
+      - name: Contextual signal editor on desktop and narrow screens
+        run: python scripts/verify-contextual-signals-ui.py
       - run: python scripts/verify-site-editor.py
       - run: python scripts/verify-site-workspace.py
       - run: node --experimental-strip-types scripts/prepare-test-page-browser-fixture.mjs && python scripts/verify-site-test-page.py
@@ -76,6 +80,7 @@ jobs:
             .generated/runtime-controls-validation-ui/
             .generated/inactive-media-ui-qa/
             .generated/draft-inventory-ui/
+            .generated/contextual-signals-ui-evidence/
             .generated/site-editor-evidence/
             .generated/position-evidence/
             .generated/site-workspace-evidence/
