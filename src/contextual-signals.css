@@ -1,0 +1,23 @@
+.contextual-signals-page{display:grid;gap:18px;padding:24px;min-width:0}
+.contextual-signals-page .config-toolbar{margin:0}
+.contextual-signals-page p{margin:0;line-height:1.55}
+.contextual-signals-card{display:grid;gap:16px;margin:0;padding:20px;border:1px solid #d3dceb;border-radius:14px;background:#fff;min-width:0}
+.contextual-signals-card legend{padding:0 8px;font-weight:750;color:#273142}
+.contextual-signals-field{display:grid;gap:7px;min-width:0;font-weight:600}
+.contextual-signals-field input,.contextual-signals-field select{width:100%;min-width:0;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#273142;font:inherit}
+.contextual-signals-field small,.contextual-signals-help{font-size:13px;line-height:1.5;font-weight:400;color:#64748b;overflow-wrap:anywhere}
+.contextual-signals-field code{overflow-wrap:anywhere}
+.contextual-signals-bidders,.contextual-signals-id-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.contextual-signals-mappings{display:grid;gap:16px}
+.contextual-signals-mapping{display:grid;gap:16px;min-width:0;padding:16px;border:1px solid #dce3ed;border-radius:10px;background:#f8fafc}
+.contextual-signals-row-heading,.contextual-signals-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.contextual-signals-actions{justify-content:flex-start}
+.contextual-signals-page .check-row{display:flex;gap:10px;align-items:flex-start;line-height:1.5}
+.contextual-signals-page .check-row input{margin-top:4px;flex:none}
+.contextual-signals-note{padding:12px 14px;border:1px solid #f1d7a8;border-radius:8px;background:#fff9ed;color:#765b24;font-size:14px}
+.contextual-signals-page button{white-space:normal}
+.contextual-signals-page fieldset:disabled{opacity:.7}
+.contextual-signals-integration{display:grid;gap:12px;font-size:14px;line-height:1.5}
+.contextual-signals-integration summary{cursor:pointer;font-weight:650}
+.contextual-signals-integration[open] p{margin:12px 0}
+@media(max-width:640px){.contextual-signals-page{padding:16px;gap:16px}.contextual-signals-card{padding:14px}.contextual-signals-bidders,.contextual-signals-id-fields{grid-template-columns:minmax(0,1fr)}.contextual-signals-mapping{padding:12px}.contextual-signals-actions>.button{width:100%}}
