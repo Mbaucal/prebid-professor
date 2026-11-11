@@ -1,5 +1,46 @@
 [
   {
+    "id": "tessera-3.21.0",
+    "version": "3.21.0",
+    "codeSha256": "8283e7aa041cc71d6cd2475c684f5a7a0e4e60a8c858fd5383bf452071790ce2",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules",
+      "viewport-height-size-maps",
+      "gam-code-compatibility",
+      "contextual-signals"
+    ],
+    "date": "2026-11-11",
+    "title": "Tessera 3.21.0 — explicit contextual IAB signals",
+    "sourceManifest": "scripts/prepare-runtime321.mjs",
+    "sourceCommit": "45d468bc8c73173a132da95f61fc1adc29b149a3",
+    "changes": [
+      "Optional exact category mappings with independent IAB Content 2.2 and 3.0 IDs per selected bidder. GAM PPS uses Content 2.2 and explicit page-level ownership.",
+      "A custom RTD provider enriches auction-local bidder content without overwriting SChain, foreign first-party data or consent configuration. Missing optional modules and unmapped categories do not block ads.",
+      "Diagnostics distinguish configured routes and auction enrichment from unconfirmed SSP taxonomy acceptance. A build kit preserves the saved Prebid module list.",
+      "All existing script choices and packages remain unchanged. Select and save 3.21.0 explicitly to use these settings."
+    ]
+  },
+  {
     "id": "tessera-3.20.1",
     "version": "3.20.1",
     "codeSha256": "3fb755b152d8e2e061745fb692265919caa50ee6419a0e5503f7f1f5b8bc9c50",

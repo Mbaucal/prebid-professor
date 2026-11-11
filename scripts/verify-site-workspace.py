@@ -104,7 +104,7 @@ try:
     assert stored_download.value.suggested_filename.startswith('builtin-draft-')
     with zipfile.ZipFile(stored_download.value.path()) as archive:
         manifest=json.loads(archive.read('manifest.json'))
-        assert manifest['runtime']['runtimeVersion']==current['version']=='3.20.1'
+        assert manifest['runtime']['runtimeVersion']==current['version']=='3.21.0'
         assert manifest['runtime']['runtimeSha256']==current['codeSha256']
         assert 'deals-plan.json' in archive.namelist()
         assert 'prebid.js' not in archive.namelist()
@@ -131,6 +131,29 @@ try:
     assert all(r['method']=='GET' for r in requests[before:])
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
     page.screenshot(path=str(out/'mobile-test-page-section.png'),full_page=True)
+    page.get_by_role('button',name='Contextual signals',exact=True).click()
+    panel=page.get_by_role('region',name='Contextual signals',exact=True)
+    expect(panel.get_by_role('checkbox',name='Enable contextual signals for this site')).not_to_be_checked()
+    expect(page.get_by_role('textbox',name='Contextual signals console command')).to_have_value(__import__('re').compile('__AD_CONTEXT'))
+    for width in [1280,390]:
+        page.set_viewport_size({'width':width,'height':900})
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+        page.screenshot(path=str(out/f'contextual-signals-{width}.png'),full_page=True)
+    panel.get_by_role('checkbox',name='Enable contextual signals for this site').check()
+    panel.get_by_role('button',name='Add category mapping').click()
+    panel.get_by_role('textbox',name='Page category 1',exact=True).fill('Books')
+    panel.get_by_role('combobox',name='Content 2.2 IDs for mapping 1').fill('48')
+    panel.get_by_role('button',name='Save contextual signals',exact=True).click()
+    expect(panel.get_by_role('status')).to_contain_text('Saved.')
+    page.reload()
+    expect(panel.get_by_role('combobox',name='Content 2.2 IDs for mapping 1')).to_have_value('48')
+    panel.get_by_text('Prebid integration required',exact=True).click()
+    with page.expect_download() as kit_download:
+        panel.get_by_role('link',name='Download Prebid integration kit',exact=True).click()
+    with zipfile.ZipFile(kit_download.value.path()) as kit:
+        assert 'modules/contextualSignalsRtdProvider.js' in kit.namelist()
+        assert json.loads(kit.read('integration.json'))['siteId']=='test-site'
+    page.screenshot(path=str(out/'contextual-signals-saved-mobile.png'),full_page=True)
     assert not errors,errors
     browser.close()
     (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'requests':requests,'externalRequests':0},indent=2))

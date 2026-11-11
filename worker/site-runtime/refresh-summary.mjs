@@ -11,7 +11,7 @@ export function refreshSummary(input, units, runtime, basicRules = []) {
   const selected = ([id, version]) => (runtime?.runtimeId ?? runtime?.id) === id && (runtime?.runtimeVersion ?? runtime?.version) === version;
   // 3.16.2 checks a position without its own saved percentage against the
   // script's inherited threshold (Default refresh, else ATF refresh, else 50%).
-  const inheritedViewPct = (selected(['tessera-3.20.1', '3.20.1']) || selected(['tessera-3.19.1', '3.19.1']) || selected(['tessera-3.20.0', '3.20.0']) || selected(['tessera-3.19.0', '3.19.0']) || selected(['tessera-3.18.0', '3.18.0']) || selected(['tessera-3.16.2', '3.16.2']) || selected(['tessera-3.17.0', '3.17.0'])) ? Number(input.core.globalRefresh.minViewPct ?? 50) : null;
+  const inheritedViewPct = (selected(['tessera-3.21.0', '3.21.0']) || selected(['tessera-3.20.1', '3.20.1']) || selected(['tessera-3.20.0', '3.20.0']) || selected(['tessera-3.19.1', '3.19.1']) || selected(['tessera-3.19.0', '3.19.0']) || selected(['tessera-3.18.0', '3.18.0']) || selected(['tessera-3.16.2', '3.16.2']) || selected(['tessera-3.17.0', '3.17.0'])) ? Number(input.core.globalRefresh.minViewPct ?? 50) : null;
   const inheritedNote = input.core.globalRefresh.minViewPct == null ? `its default ${inheritedViewPct}%`
     : `the ${inheritedViewPct}% saved in the ${rules.__DEFAULT__?.refresh != null ? 'Default' : 'ATF'} refresh rule`;
   // Version-pin capabilities are a frozen schema; the newly registered source

@@ -12,6 +12,7 @@ import SizeMapsCompatPanel from './SizeMapsCompatPanel';
 import SupplyChainConsentPanel from './SupplyChainConsentPanel';
 import UnitRulesPanel from './UnitRulesPanel';
 import UserIdModulesPanel from './UserIdModulesPanel';
+import ContextualSignalsPanel from './ContextualSignalsPanel';
 
 type Props = {
   publisherId: string;
@@ -31,6 +32,7 @@ type ConfigSection =
   | 'runtime-controls'
   | 'supply-consent'
   | 'user-id'
+  | 'contextual-signals'
   | 'generator-profiles'
   | 'legacy-profiles'
   | 'imports';
@@ -73,6 +75,7 @@ export default function ConfigPanel({ publisherId, onChanged, onOpenPrebid, onGe
           CSV import
         </button>
         <button className={section === 'legacy-profiles' ? 'active' : ''} onClick={() => setSection('legacy-profiles')} type="button">Imported templates</button>
+        <button className={section === 'contextual-signals' ? 'active' : ''} onClick={() => setSection('contextual-signals')} type="button">Contextual signals</button>
       </nav>
 
       {section === 'ad-units' ? <AdUnitsPanel onChanged={onChanged} publisherId={publisherId} onOpenSizeMaps={() => setSection('size-maps')} /> : null}
@@ -89,6 +92,7 @@ export default function ConfigPanel({ publisherId, onChanged, onOpenPrebid, onGe
       {section === 'runtime-controls' ? <RuntimeControlsPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'supply-consent' ? <SupplyChainConsentPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'user-id' ? <UserIdModulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'contextual-signals' ? <ContextualSignalsPanel key={publisherId} onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} onOpenPrebid={onOpenPrebid} onChanged={onChanged} onContinue={onGenerate} /> : null}
       {section === 'legacy-profiles' ? <LegacyGeneratorProfilesPanel key={publisherId} publisherId={publisherId} /> : null}
       {section === 'imports' ? (
