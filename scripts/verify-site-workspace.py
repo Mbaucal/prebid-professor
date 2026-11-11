@@ -1,4 +1,4 @@
-"""Shared React controls + real Worker/SQLite, all browser requests intercepted."""
+"""Shared React controls + real Worker/SQLite; only intercepted or loopback requests."""
 import base64,json,subprocess,zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -7,12 +7,13 @@ root=Path(__file__).resolve().parent.parent
 out=root/'.generated/site-workspace-evidence';out.mkdir(exist_ok=True)
 # The current version for new scripts is the newest stable release record.
 current=next(r for r in json.loads((root/'worker/runtime/runtime-releases.json').read_text()) if r['channel']=='stable')
-process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/site-workspace-browser-fixture.mjs'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
-assert json.loads(process.stdout.readline())['ready']
+process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/site-workspace-browser-fixture.mjs','--http'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+fixture=json.loads(process.stdout.readline());assert fixture['ready']
+origin=fixture['origin'];assert urlsplit(origin).hostname=='127.0.0.1'
 errors=[];requests=[]
 def route(request):
     url=urlsplit(request.request.url)
-    assert url.netloc=='tessera.fixture.invalid','Unexpected external request'
+    assert url.netloc==urlsplit(origin).netloc,'Unexpected external request'
     payload={'path':url.path,'method':request.request.method,'body':request.request.post_data}
     process.stdin.write(json.dumps(payload)+'\n');process.stdin.flush()
     result=json.loads(process.stdout.readline());assert 'error' not in result,result
@@ -22,17 +23,17 @@ try:
  with sync_playwright() as p:
     browser=p.chromium.launch(headless=True)
     page=browser.new_page(viewport={'width':1280,'height':900});page.route('**/*',route);page.on('pageerror',lambda e:errors.append(str(e)))
-    page.goto('https://tessera.fixture.invalid/')
+    page.goto(origin+'/')
     page.get_by_role('link',name='Loading rules',exact=True).click()
-    assert page.url=='https://tessera.fixture.invalid/site-workspace#loading'
+    assert page.url==origin+'/site-workspace#loading'
     page.get_by_role('heading',name='Effective behavior by ad unit',exact=True).wait_for()
     page.locator('.runtime-loading-table').get_by_text('Script setup required',exact=True).first.wait_for()
     page.reload()
     page.locator('.runtime-loading-table').get_by_text('Script setup required',exact=True).first.wait_for()
     assert all(r['method']=='GET' for r in requests)
-    page.goto('https://tessera.fixture.invalid/')
+    page.goto(origin+'/')
     page.get_by_role('link',name='Generate and releases',exact=True).click()
-    assert page.url=='https://tessera.fixture.invalid/site-workspace#packages'
+    assert page.url==origin+'/site-workspace#packages'
     page.get_by_role('heading',name='Script setup',exact=True).wait_for()
     assert page.get_by_role('button',name='Generate and save package',exact=True).is_disabled()
     assert all(r['method']=='GET' for r in requests)
@@ -104,7 +105,7 @@ try:
     assert stored_download.value.suggested_filename.startswith('builtin-draft-')
     with zipfile.ZipFile(stored_download.value.path()) as archive:
         manifest=json.loads(archive.read('manifest.json'))
-        assert manifest['runtime']['runtimeVersion']==current['version']=='3.20.1'
+        assert manifest['runtime']['runtimeVersion']==current['version']=='3.21.0'
         assert manifest['runtime']['runtimeSha256']==current['codeSha256']
         assert 'deals-plan.json' in archive.namelist()
         assert 'prebid.js' not in archive.namelist()
@@ -114,7 +115,7 @@ try:
     page.screenshot(path=str(out/'mobile-packages.png'),full_page=True)
     before=len(requests)
     # Existing bookmarks open the generator directly after removing the guide.
-    page.goto('https://tessera.fixture.invalid/site-workspace#workflow')
+    page.goto(origin+'/site-workspace#workflow')
     page.reload()
     page.get_by_text('Browser package check',exact=True).wait_for()
     assert page.get_by_role('button',name='Build workflow',exact=True).count()==0
@@ -131,6 +132,34 @@ try:
     assert all(r['method']=='GET' for r in requests[before:])
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
     page.screenshot(path=str(out/'mobile-test-page-section.png'),full_page=True)
+    page.get_by_role('button',name='Contextual signals',exact=True).click()
+    panel=page.get_by_role('region',name='Contextual signals',exact=True)
+    expect(panel.get_by_role('checkbox',name='Enable contextual signals for this site')).not_to_be_checked()
+    expect(page.get_by_role('textbox',name='Contextual signals console command')).to_have_value(__import__('re').compile('__AD_CONTEXT'))
+    for width in [1280,390]:
+        page.set_viewport_size({'width':width,'height':900})
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+        page.screenshot(path=str(out/f'contextual-signals-{width}.png'),full_page=True)
+    panel.get_by_role('checkbox',name='Enable contextual signals for this site').check()
+    panel.get_by_role('button',name='Add category mapping').click()
+    panel.get_by_role('textbox',name='Page category 1',exact=True).fill('Books')
+    panel.get_by_role('combobox',name='Content 2.2 IDs for mapping 1').fill('48')
+    panel.get_by_role('button',name='Save contextual signals',exact=True).click()
+    expect(panel.get_by_role('status')).to_contain_text('Saved.')
+    page.reload()
+    expect(panel.get_by_role('combobox',name='Content 2.2 IDs for mapping 1')).to_have_value('48')
+    panel.get_by_text('Prebid integration required',exact=True).click()
+    with page.expect_download() as kit_download:
+        panel.get_by_role('link',name='Download Prebid integration kit',exact=True).click()
+    with zipfile.ZipFile(kit_download.value.path()) as kit:
+        assert 'modules/contextualSignalsRtdProvider.js' in kit.namelist()
+        assert json.loads(kit.read('integration.json'))['siteId']=='test-site'
+    process.stdin.write(json.dumps({'inspectHttpRequests':True})+'\n');process.stdin.flush()
+    native_requests=json.loads(process.stdout.readline())['httpRequests']
+    combined=requests+native_requests
+    assert any(r['path']=='/test-api/contextual-signals/build-kit' and r['method']=='GET' and r['status']==200 for r in combined),combined
+    requests=combined
+    page.screenshot(path=str(out/'contextual-signals-saved-mobile.png'),full_page=True)
     assert not errors,errors
     browser.close()
     (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'requests':requests,'externalRequests':0},indent=2))

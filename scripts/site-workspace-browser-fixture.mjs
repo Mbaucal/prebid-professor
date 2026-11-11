@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline';
+import { createServer } from 'node:http';
 import { build } from 'esbuild';
 import worker from '../worker/test-workspace/index.mjs';
 import { siteRuntimeResponse } from '../worker/site-runtime/service.mjs';
@@ -35,9 +36,8 @@ if(setupMode){
    :<h2>Prebid.js destination</h2>}</main>}
   createRoot(document.getElementById('root')).render(<Fixture/>);`,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,outdir:'.generated/release-setup',jsx:'automatic',format:'iife',minify:true,define:{'process.env.NODE_ENV':'"production"'}});
 }
-console.log(JSON.stringify({ready:true}));
-for await(const line of createInterface({input:process.stdin})){
- try{const body=JSON.parse(line);let response;
+async function dispatch(body){
+ let response;
  if(setupMode&&body.path==='/setup')response=new Response('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/setup.css"><div id="root"></div><script src="/setup.js"></script>',{headers:{'content-type':'text/html'}});
  else if(setupMode&&['/setup.js','/setup.css'].includes(body.path)){const ext=body.path.endsWith('.js')?'.js':'.css';response=new Response(harness.outputFiles.find(f=>f.path.endsWith(ext)).text,{headers:{'content-type':ext==='.js'?'application/javascript':'text/css'}});}
  else {
@@ -48,7 +48,30 @@ for await(const line of createInterface({input:process.stdin})){
   else if(setupMode&&body.path==='/api/publishers/test-site/builtin-releases')response=await packageResponse(request,f.env,'test-site',TEST_EMAIL,{testOnly:true});
   else response=await worker.fetch(request,f.env);
  }
- console.log(JSON.stringify({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer()).toString('base64')}));}
- catch(e){console.log(JSON.stringify({error:e.message}));}
+ return response;
 }
+// Native anchor downloads may bypass Playwright page routing. The optional
+// loopback server exercises those downloads against this same ephemeral Worker.
+const httpRequests=[];let server;
+if(process.argv.includes('--http')){
+ server=createServer(async(req,res)=>{
+  try{
+   const chunks=[];for await(const chunk of req)chunks.push(chunk);
+   const response=await dispatch({path:req.url,method:req.method,body:chunks.length?Buffer.concat(chunks).toString():null});
+   httpRequests.push({path:req.url,method:req.method,status:response.status});
+   res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));
+  }catch(error){res.writeHead(500,{'content-type':'application/json'});res.end(JSON.stringify({error:error.message}));}
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+}
+console.log(JSON.stringify({ready:true,...(server?{origin:`http://127.0.0.1:${server.address().port}`}:{})}));
+for await(const line of createInterface({input:process.stdin})){
+ try{
+  const body=JSON.parse(line);
+  if(body.inspectHttpRequests){console.log(JSON.stringify({httpRequests}));continue;}
+  const response=await dispatch(body);
+  console.log(JSON.stringify({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer()).toString('base64')}));
+ }catch(e){console.log(JSON.stringify({error:e.message}));}
+}
+if(server)await new Promise(resolve=>server.close(resolve));
 f.close();

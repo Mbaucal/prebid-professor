@@ -1,3 +1,5 @@
+import ContextualSignalsPanel from '../components/ContextualSignalsPanel';
+import {contextualSignalsInspectCommand} from '../debug/contextual-signals-inspect.mjs';
 import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import DealsPanel from '../components/DealsPanel';
@@ -24,11 +26,11 @@ function Formats() {
     {selected?<OutstreamSettingsPanel key={selected} publisherId="test-site" code={selected} endpoint="/test-api/outstream-settings" onClose={()=>setSelected(null)} onSaved={()=>{}}/>:null}
   </section>;
 }
-type View = 'versions'|'positions'|'packages'|'test-page'|'loading'|'deals'|'formats'|'rules';
+type View = 'versions'|'positions'|'packages'|'test-page'|'loading'|'deals'|'formats'|'rules'|'contextual-signals';
 function currentView(): View {
   const hash = window.location.hash.slice(1);
   if (hash === 'workflow') return 'packages';
-  return ['positions', 'packages', 'test-page', 'loading', 'deals', 'formats', 'rules'].includes(hash) ? hash as View : 'versions';
+  return ['positions', 'packages', 'test-page', 'loading', 'deals', 'formats', 'rules', 'contextual-signals'].includes(hash) ? hash as View : 'versions';
 }
 function Workspace() {
   const [view,updateView]=useState<View>(currentView);
@@ -47,9 +49,10 @@ function Workspace() {
       <a href="/site-settings">Units and size maps</a><a href="/prebid-settings">Prebid and bidders</a><button onClick={()=>setView('packages')}>Generate and releases</button>
       <button onClick={()=>setView('deals')}>Deals</button><button onClick={()=>setView('formats')}>Formats</button>
       <button aria-current={view==='loading'?'page':undefined} onClick={()=>setView('loading')}>Loading rules</button>
+      <button aria-current={view==='contextual-signals'?'page':undefined} onClick={()=>setView('contextual-signals')}>Contextual signals</button>
       <button onClick={()=>setView('test-page')}>Test page</button>
     </nav>
-    {view==='rules'?<div className="test-unit-rules"><UnitRulesPanel publisherId="test-site"/></div>:view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='loading'?<SiteLoadingSummaryPanel endpoint="/test-api/site-runtime"/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
+    {view==='contextual-signals'?<><ContextualSignalsPanel publisherId="test-site" endpoint="/test-api/contextual-signals"/><section className="site-runtime-panel"><h2>Contextual signals / PPS debug</h2><p>Copy this read-only command into the console on the page using your generated script. It does not start an auction or confirm SSP acceptance.</p><textarea aria-label="Contextual signals console command" readOnly value={contextualSignalsInspectCommand()} style={{width:'100%',minHeight:180,boxSizing:'border-box'}}/></section></>:view==='rules'?<div className="test-unit-rules"><UnitRulesPanel publisherId="test-site"/></div>:view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='loading'?<SiteLoadingSummaryPanel endpoint="/test-api/site-runtime"/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Workspace/>);

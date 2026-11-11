@@ -1,3 +1,4 @@
+import {contextualSignalsInspectCommand} from '../debug/contextual-signals-inspect.mjs';
 import { schainInspectCommand, schainPositionCommand } from '../debug/schain-inspect.mjs';
 import { identityInspectCommand } from '../debug/identity-inspect.mjs';
 import { demandInspectCommand } from '../debug/demand-inspect.mjs';
@@ -803,6 +804,14 @@ function buildCommands(scope: DebugScope): DebugCommand[] {
       title: 'Identity / EID presence',
       description: 'Compare identity presence in the first retained and latest bidder requests. Shows source and counts, without user ID values.',
       code: identityInspectCommand(scope),
+    },
+    {
+      id: 'contextual-signals',
+      category: 'Prebid',
+      title: 'Contextual signals / PPS',
+      description: 'Read configured IAB versions, category mappings and auction enrichment. This does not confirm SSP receipt or acceptance.',
+      code: contextualSignalsInspectCommand(),
+      scope: 'page',
     },
     {
       id: 'schain',

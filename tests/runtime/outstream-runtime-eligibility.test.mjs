@@ -20,16 +20,16 @@ function snapshot(version,code='Billboard') {
 }
 
 test('sites without saved Outstream settings remain editable under code-compatible versions',()=>{
-  for(const version of ['3.19.1','3.20.0','3.20.1']){
+  for(const version of ['3.19.1','3.20.0','3.20.1','3.21.0']){
     const context=outstreamContext(snapshot(version));
     assert.deepEqual(normalizeOutstream(undefined,context),{schemaVersion:1,units:{}});
     for(const invalid of [null,{}, {schemaVersion:2,units:{}}])assert.throws(()=>normalizeOutstream(invalid,context),/Unsupported outstream settings version/);
   }
 });
 
-test('3.20.1 retains 3.19.1 exact-code fixed and responsive Outstream behavior',()=>{
-  for(const code of ['m.box_3','123_banner','__proto__'])for(const value of [fixed,responsive]){
-    const before=snapshot('3.19.1',code),combined=snapshot('3.20.1',code),saved=structuredClone(combined);
+test('3.20.1 and 3.21.0 retain 3.19.1 exact-code fixed and responsive Outstream behavior',()=>{
+  for(const version of ['3.20.1','3.21.0'])for(const code of ['m.box_3','123_banner','__proto__'])for(const value of [fixed,responsive]){
+    const before=snapshot('3.19.1',code),combined=snapshot(version,code),saved=structuredClone(combined);
     const context=outstreamContext(combined);
     assert.equal(context.gamCodeCompatibility,true);assert.equal(context.responsiveSizing,true);assert.equal(context.positionScoped,true);
     assert.deepEqual(normalizeOutstream(settings(code,value),context),normalizeOutstream(settings(code,value),outstreamContext(before)));
@@ -56,13 +56,13 @@ test('legacy and unselected versions keep their prior Outstream restrictions',()
   assert.equal(outstreamContext(invalid).gamCodeCompatibility,undefined,'an inconsistent version pair cannot select the new validator');
 });
 
-test('3.20.1 keeps width-only video, partner and display validation',()=>{
-  for(const modify of [
+test('3.20.1 and 3.21.0 keep width-only video, partner and display validation',()=>{
+  for(const version of ['3.20.1','3.21.0'])for(const modify of [
     s=>s.maps[0].map_json=JSON.stringify([{viewport:[0,600],sizes:[[300,250]]}]),
     s=>s.bidders[0].enabled=0,
     s=>{const c=JSON.parse(s.config.config_json);c.runtimeControls.sticky.bottomAdUnitId='m.box_3';s.config.config_json=JSON.stringify(c);},
   ]){
-    const s=snapshot('3.20.1','m.box_3');modify(s);
+    const s=snapshot(version,'m.box_3');modify(s);
     assert.throws(()=>normalizeOutstream(settings('m.box_3'),outstreamContext(s)),/width breakpoints only|enable the verified PubMatic|configured as bottom Sticky/);
   }
 });
@@ -82,7 +82,7 @@ function store(version,code='Billboard') {
 }
 
 test('Formats API exposes new versions, saves exact responsive choices and preserves explicit selection',async()=>{
-  for(const [version,code] of [['3.20.0','Billboard'],['3.20.1','m.box_3'],['3.19.1','m.box_3']]){
+  for(const [version,code] of [['3.21.0','m.box_3'],['3.20.0','Billboard'],['3.20.1','m.box_3'],['3.19.1','m.box_3']]){
     const f=store(version,code);
     try{
       const before=await (await f.request()).json();
