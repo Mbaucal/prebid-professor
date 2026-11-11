@@ -20,6 +20,8 @@ export default function ContextualSignalsPanel({publisherId,onChanged,endpoint}:
   const [error,setError]=useState(''),[message,setMessage]=useState('');
   const [reload,setReload]=useState(0);
   const alive=useRef(false),operation=useRef(0),savingRef=useRef(false);
+  const saveFeedback=useRef<HTMLDivElement>(null);
+  useEffect(()=>{if(error||message)saveFeedback.current?.scrollIntoView({block:'nearest'});},[error,message]);
   const url=endpoint??`/api/publishers/${encodeURIComponent(publisherId)}/contextual-signals`;
   async function request(body?:unknown,signal?:AbortSignal):Promise<ContextualSignalsPayload>{
     const response=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',signal,...(body?{headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{})});
@@ -59,10 +61,8 @@ export default function ContextualSignalsPanel({publisherId,onChanged,endpoint}:
   return <section className="contextual-signals-page" aria-labelledby="contextual-signals-heading" aria-busy={loading||saving}>
     <div className="config-toolbar"><div><span className="panel-kicker">Page context</span><h2 id="contextual-signals-heading">Contextual signals</h2><p>Map your page categories to IAB categories for Google PPS and selected bidders.</p></div></div>
     {loading?<p role="status">Loading contextual signals…</p>:null}
-    {error?<div className="form-error config-error" role="alert">{error}</div>:null}
-    {!loading&&error?<button className="button secondary" disabled={saving} type="button" onClick={()=>setReload(value=>value+1)}>Reload saved settings</button>:null}
-    {error&&draft?<p className="contextual-signals-help">Your edits are kept. Reloading replaces them with the saved settings.</p>:null}
-    {message?<p className="prebid-mode-message" role="status">{message}</p>:null}
+    {error&&!draft?<div className="form-error config-error" role="alert">{error}</div>:null}
+    {!loading&&error&&!draft?<button className="button secondary" disabled={saving} type="button" onClick={()=>setReload(value=>value+1)}>Reload saved settings</button>:null}
     {!loading&&data&&draft?<>
       <fieldset className="contextual-signals-card" disabled={saving}>
         <legend>1. Category source</legend>
@@ -106,6 +106,10 @@ export default function ContextualSignalsPanel({publisherId,onChanged,endpoint}:
         </article>)}</div>
         <button type="button" className="button secondary" onClick={()=>change({mappings:[...draft.mappings,{value:'',ids22:'',ids30:''}]})}>Add category mapping</button>
       </fieldset>
+      {error||message?<div ref={saveFeedback} className="contextual-signals-feedback">
+        {error?<><div className="form-error config-error" role="alert">{error}</div><p className="contextual-signals-help">Your edits are kept. Reloading replaces them with the saved settings.</p><button className="button secondary" disabled={saving} type="button" onClick={()=>setReload(value=>value+1)}>Reload saved settings</button></>:null}
+        {message?<p className="prebid-mode-message" role="status">{message}</p>:null}
+      </div>:null}
       <div className="contextual-signals-actions"><button type="button" className="button primary" disabled={saving||!dirty} onClick={()=>void save()}>{saving?'Saving…':'Save contextual signals'}</button><button type="button" className="button secondary" disabled={saving||!dirty} onClick={()=>{setDraft(draftFor(data.settings));setError('');setMessage('');}}>Reset changes</button></div>
       <p className="contextual-signals-help">This configures page context only. It does not collect user interests or identifiers. Saving does not publish a script or change consent handling.</p>
     </>:null}

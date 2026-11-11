@@ -56,13 +56,13 @@ with sync_playwright() as playwright:
     ids22=panel.get_by_role('combobox',name='Content 2.2 IDs for mapping 1');ids30=panel.get_by_role('combobox',name='Content 3.0 IDs for mapping 1')
     ids22.fill('48, 127');ids30.fill(cat30);expect(save).to_be_enabled();screen('configured')
     faults['holdPost']=True;save.click();expect(panel.get_by_role('button',name='Saving…')).to_be_disabled();expect(ids22).to_be_disabled();expect(panel.get_by_role('button',name='Add category mapping')).to_be_disabled();screen('saving')
-    fulfill(pending.pop(),'Synthetic save unavailable. Retry your edits.');expect(panel.get_by_role('alert')).to_contain_text('Synthetic save');expect(ids22).to_have_value('48, 127');expect(ids30).to_have_value(cat30);expect(save).to_be_enabled();screen('save-error')
-    save.click();expect(panel.get_by_role('status')).to_contain_text('Saved.');expect(save).to_be_disabled()
+    fulfill(pending.pop(),'Synthetic save unavailable. Retry your edits.');expect(panel.get_by_role('alert')).to_contain_text('Synthetic save');expect(panel.get_by_role('alert')).to_be_in_viewport();expect(ids22).to_have_value('48, 127');expect(ids30).to_have_value(cat30);expect(save).to_be_enabled();screen('save-error')
+    save.click();expect(panel.get_by_role('status')).to_contain_text('Saved.');expect(panel.get_by_role('status')).to_be_in_viewport();expect(save).to_be_disabled()
     saved=data()['settings'];assert saved['enabled'] and saved['gam']['enabled'];assert saved['mappings'][0]['taxonomies']['iab-content-2.2']==['48','127'];assert saved['mappings'][0]['taxonomies']['iab-content-3.0']==[cat30]
     assert {item['bidder']:item['taxonomy'] for item in saved['bidders']}=={'pubmatic':'iab-content-2.2','openx':'iab-content-3.0'}
     page.reload();expect(ids22).to_have_value('48, 127');expect(ids30).to_have_value(cat30);expect(save).to_be_disabled();screen('reloaded')
     ids22.fill('IAB17');save.click();expect(panel.get_by_role('alert')).to_be_visible();expect(ids22).to_have_value('IAB17');assert data()['settings']==saved;screen('invalid-id')
-    ids22.fill('48');data('/__fixture/stale',{});save.click();expect(panel.get_by_role('alert')).to_contain_text('Site settings changed');expect(ids22).to_have_value('48');screen('stale')
+    ids22.fill('48');data('/__fixture/stale',{});save.click();expect(panel.get_by_role('alert')).to_contain_text('Site settings changed');expect(panel.get_by_role('alert')).to_be_in_viewport();expect(ids22).to_have_value('48');screen('stale')
     panel.get_by_role('button',name='Reload saved settings').click();expect(ids22).to_have_value('48, 127');expect(save).to_be_disabled()
     panel.get_by_role('checkbox',name='Enable contextual signals for this site').uncheck();save.click();expect(panel.get_by_role('status')).to_contain_text('Saved.');assert data()['settings']['enabled'] is False;assert data()['settings']['mappings']==saved['mappings']
     panel.get_by_role('button',name='Add category mapping').click();panel.get_by_role('textbox',name='Page category 2',exact=True).fill('Unsaved');panel.get_by_role('button',name='Reset changes').click();expect(panel.get_by_role('textbox',name='Page category 2',exact=True)).to_have_count(0)
@@ -70,7 +70,7 @@ with sync_playwright() as playwright:
     # Real route auth and cross-origin protection; invalid writes never reach service.
     no_auth=send(endpoint,{'revision':data()['revision'],'settings':saved},{'cookie':''});assert no_auth['status']==401
     cross=send(endpoint,{'revision':data()['revision'],'settings':saved},{'origin':'https://other.invalid'});assert cross['status']==403
-    checks.append({'width':width,'checks':['load/retry','default-off','version-specific-mapping','independent-routes','pending-lock','save-error-preserves','save/reload','invalid-ID','stale/reload','off-preserves','reset','auth/origin','no-overflow','zero-page-errors'],'pass':True})
+    checks.append({'width':width,'checks':['load/retry','default-off','version-specific-mapping','independent-routes','pending-lock','save-error-preserves','feedback-in-viewport','save/reload','invalid-ID','stale/reload','off-preserves','reset','auth/origin','no-overflow','zero-page-errors'],'pass':True})
    finally:
     page.close();process.stdin.close();process.wait(timeout=15)
  finally:browser.close()

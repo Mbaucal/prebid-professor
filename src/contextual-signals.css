@@ -21,3 +21,6 @@
 .contextual-signals-integration summary{cursor:pointer;font-weight:650}
 .contextual-signals-integration[open] p{margin:12px 0}
 @media(max-width:640px){.contextual-signals-page{padding:16px;gap:16px}.contextual-signals-card{padding:14px}.contextual-signals-bidders,.contextual-signals-id-fields{grid-template-columns:minmax(0,1fr)}.contextual-signals-mapping{padding:12px}.contextual-signals-actions>.button{width:100%}}
+
+.contextual-signals-feedback{display:grid;gap:12px;scroll-margin:16px}
+.contextual-signals-feedback>.button{justify-self:start}
