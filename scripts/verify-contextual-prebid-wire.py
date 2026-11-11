@@ -70,13 +70,19 @@ def validate(result, rows, errors, blocked, parse_errors, version):
     check(not blocked, f'Unexpected network attempts (aborted): {blocked}')
     check(not parse_errors, f'Could not parse native adapter requests: {parse_errors}')
     check(result['prebidVersion'].lstrip('v') == version, 'Wrong native Prebid version')
-    check({'rtdModule', 'contextualSignalsRtdProvider'}.issubset(result['installedModules']), 'Real RTD modules missing')
+    check({'rtdModule', 'contextualSignalsRtdProvider', 'allowActivities'}.issubset(result['installedModules']),
+          'Real RTD/activity-control modules missing')
     check(result['beforeGlobal'] == result['afterGlobal'], 'Contextual routing mutated global FPD')
     check(not result['bidderConfigWrites'], 'Runtime wrote persistent bidder configuration')
     check(len(result['callbacks']) == len(result['expected']), 'Optional contextual data blocked an auction callback')
     check(len(result['auctionEnds']) == len(result['expected']), 'A native auction did not end')
     provider = result['providerName']
     scenario = result['scenario']
+    if scenario['mode'] == 'rtd-activity-denied':
+        check(any(item['denied'] for item in result['activityChecks']), 'RTD-only activity denial did not execute')
+        check(len(result['guardedReads']) == len(result['expected']), 'Missing native guarded RTD read observation')
+        check(all(not item['privateVisible'] and not item['eidVisible'] for item in result['guardedReads']),
+              'Native RTD Proxy exposed user/EID fields denied to the provider')
     for expected in result['expected']:
         requests = [item for item in result['requested'] if item['auctionId'] == expected['auctionId']]
         check({item['bidder'] for item in requests} == set(ENDPOINTS.values()),

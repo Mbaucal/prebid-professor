@@ -14,7 +14,7 @@ const pins = {
   '11.11.0': {commit: '0f6ba177203d5f63e0a11453ed0c887fcf5efe33', lockSha256: '8207a5e5551ec1d02125276b412e1cb18db5ff305c2babbb8c68fc361b109b7b'},
   '11.34.0': {commit: '195e0c6069928ed906bde550cb4e4183d1dc8474', lockSha256: '077338389169c8834d5bd1dedacd92094fb3b0e05a1c54fb4de7ffaa4b7d02d9'},
 };
-const modules = ['rtdModule', 'contextualSignalsRtdProvider', 'connectadBidAdapter', 'openxBidAdapter',
+const modules = ['rtdModule', 'contextualSignalsRtdProvider', 'allowActivities', 'connectadBidAdapter', 'openxBidAdapter',
   'pubmaticBidAdapter', 'ixBidAdapter', 'rubiconBidAdapter', 'teadsBidAdapter', 'richaudienceBidAdapter'];
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const args = process.argv.slice(2);

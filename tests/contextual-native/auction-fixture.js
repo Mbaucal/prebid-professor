@@ -27,6 +27,7 @@ window.runContextualNativeCase = async function (scenario) {
   const foreign = {name: 'existing-context.invalid', ext: {segtax: 500}, segment: [{id: 'existing-context'}]};
   const initialOrtb2 = {site: {name: 'Synthetic contextual fixture', content: {data: [foreign]}},
     source: {ext: {schain}}, user: {ext: {data: {preserve: 'existing-user-marker'}}}};
+  const activityChecks = [], guardedReads = [];
   if (scenario.mode === 'mixed-rubicon') initialOrtb2.site.content.data.push({
     name: 'foreign-iab.invalid', ext: {segtax: taxonomy === 'iab-content-2.2' ? 7 : 6},
     segment: [{id: 'foreign-other-taxonomy'}],
@@ -37,8 +38,11 @@ window.runContextualNativeCase = async function (scenario) {
     transmitUfpd: {default: false}, enrichUfpd: {default: false}, transmitEids: {default: false},
   }});
   if (scenario.mode === 'rtd-activity-denied') {
-    const rtdOnly = {default: true, rules: [{condition: params => params.componentType === 'rtd'
-      && params.componentName === 'contextualSignals', allow: false}]};
+    const rtdOnly = {default: true, rules: [{condition: params => {
+      const denied = params.componentType === 'rtd' && params.componentName === 'contextualSignals';
+      activityChecks.push({componentType: params.componentType, componentName: params.componentName, denied});
+      return denied;
+    }, allow: false}]};
     pbjs.setConfig({allowActivities: {transmitUfpd: rtdOnly, transmitEids: rtdOnly, enrichUfpd: rtdOnly, enrichEids: rtdOnly}});
   }
   pbjs.setBidderConfig({bidders: ['openx'], config: {ortb2: {
@@ -62,6 +66,13 @@ window.runContextualNativeCase = async function (scenario) {
   const originalEnrich = window.__AD_CONTEXT.enrichAuction;
   window.__AD_CONTEXT.enrichAuction = function (request) {
     providerCalls.push({auctionId: request.auctionId, category: clone(window.adsKeywords || {})});
+    if (scenario.mode === 'rtd-activity-denied') {
+      // This request is the actual native RTD Proxy. Prove the configured guard
+      // is active before checking that the production runtime preserves data it cannot read.
+      const user = JSON.stringify(request.ortb2Fragments.bidder.openx.user || {});
+      guardedReads.push({auctionId: request.auctionId, privateVisible: user.includes('bidder-private-marker'),
+        eidVisible: user.includes('synthetic-existing-id')});
+    }
     if (scenario.mode === 'provider-throws') throw new Error('synthetic optional-provider failure');
     return originalEnrich(request);
   };
@@ -99,6 +110,7 @@ window.runContextualNativeCase = async function (scenario) {
     if (scenario.mode === 'no-leak') await auction('foreign', 'Alpha', true);
   }
   return {scenario, expected, requested, callbacks, auctionEnds, providerCalls, elapsedMs: performance.now() - started,
+    activityChecks, guardedReads,
     providerName, schain, snapshot: contextual.snapshot(), beforeGlobal, afterGlobal: clone(pbjs.getConfig('ortb2')),
     bidderConfigWrites, realTimeData: clone(pbjs.getConfig('realTimeData') || {}),
     installedModules: pbjs.installedModules, prebidVersion: pbjs.version};
