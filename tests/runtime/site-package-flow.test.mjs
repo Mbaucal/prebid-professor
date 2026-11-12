@@ -228,7 +228,7 @@ test('choosing 3.14, 3.16 and 3.13 reuses all site inputs and exact Prebid bytes
  assert.equal(f.sqlite.prepare('SELECT current_release_id FROM publishers').get().current_release_id,null,'Generating must not publish or switch served packages');
 });
 
-for(const version of ['3.16.0-revenue.preview.3','3.16.0','3.16.1','3.16.2'])test(version+' MAIN package keeps twelve exact files, old packages and damaged-plan guards',async()=>{
+for(const version of ['3.16.0-revenue.preview.3','3.16.0','3.16.1','3.16.2','3.22.0'])test(version+' MAIN package keeps twelve exact files, old packages and damaged-plan guards',async()=>{
  const f=await fixture();
  const before=await generate(f,'Existing package before revenue');
  const original=await readPackage(f.env,'first',before.id);
@@ -271,6 +271,11 @@ for(const version of ['3.16.0-revenue.preview.3','3.16.0','3.16.1','3.16.2'])tes
   state=await siteRuntimeSettings(f.env,'first');
   await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:state.revision,runtime:selected.pin,allowPreview:selected.channel==='preview'});
  }
+ if(version==='3.22.0'){
+  const withRules=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
+  withRules.runtimeControls.bidderRules={schemaVersion:1,enabled:true,rules:[{id:'country',name:'RS only',enabled:true,bidder:'pubmatic',positions:['Billboard'],countries:{mode:'include',values:['RS'],unknown:'skip'},devices:['mobile','tablet','desktop']}]};
+  f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(withRules));
+ }
  const release=await generate(f,'Responsive revenue MAIN package');
  const p=await readPackage(f.env,'first',release.id);
  assert.equal(p.manifest.runtime.runtimeVersion,version);assert.equal(Object.keys(p.files).length,12);
@@ -286,7 +291,11 @@ for(const version of ['3.16.0-revenue.preview.3','3.16.0','3.16.1','3.16.2'])tes
   for(const name of ['ads.js','ads.min.js','README.txt'])assert.doesNotMatch(new TextDecoder().decode(p.files[name]),/revenue\.preview|tessera-revenue-preview/);
   for(const name of ['ads.js','ads.min.js'])assert(new TextDecoder().decode(p.files[name]).includes(version));
  }
- if(version==='3.16.0')assert.match(new TextDecoder().decode(p.files['README.txt']),/Deals and Outstream/);
+ if(version==='3.22.0'){
+  assert.equal(JSON.parse(new TextDecoder().decode(p.files['config.json'])).bidderRules.rules[0].bidder,'pubmatic');
+  assert.match(new TextDecoder().decode(p.files['README.txt']),/__AD_BIDDER_RULES/);
+ }
+ if(['3.16.0','3.22.0'].includes(version))assert.match(new TextDecoder().decode(p.files['README.txt']),/Deals and Outstream/);
  const index=await packageAssetResponse(new Request('https://tessera.invalid/artifact/index'),f.env,'first',release.id,null);
  assert.equal(index.status,200);const descriptor=(await index.json()).descriptor;assert.equal(descriptor.siteId,'first');assert.equal(descriptor.files.length,12);
  assert(descriptor.files.some(file=>file.name==='deals-plan.json'));

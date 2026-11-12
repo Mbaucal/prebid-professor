@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   gam:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       TESSERA_TEST_TOOLCHAIN: isolated
     timeout-minutes: 10

@@ -47,7 +47,7 @@ export default function ContextualSignalsPanel({publisherId,onChanged,endpoint}:
     try{
       const value=await request({revision:data.revision,settings:contextualSignalsFromDraft(draft)});
       if(!alive.current||id!==operation.current)return;
-      setData(value);setDraft(draftFor(value.settings));setMessage('Saved. Generate a new script with version 3.21.0 to use these settings. Existing scripts are unchanged.');
+      setData(value);setDraft(draftFor(value.settings));setMessage('Saved. Generate a new script with version 3.21.0 or later to use these settings. Existing scripts are unchanged.');
       try{await onChanged?.();}catch{ /* The settings save succeeded; a parent refresh does not undo it. */ }
     }catch(e){if(alive.current&&id===operation.current)setError((e as Error).message);}
     finally{if(id===operation.current){savingRef.current=false;if(alive.current)setSaving(false);}}
@@ -68,7 +68,7 @@ export default function ContextualSignalsPanel({publisherId,onChanged,endpoint}:
         <legend>1. Category source</legend>
         <label className="check-row"><input type="checkbox" checked={draft.enabled} onChange={event=>change({enabled:event.target.checked})}/><span>Enable contextual signals for this site</span></label>
         <label className="contextual-signals-field"><span>Page category key</span><input value={draft.sourceKey} onChange={event=>change({sourceKey:event.target.value})} placeholder="category" autoComplete="off"/><small>Reads <code>window.adsKeywords[{JSON.stringify(draft.sourceKey||'category')}]</code>. Set it before ads.js. Values match exactly; a missing or unmapped category sends no mapped signals and never delays ads.</small></label>
-        {!data.runtimeEligible?<p className="contextual-signals-note">You can save the setup now. Select and save script version 3.21.0 before generating a package with contextual signals.</p>:null}
+        {!data.runtimeEligible?<p className="contextual-signals-note">You can save the setup now. Select and save script version 3.21.0 or later before generating a package with contextual signals.</p>:null}
       </fieldset>
       <fieldset className="contextual-signals-card" disabled={saving}>
         <legend>2. Destinations and taxonomy versions</legend>
