@@ -13,6 +13,7 @@ import SupplyChainConsentPanel from './SupplyChainConsentPanel';
 import UnitRulesPanel from './UnitRulesPanel';
 import UserIdModulesPanel from './UserIdModulesPanel';
 import ContextualSignalsPanel from './ContextualSignalsPanel';
+import BidderRulesPanel from './BidderRulesPanel';
 
 type Props = {
   publisherId: string;
@@ -26,6 +27,7 @@ type ConfigSection =
   | 'ad-units'
   | 'demand-mode'
   | 'bidders'
+  | 'bidder-rules'
   | 'size-maps'
   | 'unit-rules'
   | 'advanced-rules'
@@ -49,6 +51,7 @@ const CONFIG_GROUPS: Array<{
   { label: 'Demand', sections: [
     { id: 'demand-mode', label: 'Prebid' },
     { id: 'bidders', label: 'Bidders' },
+    { id: 'bidder-rules', label: 'Bidder rules' },
     { id: 'supply-consent', label: 'Supply & consent' },
     { id: 'user-id', label: 'User ID modules' },
     { id: 'contextual-signals', label: 'Contextual signals' },
@@ -103,6 +106,7 @@ export default function ConfigPanel({ publisherId, onChanged, onOpenPrebid, onGe
       {section === 'supply-consent' ? <SupplyChainConsentPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'user-id' ? <UserIdModulesPanel onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'contextual-signals' ? <ContextualSignalsPanel key={publisherId} onChanged={onChanged} publisherId={publisherId} /> : null}
+      {section === 'bidder-rules' ? <BidderRulesPanel key={publisherId} onChanged={onChanged} publisherId={publisherId} /> : null}
       {section === 'generator-profiles' ? <GeneratorProfilesPanel publisherId={publisherId} onOpenPrebid={onOpenPrebid} onChanged={onChanged} onContinue={onGenerate} /> : null}
       {section === 'legacy-profiles' ? <LegacyGeneratorProfilesPanel key={publisherId} publisherId={publisherId} /> : null}
       {section === 'imports' ? (

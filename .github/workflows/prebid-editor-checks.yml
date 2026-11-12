@@ -2,7 +2,7 @@ name: TEST Prebid editor checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [tools/**, package.json, package-lock.json, ops/runtime-test/**, wrangler.jsonc, worker/**, shared/contextual-signals/**, tests/**, scripts/**, .github/workflows/prebid-editor-checks.yml]
+    paths: [tools/**, package.json, package-lock.json, ops/runtime-test/**, wrangler.jsonc, worker/**, shared/contextual-signals/**, shared/bidder-rules/**, tests/**, scripts/**, .github/workflows/prebid-editor-checks.yml]
   push:
     branches: [feature/isolated-runtime-workspace-v1]
 permissions:
@@ -49,7 +49,7 @@ jobs:
           retention-days: 14
 
   contextual-native:
-    name: Contextual signals · Prebid ${{ matrix.prebid }}
+    name: Contextual signals and bidder rules · Prebid ${{ matrix.prebid }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -74,6 +74,11 @@ jobs:
       - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
       - name: Verify real adapter payloads with synthetic responses and no live ad traffic
         run: python scripts/verify-contextual-prebid-wire.py --version "${{ matrix.prebid }}"
+      - name: Verify generated bidder rules with native Prebid and synthetic demand
+        run: |
+          node scripts/isolated-toolchain.mjs prepare
+          node --experimental-strip-types tests/bidder-rules-native/prepare.mjs
+          python tests/bidder-rules-native/check.py --version "${{ matrix.prebid }}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -81,5 +86,6 @@ jobs:
           path: |
             .generated/contextual-prebid/${{ matrix.prebid }}/manifest.json
             .generated/contextual-prebid/${{ matrix.prebid }}/wire-results.json
+            .generated/bidder-rules-native/browser-results-${{ matrix.prebid }}.json
           if-no-files-found: ignore
           retention-days: 14
