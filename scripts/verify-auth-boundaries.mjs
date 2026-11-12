@@ -22,6 +22,14 @@ try{
  const anonymous=await call('/api/publisher-accounts',{method:'POST',headers:{...spoof,origin,'content-type':'application/json'},body:JSON.stringify({id:'forged',name:'Forbidden'})});assert.equal(anonymous.status,401);
  const signedIn=await login();assert.equal(signedIn.status,303);assert.equal(signedIn.headers.get('location'),'/config?site=auth-site#units');
  const cookie=signedIn.headers.get('set-cookie').split(';')[0];
+ // New policy editor remains behind the same authenticated, same-origin boundary.
+ const bidderRulesPath='/api/publishers/auth-site/bidder-rules';
+ assert.equal((await call(bidderRulesPath,{headers:spoof})).status,401);
+ assert.equal((await call(bidderRulesPath,{method:'POST',headers:{...spoof,origin,'content-type':'application/json'},body:'{}'})).status,401);
+ assert.equal((await call(bidderRulesPath,{method:'POST',headers:{cookie,'content-type':'application/json'},body:'{}'})).status,403);
+ assert.equal((await call(bidderRulesPath,{method:'POST',headers:{cookie,origin:'https://other.invalid','content-type':'application/json'},body:'{}'})).status,403);
+ assert.equal((await call(bidderRulesPath+'?unexpected=1',{headers:{cookie}})).status,400);
+ assert.equal((await call(bidderRulesPath,{method:'DELETE',headers:{cookie,origin}})).status,405);
  async function mutate(path,body,status=201){const response=await call(path,{method:'POST',headers:{...spoof,cookie,origin,'content-type':'application/json'},body:JSON.stringify(body)});const data=await response.json();assert.equal(response.status,status,JSON.stringify(data));return data;}
  await mutate('/api/publisher-accounts',{id:'auth-publisher',name:'Synthetic publisher'});
  await mutate('/api/publishers',{id:'auth-site',name:'Synthetic site',domain:'example.invalid',gamPath:'/123/example/',publisherAccountId:'auth-publisher'});

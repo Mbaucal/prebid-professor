@@ -1,4 +1,5 @@
 import ContextualSignalsPanel from '../components/ContextualSignalsPanel';
+import BidderRulesPanel from '../components/BidderRulesPanel';
 import {contextualSignalsInspectCommand} from '../debug/contextual-signals-inspect.mjs';
 import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
@@ -26,11 +27,21 @@ function Formats() {
     {selected?<OutstreamSettingsPanel key={selected} publisherId="test-site" code={selected} endpoint="/test-api/outstream-settings" onClose={()=>setSelected(null)} onSaved={()=>{}}/>:null}
   </section>;
 }
-type View = 'versions'|'positions'|'packages'|'test-page'|'loading'|'deals'|'formats'|'rules'|'contextual-signals';
+const bidderRulesInspectCommand=`(() => {
+  const helper = window.__AD_BIDDER_RULES;
+  if (!helper || typeof helper.snapshot !== 'function') {
+    console.warn('Bidder rule diagnostics are unavailable. Select the top page frame and use a generated script with bidder rule support.');
+    return null;
+  }
+  const report = helper.snapshot();
+  console.log('Bidder rule decisions', report);
+  return report;
+})();`;
+type View = 'versions'|'positions'|'packages'|'test-page'|'loading'|'deals'|'formats'|'rules'|'contextual-signals'|'bidder-rules';
 function currentView(): View {
   const hash = window.location.hash.slice(1);
   if (hash === 'workflow') return 'packages';
-  return ['positions', 'packages', 'test-page', 'loading', 'deals', 'formats', 'rules', 'contextual-signals'].includes(hash) ? hash as View : 'versions';
+  return ['positions', 'packages', 'test-page', 'loading', 'deals', 'formats', 'rules', 'contextual-signals', 'bidder-rules'].includes(hash) ? hash as View : 'versions';
 }
 function Workspace() {
   const [view,updateView]=useState<View>(currentView);
@@ -50,9 +61,10 @@ function Workspace() {
       <button onClick={()=>setView('deals')}>Deals</button><button onClick={()=>setView('formats')}>Formats</button>
       <button aria-current={view==='loading'?'page':undefined} onClick={()=>setView('loading')}>Loading rules</button>
       <button aria-current={view==='contextual-signals'?'page':undefined} onClick={()=>setView('contextual-signals')}>Contextual signals</button>
+      <button aria-current={view==='bidder-rules'?'page':undefined} onClick={()=>setView('bidder-rules')}>Bidder rules</button>
       <button onClick={()=>setView('test-page')}>Test page</button>
     </nav>
-    {view==='contextual-signals'?<><ContextualSignalsPanel publisherId="test-site" endpoint="/test-api/contextual-signals"/><section className="site-runtime-panel"><h2>Contextual signals / PPS debug</h2><p>Copy this read-only command into the console on the page using your generated script. It does not start an auction or confirm SSP acceptance.</p><textarea aria-label="Contextual signals console command" readOnly value={contextualSignalsInspectCommand()} style={{width:'100%',minHeight:180,boxSizing:'border-box'}}/></section></>:view==='rules'?<div className="test-unit-rules"><UnitRulesPanel publisherId="test-site"/></div>:view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='loading'?<SiteLoadingSummaryPanel endpoint="/test-api/site-runtime"/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
+    {view==='bidder-rules'?<><BidderRulesPanel publisherId="test-site" endpoint="/test-api/bidder-rules"/><section className="site-runtime-panel"><h2>Bidder rule debug</h2><p>Copy this read-only command into the console on the page using your generated script. It shows recorded decisions without starting an auction or sending requests.</p><textarea aria-label="Bidder rules console command" readOnly value={bidderRulesInspectCommand} style={{width:'100%',minHeight:180,boxSizing:'border-box'}}/></section></>:view==='contextual-signals'?<><ContextualSignalsPanel publisherId="test-site" endpoint="/test-api/contextual-signals"/><section className="site-runtime-panel"><h2>Contextual signals / PPS debug</h2><p>Copy this read-only command into the console on the page using your generated script. It does not start an auction or confirm SSP acceptance.</p><textarea aria-label="Contextual signals console command" readOnly value={contextualSignalsInspectCommand()} style={{width:'100%',minHeight:180,boxSizing:'border-box'}}/></section></>:view==='rules'?<div className="test-unit-rules"><UnitRulesPanel publisherId="test-site"/></div>:view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='loading'?<SiteLoadingSummaryPanel endpoint="/test-api/site-runtime"/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Workspace/>);

@@ -1,4 +1,5 @@
 import {contextualSignalSettingsResponse} from '../site-runtime/contextual-signals-settings.mjs';
+import {bidderRuleSettingsResponse} from '../site-runtime/bidder-rule-settings.mjs';
 import {contextualBuildKitResponse} from '../site-runtime/contextual-signals-build-kit.mjs';
 import { workspaceJs,workspaceCss } from '../../.generated/site-workspace.mjs';
 import { siteRuntimeResponse } from '../site-runtime/service.mjs';
@@ -16,12 +17,13 @@ export async function siteWorkspaceResponse(request,env,actor,headers){
  const url=new URL(request.url);
  const testPage=url.pathname.match(/^\/test-api\/site-test-page\/(builtin-draft-[a-f0-9]{64})$/);
  if(testPage)return packageTestPageResponse(request,env,'test-site',testPage[1],{testOnly:true});
- if(!['/site-workspace','/site-workspace.js','/test-api/site-runtime','/test-api/site-packages','/test-api/package-cleanup','/test-api/deals','/test-api/outstream-settings','/test-api/contextual-signals','/test-api/contextual-signals/build-kit'].includes(url.pathname))return null;
+ if(!['/site-workspace','/site-workspace.js','/test-api/site-runtime','/test-api/site-packages','/test-api/package-cleanup','/test-api/deals','/test-api/outstream-settings','/test-api/contextual-signals','/test-api/contextual-signals/build-kit','/test-api/bidder-rules'].includes(url.pathname))return null;
  if(url.search)return new Response('Not found',{status:404,headers});
- if(['/test-api/site-runtime','/test-api/site-packages','/test-api/package-cleanup','/test-api/deals','/test-api/outstream-settings','/test-api/contextual-signals','/test-api/contextual-signals/build-kit'].includes(url.pathname)){
+ if(['/test-api/site-runtime','/test-api/site-packages','/test-api/package-cleanup','/test-api/deals','/test-api/outstream-settings','/test-api/contextual-signals','/test-api/contextual-signals/build-kit','/test-api/bidder-rules'].includes(url.pathname)){
   if(!(await inspectTestSchema(env.DB)).ready)return new Response(JSON.stringify({error:'Prepare TEST data first.'}),{status:409,headers:{...headers,'content-type':'application/json'}});
   if(url.pathname==='/test-api/package-cleanup')return cleanupResponse(request,env,actor.email,headers);
   assertWorkspaceSiteScope(await readPreviewSnapshot(env.DB.withSession('first-primary'),'test-site',{includePrebid:true}));
+  if(url.pathname==='/test-api/bidder-rules')return bidderRuleSettingsResponse(request,env,TEST_SITE,actor.email);
   if(url.pathname==='/test-api/contextual-signals')return contextualSignalSettingsResponse(request,env,TEST_SITE,actor.email);
   if(url.pathname==='/test-api/contextual-signals/build-kit')return contextualBuildKitResponse(request,env,TEST_SITE);
   if(url.pathname==='/test-api/deals')return dealSettingsResponse(request,env,TEST_SITE,actor.email);

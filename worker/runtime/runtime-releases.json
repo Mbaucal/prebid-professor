@@ -1,5 +1,47 @@
 [
   {
+    "id": "tessera-3.22.0",
+    "version": "3.22.0",
+    "codeSha256": "1aa3c8ad0dcc1c94fddf6d50b0a7b3073a524dee4750563277fd5c6d22525268",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules",
+      "viewport-height-size-maps",
+      "gam-code-compatibility",
+      "contextual-signals",
+      "bidder-rules"
+    ],
+    "date": "2026-11-12",
+    "title": "Tessera 3.22.0 \u2014 bidder rules by country, position and viewport",
+    "sourceManifest": "scripts/prepare-runtime322.mjs",
+    "sourceCommit": "df482cf6ead78780684ea2ab7dcfd095bdbff7a5",
+    "changes": [
+      "Optional exact bidder and alias rules by country, ad position and viewport layout. Selected-position rules override a bidder\u2019s all-position rule; unknown country follows an explicit Allow or Skip choice.",
+      "Rules filter the final native Prebid request after responsive format resolution. Empty bidder lists retain the existing consent-gated GAM fallback without waiting for GEO or forcing another auction.",
+      "Eligibility composes with an existing native cache filter without changing cache enablement. Current-auction targeting checks, SChain, contextual signals and deal parameters remain in place.",
+      "The editor previews unsaved decisions, and __AD_BIDDER_RULES exposes bounded local request evidence. Existing script versions and packages remain unchanged; select 3.22.0 explicitly."
+    ]
+  },
+  {
     "id": "tessera-3.21.0",
     "version": "3.21.0",
     "codeSha256": "8283e7aa041cc71d6cd2475c684f5a7a0e4e60a8c858fd5383bf452071790ce2",
