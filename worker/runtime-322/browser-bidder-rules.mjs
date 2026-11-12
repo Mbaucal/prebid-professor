@@ -53,8 +53,11 @@ export function createBidderRules(win, config, options) {
         var prior = typeof previous === 'function' ? previous.apply(this, arguments) : true;
         if (!prior) return prior;
         var record = bid && scope[bid.adUnitCode];
-        if (record && !options.evaluate(settings, {bidder:bid.bidderCode || bid.bidder, code:bid.adUnitCode,
-          country:record.context.country, width:record.context.width}).allowed) return false;
+        // Readiness accepts only the completed current auction's adIds. Even
+        // an eligible older bid can win a price/time tie and mask a fresh bid.
+        // Match that contract only on positions touched by an active rule;
+        // unrelated owned positions and foreign auctions keep their prior hook.
+        if (record && record.controlled[bid.adUnitCode] && bid.auctionId !== record.id) return false;
         return prior;
       };
       nativePb.setConfig({bidCacheFilterFunction:composed});
@@ -89,11 +92,11 @@ export function createBidderRules(win, config, options) {
     }
     catch (ignored) { cacheStatus = 'unavailable'; note({reason:'cache-filter-unavailable', allowed:false}); }
   }
-  function remember(id, units, context) {
+  function remember(id, units, controlled) {
     if (typeof id !== 'string' || !id) return;
     var codes = Object.create(null);
     units.forEach(function(unit) {codes[unit.code] = true;});
-    auctions[id] = {id:id, codes:codes, context:context}; order.push(id);
+    auctions[id] = {id:id, codes:codes, controlled:controlled}; order.push(id);
     while (order.length > 128) {
       var removed = order.shift(), record = auctions[removed]; delete auctions[removed];
       if (record) Object.keys(record.codes).forEach(function(code) {if (latest[code] === record) delete latest[code];});
@@ -105,7 +108,7 @@ export function createBidderRules(win, config, options) {
     // adUnits inside the inherited callbacks. Filter after that reconstruction.
     var guarded = Object.create(pb);
     guarded.requestBids = function(next) {
-      var current = state(), allowed = Object.create(null), changed = Object.create(null);
+      var current = state(), allowed = Object.create(null), changed = Object.create(null), controlled = Object.create(null);
       var nextUnits = [], units = next.adUnits;
       requests++;
       // All generated requests supply explicit units. An unexpected registry-only
@@ -119,6 +122,7 @@ export function createBidderRules(win, config, options) {
         var bidders = Object.create(null), removed = false;
         var bids = (unit.bids || []).filter(function(bid) {
           var decision = options.evaluate(settings, {bidder:bid.bidder, code:unit.code, country:current.country, width:current.width});
+          if (decision.ruleId !== null) controlled[unit.code] = true;
           note(Object.assign({auctionId:next.auctionId || null, code:unit.code, bidder:bid.bidder, width:current.width}, decision));
           if (decision.allowed) bidders[bid.bidder] = true;
           else { removed = true; skipped++; }
@@ -133,7 +137,7 @@ export function createBidderRules(win, config, options) {
         return;
       }
       installCacheFilter();
-      remember(next.auctionId, nextUnits, current);
+      remember(next.auctionId, nextUnits, controlled);
       var outgoing = Object.assign({}, next, {adUnits:nextUnits});
       if (Array.isArray(next.adUnitCodes)) outgoing.adUnitCodes = next.adUnitCodes.filter(function(code) { return nextUnits.some(function(unit) {return unit.code === code;}); });
       if (typeof next.bidsBackHandler === 'function') outgoing.bidsBackHandler = function(bids) {
@@ -159,7 +163,8 @@ export function createBidderRules(win, config, options) {
   }
   function snapshot() {
     return {schemaVersion:1, enabled:settings.enabled, context:state(), requests:requests,
-      skipped:skipped, dropped:dropped, cacheFilter:cacheStatus, trackedAuctions:order.length, events:copy(events),
+      skipped:skipped, dropped:dropped, cacheFilter:cacheStatus,
+      cachePolicy:settings.enabled ? 'current-auction-for-rule-positions' : 'unchanged', trackedAuctions:order.length, events:copy(events),
       evidence:'Eligibility at the native Prebid request boundary; not SSP receipt, fill or revenue.'};
   }
   var api = {snapshot:snapshot, simulate:simulate};
