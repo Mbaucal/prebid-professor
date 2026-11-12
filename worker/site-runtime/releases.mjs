@@ -13,7 +13,7 @@ import { assertPinnedRuntime } from '../runtime/version-pin.mjs';
 
 const encode=new TextEncoder(),decode=new TextDecoder('utf-8',{fatal:true});
 const ID=/^builtin-release-[a-f0-9]{64}$/;
-const hasDealsPlan=runtime=>[['tessera-3.21.0','3.21.0'],['tessera-3.20.1','3.20.1'],['tessera-3.20.0','3.20.0'],['tessera-3.19.1','3.19.1'],['tessera-3.19.0','3.19.0'],['tessera-3.18.0','3.18.0'],['tessera-3.17.0','3.17.0'],['tessera-3.16.2','3.16.2'],['tessera-3.16.1','3.16.1'],['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version)&&runtime?.capabilities?.includes('prebid-deals');
+const hasDealsPlan=runtime=>[['tessera-3.22.0','3.22.0'],['tessera-3.21.0','3.21.0'],['tessera-3.20.1','3.20.1'],['tessera-3.20.0','3.20.0'],['tessera-3.19.1','3.19.1'],['tessera-3.19.0','3.19.0'],['tessera-3.18.0','3.18.0'],['tessera-3.17.0','3.17.0'],['tessera-3.16.2','3.16.2'],['tessera-3.16.1','3.16.1'],['tessera-3.16.0','3.16.0'],['tessera-revenue-preview-1','3.16.0-revenue.preview.1'],['tessera-revenue-preview-2','3.16.0-revenue.preview.2'],['tessera-revenue-preview-3','3.16.0-revenue.preview.3']].some(([id,version])=>runtime?.runtimeId===id&&runtime?.runtimeVersion===version)&&runtime?.capabilities?.includes('prebid-deals');
 const check=(ok,message,status=409)=>{if(!ok)throw Object.assign(new Error(message),{status});};
 const db=env=>env.DB.withSession('first-primary');
 const snapshot=(env,site)=>readPreviewSnapshot(db(env),site,{includePrebid:true});
@@ -68,7 +68,7 @@ export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
  }
  const {descriptor}=await describeCandidate(site,candidate);
  const id=`builtin-release-${descriptor.packageSha256}`,files={...candidate.files};
- const stable316=[['tessera-3.16.0','3.16.0'],['tessera-3.16.1','3.16.1'],['tessera-3.16.2','3.16.2'],['tessera-3.17.0','3.17.0'],['tessera-3.18.0','3.18.0'],['tessera-3.19.0','3.19.0'],['tessera-3.21.0','3.21.0'],['tessera-3.20.1','3.20.1'],['tessera-3.20.0','3.20.0'],['tessera-3.19.1','3.19.1']].some(([id,version])=>descriptor.runtime.runtimeId===id&&descriptor.runtime.runtimeVersion===version);
+ const stable316=[['tessera-3.22.0','3.22.0'],['tessera-3.16.0','3.16.0'],['tessera-3.16.1','3.16.1'],['tessera-3.16.2','3.16.2'],['tessera-3.17.0','3.17.0'],['tessera-3.18.0','3.18.0'],['tessera-3.19.0','3.19.0'],['tessera-3.21.0','3.21.0'],['tessera-3.20.1','3.20.1'],['tessera-3.20.0','3.20.0'],['tessera-3.19.1','3.19.1']].some(([id,version])=>descriptor.runtime.runtimeId===id&&descriptor.runtime.runtimeVersion===version);
  // Store the reviewed output as a complete, immutable release with exact source pins.
  const created=new Date().toISOString();
  // Manual hosting matches Pages publication: the compact wrapper keeps the public name ads.js.
