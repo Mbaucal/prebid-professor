@@ -39,8 +39,10 @@ window.pbjs={que:[function(){
   buildRequests(bids){return {method:'GET',url:'https://bidder-rule-fixture.invalid/bid',data:{payload:JSON.stringify(bids.map(b=>{
    const key=name+':'+b.adUnitCode,round=(__rounds[key]||0)+1;__rounds[key]=round;
    __wire.push({code:b.adUnitCode,bidder:name,round,auctionId:b.auctionId,schain:b.ortb2?.source?.schain||b.ortb2?.source?.ext?.schain,at:Date.now()});
+   const size=(b.mediaTypes?.banner?.sizes||b.sizes||[]).find(s=>Array.isArray(s)&&s.length===2&&s.every(n=>Number.isFinite(n)&&n>0));
+   if(!size)throw Error('Synthetic banner request has no numeric size: '+b.adUnitCode);
    return {requestId:b.bidId,cpm:name==='pubmatic'?10:1,ttl:300,currency:'EUR',netRevenue:true,creativeId:name+'-'+round,
-    ad:'<div>Synthetic</div>',width:300,height:250};
+    ad:'<div>Synthetic</div>',width:size[0],height:size[1]};
   }))},options:{withCredentials:false}};},interpretResponse:r=>r.body.bids
  });
  pbjs.onEvent('auctionInit',a=>__auctions.push({id:a.auctionId,codes:a.adUnitCodes,at:Date.now()}));

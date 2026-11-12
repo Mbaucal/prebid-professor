@@ -9,7 +9,7 @@ permissions:
   contents: read
 jobs:
   editor:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       TZ: UTC
@@ -50,7 +50,7 @@ jobs:
 
   contextual-native:
     name: Contextual signals and bidder rules · Prebid ${{ matrix.prebid }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
