@@ -124,7 +124,7 @@ function integration(config=settings(), transform=input=>input, {retry=false,nat
       if(!nativeCache)return nativeTargets[code]||{};
       // Match the native documented cache-hook boundary: it sees prior bids,
       // never current bids; native selection still chooses each bidder's best.
-      const bids=cache.filter(b=>b.adUnitCode===code&&(b.auctionId===latest[code]||pbConfig.useBidCache&&(!pbConfig.bidCacheFilterFunction||pbConfig.bidCacheFilterFunction(b)))).sort((a,b)=>b.cpm-a.cpm);
+      const bids=cache.filter(b=>b.adUnitCode===code&&(b.auctionId===latest[code]||pbConfig.useBidCache&&(!pbConfig.bidCacheFilterFunction||pbConfig.bidCacheFilterFunction(b)))).sort((a,b)=>b.cpm-a.cpm||(a.timeToRespond||0)-(b.timeToRespond||0));
       if(!bids.length)return {};const target={hb_adid:bids[0].adId,hb_bidder:bids[0].bidderCode};
       for(const bid of bids)if(!target['hb_adid_'+bid.bidderCode])target['hb_adid_'+bid.bidderCode]=bid.adId;
       return target;
@@ -239,7 +239,8 @@ test('scoped native cache hook preserves prior filter receiver/results/errors, e
   state.helper.request(pb,{auctionId:'owned',adUnits:[unit('P1'),unit('P2')]});assert.equal(writes.length,1);
   const receiver={marker:true},bid={adUnitCode:'P1',bidderCode:'ix',adId:'old'};
   assert.equal(config.bidCacheFilterFunction.call(receiver,bid,'extra'),false);assert.equal(calls.at(-1).receiver,receiver);assert.equal(calls.at(-1).args[1],'extra');
-  assert.equal(config.bidCacheFilterFunction({...bid,bidderCode:'openx'}),true);
+  assert.equal(config.bidCacheFilterFunction({...bid,bidderCode:'openx'}),false,'Even an eligible old bidder must not mask the current auction');
+  assert.equal(config.bidCacheFilterFunction({...bid,bidderCode:'openx',auctionId:'owned'}),true);
   assert.equal(config.bidCacheFilterFunction({...bid,bidderCode:'openx',adId:'prior-denied'}),false);
   assert.throws(()=>config.bidCacheFilterFunction({...bid,adId:'throws'}),/prior failure/);
   state.win.__AD_GEO.getSnapshot=()=>known('RS');
@@ -263,15 +264,18 @@ test('cache context storage is bounded while unrelated cached bidders retain ori
   assert.equal(config.bidCacheFilterFunction({adUnitCode:'foreign-slot',bidderCode:'ix'}),true);
 });
 
-test('actual readiness retry path keeps the eligible fresh winner when excluded cached bidder has higher CPM',()=>{
-  const state=integration(settings(),input=>input,{retry:true,nativeCache:true});
-  state.consent({gdprApplies:false});state.setCountry('RS');state.request([unit()]);
-  state.complete(0,{P1:[{bidderCode:'ix',adId:'old-high',cpm:10},{bidderCode:'openx',adId:'old-low',cpm:0.5}]});
-  assert.equal(state.sent[0].slots[0].targeting.hb_adid,'old-high');
-  state.setCountry('DE');state.request([unit()]);state.complete(1,{P1:[{bidderCode:'openx',adId:'fresh-allowed',cpm:1}]});
-  assert.equal(state.sent[1].slots[0].targeting.hb_adid,'fresh-allowed');
-  assert.equal(state.sent[1].slots[0].targeting.hb_adid_ix,undefined);
-  assert.equal(state.requests.length,2,'No unnecessary expired-target retry');assert.equal(state.pbConfig.useBidCache,true);
+test('current-auction cache policy retains fresh eligible bids despite equal or higher CPM from older eligible bids',()=>{
+  for(const oldCpm of [1,5]){
+    const state=integration(settings(),input=>input,{retry:true,nativeCache:true});
+    state.consent({gdprApplies:false});state.setCountry('RS');state.request([unit()]);
+    state.complete(0,{P1:[{bidderCode:'ix',adId:'old-high',cpm:10},{bidderCode:'openx',adId:'old-eligible',cpm:oldCpm,timeToRespond:78}]});
+    assert.equal(state.sent[0].slots[0].targeting.hb_adid,'old-high');
+    state.setCountry('DE');state.request([unit()]);state.complete(1,{P1:[{bidderCode:'openx',adId:'fresh-allowed',cpm:1,timeToRespond:99}]});
+    assert.equal(state.sent[1].slots[0].targeting.hb_adid,'fresh-allowed');
+    assert.equal(state.sent[1].slots[0].targeting.hb_adid_ix,undefined);
+    assert.equal(state.requests.length,2,'No unnecessary expired-target retry');assert.equal(state.pbConfig.useBidCache,true);
+    assert.equal(state.helper.snapshot().cachePolicy,'current-auction-for-rule-positions');
+  }
 });
 
 test('actual readiness retry is still filtered and bounded when native targeting remains incompatible',()=>{
@@ -315,5 +319,20 @@ test('Prebid replacement detaches old scope and restores only its own installed 
     assert.equal(oldOwn({adUnitCode:'P1',bidderCode:'ix'}),true,'Detached callbacks have no new Prebid ownership');
     oldPb.listeners.forEach(fn=>fn({auctionId:'old-foreign',adUnitCodes:['P1']}));
     assert.equal(newPb.config.bidCacheFilterFunction({adUnitCode:'P1',bidderCode:'ix'}),false,'Old event callbacks cannot clear new ownership');
+  }
+});
+
+test('fresh-only cache compatibility is limited to positions with an active matching rule',()=>{
+  for(const enabled of [true,false]){
+    const state=harness(settings(rule({positions:['P1'],enabled}))),config={},listeners=[];
+    const pb={getConfig:key=>config[key],setConfig:value=>Object.assign(config,value),onEvent:(name,fn)=>listeners.push(fn),
+      requestBids(input){listeners.forEach(fn=>fn({auctionId:input.auctionId,adUnitCodes:input.adUnits.map(u=>u.code)}));}};
+    state.helper.configurePrebid(pb);state.helper.request(pb,{auctionId:'owned',adUnits:[unit('P1'),unit('P2')]});
+    const cached={adUnitCode:'P1',bidderCode:'openx',auctionId:'earlier'};
+    assert.equal(config.bidCacheFilterFunction(cached),!enabled,'Only active position rule changes its owned cache scope');
+    assert.equal(config.bidCacheFilterFunction({...cached,adUnitCode:'P2'}),true,'Unrelated owned position keeps its prior filter');
+    assert.equal(config.bidCacheFilterFunction({...cached,adUnitCode:'unowned'}),true);
+    listeners.forEach(fn=>fn({auctionId:'foreign',adUnitCodes:['P1']}));
+    assert.equal(config.bidCacheFilterFunction(cached),true,'Foreign auction restores original cache semantics');
   }
 });
