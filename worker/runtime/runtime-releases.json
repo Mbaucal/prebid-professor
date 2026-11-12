@@ -2,7 +2,7 @@
   {
     "id": "tessera-3.22.0",
     "version": "3.22.0",
-    "codeSha256": "f4bdcbb65c9cc7a19534eed85f5dc8322c08009fc5501b82b2edabbd870490e3",
+    "codeSha256": "1aa3c8ad0dcc1c94fddf6d50b0a7b3073a524dee4750563277fd5c6d22525268",
     "configSchemaVersion": 1,
     "channel": "stable",
     "capabilities": [
@@ -33,7 +33,7 @@
     "date": "2026-11-12",
     "title": "Tessera 3.22.0 \u2014 bidder rules by country, position and viewport",
     "sourceManifest": "scripts/prepare-runtime322.mjs",
-    "sourceCommit": "679c2d23ed40801c5bc6a1c2d8795119d0f05b64",
+    "sourceCommit": "df482cf6ead78780684ea2ab7dcfd095bdbff7a5",
     "changes": [
       "Optional exact bidder and alias rules by country, ad position and viewport layout. Selected-position rules override a bidder\u2019s all-position rule; unknown country follows an explicit Allow or Skip choice.",
       "Rules filter the final native Prebid request after responsive format resolution. Empty bidder lists retain the existing consent-gated GAM fallback without waiting for GEO or forcing another auction.",
