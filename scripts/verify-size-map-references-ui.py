@@ -44,8 +44,45 @@ with sync_playwright() as playwright:
     dialog.get_by_role('button',name='Save size map',exact=True).click();expect(dialog).to_have_count(0);renamed=page.locator('article').filter(has=page.get_by_role('heading',name='renamed',exact=True));expect(renamed).to_contain_text('3 reference(s)');state=data('/__fixture/snapshot');assert state['config']['advancedUnitRules']['P1']['conditionalMappings'][0]['sizeMapKey']=='renamed';assert state['config']['unitRules']['P1']['conditionalMappings'][1]['sizeMapKey']=='renamed';assert json.loads(state['rules'][0]['rule_json'])['conditionalMappings'][0]['sizeMapKey']=='renamed';screen('saved')
     page.reload();expect(renamed).to_contain_text('3 reference(s)');renamed.get_by_role('button',name='Edit',exact=True).click();field=page.get_by_role('dialog').get_by_label('Size map name');field.fill('display');page.get_by_role('button',name='Save size map',exact=True).click();expect(page.get_by_role('dialog').get_by_role('alert')).to_contain_text('already exists');expect(field).to_have_value('display');screen('name-conflict')
     field.fill('renamed');page.get_by_role('button',name='Save size map',exact=True).click();expect(page.get_by_role('dialog')).to_have_count(0);screen('retry-saved')
+    # Page-type maps: listed as used, carried by a base rename, confirmed before they stop applying.
+    def variant_card(name):return page.locator('article').filter(has=page.get_by_role('heading',name=name,exact=True))
+    def map_names():return {row['name'] for row in data('/__fixture/snapshot')['maps']}
+    variant=variant_card('naslovna_display');expect(variant).to_contain_text('Page type naslovna: P1 (via display)');expect(variant).to_contain_text('1 reference(s)');screen('page-type-listed')
+    variant_card('display').get_by_role('button',name='Edit',exact=True).click();dialog=page.get_by_role('dialog');dialog.get_by_label('Size map name').fill('rectangle');expect(dialog).to_contain_text('Also renames: naslovna_display → naslovna_rectangle');screen('page-type-rename-preview')
+    dialog.get_by_role('button',name='Save size map',exact=True).click();expect(dialog).to_have_count(0)
+    variant=variant_card('naslovna_rectangle');expect(variant).to_contain_text('Page type naslovna: P1 (via rectangle)');assert {'rectangle','naslovna_rectangle'}<=map_names();assert 'naslovna_display' not in map_names()
+    def rename_variant(card,new_name):
+     card.get_by_role('button',name='Edit',exact=True).click();dialog=page.get_by_role('dialog');dialog.get_by_label('Size map name').fill(new_name);dialog.get_by_role('button',name='Save size map',exact=True).click()
+     note=dialog.locator('.page-type-confirmation');expect(note).to_contain_text('Page type naslovna: P1 will use rectangle instead of naslovna_rectangle.');expect(note).to_contain_text('Page type home: P1 will use home_rectangle instead of rectangle.');expect(note).to_contain_text('The next Generate uses these sizes. Existing packages do not change.');expect(note).to_be_in_viewport();expect(dialog.get_by_role('button',name='Confirm and save',exact=True)).to_be_visible();assert new_name not in map_names()
+     return dialog,note
+    dialog,note=rename_variant(variant,'home_rectangle');screen('page-type-confirm-rename')
+    # Any change to the breakpoints withdraws the confirmation; saving again asks again.
+    dialog.get_by_role('button',name='Add breakpoint',exact=True).click();expect(note).to_have_count(0);expect(dialog.get_by_role('button',name='Save size map',exact=True)).to_be_visible()
+    dialog.get_by_role('button',name='Save size map',exact=True).click();expect(note).to_be_visible();dialog.get_by_role('button',name='Remove breakpoint 3',exact=True).click();expect(note).to_have_count(0);expect(dialog.get_by_role('button',name='Save size map',exact=True)).to_be_visible();assert 'home_rectangle' not in map_names();screen('page-type-confirm-cleared')
+    dialog.get_by_role('button',name='Cancel',exact=True).click();expect(dialog).to_have_count(0);assert 'naslovna_rectangle' in map_names()
+    dialog,note=rename_variant(variant,'home_rectangle');dialog.get_by_role('button',name='Confirm and save',exact=True).click();expect(dialog).to_have_count(0)
+    variant=variant_card('home_rectangle');expect(variant).to_contain_text('Page type home: P1 (via rectangle)');assert 'home_rectangle' in map_names() and 'naslovna_rectangle' not in map_names();screen('page-type-confirmed')
+    prompts=[];answer={'accept':False}
+    def on_dialog(prompt):
+     prompts.append(prompt.message);prompt.accept() if answer['accept'] else prompt.dismiss()
+    page.on('dialog',on_dialog)
+    def wait_prompts(count):
+     for _ in range(100):
+      if len(prompts)>=count:break
+      page.wait_for_timeout(100)
+     assert len(prompts)>=count,prompts
+    variant.get_by_role('button',name='Delete',exact=True).click();wait_prompts(1);page.wait_for_timeout(300)
+    assert len(prompts)==1 and 'Page type home: P1 will use rectangle instead of home_rectangle.' in prompts[0],prompts;assert 'home_rectangle' in map_names();expect(variant).to_have_count(1)
+    prompts.clear();answer['accept']=True;variant.get_by_role('button',name='Delete',exact=True).click();expect(variant).to_have_count(0);assert len(prompts)==1,prompts;assert 'home_rectangle' not in map_names();screen('page-type-deleted')
+    # The listing is stale (another tab adds P2 on the base): the server's fresh lines get a second dialog.
+    send('/__fixture/insert-map','POST',json.dumps({'id':'sport-rectangle-map','name':'sport_rectangle','map':[{'minViewPort':[0,0],'sizes':[[300,250]]}]}));page.reload()
+    sport=variant_card('sport_rectangle');expect(sport).to_contain_text('Page type sport: P1 (via rectangle)')
+    send('/__fixture/insert-unit','POST',json.dumps({'id':'unit-P2','code':'P2','sizeMapKey':'rectangle','sortOrder':1}))
+    prompts.clear();sport.get_by_role('button',name='Delete',exact=True).click();expect(sport).to_have_count(0)
+    assert len(prompts)==2,prompts;assert 'Page type sport: P1 will use rectangle instead of sport_rectangle.' in prompts[0],prompts;assert 'Page type sport: P1, P2 will use rectangle instead of sport_rectangle.' in prompts[1],prompts
+    assert 'sport_rectangle' not in map_names();page.remove_listener('dialog',on_dialog);screen('page-type-delete-recheck')
     page.get_by_role('button',name='Unit rules',exact=True).click();page.get_by_role('button',name='＋ New rule',exact=True).click();rule_dialog=page.get_by_role('dialog');rule_dialog.get_by_label('Rule target',exact=False).select_option('__DEFAULT__');scope=rule_dialog.locator('.conditional-section');scope.scroll_into_view_if_needed();expect(scope).to_contain_text('In scripts 3.21.1 and 3.21.2, Default, ATF and BTF conditions apply only to those formats');expect(scope).to_contain_text('Other scripts, including 3.22.0, can reject packages when those group rules reach TakeOver or Outstream.');expect(scope).to_contain_text('A Default or group preset does not restrict TakeOver or Outstream.');expect(scope.get_by_text('Conditional rules support Banner and Sticky.',exact=False)).to_be_in_viewport();screen('rule-format-scope');rule_dialog.get_by_role('button',name='Cancel',exact=True).click();expect(rule_dialog).to_have_count(0);assert not errors,errors
-    checks.append({'width':width,'pass':True,'checks':['real HTTP/SQLite','load/retry','basic+advanced+disabled references','delete blocked with explanation','pending lock','failed save retains values','successful rename closes dialog','saved rule references','reload','name conflict/retry','3.21.1 and 3.21.2 group format scope copy','no overflow','zero page errors']})
+    checks.append({'width':width,'pass':True,'checks':['real HTTP/SQLite','load/retry','basic+advanced+disabled references','delete blocked with explanation','pending lock','failed save retains values','successful rename closes dialog','saved rule references','reload','name conflict/retry','3.21.1 and 3.21.2 group format scope copy','page-type listing','page-type rename preview and cascade','page-type rename confirmation','breakpoint change clears confirmation','confirmed page-type rename','page-type delete cancel/confirm','stale listing asks again with fresh lines','no overflow','zero page errors']})
    finally:page.close();proc.stdin.close();proc.wait(timeout=15)
  finally:browser.close()
 (out/'results.json').write_text(json.dumps({'checks':checks},indent=2)+'\n');print(json.dumps({'checks':checks},indent=2))
