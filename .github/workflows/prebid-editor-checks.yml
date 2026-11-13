@@ -76,6 +76,7 @@ jobs:
         run: python scripts/verify-contextual-prebid-wire.py --version "${{ matrix.prebid }}"
       - name: Verify full generated 3.21.1 wrappers through native RTD and consent gates
         run: |
+          node scripts/isolated-toolchain.mjs prepare
           node --experimental-strip-types scripts/prepare-audit3211-browser-fixtures.mjs
           python scripts/verify-audit3211-contextual-wrapper.py --version "${{ matrix.prebid }}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

@@ -88,7 +88,7 @@ function lifecycle({prebid='off',body=true,persisted=null,source=after,frequency
   const context=vm.createContext({window:win,Date:clock.Date,setTimeout:clock.setTimeout,clearTimeout:clock.clearTimeout,
     document:{body:body?{}:null,addEventListener(name,callback){domListeners.set(name,callback);}},
     TESSERA_OVERLAY:{code:'Overlay',frequencyMinutes:frequency},HAS_PREBID:prebid!=='off',BIDDERS:prebid==='off'?[]:[{}],
-    TAKEOVER_ACTIVE_FOR_PAGE:frequency===0,_tesseraTakeOverEligible:true,_tesseraTakeOverWaiting:false,
+    TAKEOVER_ACTIVE_FOR_PAGE:frequency===0,_tesseraTakeOverEligible:true,_tesseraTakeOverWaiting:false,_tesseraTakeOverCapResolved:false,_tesseraTakeOverBootWaiting:false,
     _takeOver:{initialized:false},_tesseraInitialStarted:new WeakSet(),_takeOverSlot:null,
     tesseraOverlayDevice:()=>({device:'desktop',size:[800,600],autoCloseSec:0}),
     takeOverDeviceConfig:()=>context.tesseraOverlayDevice(),takeOverMainAdUnitPath:()=>'/123/test/Overlay',
@@ -100,7 +100,7 @@ function lifecycle({prebid='off',body=true,persisted=null,source=after,frequency
     adViewportInitialSlots:slots=>slots,
     googletag:{cmd:{push:fn=>fn()},defineSlot:()=>slot,pubads:()=>service,display(){},enableServices(){events.push('enable-services');}},
   });
-  const names=['createConsentStorage','createTesseraReadiness','initTakeOver','initTakeOverReady','tesseraOverlayAllowed','tesseraRecordOverlayView','startATF','resolveConsent'];
+  const names=['createConsentStorage','createTesseraReadiness','resolveTakeOverCap','initTakeOver','initTakeOverReady','tesseraOverlayAllowed','tesseraRecordOverlayView','startATF','resolveConsent'];
   vm.runInContext(names.map(name=>extract(source,name)).join('\n'),context);
   vm.runInContext('var _adStorage=createConsentStorage(window);var _tesseraReady=createTesseraReadiness(window,{storageConsent:_adStorage.update,rawDispatch:function(){},code:function(){return "Billboard";},clear:function(){},apply:function(){}});',context);
   return {...h,clock,events,context,emit:(data,success=true)=>cmp(data,success),
@@ -148,4 +148,56 @@ test('late body callback rechecks current CMP and viewport before initializing',
   const resized=lifecycle({frequency:0});resized.start();resized.context.tesseraOverlayDevice=()=>null;
   resized.emit(ready(false));resized.clock.tick();assert.equal(resized.context._takeOver.status,'skipped-viewport');
   assert(resized.events.includes('release:viewport-disabled'));assert.deepEqual(resized.access,[]);
+});
+
+// The real boot defines slots and enables GPT before startATF. Keeping both
+// emitted functions in this fixture catches ordering that an ATF-only test misses.
+function startup(options) {
+  const h=lifecycle(options), c=h.context;
+  const element={id:'Billboard',getAttribute:()=>null};
+  Object.assign(c,{
+    AD_GEO_STATE:{initialized:false},AD_CONTAINER_SELECTOR:'.wrapperAd',STICKY_TARGET_ID:'',STICKY_TOP_TARGET_ID:'',
+    SIZE_MAPS_RAW:{display:[{viewport:[0,0],sizes:[[300,250]]}]},adUnitPath:'/123/test/',
+    _tesseraDiscovery:{failed:{}},_refreshCounts:{},_lastRefreshAt:{},COLLAPSE_EMPTY_SLOTS:false,TESSERA_LAZY_STARTED:false,
+    _takeOverCodelessGuardSlot:null,_takeOverCodelessReleased:false,TAKEOVER_BLOCK_CODELESS:true,
+    adViewportInstallInitialResume(){h.events.push('normal-init');},ensureStickyCss(){},ensureStickyHostsExist(){},
+    waitForHostAndButton(){},ensureStickyClose(){},ensureStickyTopClose(){},lateMergeTargeting(){},
+    takeOverConfigureGuardSlot(){},takeOverOnCodelessFallbackRender(){},takeOverCodelessAdUnitPath:()=>'/123/test/Interstitial',
+    getUnitConfigById:()=>({type:'ATF',sizeMapName:'display',sizes:[[300,250]]}),slotHasCurrentViewportSizes:()=>true,
+    applyImmediateTargeting(){},takeOverScheduleCodelessSweep(){},tesseraHandleLateSlots(){},
+    tesseraWireConfiguredLazy(){},startAfterGptAndConsent(){h.start();},
+  });
+  c._takeOver.guardAttempts=0;c.window.adSlots={};c.document.querySelectorAll=()=>[element];
+  c.document.getElementById=()=>element;c.googletag.setConfig=()=>{};
+  c.googletag.sizeMapping=()=>({addSize(){return this;},build:()=>[]});
+  c.googletag.enums={OutOfPageFormat:{INTERSTITIAL:1}};
+  c.googletag.defineOutOfPageSlot=()=>{h.events.push('guard');return{addService(){}};};
+  c.googletag.defineSlot=(path,sizes,id)=>({getSlotElementId:()=>id,setConfig(){},defineSizeMapping(){},addService(){}});
+  Object.assign(c.googletag.pubads(),{collapseEmptyDivs(){},setCentering(){},disableInitialLoad(){}});
+  vm.runInContext(['init','initAfterTakeOverCap','defineAllSlots','takeOverEnsureCodelessGuard'].map(name=>extract(after,name)).join('\n'),c);
+  return h;
+}
+test('actual generated init and defineAllSlots resolve a cap before guard, GPT enable and normal ATF collection',()=>{
+  for(const prebid of ['off','ready','missing'])for(const grant of [true,false]){
+    const h=startup({prebid});h.context.init();h.context.init();h.clock.tick(1000);
+    assert.deepEqual(h.events,[],'boot must not enable GPT before the cap can be resolved');assert.deepEqual(h.access,[]);
+    h.emit(ready(grant));h.clock.tick(3001);
+    assert.equal(h.events.filter(value=>value==='normal-init').length,1,'duplicate pending boot is coalesced');
+    assert(h.events.indexOf('guard')>=0);assert(h.events.indexOf('guard')<h.events.indexOf('enable-services'));
+    assert.equal(h.events.filter(value=>value==='overlay').length,1);assert(h.context.window.adSlots.Billboard);
+    assert.equal(h.access.filter(value=>value==='read').length,grant?1:0,'one cap read per opportunity');
+    assert(h.events.indexOf('block')<h.events.indexOf('guard'));
+  }
+});
+test('actual boot still starts normal slots when capped or resized; zero-cap and ineligible boot stay synchronous',()=>{
+  const capped=startup({persisted:'900000'});capped.context.init();capped.emit(ready(true));capped.clock.tick();
+  assert(capped.events.includes('enable-services'));assert(!capped.events.includes('guard'));assert(!capped.events.includes('overlay'));
+  assert(capped.context.window.adSlots.Billboard);assert.equal(capped.context._takeOver.status,'frequency-capped');
+  const resized=startup();resized.context.init();resized.context.tesseraOverlayDevice=()=>null;
+  resized.emit(ready(true));resized.clock.tick();assert(resized.events.includes('enable-services'));
+  assert(!resized.events.includes('guard'));assert(!resized.events.includes('overlay'));assert.deepEqual(resized.access,[]);
+  assert.equal(resized.context._takeOver.status,'skipped-viewport');
+  const zero=startup({frequency:0});zero.context.init();assert(zero.events.includes('enable-services'));assert.deepEqual(zero.access,[]);
+  const ineligible=startup();ineligible.context._tesseraTakeOverEligible=false;ineligible.context.init();
+  assert(ineligible.events.includes('enable-services'));assert.deepEqual(ineligible.access,[]);
 });

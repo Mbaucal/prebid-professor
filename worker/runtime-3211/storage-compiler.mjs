@@ -40,7 +40,7 @@ export function applyStoragePrivacy(source, input) {
       '  var TAKEOVER_ACTIVE_FOR_PAGE = takeOverIsActiveForPage() && tesseraOverlayAllowed();',
       '  var _tesseraTakeOverEligible=takeOverIsActiveForPage() && !!tesseraOverlayDevice();\n  var TAKEOVER_ACTIVE_FOR_PAGE = _tesseraTakeOverEligible && !TESSERA_OVERLAY.frequencyMinutes;');
     source = once(source, '  var _tesseraReady=createTesseraReadiness(window,{',
-      `${browser.createConsentStorage.toString()}\n  var _adStorage=createConsentStorage(window);\n  var _tesseraTakeOverWaiting=false;\n  var _tesseraReady=createTesseraReadiness(window,{\n    storageConsent:_adStorage.update,`);
+      `${browser.createConsentStorage.toString()}\n${browser.resolveTakeOverCap.toString()}\n  var _adStorage=createConsentStorage(window);\n  var _tesseraTakeOverWaiting=false;\n  var _tesseraTakeOverCapResolved=false;\n  var _tesseraTakeOverBootWaiting=false;\n  var _tesseraReady=createTesseraReadiness(window,{\n    storageConsent:_adStorage.update,`);
     source = once(source,
       '    consent = {ready:!!ready, phase:phase, epoch:consent.epoch + (changed ? 1 : 0)};',
       '    consent = {ready:!!ready, phase:phase, epoch:consent.epoch + (changed ? 1 : 0)};\n    if(options.storageConsent)options.storageConsent(data,success,!!ready);');
@@ -48,6 +48,8 @@ export function applyStoragePrivacy(source, input) {
     source = replaceFunction(source, 'tesseraRecordOverlayView', browser.tesseraRecordOverlayView.toString());
     source = once(source, '  function initTakeOver(){',
       browser.initTakeOver.toString() + '\n  function initTakeOverReady(){');
+    source = once(source, '  function init(){',
+      browser.init.toString() + '\n  function initAfterTakeOverCap(){');
   }
   parse(source, {ecmaVersion: 2015});
   return source;

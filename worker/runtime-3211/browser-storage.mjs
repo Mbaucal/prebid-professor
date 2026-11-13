@@ -42,6 +42,38 @@ export function createConsentStorage(win) {
 }
 
 /** Called only inside the existing current-decision readiness gate. */
+export function resolveTakeOverCap() {
+  if (_tesseraTakeOverCapResolved) return TAKEOVER_ACTIVE_FOR_PAGE;
+  _tesseraTakeOverCapResolved = true;
+  var device = tesseraOverlayDevice();
+  var skippedViewport = !!TESSERA_OVERLAY.frequencyMinutes && !device;
+  var capped = !!device && !tesseraOverlayAllowed();
+  TAKEOVER_ACTIVE_FOR_PAGE = !skippedViewport && !capped;
+  window.TAKEOVER_ACTIVE_FOR_PAGE = TAKEOVER_ACTIVE_FOR_PAGE;
+  _takeOver.activeForPage = TAKEOVER_ACTIVE_FOR_PAGE;
+  if (!TAKEOVER_ACTIVE_FOR_PAGE) {
+    _takeOver.initialized = true;
+    _takeOver.status = skippedViewport ? 'skipped-viewport' : 'frequency-capped';
+    takeOverEvent(_takeOver.status, skippedViewport ? {width: window.innerWidth} : {});
+  } else applyTakeOverCodelessLinkBlock();
+  return TAKEOVER_ACTIVE_FOR_PAGE;
+}
+
+/** Resolve a stored cap before the original boot defines its GPT guard/services. */
+export function init() {
+  if (_tesseraTakeOverEligible && TESSERA_OVERLAY.frequencyMinutes && !_tesseraTakeOverCapResolved) {
+    if (_tesseraTakeOverBootWaiting) return;
+    _tesseraTakeOverBootWaiting = true;
+    _tesseraReady.whenConsent(function() {
+      _tesseraTakeOverBootWaiting = false;
+      resolveTakeOverCap();
+      initAfterTakeOverCap();
+    });
+    return;
+  }
+  initAfterTakeOverCap();
+}
+
 export function initTakeOver() {
   if (_takeOver.initialized || _tesseraTakeOverWaiting) return;
   if (!_tesseraTakeOverEligible) return;
@@ -49,18 +81,7 @@ export function initTakeOver() {
   _tesseraReady.whenConsent(function() {
     _tesseraTakeOverWaiting = false;
     if (_takeOver.initialized) return;
-    if (tesseraOverlayDevice() && !tesseraOverlayAllowed()) {
-      TAKEOVER_ACTIVE_FOR_PAGE = false;
-      window.TAKEOVER_ACTIVE_FOR_PAGE = false;
-      _takeOver.activeForPage = false;
-      _takeOver.initialized = true;
-      _takeOver.status = 'frequency-capped';
-      takeOverEvent('frequency-capped', {});
-      return;
-    }
-    TAKEOVER_ACTIVE_FOR_PAGE = true;
-    window.TAKEOVER_ACTIVE_FOR_PAGE = true;
-    _takeOver.activeForPage = true;
+    if (!resolveTakeOverCap()) return;
     applyTakeOverCodelessLinkBlock();
     initTakeOverReady();
   });

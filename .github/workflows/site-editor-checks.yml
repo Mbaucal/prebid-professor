@@ -63,12 +63,12 @@ jobs:
           python scripts/verify-runtime-controls-validation-ui.py
           python scripts/verify-inactive-media-ui-qa.py
           python scripts/verify-draft-inventory-ui.py
-      - name: Full generated storage and CMP regression on readable and minified scripts
-        run: node scripts/prepare-storage3211-browser.mjs && python scripts/verify-storage3211-browser.py
       - name: Rule map references, rename recovery and supported scope on desktop and narrow screens
         run: python scripts/verify-size-map-references-ui.py
       - name: Contextual signal editor on desktop and narrow screens
         run: python scripts/verify-contextual-signals-ui.py
+      - name: Full generated storage and CMP regression on readable and minified scripts
+        run: node scripts/prepare-storage3211-browser.mjs && python scripts/verify-storage3211-browser.py
       - run: python scripts/verify-site-editor.py
       - run: python scripts/verify-site-workspace.py
       - run: node --experimental-strip-types scripts/prepare-test-page-browser-fixture.mjs && python scripts/verify-site-test-page.py
