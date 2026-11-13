@@ -2,7 +2,7 @@
   {
     "id": "tessera-3.21.1",
     "version": "3.21.1",
-    "codeSha256": "07dcb7bc675b778f07a3f2f23f37f3271a4027a263e59cb5767aa9399c5eb40f",
+    "codeSha256": "26652665bed6736708dc54218e46e239844b5b6b3c5ccccf5ce24a7271d10494",
     "configSchemaVersion": 1,
     "channel": "stable",
     "capabilities": [
@@ -32,7 +32,7 @@
     "date": "2026-11-13",
     "title": "Tessera 3.21.1 — independent audit corrections",
     "sourceManifest": "scripts/prepare-runtime3211.mjs",
-    "sourceCommit": "eea3c09604aa9af3f01a2ac0b886894ff7c97b55",
+    "sourceCommit": "194ee2987eebe5a1c6e2fe70e5e317e1504c2336",
     "changes": [
       "Preserve the category/page GPT and Prebid maps when conditional rules do not explicitly override them. Inherited rules report excluded TakeOver and Outstream formats.",
       "Preserve publisher-owned native RTD configuration and diagnose missing modules, an incompatible initial provider list and later configuration changes. Configure all RTD providers together before the wrapper.",
