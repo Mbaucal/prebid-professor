@@ -1,8 +1,8 @@
 /**
  * Page-type size maps, exactly as every Tessera generator selects them.
  *
- * Reference 3.9.1 baseUnitConfigById (built-in 3.16.0 to 3.21.1 and every
- * operator template built from it) builds each prefix from
+ * Reference 3.9.1 baseUnitConfigById (built-in 3.16.0 to 3.21.2, 3.22.0 and
+ * every operator template built from it) builds each prefix from
  * window.adsKeywords[PAGE_TYPE_KEYS[i]] as String(value).toLowerCase() with
  * whitespace runs replaced by "_", joins several keys with "_", and then uses
  * SIZE_MAPS_RAW[prefix + "_" + sizeMapName] when that exact saved name exists.
