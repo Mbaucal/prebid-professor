@@ -207,8 +207,8 @@ export async function updateFlexibleSizeMap(
   }
 
   try {
-    const failure = await mutateSizeMap(env.DB, siteId, { id: existingRow.id, name: existingRow.name, updatedAt: existingRow.updated_at }, getActor(request), { name, map });
-    if (failure) return apiError(failure.error, failure.status);
+    const failure = await mutateSizeMap(env.DB, siteId, { id: existingRow.id, name: existingRow.name, updatedAt: existingRow.updated_at }, getActor(request), { name, map }, body.confirmPageTypeChanges);
+    if (failure) return apiError(failure.error, failure.status, failure.confirmation ? { confirmation: failure.confirmation } : undefined);
   } catch (error) {
     const conflict = /unique|constraint/i.test(error instanceof Error ? error.message : '');
     return apiError(conflict ? `Size map "${name}" already exists on this site.` : 'Size map update failed. Reload and review the saved rules before trying again.', conflict ? 409 : 500);

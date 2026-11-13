@@ -252,8 +252,8 @@ export async function updateSizeMap(
   }
 
   try {
-    const failure = await mutateSizeMap(env.DB, siteId, current, getActor(request), { name, map });
-    if (failure) return apiError(failure.error, failure.status);
+    const failure = await mutateSizeMap(env.DB, siteId, current, getActor(request), { name, map }, input.confirmPageTypeChanges);
+    if (failure) return apiError(failure.error, failure.status, failure.confirmation ? { confirmation: failure.confirmation } : undefined);
   } catch (error) {
     const conflict = /unique|constraint/i.test(error instanceof Error ? error.message : '');
     return apiError(conflict ? `Size map "${name}" already exists on this site.` : 'Size map update failed. Reload and review the saved rules before trying again.', conflict ? 409 : 500);
@@ -297,9 +297,23 @@ export async function deleteSizeMap(
   const current = await fetchSizeMap(env.DB, siteId, sizeMapId);
   if (!current) return apiError('Size map not found.', 404);
 
+  // Optional JSON body: {confirmPageTypeChanges} from the previous 409 confirmation.
+  // An empty body is the same as no body, whatever its content type.
+  let confirmPageTypeChanges: unknown;
+  if ((request.headers.get('content-type') ?? '').includes('application/json')) {
+    const text = await request.text();
+    if (text.trim()) {
+      try { confirmPageTypeChanges = (JSON.parse(text) as { confirmPageTypeChanges?: unknown } | null)?.confirmPageTypeChanges; }
+      catch { return apiError('Invalid JSON body.'); }
+    }
+  }
+
   try {
-    const failure = await mutateSizeMap(env.DB, siteId, current, getActor(request), null);
-    if (failure) return apiError(failure.error, failure.status, { references: failure.references });
+    const failure = await mutateSizeMap(env.DB, siteId, current, getActor(request), null, confirmPageTypeChanges);
+    if (failure) return apiError(failure.error, failure.status, {
+      ...(failure.references ? { references: failure.references } : {}),
+      ...(failure.confirmation ? { confirmation: failure.confirmation } : {}),
+    });
   } catch {
     return apiError('Size map deletion failed. Reload and review the saved rules before trying again.', 500);
   }

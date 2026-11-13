@@ -119,9 +119,31 @@ export type SizeMapBreakpoint = {
 };
 
 export type SizeMapReference = {
-  source: 'ad-unit' | 'rule' | 'advanced-rule';
+  /** page-type: the generator selects this map by name (<page type>_<base map>) for these units.
+   * outstream: saved responsive Outstream video size choices that are keyed by this map name. */
+  source: 'ad-unit' | 'rule' | 'advanced-rule' | 'page-type' | 'outstream';
   scope: string;
   label: string;
+  pageType?: string;
+  baseMap?: string;
+  units?: string[];
+};
+
+/** A page-type selection that a rename or delete would change; requires explicit confirmation. */
+export type SizeMapPageTypeChange = {
+  pageType: string;
+  base: string;
+  codes: string[];
+  from: string | null;
+  to: string | null;
+  message: string;
+};
+
+export type SizeMapPageTypeConfirmation = {
+  token: string;
+  changes: SizeMapPageTypeChange[];
+  /** Positions whose saved Outstream video sizes for this map are removed. */
+  videoUnits: string[];
 };
 
 export type SizeMap = {
@@ -139,7 +161,10 @@ export type CreateSizeMapInput = {
   map: SizeMapBreakpoint[];
 };
 
-export type UpdateSizeMapInput = Partial<CreateSizeMapInput>;
+export type UpdateSizeMapInput = Partial<CreateSizeMapInput> & {
+  /** Token from a 409 page-type confirmation; only valid while the same changes apply. */
+  confirmPageTypeChanges?: string;
+};
 
 export type DuplicateSizeMapInput = {
   name: string;
