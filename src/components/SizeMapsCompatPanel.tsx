@@ -1,5 +1,5 @@
 import BulkImportPanel from './BulkImportPanel';
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AdUnit, SizeMap } from '../shared/types';
 import { reservedHeightSummary } from '../shared/size-map-height-summary';
@@ -135,6 +135,10 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [defaultsBusy,setDefaultsBusy]=useState(false),[defaultsNote,setDefaultsNote]=useState('');
+  const errorNotice = useRef<HTMLDivElement>(null);
+  const formNotice = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (error) errorNotice.current?.scrollIntoView({ block: 'nearest' }); }, [error]);
+  useEffect(() => { if (formError) formNotice.current?.scrollIntoView({ block: 'nearest' }); }, [formError]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,8 +164,11 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
       if (!unit.sizeMapKey) return;
       result.set(unit.sizeMapKey, [...(result.get(unit.sizeMapKey) ?? []), unit.code]);
     });
+    sizeMaps.forEach((map) => {
+      if (map.references) result.set(map.name, map.references.map(reference => reference.label));
+    });
     return result;
-  }, [adUnits]);
+  }, [adUnits, sizeMaps]);
 
   async function addDefaults(){
     setDefaultsBusy(true);setError(null);setDefaultsNote('');
@@ -250,7 +257,9 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
       }
       await load();
       await onChanged?.();
-      closeForm();
+      setMode(null);
+      setSource(null);
+      setFormError(null);
     } catch (requestError) {
       setFormError(requestError instanceof Error ? requestError.message : 'Size map operation failed.');
     } finally {
@@ -261,8 +270,9 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
   async function remove(item: FlexibleMap) {
     const usedBy = usage.get(item.name) ?? [];
     const message = usedBy.length
-      ? `${item.name} is used by ${usedBy.join(', ')} and cannot be deleted until those ad units are reassigned.`
+      ? `${item.name} is used by ${usedBy.join(', ')}. Reassign these references before deleting it.`
       : `Delete size map ${item.name}?`;
+    if (usedBy.length) { setError(message); return; }
     if (!window.confirm(message)) return;
 
     try {
@@ -295,7 +305,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
           <span><code>fluid</code> is valid for GPT/native inventory. Leave Sizes empty to create <code>[]</code> and disable the slot at that viewport.</span>
         </div>
 
-        {error ? <div className="form-error config-error">{error}</div> : null}
+        {error ? <div ref={errorNotice} role="alert" className="form-error config-error"><p>{error}</p><button className="button secondary" disabled={loading} onClick={() => void load()} type="button">Reload size maps</button></div> : null}
         {loading ? <div className="config-loading">Loading size maps from D1…</div> : null}
 
         <div className="size-map-grid">
@@ -306,7 +316,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                 <div className="size-map-heading">
                   <div><h3>{item.name}</h3><span>{item.map.length} breakpoint(s)</span></div>
                   <span className={usedBy.length ? 'map-usage used' : 'map-usage'}>
-                    {usedBy.length ? `${usedBy.length} unit(s)` : 'unused'}
+                    {usedBy.length ? `${usedBy.length} reference(s)` : 'unused'}
                   </span>
                 </div>
 
@@ -358,14 +368,14 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                 <span className="panel-kicker">Responsive size workflow</span>
                 <h2 id="size-map-editor-title">{mode === 'create' ? 'Create size map' : mode === 'duplicate' ? `Duplicate ${source?.name ?? 'size map'}` : `Edit ${source?.name ?? 'size map'}`}</h2>
               </div>
-              <button className="icon-button" onClick={closeForm} type="button">×</button>
+              <button className="icon-button" disabled={submitting} onClick={closeForm} type="button">×</button>
             </div>
 
             <form className="publisher-form" onSubmit={submit}>
               <label>
                 <span>Size map name</span>
-                <input autoFocus onChange={(event) => setName(event.target.value)} placeholder="Billboard" value={name} />
-                <small>Renaming a map updates all ad units that reference it.</small>
+                <input autoFocus disabled={submitting} onChange={(event) => setName(event.target.value)} placeholder="Billboard" value={name} />
+                <small>Renaming a map updates ad units and saved rules that reference it.</small>
               </label>
 
               <div className="breakpoint-editor size-map-compat-editor">
@@ -374,7 +384,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                     <span>Breakpoints</span>
                     <small>Viewport width chooses when a row applies. Sizes lists the allowed creatives, for example 970x250 | fluid. Leave Sizes empty when no ad should serve.</small>
                   </div>
-                  {mode !== 'duplicate' ? <button className="button secondary" onClick={addBreakpoint} type="button">Add breakpoint</button> : null}
+                  {mode !== 'duplicate' ? <button className="button secondary" disabled={submitting} onClick={addBreakpoint} type="button">Add breakpoint</button> : null}
                 </div>
 
                 <p className="size-map-reservation-help">Reserved ad height is calculated from Sizes for standard slots and exported as CSS min-height. Sticky and overlay positions use their own layout. It is separate from the browser viewport height.</p>
@@ -384,14 +394,14 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                   <div className="breakpoint-form-row" key={row.id}>
                     <label>
                       <span>Viewport width ≥ (px)</span>
-                      <input aria-label={`Breakpoint ${index + 1} minimum browser viewport width`} disabled={mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minWidth: Number(event.target.value) })} type="number" value={row.minWidth} />
+                      <input aria-label={`Breakpoint ${index + 1} minimum browser viewport width`} disabled={submitting || mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minWidth: Number(event.target.value) })} type="number" value={row.minWidth} />
                     </label>
                     <label className="sizes-field">
                       <span>Sizes</span>
-                      <input aria-label={`Breakpoint ${index + 1} sizes`} disabled={mode === 'duplicate'} onChange={(event) => updateRow(row.id, { sizesText: event.target.value })} placeholder="970x250 | 728x90 | fluid · or leave empty" value={row.sizesText} />
+                      <input aria-label={`Breakpoint ${index + 1} sizes`} disabled={submitting || mode === 'duplicate'} onChange={(event) => updateRow(row.id, { sizesText: event.target.value })} placeholder="970x250 | 728x90 | fluid · or leave empty" value={row.sizesText} />
                     </label>
                     {mode !== 'duplicate' ? (
-                      <button aria-label={`Remove breakpoint ${index + 1}`} className="breakpoint-remove" disabled={rows.length === 1} onClick={() => removeBreakpoint(row.id)} type="button">×</button>
+                      <button aria-label={`Remove breakpoint ${index + 1}`} className="breakpoint-remove" disabled={submitting || rows.length === 1} onClick={() => removeBreakpoint(row.id)} type="button">×</button>
                     ) : null}
                     <div className="breakpoint-reserved-height" aria-live="polite">
                       <span>Reserved ad height / CSS min-height</span>
@@ -402,7 +412,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                       <summary>Advanced: browser viewport height{row.minHeight ? ` ≥ ${row.minHeight}px` : ''}</summary>
                       <label>
                         <span>Minimum browser viewport height (px)</span>
-                        <input aria-label={`Breakpoint ${index + 1} minimum browser viewport height`} disabled={mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minHeight: Number(event.target.value) })} type="number" value={row.minHeight} />
+                        <input aria-label={`Breakpoint ${index + 1} minimum browser viewport height`} disabled={submitting || mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minHeight: Number(event.target.value) })} type="number" value={row.minHeight} />
                         <small>Additional condition on the browser window, not reserved ad space. Keep 0 for width-only rules. Nonzero values require a script and ad format that support viewport-height rules.</small>
                       </label>
                     </details>
@@ -411,7 +421,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
               </div>
 
               {mode === 'duplicate' ? <div className="form-options">The copied map keeps all {source?.map.length ?? 0} breakpoint(s). Save it first, then edit if needed.</div> : null}
-              {formError ? <div role="alert" className="form-error">{formError}</div> : null}
+              {formError ? <div ref={formNotice} role="alert" className="form-error">{formError}</div> : null}
               <div className="modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeForm} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting} type="submit">
