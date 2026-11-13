@@ -1,5 +1,46 @@
 [
   {
+    "id": "tessera-3.21.1",
+    "version": "3.21.1",
+    "codeSha256": "07dcb7bc675b778f07a3f2f23f37f3271a4027a263e59cb5767aa9399c5eb40f",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules",
+      "viewport-height-size-maps",
+      "gam-code-compatibility",
+      "contextual-signals"
+    ],
+    "date": "2026-11-13",
+    "title": "Tessera 3.21.1 — independent audit corrections",
+    "sourceManifest": "scripts/prepare-runtime3211.mjs",
+    "sourceCommit": "eea3c09604aa9af3f01a2ac0b886894ff7c97b55",
+    "changes": [
+      "Preserve the category/page GPT and Prebid maps when conditional rules do not explicitly override them. Inherited rules report excluded TakeOver and Outstream formats.",
+      "Preserve publisher-owned native RTD configuration and diagnose missing modules, an incompatible initial provider list and later configuration changes. Configure all RTD providers together before the wrapper.",
+      "TakeOver frequency storage follows the current CMP decision, with page-memory fallback. Debug opt-in no longer reads or writes localStorage.",
+      "Previous release sources, selected versions and saved packages remain unchanged. Select and save 3.21.1 explicitly to apply these corrections."
+    ]
+  },
+  {
     "id": "tessera-3.21.0",
     "version": "3.21.0",
     "codeSha256": "8283e7aa041cc71d6cd2475c684f5a7a0e4e60a8c858fd5383bf452071790ce2",
