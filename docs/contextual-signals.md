@@ -59,3 +59,15 @@ Automated checks use synthetic demand and intercepted networks. Actual executed 
 - [Prebid first-party data](https://docs.prebid.org/features/firstPartyData.html)
 - [Prebid RTD provider interface](https://docs.prebid.org/dev-docs/add-rtd-submodule.html)
 - [IAB Taxonomies](https://github.com/InteractiveAdvertisingBureau/Taxonomies/tree/0fa1a8b3d7b6a94d245ee858d936dcfe021ca2c5)
+
+## RTD coexistence in script 3.21.1
+
+Prebid 11.11.0 and 11.34.0 initialize RTD from the first `realTimeData.dataProviders` configuration, including an empty array. A later `setConfig` changes what `getConfig` returns without changing the active native providers. Script 3.21.1 therefore never merges its provider into an existing provider list.
+
+When another system supplies RTD data, the publisher must set **one complete initial configuration before ads.js**. Preserve the existing providers, parameters and auction delay, and include `{name: 'contextualSignals', waitForIt: false, params: {}}` in that first list. The custom contextual provider resolves the wrapper helper at auction time, so this combined configuration can be initialized before the helper exists. If ads.js is the sole RTD owner, it configures its provider automatically.
+
+An existing configuration without contextualSignals remains untouched. A later different RTD configuration is observed through the public config subscription and produces a console warning plus `rtd-config-changed-after-initialization`. The runtime cannot safely hot-reconfigure native RTD; correct the first configuration and reload. Repeating `configurePrebid` does not add duplicate listeners or configuration writes.
+
+The debug snapshot has an `rtd` object with status, initial configured provider names, owner and `providerObserved`. Provider presence in `getConfig` alone is not activation evidence. `provider-not-observed` and `prebid-modules-missing` keep ads running without claiming successful optional enrichment. GAM PPS remains independent.
+
+The editor now shows missing required modules for the current uploaded build. This is explicitly **stored-build metadata**, not an assertion that the module is active on a publisher page. The runtime also checks `installedModules` when Prebid exposes it. Save the intended build selection after uploading the compatible custom build.

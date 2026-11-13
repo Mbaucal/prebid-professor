@@ -840,8 +840,8 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                     <span className="rule-section-kicker">Key-values</span>
                     <h3>{isInterstitial ? 'Conditional Interstitial fallback' : 'Conditional size-map and slot rules'}</h3>
                     <p>Script 3.19.0 adds geo_country from country detection. Example: geo_country equals DE selects a map for Germany. Only positions with country conditions wait for that result. Page keys such as category still come from window.adsKeywords, set before ads.js. Higher priority runs first; no match keeps the assigned map and state.</p>
-                    {isInterstitial ? <p>This rule controls the script-managed TakeOver fallback only. Independently loaded GAM codeless Interstitials need their own GAM targeting. Known country is also sent to GAM as geo_country.</p> : <p>Banner and Sticky support size-map changes. TakeOver and Outstream keep their reviewed size maps.</p>}
-                    <p>The Only Serbia preset disables this position for other or unknown countries. Keep it ahead of other matching rules; an Enable action alone does not restrict a position to a country.</p>
+                    {isInterstitial ? <p>This rule controls the script-managed TakeOver fallback only. Independently loaded GAM codeless Interstitials need their own GAM targeting. Known country is also sent to GAM as geo_country.</p> : <p>Conditional rules support Banner and Sticky. In script 3.21.1, Default, ATF and BTF conditions apply only to those formats; TakeOver and Outstream keep their own maps and serving behavior. Earlier scripts can reject packages when those group rules reach TakeOver or Outstream. Interstitial fallback has its own rule target.</p>}
+                    <p>The Only Serbia preset disables eligible positions in this scope for other or unknown countries. A Default or group preset does not restrict TakeOver or Outstream. Keep it ahead of other matching rules; an Enable action alone does not restrict a position to a country.</p>
                   </div>
                 </div>
                 <div className="runtime-actions">

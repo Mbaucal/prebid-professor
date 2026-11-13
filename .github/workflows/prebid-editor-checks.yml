@@ -79,6 +79,11 @@ jobs:
           node scripts/isolated-toolchain.mjs prepare --profile test
           node --experimental-strip-types tests/bidder-rules-native/prepare.mjs
           python tests/bidder-rules-native/check.py --version "${{ matrix.prebid }}"
+      - name: Verify full generated 3.21.1 wrappers through native RTD and consent gates
+        run: |
+          node scripts/isolated-toolchain.mjs prepare --profile test
+          node --experimental-strip-types scripts/prepare-audit3211-browser-fixtures.mjs
+          python scripts/verify-audit3211-contextual-wrapper.py --version "${{ matrix.prebid }}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -87,5 +92,6 @@ jobs:
             .generated/contextual-prebid/${{ matrix.prebid }}/manifest.json
             .generated/contextual-prebid/${{ matrix.prebid }}/wire-results.json
             .generated/bidder-rules-native/browser-results-${{ matrix.prebid }}.json
+            .generated/contextual-prebid/${{ matrix.prebid }}/wrapper-results.json
           if-no-files-found: ignore
           retention-days: 14
