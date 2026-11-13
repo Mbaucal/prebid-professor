@@ -76,6 +76,17 @@ try{
  check('ADM-5 json_each gate on D1: true while every selected map exists, false after a rename',await gate(['naslovna_X','članak_X','quote"name'])===1&&await gate(['naslovna_P'])===0&&await gate([])===1);
  const raced=await json(api+'/unit-rules',{ruleKey:'P2',rule:{conditionalMappings:[{name:'Old name',enabled:true,priority:100,match:'all',conditions:[{key:'category',operator:'equals',value:'Naslovna'}],sizeMapKey:'naslovna_P',slotAction:'inherit'}]}});
  check('A rule that still names the old map is refused before any write',raced.status===422&&/naslovna_P/.test(raced.data.error));
+ // F7: the renamed map frees its own name for its page-type map in the same batch, under UNIQUE(publisher_id,name).
+ for(const [id,name] of [['sq-map','sport_Q'],['ssq-map','sport_sport_Q']])await db.prepare('INSERT INTO size_maps(id,publisher_id,name,map_json) VALUES(?,?,?,?)').bind(id,site,name,JSON.stringify(NP)).run();
+ await db.prepare("INSERT INTO ad_units(id,publisher_id,code,type,media_type,size_map_key,sort_order) VALUES('unit-P4',?,'P4','BTF','banner','sport_Q',3)").bind(site).run();
+ const own=await json(api+'/size-maps/sq-map',{name:'Q',map:NP},'PATCH');
+ const ownRows=(await db.prepare("SELECT id,name FROM size_maps WHERE id IN ('sq-map','ssq-map') ORDER BY id").all()).results.map(row=>row.id+':'+row.name).join();
+ check('F7: renaming sport_Q to Q carries sport_sport_Q to sport_Q in one D1 batch',own.status===200&&ownRows==='sq-map:Q,ssq-map:sport_Q');
+ // F4: a token issued for a delete is refused for a rename with the same page-type impact.
+ const v2=(await db.prepare("SELECT id FROM size_maps WHERE publisher_id=? AND name='naslovna.v2_X'").bind(site).first()).id;
+ const removal=await json(api+'/size-maps/'+v2,undefined,'DELETE');
+ const crossed=await json(api+'/size-maps/'+v2,{name:'Naslovna_V2',map:NP,confirmPageTypeChanges:removal.data.details.confirmation.token},'PATCH');
+ check('F4: a delete token never confirms a rename of the same map on D1, nothing written',removal.status===409&&crossed.status===409&&/Reload size maps to review and confirm this change\.$/.test(crossed.data.error)&&JSON.stringify(crossed.data.details.confirmation.changes)===JSON.stringify(removal.data.details.confirmation.changes)&&(await names()).includes('naslovna.v2_X'));
  check('No outbound fetch was attempted',outbound===0);
  await mkdir('.generated/size-map-references-ui',{recursive:true});
  const report={scope:'compiled production Worker + local Miniflare D1; NOT hosted Cloudflare',checks,passed:checks.length,failed:0,outbound};

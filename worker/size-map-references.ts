@@ -54,6 +54,62 @@ function keyMap(key: string): string | null {
 }
 /** Same family rule as playerSizeMaps(): the assigned map and every saved name ending in _<map>. */
 const outstreamFamily = (name: string, base: string) => name === base || name.endsWith('_' + base);
+/** Same rule as eligiblePlayerSize() in shared/outstream/settings-v3.mjs. */
+const videoSize = (size: unknown): size is [number, number] =>
+  Array.isArray(size) && size.length === 2 && size.every(value => Number.isInteger(value) && value >= 144 && value <= 1920);
+type VideoGap = 'choose' | 'none';
+/** Breakpoints of one map that the Outstream Generate check (resolveMaps) would stop on:
+ * several video sizes and no saved choice, or no video size at all. Keyed by viewport. */
+function videoGaps(name: string, rowsJson: string, playerSizes: RecordValue): Map<string, VideoGap> {
+  const gaps = new Map<string, VideoGap>();
+  let rows: unknown;
+  try { rows = JSON.parse(rowsJson); } catch { return gaps; }
+  if (!Array.isArray(rows)) return gaps;
+  for (const row of rows) {
+    if (!record(row) || !Array.isArray(row.sizes) || !row.sizes.length) continue;
+    const viewport = row.minViewPort ?? row.viewport;
+    if (!Array.isArray(viewport) || viewport.length !== 2) continue;
+    const sizes = new Set(row.sizes.filter(videoSize).map(size => size.join('x')));
+    const key = `${viewport[0]}x${viewport[1]}`;
+    if (!sizes.size) gaps.set(key, 'none');
+    else if (sizes.size > 1 && playerSizes[`${name}@${key}`] === undefined) gaps.set(key, 'choose');
+  }
+  return gaps;
+}
+type PageTypeVideoSize = { code: string; map: string; message: string };
+/** A confirmed change that makes an Outstream position (map-based player sizing) use a page-type
+ * map whose video size is not chosen would only fail later, at Generate. Lists each position and
+ * newly selected map with a breakpoint that the saved settings cannot size. */
+function pageTypeVideoSizes(
+  changes: ReturnType<typeof pageTypeChanges>, mapRows: MapRow[], unitRows: UnitRow[], renames: Map<string, string>,
+  deleted: Set<string>, edited: { id: string; map: unknown[] } | null, before: RecordValue | null, after: RecordValue | null,
+): PageTypeVideoSize[] {
+  const units = (config: RecordValue | null) => new Map(outstreamUnits(config).filter(([, settings]) => settings.format !== 'banner'));
+  const unitsBefore = units(before), unitsAfter = units(after);
+  const result: PageTypeVideoSize[] = [];
+  for (const change of changes) {
+    if (change.to === null) continue;
+    const row = mapRows.find(item => !deleted.has(item.name) && (renames.get(item.name) ?? item.name) === change.to);
+    if (!row) continue;
+    for (const code of change.codes) {
+      const settings = unitsAfter.get(code);
+      if (!settings || result.some(item => item.code === code && item.map === change.to)) continue;
+      const rowsAfter = edited && row.id === edited.id ? JSON.stringify(edited.map) : row.map_json;
+      const gaps = videoGaps(change.to, rowsAfter, settings.playerSizes as RecordValue);
+      // A breakpoint that already stopped Generate for this position before the change
+      // (same map in its family, same gap) is not new to the operator.
+      const previous = unitsBefore.get(code), baseBefore = unitRows.find(unit => unit.code === code)?.size_map_key;
+      const known = previous && baseBefore && outstreamFamily(row.name, baseBefore)
+        ? videoGaps(row.name, row.map_json, previous.playerSizes as RecordValue) : new Map<string, VideoGap>();
+      const fresh = [...gaps].filter(([viewport, gap]) => known.get(viewport) !== gap).map(([, gap]) => gap);
+      if (!fresh.length) continue;
+      result.push({ code, map: change.to, message: fresh.includes('none')
+        ? `Outstream on ${code}: ${change.to} has no supported video size. Add a video size to that map before Generate.`
+        : `Outstream on ${code}: no video size is chosen for ${change.to}. Choose one in Formats before Generate.` });
+    }
+  }
+  return result;
+}
 /** Rows as the generators compare them (viewport + sizes, ascending viewport). */
 function comparableRows(json: string): string {
   let rows: unknown;
@@ -211,7 +267,9 @@ export async function mutateSizeMap(
   const renaming = Boolean(change && change.name !== current.name);
   for (const [from, to] of renames) {
     if (to.length > MAX_NAME_LENGTH) return { status: 422, error: `Renaming ${current.name} to ${change!.name} would rename its page-type map ${from} to ${to}, which is longer than ${MAX_NAME_LENGTH} characters. Choose a shorter name.` };
-    if (!names.includes(to)) continue;
+    // The renamed map frees its own name, and its UPDATE runs first in the batch, so a page-type
+    // map may take it (sport_Q -> Q carries sport_sport_Q -> sport_Q). Never refuse with that name.
+    if (!names.includes(to) || to === current.name) continue;
     return { status: 409, error: from === current.name
       ? `Size map "${to}" already exists on this site.`
       : `Size map "${to}" already exists on this site. Renaming ${current.name} to ${change!.name} also renames its page-type map ${from} to ${to}. Rename or delete ${to} first, or choose another name.` };
@@ -232,14 +290,20 @@ export async function mutateSizeMap(
     return { status: 409, error: `Renaming ${current.name} to ${change!.name} would replace the saved Outstream video size ${outstream.overwritten.map(item => `${item.key} on ${item.code}`).join(', ')}. Reopen Formats and review the video size choices for ${codes.join(', ')}, or choose another name.` };
   }
   if (pageChanges.length) {
-    const token = await changesToken({ pageChanges, outstreamRemoved: outstream.removed });
+    const videoSizes = pageTypeVideoSizes(pageChanges, state.mapRows, state.unitRows, renames, deleted,
+      change ? { id: current.id, map: change.map } : null, state.configValue, configValue);
+    // The token covers the operation, the map and the target name as well as the impact, so a
+    // confirmation shown for one delete or rename never confirms another one.
+    const token = await changesToken({ operation: change ? 'rename' : 'delete', sizeMapId: current.id, from: current.name, to: change?.name ?? null,
+      pageChanges, outstreamRemoved: outstream.removed, videoSizes: videoSizes.map(item => item.message) });
     if (confirmPageTypeChanges !== token) {
       const action = change ? `Renaming ${current.name} to ${change.name}` : `Deleting ${current.name}`;
       const lines = pageChanges.map(describePageTypeChange);
       const removedFor = [...new Set(outstream.removed.map(item => item.slice(0, item.indexOf(':'))))];
       const video = removedFor.length ? ` Saved Outstream video sizes for this map are removed from ${removedFor.join(', ')}.` : '';
-      return { status: 409, error: `${action} changes the size map that page types use. ${lines.join(' ')}${video} Reload size maps to review and confirm this change.`,
-        confirmation: { token, changes: pageChanges.map((item, index) => ({ ...item, message: lines[index] })), videoUnits: removedFor } };
+      const choices = videoSizes.map(item => ' ' + item.message).join('');
+      return { status: 409, error: `${action} changes the size map that page types use. ${lines.join(' ')}${video}${choices} Reload size maps to review and confirm this change.`,
+        confirmation: { token, changes: pageChanges.map((item, index) => ({ ...item, message: lines[index] })), videoUnits: removedFor, videoSizes } };
     }
   }
 

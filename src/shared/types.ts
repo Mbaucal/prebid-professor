@@ -144,6 +144,9 @@ export type SizeMapPageTypeConfirmation = {
   changes: SizeMapPageTypeChange[];
   /** Positions whose saved Outstream video sizes for this map are removed. */
   videoUnits: string[];
+  /** Outstream positions (map-based player sizing) that would newly use a page-type map whose
+   * video size is not chosen or not available; Generate stops until that is fixed. */
+  videoSizes?: Array<{ code: string; map: string; message: string }>;
 };
 
 export type SizeMap = {
