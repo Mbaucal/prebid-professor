@@ -118,11 +118,18 @@ export type SizeMapBreakpoint = {
   sizes: SizeMapSize[];
 };
 
+export type SizeMapReference = {
+  source: 'ad-unit' | 'rule' | 'advanced-rule';
+  scope: string;
+  label: string;
+};
+
 export type SizeMap = {
   id: string;
   publisherId: string;
   name: string;
   map: SizeMapBreakpoint[];
+  references?: SizeMapReference[];
   createdAt: string;
   updatedAt: string;
 };

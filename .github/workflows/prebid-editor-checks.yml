@@ -9,7 +9,7 @@ permissions:
   contents: read
 jobs:
   editor:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       TZ: UTC
@@ -50,7 +50,7 @@ jobs:
 
   contextual-native:
     name: Contextual signals · Prebid ${{ matrix.prebid }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -74,6 +74,10 @@ jobs:
       - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
       - name: Verify real adapter payloads with synthetic responses and no live ad traffic
         run: python scripts/verify-contextual-prebid-wire.py --version "${{ matrix.prebid }}"
+      - name: Verify full generated 3.21.1 wrappers through native RTD and consent gates
+        run: |
+          node --experimental-strip-types scripts/prepare-audit3211-browser-fixtures.mjs
+          python scripts/verify-audit3211-contextual-wrapper.py --version "${{ matrix.prebid }}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -81,5 +85,6 @@ jobs:
           path: |
             .generated/contextual-prebid/${{ matrix.prebid }}/manifest.json
             .generated/contextual-prebid/${{ matrix.prebid }}/wire-results.json
+            .generated/contextual-prebid/${{ matrix.prebid }}/wrapper-results.json
           if-no-files-found: ignore
           retention-days: 14
