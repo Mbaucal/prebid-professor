@@ -70,7 +70,7 @@ try:
     assert stored_download.value.suggested_filename.startswith('builtin-draft-')
     with zipfile.ZipFile(stored_download.value.path()) as archive:
         manifest=json.loads(archive.read('manifest.json'))
-        assert manifest['runtime']['runtimeVersion']==current['version']=='3.21.1'
+        assert manifest['runtime']['runtimeVersion']==current['version']=='3.21.2'
         assert manifest['runtime']['runtimeSha256']==current['codeSha256']
         assert 'deals-plan.json' in archive.namelist()
         assert 'prebid.js' not in archive.namelist()
