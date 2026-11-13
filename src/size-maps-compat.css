@@ -72,3 +72,24 @@
     gap: 4px;
   }
 }
+
+/* Page-type maps (<page type>_<map>) in the size-map editor. */
+.publisher-form .page-type-renames {
+  color: #31546f;
+  overflow-wrap: anywhere;
+}
+
+.publisher-form .page-type-confirmation {
+  display: block;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.page-type-confirmation ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+
+.page-type-confirmation p {
+  margin: 0;
+}
