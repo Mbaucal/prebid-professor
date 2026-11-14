@@ -104,6 +104,12 @@ try{
  check('F3: an ad-unit CSV naming a renamed map is refused whole; a valid one upserts through the gated INSERT ... SELECT ... ON CONFLICT on D1',refusedCsv.status===422
   &&refusedCsv.data.details.rows[0].errors[0].startsWith('Size map "P" does not exist')&&refusedKeys[0]==='home'&&refusedKeys[1]===undefined
   &&appliedCsv.status===200&&appliedCsv.data.created===2&&appliedCsv.data.updated===1&&await unitKey('P6')==='sport_Q'&&await unitKey('P7')===null);
+ // The row guard compares the stored key with IS, so a unit without a size map (NULL) still saves on D1.
+ const p7=await db.prepare('SELECT id FROM ad_units WHERE publisher_id=? AND code=?').bind(site,'P7').first();
+ const noMap=await json(api+'/ad-units/'+p7.id,{notes:'no size map'},'PATCH');
+ const staleNoMap=await json(api+'/ad-units/'+p7.id,{notes:'stale',sizeMapKey:'P'},'PATCH');
+ check('F3: an edit of a unit without a size map passes the row guard on D1; a stale map name on it is still refused',noMap.status===200&&noMap.data.adUnit.notes==='no size map'&&await unitKey('P7')===null
+  &&staleNoMap.status===409&&staleNoMap.data.error.startsWith('Size map "P" does not exist')&&await unitKey('P7')===null);
  check('No outbound fetch was attempted',outbound===0);
  await mkdir('.generated/size-map-references-ui',{recursive:true});
  const report={scope:'compiled production Worker + local Miniflare D1; NOT hosted Cloudflare',checks,passed:checks.length,failed:0,outbound};
