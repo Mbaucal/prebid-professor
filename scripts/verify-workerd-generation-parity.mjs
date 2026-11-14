@@ -9,7 +9,14 @@
  * timestamp, and requires every package file to be byte-identical. The 3.9.1
  * Generate and Save path (/test-api/generate: without a saved selection, and with
  * 3.9.1 saved for GAM-only and Prebid; with and without the legacy TakeOver) and
- * one saved package per configuration are checked the same way.
+ * one saved package per configuration are checked the same way, and so are the
+ * other scripts the Worker serves from functions (/prebid-settings.js and
+ * /geo/v1/client.js).
+ *
+ * The bundle runs behind scripts/canonical-text-guard.mjs: any
+ * Function.prototype.toString call on a non-native function during these
+ * requests (a function serialized without installed canonical text, in any form)
+ * fails the check even when the output happens to match.
  *
  * Writes the generated programs for scripts/verify-generation-parity-browser.py.
  * Run after test-build: TESSERA_TEST_TOOLCHAIN=isolated node --experimental-strip-types
@@ -23,6 +30,7 @@ import {join, resolve, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {unzipSync} from 'fflate';
 import {Miniflare} from './local-miniflare.mjs';
+import {guardedModules, guardCalls, describeCalls} from './canonical-text-guard.mjs';
 import {readPreviewSnapshot} from '../worker/runtime/builtin-preview-service.mjs';
 import {runtimeCatalog, readPinnedSiteRuntime, buildArtifactCandidate} from '../worker/test-workspace/runtime-catalog.mjs';
 import {takeOverForBuild} from '../worker/test-workspace/takeover-settings.mjs';
@@ -47,13 +55,13 @@ const reference = runtimeCatalog[1].version;
 assert.match(reference, /^3\.9\.1/);
 
 let outbound = 0;
-const entries = [], failures = [];
+const entries = [], failures = [], served = [], guard = {};
 await rm(output, {recursive: true, force: true});
 await mkdir(output, {recursive: true});
 
 async function start(name) {
   const directory = await mkdtemp(join(tmpdir(), 'tessera-generation-parity-'));
-  const mf = new Miniflare({name: 'generation-parity-' + name, modules: true, script, compatibilityDate: config.compatibility_date,
+  const mf = new Miniflare({name: 'generation-parity-' + name, modules: guardedModules(script), compatibilityDate: config.compatibility_date,
     compatibilityFlags: config.compatibility_flags ?? [], host: '127.0.0.1', port: 0, cf: false, bindings, resourcePersistencePath: directory,
     d1Databases: {DB: 'generation-parity-d1'}, r2Buckets: {BUILDS: 'generation-parity-r2'},
     outboundService: () => { outbound++; return new Response('External requests disabled', {status: 503}); }});
@@ -124,6 +132,18 @@ async function directGenerate(s, buildTimestamp, takeOverEnabled) {
   return (await buildArtifactCandidate({snapshot: configuration, pin: resolved.pin, buildTimestamp, countryTarget: 'test',
     takeOver: takeOverForBuild(settings, takeOverEnabled), prebid: resolved.prebid})).files;
 }
+// Scripts the Worker builds from functions outside packages, against the unbundled modules.
+async function servedScripts(s) {
+  const {prebidScript} = await import('../worker/test-workspace/prebid-page.mjs');
+  const {countryClientSource} = await import('../shared/geo-country.mjs');
+  for (const [path, direct] of [['/prebid-settings.js', prebidScript], ['/geo/v1/client.js', countryClientSource(new URL(origin).origin + '/geo/v1/country')]]) {
+    const response = await s.call(path), text = await response.text();
+    const entry = {path, status: response.status, identical: response.status === 200 && text === direct, servedSha256: sha(text), directSha256: sha(direct)};
+    served.push(entry);
+    if (!entry.identical) failures.push(`${path}: the sealed Worker serves ${response.status} ${entry.servedSha256}, the unbundled module gives ${entry.directSha256}`);
+    console.log(`${entry.identical ? 'identical' : 'DIFFERS  '} ${path}`);
+  }
+}
 const zipFiles = async response => unzipSync(new Uint8Array(await response.arrayBuffer()));
 const stampOf = files => JSON.parse(new TextDecoder().decode(files['manifest.json'])).buildTimestamp;
 
@@ -170,6 +190,7 @@ for (const demand of ['gam', 'prebid']) for (const [takeover, frequency] of Obje
   const configName = `${demand}-${takeover}`;
   const s = await start(configName);
   try {
+    if (!served.length) await servedScripts(s);
     const legacy = takeover === 'none' ? [false, true] : [];
     // No saved runtime selection yet: the seeded GAM-only site uses the default runtime.
     if (demand === 'gam') for (const takeOverEnabled of legacy) {
@@ -224,14 +245,20 @@ for (const demand of ['gam', 'prebid']) for (const [takeover, frequency] of Obje
         await record(entry, bundled, await directSiteRuntime(s, stampOf(bundled)));
       } catch (error) { refused(entry, error); }
     }
+    // Every serialization in this Worker instance, from startup to the last package.
+    const calls = await guardCalls(s.mf, origin);
+    guard[configName] = describeCalls(calls);
+    if (calls.length) failures.push(`${configName}: Function.prototype.toString ran on ${calls.length} non-native functions in the sealed Worker: ${guard[configName].join('; ')}`);
+    console.log(`${calls.length ? 'GUARD    ' : 'guard ok '} ${configName}${calls.length ? ': ' + guard[configName].join('; ') : ''}`);
   } finally {
     await s.mf.dispose();
     await rm(s.directory, {recursive: true, force: true});
   }
 }
 const report = {scope: 'LOCAL Miniflare/workerd with local D1/R2; sealed TEST Worker bundle vs unbundled Node compile; NOT hosted',
-  compiledSha256: sha(script), outbound, runtimes: runtimeCatalog.map(r => r.version), entries, failures, passed: failures.length === 0 && outbound === 0};
+  compiledSha256: sha(script), outbound, runtimes: runtimeCatalog.map(r => r.version), served, guard, entries, failures, passed: failures.length === 0 && outbound === 0};
 await writeFile(join(output, 'manifest.json'), JSON.stringify(report, null, 2) + '\n');
-console.log(JSON.stringify({entries: entries.length, identical: entries.filter(e => e.identical).length, failures: failures.length, outbound}));
+console.log(JSON.stringify({entries: entries.length, identical: entries.filter(e => e.identical).length, served: served.filter(e => e.identical).length,
+  guardCalls: Object.values(guard).flat().length, failures: failures.length, outbound}));
 assert.equal(outbound, 0, 'The Worker attempted an outbound request');
-assert.deepEqual(failures, [], `${failures.length} generated packages differ from the direct compile or failed`);
+assert.deepEqual(failures, [], `${failures.length} checks failed: output differs from the direct compile, a function was serialized without canonical text, or generation failed`);

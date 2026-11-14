@@ -7,6 +7,7 @@ import {randomBytes} from 'node:crypto';
 import {createInterface} from 'node:readline';
 import {pathToFileURL} from 'node:url';
 import {initializeTestSchema} from '../worker/test-workspace/schema.mjs';
+import {guardedModules} from './canonical-text-guard.mjs';
 
 export const ORIGIN='https://prebid-professor-test.mbaucal.workers.dev';
 export const EMAIL='tester@example.invalid';
@@ -18,7 +19,8 @@ export async function namedScriptFixture(){
   const files=(await readdir(compiled)).filter(name=>/\.m?js$/.test(name));
   if(files.length!==1)throw Error('Compile the exact active TEST Worker first.');
   let outbound=0;
-  const mf=new Miniflare({modules:true,script:await readFile(join(compiled,files[0]),'utf8'),
+  // The canonical-text guard records any function serialized without installed source text.
+  const mf=new Miniflare({modules:guardedModules(await readFile(join(compiled,files[0]),'utf8')),
     compatibilityDate:config.compatibility_date,compatibilityFlags:config.compatibility_flags,cf:false,
     resourcePersistencePath:directory,d1Databases:{DB:'local-named-script'},r2Buckets:{BUILDS:'local-named-script'},
     bindings:{...config.vars,TEST_ADMIN_EMAIL:EMAIL,TEST_ADMIN_PASSWORD:PASSWORD,TEST_SESSION_SECRET:randomBytes(48).toString('hex')},

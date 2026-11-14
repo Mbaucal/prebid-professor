@@ -3,6 +3,7 @@ import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {namedScriptFixture,ORIGIN,EMAIL,PASSWORD} from './named-script-test-fixture.mjs';
 import {buildSavedScript,buildSavedTest} from './saved-script-package.mjs';
 import {sha256} from './static-aa-package.mjs';
+import {guardCalls,describeCalls} from './canonical-text-guard.mjs';
 const f=await namedScriptFixture(),checks=[];
 const check=(name,value)=>{assert(value,name);checks.push(name);};
 const base='/api/publishers/test-named-script';
@@ -58,6 +59,8 @@ try{
   check('All named R2 writes stay inside the fixture site prefix',(await f.bucket.list()).objects.every(o=>o.key==='publishers/test-site/kept-fixture.txt'||o.key.startsWith('site-script-library/v1/test-named-script/')));
   check('Existing site and object remain unchanged',await original()===before&&await(await f.bucket.get('publishers/test-site/kept-fixture.txt')).text()==='Existing TEST object');
   check('No outgoing application request',f.outbound()===0);
+  assert.deepEqual(describeCalls(await guardCalls(f.mf,ORIGIN)),[],'The compiled Worker serialized a function without canonical text');
+  checks.push('Named scripts serialize only functions with canonical text');
   await mkdir('.generated/named-script-test-evidence',{recursive:true});
   await writeFile('.generated/named-script-test-evidence/workerd.json',JSON.stringify({scope:'Local compiled TEST Worker, real ephemeral D1/R2; no hosted claims',checks,passed:checks.length,failed:0,packageSha256:expected.archiveSha256},null,2));
   console.log(JSON.stringify({passed:checks.length,failed:0}));
