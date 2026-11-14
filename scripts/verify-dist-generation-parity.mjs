@@ -12,7 +12,9 @@
  * packages). A Generate error is a failure. Also checked the same way: the 3.9.1
  * default candidate (builtin-runtime-bundle, no saved selection; with and without
  * the legacy TakeOver), a 3.9.1 package with the saved legacy TakeOver, and one
- * review candidate (builtin-site-settings bundle) per configuration.
+ * review candidate (builtin-site-settings bundle) per configuration. The country
+ * script the Worker builds from functions (/geo/v1/client.js) must equal the
+ * unbundled route's response byte for byte.
  *
  * The Worker runs behind scripts/canonical-text-guard.mjs, with every module Vite
  * emitted for it: any Function.prototype.toString call on a non-native function
@@ -36,6 +38,7 @@ import {fileURLToPath} from 'node:url';
 import {unzipSync} from 'fflate';
 import {Miniflare} from './local-miniflare.mjs';
 import {guardedModules, guardCalls, describeCalls} from './canonical-text-guard.mjs';
+import {countryResponse} from '../worker/geo-country.mjs';
 import {readPreviewSnapshot, runtimeDescriptor} from '../worker/runtime/builtin-preview-service.mjs';
 import {previewInput} from '../worker/runtime/preview-snapshot.mjs';
 import {pinRuntime} from '../worker/runtime/version-pin.mjs';
@@ -74,7 +77,7 @@ assert.equal(runtimeDescriptor.version, reference);
 const REWRITTEN = new Set(['README.txt', 'config.json', 'implementation.html', 'manifest.json']);
 
 let outbound = 0;
-const entries = [], failures = [], guard = {};
+const entries = [], failures = [], served = [], guard = {};
 await rm(output, {recursive: true, force: true});
 await mkdir(output, {recursive: true});
 const directory = await mkdtemp(join(tmpdir(), 'tessera-dist-generation-parity-'));
@@ -216,6 +219,20 @@ try {
     } catch (error) { failed(entry, error); }
   }
 
+  // Scripts the Worker builds from functions outside packages, against the unbundled route.
+  for (const path of ['/geo/v1/client.js']) {
+    const response = await mf.dispatchFetch(origin + path), text = await response.text();
+    const unbundled = countryResponse(new Request(origin + path)), direct = await unbundled.text();
+    const entry = {path, file: 'served/' + path.slice(1).replaceAll('/', '-'), endpoint: origin + '/geo/v1/country', status: response.status,
+      contentType: response.headers.get('content-type'), servedSha256: sha(text), directSha256: sha(direct)};
+    entry.identical = response.status === 200 && unbundled.status === 200 && entry.contentType === unbundled.headers.get('content-type') && text === direct;
+    await mkdir(join(output, 'served'), {recursive: true});
+    await writeFile(join(output, entry.file), text);
+    served.push(entry);
+    if (!entry.identical) failures.push(`${path}: the compiled Worker serves ${response.status} ${entry.servedSha256}, the unbundled route gives ${unbundled.status} ${entry.directSha256}`);
+    console.log(`${entry.identical ? 'identical' : 'DIFFERS  '} ${path}`);
+  }
+
   for (const demand of ['gam', 'prebid']) for (const [takeover, frequency] of Object.entries(TAKEOVERS)) {
     const configName = `${demand}-${takeover}`, site = `parity-${configName}`;
     await createSite(site, demand, frequency);
@@ -285,9 +302,9 @@ try {
 }
 const report = {scope: 'LOCAL Miniflare/workerd with local D1/R2; compiled production Worker (dist) vs unbundled Node compile; NOT hosted',
   compiledSha256: sha(script), chunks: Object.fromEntries(chunkModules.map(chunk => [chunk.path, sha(chunk.contents)])), outbound,
-  runtimes: runtimeCatalog.map(r => r.version), guard, entries, failures, passed: failures.length === 0 && outbound === 0};
+  runtimes: runtimeCatalog.map(r => r.version), served, guard, entries, failures, passed: failures.length === 0 && outbound === 0};
 await writeFile(join(output, 'manifest.json'), JSON.stringify(report, null, 2) + '\n');
-console.log(JSON.stringify({entries: entries.length, identical: entries.filter(e => e.identical).length,
+console.log(JSON.stringify({entries: entries.length, identical: entries.filter(e => e.identical).length, served: served.filter(e => e.identical).length,
   guardCalls: Object.values(guard).flat().length, failures: failures.length, outbound}));
 assert.equal(outbound, 0, 'The Worker attempted an outbound request');
 assert.deepEqual(failures, [], `${failures.length} checks failed: output differs from the direct compile, a function was serialized without canonical text, or generation failed`);

@@ -14,6 +14,10 @@ on the first view exactly when the configuration has one. Lazy requests depend o
 IntersectionObserver rendering, not on the virtual clock, so they are only recorded.
 An error a program throws (also inside a virtual-clock timer) fails that program
 only; every program runs and browser-results.json is always written.
+
+The country script the Worker serves (/geo/v1/client.js, byte-identical to the
+unbundled route) runs too: its country request gets a synthetic RS answer, and
+__AD_GEO.ready() must resolve to it with no uncaught error.
 """
 import hashlib
 import json
@@ -51,6 +55,7 @@ GRANT = r'''
 STATE = '''() => ({defined: window.__defined, enableServices: window.__enable,
  requests: __testAds.observations.requests.map(request => request.id), bids: __testAds.observations.bids.length})'''
 EMPTY = {'defined': [], 'enableServices': 0, 'requests': [], 'bids': 0}
+COUNTRY = json.dumps({'version': 1, 'status': 'known', 'country': 'RS', 'source': 'cloudflare'})
 
 
 def containers(html):
@@ -85,12 +90,14 @@ started = time.time()
 with sync_playwright() as pw:
     browser = pw.chromium.launch(headless=True, executable_path=os.environ.get('CHROMIUM_PATH'), args=['--no-sandbox'])
     page = browser.new_page(viewport={'width': 1440, 'height': 900})
-    fixtures, outbound = {}, []
+    fixtures, answers, outbound = {}, {}, []
 
     def route(request):
         url = request.request.url
         if url in fixtures:
             request.fulfill(content_type='text/html', body='<!doctype html><html><head></head><body>' + fixtures[url] + '<main style="height:2400px"></main></body></html>')
+        elif url in answers:
+            request.fulfill(content_type='application/json; charset=utf-8', headers={'access-control-allow-origin': '*'}, body=answers[url])
         else:
             outbound.append(url)
             request.abort()
@@ -143,14 +150,43 @@ with sync_playwright() as pw:
         results.append(row)
         status = 'ok    ' if all(p['passed'] for p in row['programs'].values()) else 'FAILED'
         print(status, entry['dir'], ' | '.join('%s %s' % (n, '; '.join(p['problems']) or 'slots %d requests %d' % (len(p['defined']), len(p['requests']))) for n, p in row['programs'].items()))
+    for entry in manifest['served']:
+        # The served country script: one request, answered with a synthetic country.
+        assert hashlib.sha256((output / entry['file']).read_bytes()).hexdigest() == entry['servedSha256'], 'Served file changed: ' + entry['file']
+        counter += 1
+        origin = 'https://p%d.generation-parity.invalid/' % counter
+        fixtures[origin] = ''
+        answers[entry['endpoint']] = COUNTRY
+        errors, problems = [], []
+        listener = lambda error, errors=errors: errors.append(str(error).split('\n')[0])
+        page.on('pageerror', listener)
+        try:
+            page.goto(origin)
+            page.add_script_tag(content=(output / entry['file']).read_text())
+            signal = page.evaluate('() => window.__AD_GEO.ready().then(snapshot => ({status: snapshot.status, country: snapshot.country}))')
+        except Exception as error:
+            signal = None
+            errors.append(str(error).split('\n')[0])
+        finally:
+            page.remove_listener('pageerror', listener)
+        if errors:
+            problems.append('uncaught: ' + ' | '.join(sorted(set(errors))))
+        if signal != {'status': 'known', 'country': 'RS'}:
+            problems.append('__AD_GEO.ready() gave %s, expected known RS' % json.dumps(signal))
+        results.append({'dir': entry['path'], 'identicalToDirect': entry['identical'], 'programs': {entry['path']: {'passed': not problems, 'problems': problems, 'signal': signal}}})
+        if problems:
+            failures.append('%s: %s' % (entry['path'], '; '.join(problems)))
+        print('ok    ' if not problems else 'FAILED', entry['path'], '; '.join(problems) or 'country %s' % signal['country'])
     version = browser.version
     browser.close()
 
 report = {'scope': 'Chromium %s, repository GPT/Prebid mock, TCF stub with all purposes granted, external requests aborted, virtual clock' % version,
-          'compiledSha256': manifest['compiledSha256'], 'programs': 2 * len(results), 'seconds': round(time.time() - started, 1),
+          'compiledSha256': manifest['compiledSha256'], 'programs': sum(len(row['programs']) for row in results), 'seconds': round(time.time() - started, 1),
           'abortedRequests': sorted(set(outbound)), 'results': results, 'failures': failures, 'passed': not failures}
 (output / 'browser-results.json').write_text(json.dumps(report, indent=1) + '\n')
 print(json.dumps({'programs': report['programs'], 'failures': len(failures), 'seconds': report['seconds']}))
+if not manifest['served']:
+    failures.insert(0, 'the manifest has no served script')
 if not manifest['passed']:
     failures.insert(0, 'the Worker generation parity check failed: %d checks' % len(manifest['failures']))
 assert not failures, '%d programs failed:\n%s' % (len(failures), '\n'.join(failures))
