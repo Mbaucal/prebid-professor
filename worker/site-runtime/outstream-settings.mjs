@@ -32,7 +32,7 @@ async function handle(request,env,siteId,actor) {
     formatReviewRequired:outstreamSizingReview(config.runtimeControls?.outstream,ctx),
     responsiveSizing:ctx.responsiveSizing===true,
     sizeMaps:Object.fromEntries(ctx.units.map(unit=>{try{return [unit.code,{maps:playerSizeMaps(unit.code,ctx)}];}catch(error){return [unit.code,{error:error.message}];}})),
-    runtimeEligible:['3.21.1','3.22.0','3.21.0','3.20.1','3.20.0','3.19.1','3.16.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3'].includes(config.builtinRuntimeSelection?.runtime?.runtimeVersion),published:false},{headers:{'cache-control':'no-store'}});
+    runtimeEligible:['3.21.2','3.21.1','3.22.0','3.21.0','3.20.1','3.20.0','3.19.1','3.16.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3'].includes(config.builtinRuntimeSelection?.runtime?.runtimeVersion),published:false},{headers:{'cache-control':'no-store'}});
 }
 
 export async function outstreamSettingsResponse(request,env,siteId,actor) {
