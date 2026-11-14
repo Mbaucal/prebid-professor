@@ -48,7 +48,7 @@ with sync_playwright() as p:
         page.wait_for_function('window.googletag.apiReady', timeout=30000)
         page.evaluate('''() => {
           const wrap=(o,n)=>{const f=o[n];o[n]=function(...a){
-            __flow.push({name:n,arg:typeof a[0]==='string'?a[0]:null,slots:n==='refresh'?(a[0]||[]).map(s=>s.getAdUnitPath()):[]});
+            __flow.push({time:Date.now(),name:n,arg:typeof a[0]==='string'?a[0]:null,slots:n==='refresh'?(a[0]||[]).map(s=>s.getAdUnitPath()):[]});
             return f.apply(this,a);
           }};
           ['defineSlot','defineOutOfPageSlot','enableServices','display'].forEach(n=>wrap(googletag,n));wrap(googletag.pubads(),'refresh');
@@ -80,7 +80,16 @@ with sync_playwright() as p:
                 if after['config']['blockCodeless']:
                     assert 'defineOutOfPageSlot' in names, after
                     assert names.index('defineOutOfPageSlot') < names.index('enableServices'), after
-                    assert after['config']['codelessPath'] not in requested, after
+                    fallback = [x for x in after['flow'] if x['name']=='refresh' and after['config']['codelessPath'] in x['slots']]
+                    if fallback:
+                        # Aborted GAM calls become no-fill. The saved configuration explicitly
+                        # releases the guard on no-fill; verify that release follows that event.
+                        from datetime import datetime
+                        empty = [x for x in after['state']['events'] if x['type']=='empty']
+                        assert after['config']['releaseCodelessOnNoFill'] and empty, after
+                        empty_ms = datetime.fromisoformat(empty[0]['time'].replace('Z','+00:00')).timestamp()*1000
+                        assert all(x['time'] >= empty_ms for x in fallback), after
+                        assert after['state']['fallbackRequested'] and after['state']['codelessReleased'], after
             result={'capped':capped,'pending':pending,'unknown':unknown,'after':after,'wire':wire,'scripts':scripts,'errors':errors,'passed':True}
         except Exception as error:
             result={'capped':capped,'error':str(error),'snapshot':page.evaluate(snap),'wire':wire,'scripts':scripts,'errors':errors,'passed':False}
