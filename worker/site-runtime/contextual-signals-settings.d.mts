@@ -1,11 +1,13 @@
 import type {RuntimeServiceEnv} from '../runtime/contracts';
 import type {ContextualSignals} from '../../shared/contextual-signals/settings.mjs';
+import type {ContextualPrebidStatus} from './contextual-prebid-status.mjs';
 export type ContextualSignalsPayload={
   revision:string;
   settings:ContextualSignals;
   bidders:{bidder:string;enabled:boolean;configured:boolean}[];
   enablePrebid:boolean;
   prebidVersion:string|null;
+  prebidIntegration:ContextualPrebidStatus;
   runtimeEligible:boolean;
   compatibility:{bidder:string;delivery:string;note:string;source:string|null;evidence:string;serverAcceptance:string}[];
   taxonomies:{id:string;label:string;segtax:number;categories:{id:string;name:string}[]}[];

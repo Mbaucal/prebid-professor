@@ -5,6 +5,7 @@ import {commitSiteConfiguration} from './service.mjs';
 import {normalizeContextualSignals,defaultContextualSignals} from '../../shared/contextual-signals/settings.mjs';
 import {CONTEXTUAL_TAXONOMIES} from '../../shared/contextual-signals/catalog.mjs';
 import {contextualCompatibility} from '../../shared/contextual-signals/compatibility.mjs';
+import {contextualPrebidStatus} from './contextual-prebid-status.mjs';
 
 const fail=(message,status=422)=>{throw Object.assign(Error(message),{status});};
 async function read(env,siteId){
@@ -25,6 +26,7 @@ function payload(saved,config,revision){
     bidders,
     enablePrebid:config.enablePrebid===true,
     prebidVersion,
+    prebidIntegration:contextualPrebidStatus(saved.prebidBuilds,config.builtinRuntimeSelection?.prebid?.id??null),
     runtimeEligible:config.builtinRuntimeSelection?.runtime?.capabilities?.includes('contextual-signals')===true,
     compatibility:bidders.map(row=>contextualCompatibility(row.bidder,prebidVersion)),
     taxonomies:CONTEXTUAL_TAXONOMIES,
