@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { api, ApiError } from '../api';
 import type { AdUnit, SizeMap, SizeMapPageTypeConfirmation, SizeMapReference } from '../shared/types';
 import { reservedHeightSummary } from '../shared/size-map-height-summary';
-import { comparePageTypeChanges, describePageTypeChange, pageTypeRenames } from '../../shared/size-maps/page-type.mjs';
+import { comparePageTypeChanges, describePageTypeChange, pageTypeOf, pageTypeRenames } from '../../shared/size-maps/page-type.mjs';
 
 type Props = {
   publisherId: string;
@@ -33,6 +33,25 @@ function pageTypeConfirmation(error: unknown): SizeMapPageTypeConfirmation | nul
   if (!(error instanceof ApiError) || error.status !== 409) return null;
   const details = error.details as { confirmation?: SizeMapPageTypeConfirmation } | undefined;
   return details?.confirmation?.token && Array.isArray(details.confirmation.changes) ? details.confirmation : null;
+}
+
+/** Scrolls the dialog so the confirmation note and the row with "Confirm and save" are both
+ * visible below the sticky heading. A note taller than the dialog keeps the button in view. */
+function revealConfirmation(note: HTMLElement, actions: HTMLElement | null) {
+  const scroller = note.closest('.modal-card');
+  if (!(scroller instanceof HTMLElement) || !actions) {
+    note.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  const box = scroller.getBoundingClientRect();
+  const heading = scroller.querySelector('.modal-heading')?.getBoundingClientRect().height ?? 0;
+  const top = box.top + scroller.clientTop + heading;
+  const bottom = box.top + scroller.clientTop + scroller.clientHeight;
+  const first = note.getBoundingClientRect().top;
+  const last = actions.getBoundingClientRect().bottom;
+  let delta = last > bottom ? last - bottom : 0;
+  if (first - delta < top && last - first <= bottom - top) delta = first - top;
+  if (delta) scroller.scrollBy({ top: delta });
 }
 
 function rowId(): string {
@@ -143,14 +162,24 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
   const [rows, setRows] = useState<BreakpointForm[]>([emptyBreakpoint()]);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<SizeMapPageTypeConfirmation | null>(null);
+  // True when "Confirm and save" came back with a different confirmation (another tab changed the impact).
+  const [confirmationUpdated, setConfirmationUpdated] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [defaultsBusy,setDefaultsBusy]=useState(false),[defaultsNote,setDefaultsNote]=useState('');
   const errorNotice = useRef<HTMLDivElement>(null);
   const formNotice = useRef<HTMLDivElement>(null);
   const confirmNotice = useRef<HTMLDivElement>(null);
+  const formActions = useRef<HTMLDivElement>(null);
   useEffect(() => { if (error) errorNotice.current?.scrollIntoView({ block: 'nearest' }); }, [error]);
   useEffect(() => { if (formError) formNotice.current?.scrollIntoView({ block: 'nearest' }); }, [formError]);
-  useEffect(() => { if (confirmation) confirmNotice.current?.scrollIntoView({ block: 'nearest' }); }, [confirmation]);
+  // A new or re-issued confirmation: show it with its button, then move focus to it so it is read
+  // out (the name field and the button were disabled while saving, so focus had fallen to the page).
+  useEffect(() => {
+    const note = confirmNotice.current;
+    if (!confirmation || !note) return;
+    revealConfirmation(note, formActions.current);
+    note.focus({ preventScroll: true });
+  }, [confirmation]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -200,13 +229,31 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
       await load();await onChanged?.();setDefaultsNote(result.addedMaps?`${result.addedMaps} default maps added. Existing maps kept.`:'All 7 default maps are already present. Existing maps kept.');
     }catch(e){setError((e as Error).message);}finally{setDefaultsBusy(false);}
   }
+  function withdrawConfirmation() {
+    setConfirmation(null);
+    setConfirmationUpdated(false);
+  }
+
+  // A page-type map of a base that ad units use is renamed on its own (only a base carries its
+  // page-type maps); the help under the name field says so instead of promising a cascade.
+  const variantOf = useMemo(() => {
+    if (mode !== 'edit' || !source) return null;
+    for (const unit of adUnits) {
+      const base = unit.sizeMapKey;
+      if (!base || base === source.name) continue;
+      const pageType = pageTypeOf(source.name, base);
+      if (pageType !== null) return { base, pageType };
+    }
+    return null;
+  }, [mode, source, adUnits]);
+
   function openCreate() {
     setMode('create');
     setSource(null);
     setName('');
     setRows([emptyBreakpoint(0)]);
     setFormError(null);
-    setConfirmation(null);
+    withdrawConfirmation();
   }
 
   function openEdit(item: FlexibleMap) {
@@ -215,7 +262,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
     setName(item.name);
     setRows(rowsFromMap(item.map));
     setFormError(null);
-    setConfirmation(null);
+    withdrawConfirmation();
   }
 
   function openDuplicate(item: FlexibleMap) {
@@ -224,7 +271,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
     setName(nextCopyName(item.name));
     setRows(rowsFromMap(item.map));
     setFormError(null);
-    setConfirmation(null);
+    withdrawConfirmation();
   }
 
   function closeForm() {
@@ -232,22 +279,22 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
     setMode(null);
     setSource(null);
     setFormError(null);
-    setConfirmation(null);
+    withdrawConfirmation();
   }
 
   function updateRow(id: string, patch: Partial<BreakpointForm>) {
-    setConfirmation(null);
+    withdrawConfirmation();
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   }
 
   function addBreakpoint() {
-    setConfirmation(null);
+    withdrawConfirmation();
     const currentMax = rows.reduce((max, row) => Math.max(max, Number(row.minWidth) || 0), 0);
     setRows((current) => [...current, emptyBreakpoint(currentMax ? currentMax + 1 : 469)]);
   }
 
   function removeBreakpoint(id: string) {
-    setConfirmation(null);
+    withdrawConfirmation();
     setRows((current) => current.filter((row) => row.id !== id));
   }
 
@@ -289,9 +336,10 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
       setMode(null);
       setSource(null);
       setFormError(null);
-      setConfirmation(null);
+      withdrawConfirmation();
     } catch (requestError) {
       const required = pageTypeConfirmation(requestError);
+      setConfirmationUpdated(Boolean(required && confirmation && required.token !== confirmation.token));
       setConfirmation(required);
       setFormError(required ? null : requestError instanceof Error ? requestError.message : 'Size map operation failed.');
     } finally {
@@ -315,15 +363,16 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
       .sort(comparePageTypeChanges)
       .map(describePageTypeChange);
     const shownVideo = [...new Set(references.filter((reference) => reference.source === 'outstream').map((reference) => reference.scope))];
-    const prompt = (changes: string[], videoUnits: string[]) => [`Delete size map ${item.name}?`, ...changes,
+    const prompt = (changes: string[], videoUnits: string[], videoSizes: string[] = []) => [`Delete size map ${item.name}?`, ...changes,
       ...(videoUnits.length ? [`Saved Outstream video sizes for this map are removed from ${videoUnits.join(', ')}.`] : []),
+      ...videoSizes,
       ...(changes.length ? ['The next Generate uses these sizes. Existing packages do not change.'] : [])].join('\n\n');
     if (!window.confirm(prompt(shownChanges, shownVideo))) return;
 
     try {
       // The server re-checks the impact. A delete is sent with its token only after the
       // operator has seen exactly those lines; changed lines are shown again first.
-      let shown = JSON.stringify([shownChanges, shownVideo]);
+      let shown = JSON.stringify([shownChanges, shownVideo, []]);
       let token: string | undefined;
       for (let attempt = 0; ; attempt += 1) {
         try {
@@ -333,8 +382,9 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
           const required = pageTypeConfirmation(requestError);
           if (!required || attempt >= 3) throw requestError;
           const changes = required.changes.map((change) => change.message), videoUnits = required.videoUnits ?? [];
-          const fresh = JSON.stringify([changes, videoUnits]);
-          if (fresh !== shown && !window.confirm(prompt(changes, videoUnits))) return;
+          const videoSizes = (required.videoSizes ?? []).map((line) => line.message);
+          const fresh = JSON.stringify([changes, videoUnits, videoSizes]);
+          if (fresh !== shown && !window.confirm(prompt(changes, videoUnits, videoSizes))) return;
           shown = fresh;
           token = required.token;
         }
@@ -376,7 +426,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
             return (
               <article className="size-map-card" key={item.id}>
                 <div className="size-map-heading">
-                  <div><h3>{item.name}</h3><span>{item.map.length} breakpoint(s)</span></div>
+                  <div className="size-map-title"><h3>{item.name}</h3><span>{item.map.length} breakpoint(s)</span></div>
                   <span className={usedBy.length ? 'map-usage used' : 'map-usage'}>
                     {usedBy.length ? `${usedBy.length} reference(s)` : 'unused'}
                   </span>
@@ -436,10 +486,17 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
             <form className="publisher-form" onSubmit={submit}>
               <label>
                 <span>Size map name</span>
-                <input autoFocus disabled={submitting} onChange={(event) => { setConfirmation(null); setName(event.target.value); }} placeholder="Billboard" value={name} />
-                <small>Renaming a map updates ad units, saved rules and Outstream video sizes that reference it, and renames its page-type maps (&lt;page type&gt;_{source?.name || 'name'}).</small>
-                {pageTypeMapRenames.length ? <small className="page-type-renames">Also renames: {pageTypeMapRenames.map(([from, to]) => `${from} → ${to}`).join(', ')}</small> : null}
+                <input aria-describedby={pageTypeMapRenames.length ? 'size-map-page-type-renames' : undefined} autoFocus disabled={submitting} onChange={(event) => { withdrawConfirmation(); setName(event.target.value); }} placeholder="Billboard" value={name} />
+                {variantOf && source
+                  ? <small>Renaming a map updates ad units, saved rules and Outstream video sizes that reference it. {source.name} is the {variantOf.pageType} page-type map of {variantOf.base}, so no other map is renamed with it.</small>
+                  : <small>Renaming a map updates ad units, saved rules and Outstream video sizes that reference it, and renames its page-type maps (&lt;page type&gt;_{mode === 'edit' && source ? source.name : 'name'}).</small>}
               </label>
+              {pageTypeMapRenames.length ? (
+                <div className="page-type-renames" id="size-map-page-type-renames">
+                  <span>Also renames:</span>
+                  <ul>{pageTypeMapRenames.map(([from, to]) => <li key={from}>{from} → {to}</li>)}</ul>
+                </div>
+              ) : null}
 
               <div className="breakpoint-editor size-map-compat-editor">
                 <div className="breakpoint-editor-heading">
@@ -485,15 +542,17 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
 
               {mode === 'duplicate' ? <div className="form-options">The copied map keeps all {source?.map.length ?? 0} breakpoint(s). Save it first, then edit if needed.</div> : null}
               {confirmation ? (
-                <div ref={confirmNotice} role="alert" className="size-map-compat-note page-type-confirmation">
+                <div ref={confirmNotice} tabIndex={-1} role="status" aria-live="polite" aria-atomic="true" className={`size-map-compat-note page-type-confirmation${confirmationUpdated ? ' updated' : ''}`}>
                   <strong>Confirm the page-type change</strong>
+                  {confirmationUpdated ? <p className="page-type-confirmation-updated">Updated: the impact changed since your last attempt, for example in another tab. Review these lines before you confirm.</p> : null}
                   <ul>{confirmation.changes.map((change) => <li key={`${change.base}\u0000${change.pageType}`}>{change.message}</li>)}</ul>
                   {confirmation.videoUnits?.length ? <p>Saved Outstream video sizes for this map are removed from {confirmation.videoUnits.join(', ')}.</p> : null}
+                  {confirmation.videoSizes?.map((line) => <p className="page-type-video-size" key={`${line.code}\u0000${line.map}`}>{line.message}</p>)}
                   <p>The next Generate uses these sizes. Existing packages do not change.</p>
                 </div>
               ) : null}
               {formError ? <div ref={formNotice} role="alert" className="form-error">{formError}</div> : null}
-              <div className="modal-actions">
+              <div className="modal-actions" ref={formActions}>
                 <button className="button secondary" disabled={submitting} onClick={closeForm} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting} type="submit">
                   {submitting ? 'Saving…' : mode === 'duplicate' ? 'Duplicate size map' : confirmation ? 'Confirm and save' : 'Save size map'}

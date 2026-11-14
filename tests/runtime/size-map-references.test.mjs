@@ -352,6 +352,73 @@ test('Outstream: a rename that adds a multi-size map to a unit family needs a Fo
  assert.deepEqual((await reviewOf(f)).map(row=>row.code),['P1']);
  ({response,data}=await f.json('/size-maps/hr','PATCH',{name:'home_P',map:multi}));assert.equal(response.status,409);
  assert.deepEqual(data.details.confirmation.changes.map(row=>row.message),['Page type home: P1–P3 will use home_P instead of P.']);
+ assert.deepEqual(data.details.confirmation.videoSizes,[{code:'P1',map:'home_P',message:'Outstream on P1: no video size is chosen for home_P. Choose one in Formats before Generate.'}]);
+});
+// F2: the confirmation names the Outstream position and the page-type map that needs a video size before Generate.
+const VIDEO_ROWS={multi:[{minViewPort:[0,0],sizes:[[300,250],[400,300]]}],banner:[{minViewPort:[0,0],sizes:[[728,90]]}],single:[{minViewPort:[0,0],sizes:[[320,180],[728,90]]}]};
+for(const [kind,rows] of Object.entries(VIDEO_ROWS))test(`F2: renaming a ${kind} map into a page-type family of an Outstream position ${kind==='single'?'needs no video-size line':'adds a video-size line'} to the confirmation`,async()=>{
+ const f=await pageSetup({video:true});f.sqlite.prepare("INSERT INTO size_maps(id,publisher_id,name,map_json) VALUES('foo',?,'foo',?)").run(site,JSON.stringify(rows));const before=saved(f);
+ let {response,data}=await f.json('/size-maps/foo','PATCH',{name:'sport_P',map:rows});
+ assert.equal(response.status,409);assert.deepEqual(data.details.confirmation.changes.map(row=>row.message),['Page type sport: P1–P3 will use sport_P instead of P.']);assert.deepEqual(saved(f),before);
+ const expected={multi:'Outstream on P1: no video size is chosen for sport_P. Choose one in Formats before Generate.',banner:'Outstream on P1: sport_P has no supported video size. Add a video size to that map before Generate.'}[kind];
+ assert.deepEqual(data.details.confirmation.videoSizes,expected?[{code:'P1',map:'sport_P',message:expected}]:[],'only P1 is Outstream; P2 and P3 are not named');
+ if(expected)assert(data.error.endsWith(`will use sport_P instead of P. ${expected} Reload size maps to review and confirm this change.`),data.error);
+ ({response,data}=await f.json('/size-maps/foo','PATCH',{name:'sport_P',map:rows,confirmPageTypeChanges:data.details.confirmation.token}));assert.equal(response.status,200,JSON.stringify(data));
+ // The line says exactly what the Formats review (and Generate) then asks for.
+ const review=await reviewOf(f);
+ if(kind==='multi')assert.deepEqual(review,[{code:'P1',message:'P1: sport_P, minimum width 0px: choose one of the available video sizes in Formats.'}]);
+ else if(kind==='banner')assert.match(review[0].message,/^P1: sport_P, minimum width 0px has no supported video size/);
+ else assert.deepEqual(review,[]);
+});
+test('F2: a page-type rename that carries its saved video size, and a delete that falls back to the base, add no video-size line',async()=>{
+ const f=await pageSetup({video:true});
+ let {response,data}=await f.json('/size-maps/np-map','PATCH',{name:'home_P',map:NP});
+ assert.equal(response.status,409);assert.deepEqual(data.details.confirmation.videoSizes,[],'naslovna_P@768x0 moves to home_P@768x0');
+ ({response,data}=await f.json('/size-maps/vs-map','DELETE'));assert.equal(response.status,409);assert.deepEqual(data.details.confirmation.videoSizes,[]);
+ // A breakpoint that already needed a choice before the change (Formats review already names P1) is not reported as new.
+ const c=f.readConfig();delete c.runtimeControls.outstream.units.P1.playerSizes['naslovna_P@768x0'];f.writeConfig(c);
+ assert.deepEqual((await reviewOf(f)).map(row=>row.message),['P1: naslovna_P, minimum width 768px: choose one of the available video sizes in Formats.']);
+ ({response,data}=await f.json('/size-maps/np-map','PATCH',{name:'home_P',map:NP}));assert.equal(response.status,409);assert.deepEqual(data.details.confirmation.videoSizes,[]);
+});
+// F4: a confirmation token covers one operation on one map with one target name.
+test('F4: a token issued for a delete never confirms a rename of the same map with the same impact, and the reverse',async()=>{
+ const f=await pageSetup();const before=saved(f);
+ const removal=(await f.json('/size-maps/np-map','DELETE')).data.details.confirmation;
+ let {response,data}=await f.json('/size-maps/np-map','PATCH',{name:'Naslovna_X',map:NP});
+ assert.equal(response.status,409);assert.deepEqual(data.details.confirmation.changes,removal.changes,'same page-type impact as the delete');assert.notEqual(data.details.confirmation.token,removal.token);
+ ({response,data}=await f.json('/size-maps/np-map','PATCH',{name:'Naslovna_X',map:NP,confirmPageTypeChanges:removal.token}));
+ assert.equal(response.status,409);assert.match(data.error,/Reload size maps to review and confirm this change\.$/);assert.deepEqual(saved(f),before);
+ const rename=data.details.confirmation.token;
+ ({response,data}=await f.json('/size-maps/np-map','DELETE',{confirmPageTypeChanges:rename}));
+ assert.equal(response.status,409);assert.match(data.error,/Reload size maps to review and confirm this change\.$/);assert.deepEqual(saved(f),before);
+ ({response,data}=await f.json('/size-maps/np-map','PATCH',{name:'Naslovna_X',map:NP,confirmPageTypeChanges:rename}));assert.equal(response.status,200,JSON.stringify(data));assert(names(f).includes('Naslovna_X'));
+});
+test('F4: a token covers its target name and its map; another name or a recreated map with the old name is refused',async()=>{
+ const f=await pageSetup();let before=saved(f);
+ const toA=(await f.json('/size-maps/np-map','PATCH',{name:'Aaa',map:NP})).data.details.confirmation;
+ let {response,data}=await f.json('/size-maps/np-map','PATCH',{name:'Bbb',map:NP,confirmPageTypeChanges:toA.token});
+ assert.equal(response.status,409);assert.deepEqual(data.details.confirmation.changes,toA.changes);assert.notEqual(data.details.confirmation.token,toA.token);assert.deepEqual(saved(f),before);
+ const vs=(await f.json('/size-maps/vs-map','DELETE')).data.details.confirmation;
+ assert.equal((await f.json('/size-maps/vs-map','DELETE',{confirmPageTypeChanges:vs.token})).response.status,200);assert(!names(f).includes('vesti_sport_P'));
+ f.sqlite.prepare("INSERT INTO size_maps(id,publisher_id,name,map_json) VALUES('vs-map-2',?,'vesti_sport_P',?)").run(site,JSON.stringify(NP));before=saved(f);
+ ({response,data}=await f.json('/size-maps/vs-map-2','DELETE',{confirmPageTypeChanges:vs.token}));
+ assert.equal(response.status,409,'the token of the deleted map never deletes the new map with its name');assert.match(data.error,/Reload size maps to review and confirm this change\.$/);assert.deepEqual(saved(f),before);
+ assert.deepEqual(data.details.confirmation.changes.map(row=>row.message),vs.changes.map(row=>row.message));
+});
+// F7: the renamed map frees its own name for its page-type map.
+test('F7: renaming sport_Q to Q carries sport_sport_Q to sport_Q instead of refusing with the name being renamed',async()=>{
+ const f=await setup();const A=[{minViewPort:[0,0],sizes:[[300,250],[300,600]]}],B=[{minViewPort:[0,0],sizes:[[320,100],[250,250]]}];
+ for(const [id,name,rows] of [['sq','sport_Q',A],['ssq','sport_sport_Q',B]])f.sqlite.prepare('INSERT INTO size_maps(id,publisher_id,name,map_json) VALUES(?,?,?,?)').run(id,site,name,JSON.stringify(rows));
+ f.sqlite.prepare("UPDATE ad_units SET size_map_key='sport_Q' WHERE id='audit-unit'").run();
+ assert.deepEqual((await refsOf(f,'sport_sport_Q')).map(row=>row.label),['Page type sport: P1 (via sport_Q)']);
+ const {response,data}=await f.json('/size-maps/sq','PATCH',{name:'Q',map:A});assert.equal(response.status,200,JSON.stringify(data));
+ assert.deepEqual(f.sqlite.prepare("SELECT id,name,map_json FROM size_maps WHERE id IN ('sq','ssq') ORDER BY id").all().map(row=>[row.id,row.name,JSON.parse(row.map_json)]),[['sq','Q',A],['ssq','sport_Q',B]]);
+ assert.equal(f.sqlite.prepare("SELECT size_map_key FROM ad_units WHERE id='audit-unit'").get().size_map_key,'Q');
+ assert.deepEqual((await refsOf(f,'sport_Q')).map(row=>row.label),['Page type sport: P1 (via Q)'],'page type sport keeps the same sizes');
+ assert.deepEqual(JSON.parse(f.sqlite.prepare('SELECT details_json FROM audit_log').get().details_json).pageTypeMaps,[['sport_sport_Q','sport_Q']]);
+ // A real collision is still refused and names the existing map.
+ f.sqlite.prepare("INSERT INTO size_maps(id,publisher_id,name,map_json) VALUES('r',?,'R',?)").run(site,JSON.stringify(A));const kept=saved(f);
+ const taken=await f.json('/size-maps/sq','PATCH',{name:'R',map:A});assert.equal(taken.response.status,409);assert.equal(taken.data.error,'Size map "R" already exists on this site.');assert.deepEqual(saved(f),kept);
 });
 
 function takeOverSetup(){
