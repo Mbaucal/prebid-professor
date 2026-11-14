@@ -2,7 +2,7 @@ name: TEST site editor checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [shared/bidder-rules/**, shared/contextual-signals/**, worker/**, src/**, tests/**, scripts/**, tools/**, ops/runtime-test/**, package.json, package-lock.json, .github/workflows/site-editor-checks.yml]
+    paths: [shared/bidder-rules/**, shared/contextual-signals/**, shared/size-maps/**, shared/outstream/**, worker/**, src/**, tests/**, scripts/**, tools/**, ops/runtime-test/**, package.json, package-lock.json, .github/workflows/site-editor-checks.yml]
   push:
     branches: [main, feature/isolated-runtime-workspace-v1]
 permissions:
@@ -39,10 +39,12 @@ jobs:
       - name: Verify bidder eligibility and generated request isolation
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/bidder-rules-*.test.mjs
       - name: Reproduce and prevent the independent audit failures
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/audit-size-map-selection.test.mjs tests/runtime/consent-storage3211.test.mjs tests/runtime/contextual-rtd-ownership.test.mjs tests/runtime/size-map-references.test.mjs tests/runtime/runtime3211-package-qa.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/audit-size-map-selection.test.mjs tests/runtime/consent-storage3211.test.mjs tests/runtime/contextual-rtd-ownership.test.mjs tests/runtime/size-map-references.test.mjs tests/runtime/runtime3211-package-qa.test.mjs tests/runtime/boot3212.test.mjs tests/runtime/runtime3212-package-qa.test.mjs
       - name: Verify security boundaries in the compiled production Worker
         run: node scripts/verify-artifact-boundary.mjs && node scripts/verify-auth-boundaries.mjs
       - run: node scripts/verify-site-duplication-workerd.mjs
+      - name: Size-map rename cascade, delete confirmation and rule map gate on compiled Worker and local D1
+        run: node scripts/verify-size-map-references-workerd.mjs
       - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/loading-summary.test.mjs
       - name: Compile TEST only; no deployment
         working-directory: ops/runtime-test
@@ -64,10 +66,18 @@ jobs:
           python scripts/verify-draft-inventory-ui.py
       - name: Rule map references, rename recovery and supported scope on desktop and narrow screens
         run: python scripts/verify-size-map-references-ui.py
+      - name: Page-type size maps keep their selection after a base-map rename (GPT mock, no network)
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-page-type-map-selection.mjs && python scripts/verify-page-type-map-selection.py
       - name: Contextual signal editor on desktop and narrow screens
         run: python scripts/verify-contextual-signals-ui.py
-      - name: Full generated storage and CMP regression on readable and minified scripts
-        run: node scripts/prepare-storage3211-browser.mjs && python scripts/verify-storage3211-browser.py
+      - name: Full generated storage and CMP regression on readable and minified 3.21.1 and 3.21.2 scripts
+        run: |
+          node scripts/prepare-storage3211-browser.mjs
+          python scripts/verify-storage3211-browser.py
+          node scripts/prepare-storage3212-browser.mjs
+          python scripts/verify-storage3211-browser.py .generated/storage3212-browser
+      - name: 3.21.2 boot at load, held GPT start, TakeOver cap and load-time page targeting against 3.21.0
+        run: node scripts/prepare-boot3212-browser.mjs && python scripts/verify-boot3212-browser.py
       - name: Bidder rule editor and simulator on desktop and narrow screens
         run: python scripts/verify-bidder-rules-ui.py
       - run: python scripts/verify-site-editor.py
@@ -85,7 +95,10 @@ jobs:
           name: site-editor-evidence
           path: |
             .generated/storage3211-browser/
+            .generated/storage3212-browser/
+            .generated/boot3212-browser/
             .generated/size-map-references-ui/
+            .generated/page-type-map-selection/
             .generated/size-map-height-ui/
             .generated/runtime-controls-validation-ui/
             .generated/inactive-media-ui-qa/
