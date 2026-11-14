@@ -7,6 +7,7 @@ on:
       - src/builtin-runtime-preview.css
       - src/preview/**
       - src/site-workspace/**
+      - src/shared/**
       - src/components/ScriptLibraryPanel.tsx
       - src/components/PositionBidCachePanel.tsx
       - src/components/PrebidModePanel.tsx
