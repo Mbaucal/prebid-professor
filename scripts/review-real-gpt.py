@@ -32,7 +32,8 @@ with sync_playwright() as p:
    assert len(pending['slots'])==2,pending
    assert len(wire)==0,wire
   page.evaluate('window.__emit()');page.wait_for_timeout(1600)
-  after=page.evaluate('''() => ({flow:__flow,slots:googletag.pubads().getSlots().map(s=>({path:s.getAdUnitPath(),id:s.getSlotElementId()})),state:takeOverDebug.state(),target:googletag.pubads().getConfig('targeting'),html:document.documentElement.getAttribute('data-google-interstitial')})''')
+  after=page.evaluate('''() => ({flow:__flow,slots:googletag.pubads().getSlots().map(s=>({path:s.getAdUnitPath(),id:s.getSlotElementId()})),state:takeOverDebug.state(),target:Object.fromEntries(googletag.pubads().getTargetingKeys().map(k=>[k,googletag.pubads().getTargeting(k)])),html:document.documentElement.getAttribute('data-google-interstitial')})''')
+  (out/(version+'-raw.json')).write_text(json.dumps({'pending':pending,'after':after,'wire':wire,'logs':logs,'scripts':scripts},indent=2))
   assert any(x.startswith('enableServices:') for x in after['flow']),after
   assert wire,{'after':after,'logs':logs,'scripts':scripts}
   results.append({'version':version,'pending':pending,'after':after,'wire':wire,'logs':logs,'scripts':scripts})
@@ -40,3 +41,4 @@ with sync_playwright() as p:
   print(json.dumps({'version':version,'flow':after['flow'],'wire':[{'iu':x['query'].get('iu'),'iu_parts':x['query'].get('iu_parts'),'enc_prev_ius':x['query'].get('enc_prev_ius'),'cust_params':x['query'].get('cust_params')} for x in wire],'guard':after['state'].get('guardStatus'),'scripts':len(scripts)}),flush=True)
   page.close()
  b.close()
+
