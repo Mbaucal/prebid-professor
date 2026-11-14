@@ -24,7 +24,7 @@ const templates: Record<CsvImportKind, Template> = {
     fileName: 'ad-units-template.csv',
     csv: `code,type,mediaType,sizeMapKey,enabled,sortOrder,notes
 Billboard,ATF,banner,Billboard,true,1,Homepage top billboard
-P1,ATF,banner,P_MAP,true,2,Right rail
+P1,ATF,banner,P,true,2,Right rail
 InFeed_1,BTF,banner,InFeed,true,10,First in-feed position`,
     tips: [
       'code is also the div ID used by the generated wrapper.',
