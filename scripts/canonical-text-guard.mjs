@@ -50,5 +50,7 @@ export async function guardCalls(mf, origin) {
 }
 
 export function describeCalls(calls) {
-  return calls.map(call => `${call.name || '(anonymous)'} [${call.source.split('\n')[0].slice(0, 80)}] from ${call.stack.find(line => !line.includes('canonical-text-guard')) ?? '?'}`);
+  // The caller in the bundle, not the guard or a built-in such as String.
+  const caller = stack => stack.find(line => /index\.js:\d+/.test(line)) ?? stack.find(line => !line.includes('canonical-text-guard')) ?? '?';
+  return calls.map(call => `${call.name || '(anonymous)'} [${call.source.split('\n')[0].slice(0, 80)}] from ${caller(call.stack)}`);
 }
