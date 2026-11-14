@@ -18,6 +18,18 @@ test('default is off; metadata is site scoped and does not require future page c
   assert.deepEqual(data.bidders,[{bidder:'pubmatic',enabled:true,configured:true}]);
   assert.deepEqual(data.taxonomies.map(row=>[row.id,row.segtax]),[['iab-content-2.2',6],['iab-content-3.0',7]]);
   assert.equal(data.published,false);assert.equal(f.sqlite.prepare('SELECT COUNT(*) count FROM audit_log').get().count,0);
+  assert.equal(data.prebidIntegration.status,'modules-missing');
+  assert.deepEqual(data.prebidIntegration.missingModules,['rtdModule','contextualSignalsRtdProvider']);
+});
+
+test('current build module status changes on upload without changing contextual settings',async()=>{
+  const f=fixture(),before=f.readConfig();
+  f.sqlite.prepare('UPDATE prebid_builds SET modules_json=?').run(JSON.stringify(['pubmaticBidAdapter','rtdModule','contextualSignalsRtdProvider']));
+  const present=await getContextualSignalSettings(f.env,'audit-site');
+  assert.equal(present.prebidIntegration.status,'modules-present');assert.deepEqual(present.prebidIntegration.missingModules,[]);
+  f.sqlite.prepare('UPDATE prebid_builds SET modules_json=?').run('{broken');
+  assert.equal((await getContextualSignalSettings(f.env,'audit-site')).prebidIntegration.status,'unknown');
+  assert.deepEqual(f.readConfig(),before);assert.equal(f.sqlite.prepare('SELECT COUNT(*) count FROM audit_log').get().count,0);
 });
 
 test('save and reload preserve unrelated config, bidder params and script selection',async()=>{

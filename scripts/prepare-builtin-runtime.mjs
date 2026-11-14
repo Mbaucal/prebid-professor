@@ -12,6 +12,8 @@ import { prepareRuntime316 } from './prepare-runtime316.mjs';
 import { prepareRuntime3161 } from './prepare-runtime3161.mjs';
 import { prepareRuntime3191 } from './prepare-runtime3191.mjs';
 import { prepareRuntime321 } from './prepare-runtime321.mjs';
+import { prepareRuntime3211 } from './prepare-runtime3211.mjs';
+import { prepareRuntime3212 } from './prepare-runtime3212.mjs';
 import { prepareRuntime3201 } from './prepare-runtime3201.mjs';
 import { prepareRuntime320 } from './prepare-runtime320.mjs';
 import { prepareRuntime319 } from './prepare-runtime319.mjs';
@@ -22,6 +24,7 @@ import { prepareReadinessRuntime } from './prepare-readiness-runtime.mjs';
 import { prepareReportingRuntime } from './prepare-reporting-runtime.mjs';
 import { prepareNextRuntime } from './prepare-next-runtime.mjs';
 import { prepareTestPageClient } from './prepare-test-page-client.mjs';
+import { prepareBrowserCanonical } from './prepare-browser-canonical.mjs';
 const currentRuntimeRelease=runtimeReleaseHistory.find(r=>r.codeSha256==='222569881b377c085f0b5d373523d092d64e2ac5dab05d421c3cc9f371078de9');
 
 export const BUILDER_SHA256 = '2f0e5c93a9c1dc2137fac63e08d0b0f493f74b91c5df4419a8403886d28b91ec';
@@ -96,7 +99,11 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareRuntime320(root);
   await prepareRuntime3201(root);
   await prepareRuntime321(root);
+  await prepareRuntime3211(root);
+  await prepareRuntime3212(root);
   await prepareTestPageClient(root);
+  // Source text the Worker entries install; see worker/runtime-canonical/functions.mjs.
+  await prepareBrowserCanonical(root);
   return descriptor;
 }
 

@@ -8,6 +8,7 @@ import {unzipSync} from 'fflate';
 import {buildSavedScript,buildSavedTest} from './saved-script-package.mjs';
 import {seedScriptLibrary} from './script-library-test-db.mjs';
 import {sha256} from './static-aa-package.mjs';
+import {guardedModules,guardCalls,describeCalls} from './canonical-text-guard.mjs';
 
 const directory=await mkdtemp(join(tmpdir(),'script-library-'));
 const origin='https://app.invalid',password=randomBytes(20).toString('hex');
@@ -15,7 +16,8 @@ const script=await readFile('dist/prebid_professor/index.js','utf8');
 let outbound=0,mf;const checks=[];
 const check=(name,ok)=>{assert(ok,name);checks.push(name);};
 try {
-  mf=new Miniflare({modules:true,script,compatibilityDate:'2026-07-15',compatibilityFlags:['nodejs_compat'],cf:false,
+  // The canonical-text guard records any function serialized without installed source text.
+  mf=new Miniflare({modules:guardedModules(script),compatibilityDate:'2026-07-15',compatibilityFlags:['nodejs_compat'],cf:false,
     resourcePersistencePath:directory,d1Databases:{DB:'ab-editor-d1'},r2Buckets:{BUILDS:'ab-editor-r2'},
     bindings:{ADMIN_EMAIL:'tester@example.invalid',ADMIN_PASSWORD:password,SESSION_SECRET:randomBytes(40).toString('hex')},
     serviceBindings:{ASSETS:()=>new Response('fixture asset',{status:404})},
@@ -130,6 +132,8 @@ try {
   }
   check('Old downloaded cache version remains byte-identical after position changes',sha256(new Uint8Array(await(await call(suffix)).arrayBuffer()))===item.sha256);
   check('Generation made no external network request',outbound===0);
+  assert.deepEqual(describeCalls(await guardCalls(mf,origin)),[],'The compiled Worker serialized a function without canonical text');
+  checks.push('Named scripts serialize only functions with canonical text');
   await writeFile(output+'workerd-report.json',JSON.stringify({scope:'Compiled production Worker, ephemeral D1/R2 and synthetic identity only',checks,passed:checks.length,failed:0},null,2));
   console.log(JSON.stringify({passed:checks.length,failed:0}));
 }finally{if(mf)await mf.dispose();await rm(directory,{recursive:true,force:true});}

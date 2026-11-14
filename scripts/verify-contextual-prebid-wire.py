@@ -26,7 +26,8 @@ PINS = {'11.11.0': '0f6ba177203d5f63e0a11453ed0c887fcf5efe33',
         '11.34.0': '195e0c6069928ed906bde550cb4e4183d1dc8474'}
 MODES = ['route-off', 'disabled', 'no-routes', 'no-category', 'unknown-category', 'foreign-auction',
          'mismatched-auction', 'provider-throws', 'concurrent', 'category-cleared', 'no-leak',
-         'mixed-rubicon', 'activity-denied', 'rtd-activity-denied']
+         'mixed-rubicon', 'activity-denied', 'rtd-activity-denied', 'rtd-before', 'rtd-after',
+         'rtd-combined', 'rtd-empty-first', 'rtd-repeat', 'missing-provider']
 
 
 def check(condition, message):
@@ -70,7 +71,10 @@ def validate(result, rows, errors, blocked, parse_errors, version):
     check(not blocked, f'Unexpected network attempts (aborted): {blocked}')
     check(not parse_errors, f'Could not parse native adapter requests: {parse_errors}')
     check(result['prebidVersion'].lstrip('v') == version, 'Wrong native Prebid version')
-    check({'rtdModule', 'contextualSignalsRtdProvider', 'allowActivities'}.issubset(result['installedModules']),
+    required_modules = {'rtdModule', 'allowActivities'}
+    if result['scenario']['mode'] != 'missing-provider':
+        required_modules.add('contextualSignalsRtdProvider')
+    check(required_modules.issubset(result['installedModules']),
           'Real RTD/activity-control modules missing')
     check(result['beforeGlobal'] == result['afterGlobal'], 'Contextual routing mutated global FPD')
     check(not result['bidderConfigWrites'], 'Runtime wrote persistent bidder configuration')
@@ -146,11 +150,25 @@ def validate(result, rows, errors, blocked, parse_errors, version):
             if scenario['mode'] == 'activity-denied':
                 check('existing-user-marker' not in json.dumps(payload), f'{bidder}: prohibited user data serialized')
         check(sorted(actual_sets) == expected_sets, f'{bidder}: wrong serialized route sets: {actual_sets}, expected {expected_sets}')
-    if scenario['mode'] not in ['disabled', 'no-routes']:
+    if scenario['mode'] == 'missing-provider':
+        check('contextualSignalsRtdProvider' not in result['installedModules'], 'Missing-provider test used a provider-enabled build')
+        check(result['snapshot']['rtd']['status'] == 'prebid-modules-missing', 'Missing module did not produce a diagnostic')
+    if scenario['mode'] in ['rtd-before', 'rtd-empty-first']:
+        check(result['snapshot']['rtd']['status'] == 'rtd-config-preexisting', 'Existing RTD conflict not diagnosed')
+        check(result['realTimeData']['dataProviders'] == ([] if scenario['mode'] == 'rtd-empty-first' else [{'name': 'contextualAudit', 'waitForIt': False, 'params': {'keep': True}}]), 'Existing provider configuration was overwritten')
+    if scenario['mode'] == 'rtd-after':
+        check(result['snapshot']['rtd']['status'] == 'rtd-config-changed-after-initialization', 'Later RTD configuration was silently ignored')
+    expected_other_calls = len(result['expected']) if scenario['mode'] in ['rtd-before', 'rtd-combined'] else 0
+    check(result['otherProviderCalls'] == expected_other_calls, 'Wrong active publisher RTD provider')
+    no_provider = scenario['mode'] in ['disabled', 'no-routes', 'rtd-before', 'rtd-empty-first', 'missing-provider']
+    if not no_provider:
         providers = result['realTimeData'].get('dataProviders', [])
         configured = [item for item in providers if item.get('name') == 'contextualSignals']
-        check(len(configured) == 1 and configured[0].get('waitForIt') is False, 'Contextual provider must be synchronous/nonwaiting')
+        if scenario['mode'] != 'rtd-after':
+            check(len(configured) == 1 and configured[0].get('waitForIt') is False, 'Contextual provider must be synchronous/nonwaiting')
         check(len(result['providerCalls']) == len(result['expected']), 'Native RTD hook did not execute once per auction')
+    else:
+        check(not result['providerCalls'], 'Unexpected contextual provider activity')
 
 
 def run_version(playwright, version):
@@ -158,7 +176,8 @@ def run_version(playwright, version):
     manifest = json.loads((destination / 'manifest.json').read_text())
     check(manifest['sourceCommit'] == PINS[version], 'Unpinned source commit')
     for path_key, hash_key in [('buildPath', 'buildSha256'), ('moduleSourcePath', 'moduleSourceSha256'),
-                               ('runtimeSourcePath', 'runtimeSourceSha256'), ('browserRuntimePath', 'browserRuntimeSha256')]:
+                               ('runtimeSourcePath', 'runtimeSourceSha256'), ('browserRuntimePath', 'browserRuntimeSha256'),
+                               ('missingProviderPath', 'missingProviderSha256')]:
         check(digest(manifest[path_key]) == manifest[hash_key], f'Stale or modified input: {path_key}; rebuild before testing')
     prebid = Path(manifest['buildPath']).read_text()
     runtime = Path(manifest['browserRuntimePath']).read_text()
@@ -205,7 +224,7 @@ def run_version(playwright, version):
             result = None
             try:
                 page.goto(ORIGIN + '/fixture')
-                page.add_script_tag(content=prebid)
+                page.add_script_tag(content=Path(manifest['missingProviderPath']).read_text() if scenario['mode'] == 'missing-provider' else prebid)
                 page.add_script_tag(content=runtime)
                 page.add_script_tag(content=fixture)
                 result = page.evaluate('''scenario => Promise.race([

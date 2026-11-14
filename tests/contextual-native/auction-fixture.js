@@ -62,7 +62,18 @@ window.runContextualNativeCase = async function (scenario) {
       ? {...request, auctionId: `${request.auctionId}-different`} : request),
     dispatch: () => {}, code: slot => slot.code,
   });
+  const otherRtd = {auctionDelay: 0, dataProviders: [{name: 'contextualAudit', waitForIt: false, params: {keep: true}}]};
+  if (scenario.mode === 'rtd-before') pbjs.setConfig({realTimeData: clone(otherRtd)});
+  if (scenario.mode === 'rtd-empty-first') pbjs.setConfig({realTimeData: {dataProviders: []}});
+  if (scenario.mode === 'rtd-combined') {
+    // The publisher config can be initialized before this wrapper helper exists.
+    const helper = window.__AD_CONTEXT; delete window.__AD_CONTEXT;
+    pbjs.setConfig({realTimeData: {...clone(otherRtd), dataProviders: [...clone(otherRtd.dataProviders), {name: 'contextualSignals', waitForIt: false}]}});
+    window.__AD_CONTEXT = helper;
+  }
   contextual.configurePrebid(pbjs);
+  if (scenario.mode === 'rtd-after') pbjs.setConfig({realTimeData: clone(otherRtd)});
+  if (scenario.mode === 'rtd-repeat') { contextual.configurePrebid(pbjs); contextual.configurePrebid(pbjs); }
   const originalEnrich = window.__AD_CONTEXT.enrichAuction;
   window.__AD_CONTEXT.enrichAuction = function (request) {
     providerCalls.push({auctionId: request.auctionId, category: clone(window.adsKeywords || {})});
@@ -87,7 +98,7 @@ window.runContextualNativeCase = async function (scenario) {
       const enabled = config.enabled && mapped && supported.includes(bid.bidder)
         && routes.some(route => route.bidder === bid.bidder)
         && !foreignAuction
-        && !['foreign-auction', 'mismatched-auction', 'provider-throws'].includes(scenario.mode)
+        && !['foreign-auction', 'mismatched-auction', 'provider-throws', 'rtd-before', 'rtd-empty-first', 'missing-provider'].includes(scenario.mode)
         && !(scenario.mode === 'mixed-rubicon' && bid.bidder === 'rubicon');
       routeIds[bid.bidder] = enabled ? mapped.taxonomies[taxonomy] : [];
     });
@@ -110,7 +121,7 @@ window.runContextualNativeCase = async function (scenario) {
     if (scenario.mode === 'no-leak') await auction('foreign', 'Alpha', true);
   }
   return {scenario, expected, requested, callbacks, auctionEnds, providerCalls, elapsedMs: performance.now() - started,
-    activityChecks, guardedReads,
+    activityChecks, guardedReads, otherProviderCalls: window.__contextualAuditCalls || 0,
     providerName, schain, snapshot: contextual.snapshot(), beforeGlobal, afterGlobal: clone(pbjs.getConfig('ortb2')),
     bidderConfigWrites, realTimeData: clone(pbjs.getConfig('realTimeData') || {}),
     installedModules: pbjs.installedModules, prebidVersion: pbjs.version};

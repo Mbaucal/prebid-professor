@@ -22,7 +22,13 @@ for await(const line of createInterface({input:process.stdin})){
     else if(['/fixture.js','/fixture.css'].includes(input.path)){
       const ext=input.path.endsWith('.js')?'.js':'.css';response=new Response(bundle.outputFiles.find(file=>file.path.endsWith(ext)).text,{headers:{'content-type':ext==='.js'?'application/javascript':'text/css'}});
     }else if(input.path==='/__fixture/snapshot')response=Response.json({config:f.readConfig(),audits:f.sqlite.prepare('SELECT action FROM audit_log ORDER BY created_at,id').all()});
-    else if(input.path==='/__fixture/stale'){
+    else if(input.path==='/__fixture/modules'){
+      const mode=JSON.parse(input.body||'{}').mode;
+      assert(['missing','present','unknown'].includes(mode));
+      if(mode==='unknown')f.sqlite.prepare("UPDATE prebid_builds SET modules_json='broken' WHERE publisher_id='audit-site'").run();
+      else f.setPrebid(mode==='present'?['pubmaticBidAdapter','openxBidAdapter','consentManagementTcf','rtdModule','contextualSignalsRtdProvider']:['pubmaticBidAdapter','openxBidAdapter','consentManagementTcf']);
+      response=Response.json({ok:true});
+    }else if(input.path==='/__fixture/stale'){
       f.writeConfig({...f.readConfig(),otherTabChange:true});response=Response.json({ok:true});
     }else response=await worker.fetch(new Request(origin+input.path,{method:input.method,headers:{origin,cookie,...input.headers,...(input.body?{'content-type':'application/json'}:{})},body:input.body||undefined}),f.env,ctx);
     console.log(JSON.stringify({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer()).toString('base64')}));

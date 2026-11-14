@@ -10,7 +10,10 @@ export function contextualSignalsInspectCommand(){
   console.table((report.outputs || []).map(row => ({
     destination: row.destination, taxonomy: row.taxonomy,
     ids: row.ids.join(', ') || '(unmapped)', evidence: row.evidence,
-    prebidVersion: report.prebidVersion, providerRegistered: report.providerRegistered
+    prebidVersion: report.prebidVersion, providerRegistered: report.providerRegistered,
+    rtdStatus: report.rtd?.status || '(legacy report)',
+    rtdOwner: report.rtd?.owner || '(unknown)',
+    providerObserved: report.rtd?.providerObserved ?? null
   })));
   console.log('Contextual signals report', report);
   console.log('Evidence limit: ' + report.evidence);

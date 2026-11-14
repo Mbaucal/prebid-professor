@@ -61,19 +61,21 @@ import type {
 // Carries the HTTP status so panels can react to 404/409 save refusals.
 export class ApiError extends Error {
   readonly status: number;
+  readonly details: unknown;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, details?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.details = details;
   }
 }
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
-  const payload = (await response.json()) as T & { error?: string };
+  const payload = (await response.json()) as T & { error?: string; details?: unknown };
   if (!response.ok) {
-    throw new ApiError(payload.error || `Request failed with status ${response.status}.`, response.status);
+    throw new ApiError(payload.error || `Request failed with status ${response.status}.`, response.status, payload.details);
   }
   return payload;
 }
@@ -321,10 +323,12 @@ export const api = {
     return payload.sizeMap;
   },
 
-  async deleteSizeMap(publisherId: string, sizeMapId: string): Promise<string> {
+  async deleteSizeMap(publisherId: string, sizeMapId: string, confirmPageTypeChanges?: string): Promise<string> {
     const payload = await requestJson<DeleteSizeMapResponse>(
       `/api/publishers/${encodeURIComponent(publisherId)}/size-maps/${encodeURIComponent(sizeMapId)}`,
-      { method: 'DELETE' },
+      confirmPageTypeChanges
+        ? { method: 'DELETE', headers: jsonHeaders, body: JSON.stringify({ confirmPageTypeChanges }) }
+        : { method: 'DELETE' },
     );
     return payload.deletedId;
   },

@@ -318,6 +318,8 @@ type RowExpectation = {
   present?: { rule: UnitRule; goneMessage: string };
   // A rule key that must not exist yet (create or duplicate target).
   absentKey?: string;
+  // Size maps the saved rule selects; set by prepareConfigUpdate and re-checked in the batch.
+  sizeMaps?: string[];
 };
 
 function checkExpectation(rows: UnitRuleRowState[], expectation: RowExpectation): void {
@@ -407,6 +409,10 @@ async function prepareConfigUpdate(
   // saved position's ATF/BTF group, which an ad-unit edit can change without touching any
   // row when the position has none yet, so its code and group must still be as read.
   const unitType = (units.results ?? []).find((unit) => unit.code === ruleKey)?.type ?? null;
+  // Each selected map was checked by name before this batch; a rename or delete in
+  // another tab between that check and the batch must refuse the save (ADM-5).
+  const sizeMaps = [...new Set((rule?.conditionalMappings ?? []).map((mapping) => mapping.sizeMapKey).filter((name): name is string => Boolean(name)))];
+  expectation.sizeMaps = sizeMaps;
   // A create or copy for a position that was renamed or deleted after its target was checked
   // would otherwise pass the guard (NULL IS NULL) and write under a code that no longer
   // exists. (An existing row is covered by the row guard: a rename moves it, a delete removes it.)
@@ -416,8 +422,10 @@ async function prepareConfigUpdate(
   const statement = db.prepare(
     `UPDATE publisher_configs SET config_json = ?, config_hash = NULL, updated_at = ?
      WHERE publisher_id = ? AND config_json = ? AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}
-       AND (SELECT type FROM ad_units WHERE publisher_id = ? AND code = ? LIMIT 1) IS ?`,
-  ).bind(JSON.stringify(config), now, siteId, row.config_json, ...unitRuleRowsUnchangedArgs(siteId, rows), siteId, ruleKey, unitType);
+       AND (SELECT type FROM ad_units WHERE publisher_id = ? AND code = ? LIMIT 1) IS ?
+       AND (SELECT count(*) FROM size_maps WHERE publisher_id = ? AND name IN (SELECT value FROM json_each(?))) = ?`,
+  ).bind(JSON.stringify(config), now, siteId, row.config_json, ...unitRuleRowsUnchangedArgs(siteId, rows), siteId, ruleKey, unitType,
+    siteId, JSON.stringify(sizeMaps), sizeMaps.length);
   return { statement, kept };
 }
 
@@ -444,6 +452,10 @@ async function applyRuleSave(
       const response = ruleErrorResponse(error);
       if (response) return response;
       throw error;
+    }
+    for (const name of expectation.sizeMaps ?? []) {
+      const exists = await db.prepare('SELECT 1 AS found FROM size_maps WHERE publisher_id = ? AND name = ? LIMIT 1').bind(siteId, name).first();
+      if (!exists) return apiError(`Size map "${name}" was renamed or deleted in another tab, so nothing was saved. Reload unit rules and choose the size map again.`, 409);
     }
     return apiError(CHANGED_ELSEWHERE, 409);
   }

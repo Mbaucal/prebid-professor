@@ -6,6 +6,7 @@ import type {
   DuplicateAdUnitInput,
   UpdateAdUnitInput,
 } from '../src/shared/types';
+import { SIZE_MAPS_SAVED_SQL, missingSizeMaps, sizeMapNames, sizeMapsMissing, sizeMapsSavedArgs } from './ad-unit-size-maps';
 import { apiError, getActor, json, readJson } from './http';
 import type { DatabaseEnv } from './publishers';
 import { keepUnitRuleIntervals } from './refresh-inheritance';
@@ -33,6 +34,22 @@ type AdUnitRow = {
 
 function databaseMissing(): Response {
   return apiError('D1 database binding is not configured yet.', 503);
+}
+
+/**
+ * The 409 for a batch whose guarded first statement wrote nothing: names the size map the
+ * write would have stored when it is not saved now (renamed or deleted, for example in
+ * another tab, or never created); otherwise `changed` (the row or settings changed).
+ */
+async function sizeMapRefused(
+  db: D1Database, siteId: string, sizeMaps: string[], action: 'saved' | 'copied', changed: string,
+): Promise<Response> {
+  const missing = await missingSizeMaps(db, siteId, sizeMaps);
+  if (!missing.length) return apiError(changed, 409);
+  const next = action === 'copied'
+    ? 'Reload ad units, or copy without the size-map reference.'
+    : 'Reload ad units and choose a current size map.';
+  return apiError(`${sizeMapsMissing(missing)} on this site, so nothing was ${action}. ${next}`, 409);
 }
 
 async function positionGuard(db:D1Database,siteId:string,code:string){
@@ -290,15 +307,16 @@ export async function createAdUnit(
     .bind(publisherId).first<{config_json:string}>();
   const mediaIssue = unsupportedBuiltinMedia(configRow?.config_json ?? null, mediaType, enabled === 1, type);
   if (mediaIssue) return mediaIssue;
+  const sizeMaps = sizeMapNames([sizeMapKey]);
 
   try {
-    await env.DB.batch([
+    const result = await env.DB.batch([
       env.DB
         .prepare(
           `INSERT INTO ad_units (
              id, publisher_id, code, type, media_type, size_map_key, enabled, sort_order,
              notes, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${SIZE_MAPS_SAVED_SQL}`,
         )
         .bind(
           id,
@@ -312,12 +330,13 @@ export async function createAdUnit(
           notes,
           now,
           now,
+          ...sizeMapsSavedArgs(publisherId, sizeMaps),
         ),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'ad_unit.created', ?, 'ad_unit', ?, ?, ?)`,
+           ) SELECT ?, ?, 'ad_unit.created', ?, 'ad_unit', ?, ?, ? WHERE ${SIZE_MAPS_SAVED_SQL}`,
         )
         .bind(
           crypto.randomUUID(),
@@ -326,8 +345,10 @@ export async function createAdUnit(
           id,
           JSON.stringify({ code, type, mediaType, sizeMapKey }),
           now,
+          ...sizeMapsSavedArgs(publisherId, sizeMaps),
         ),
     ]);
+    if (result[0].meta.changes !== 1) return sizeMapRefused(env.DB, publisherId, sizeMaps, 'saved', 'Size maps changed. Reload ad units before creating this ad unit.');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);
@@ -399,6 +420,10 @@ export async function updateAdUnit(
   // The re-keyed (or re-grouped) row is a new version of the row this request read, so a
   // Unit rules or Refresh schedules save built from the older row is refused.
   const ruleRow = rows.find((row) => row.rule_key === current.code);
+  // A new or changed size map key must name a saved map. An absent or unchanged key is the
+  // one this request read, and the row guard checks that the unit still stores it (a map
+  // rename moves the unit's key, a map in use cannot be deleted), so it keeps its meaning.
+  const sizeMaps = sizeMapKey === current.sizeMapKey ? [] : sizeMapNames([sizeMapKey]);
 
   try {
     const result = await env.DB.batch([
@@ -408,7 +433,8 @@ export async function updateAdUnit(
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
            ) SELECT ?, ?, 'ad_unit.updated', ?, 'ad_unit', ?, ?, ?
            WHERE (SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1) IS ?
-             AND EXISTS (SELECT 1 FROM ad_units WHERE publisher_id = ? AND id = ? AND code = ? AND updated_at IS ?)
+             AND EXISTS (SELECT 1 FROM ad_units WHERE publisher_id = ? AND id = ? AND code = ? AND updated_at IS ? AND size_map_key IS ?)
+             AND ${SIZE_MAPS_SAVED_SQL}
              ${carries ? `AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}` : ''}`,
         )
         .bind(
@@ -417,7 +443,8 @@ export async function updateAdUnit(
           publisherId,
           adUnitId,
           JSON.stringify({ previousCode: current.code, code, type, mediaType, sizeMapKey, ...(carried.kept.length ? { keptUnitRuleIntervals: carried.kept } : {}) }),
-          now, publisherId, guard.configJson, publisherId, adUnitId, current.code, current.updatedAt,
+          now, publisherId, guard.configJson, publisherId, adUnitId, current.code, current.updatedAt, current.sizeMapKey,
+          ...sizeMapsSavedArgs(publisherId, sizeMaps),
           ...(carries ? unitRuleRowsUnchangedArgs(publisherId, rows) : []),
         ),
       ...carriedConfigStatement(env.DB, publisherId, guard.configJson, carried.configJson, now, auditId),
@@ -458,7 +485,16 @@ export async function updateAdUnit(
             .bind(code, nextRowVersion(ruleRow.updated_at, now), publisherId, current.code, auditId)]
         : []),
     ]);
-    if (result[0].meta.changes !== 1) return apiError("Site settings changed. Reload before editing this ad unit.",409);
+    if (result[0].meta.changes !== 1) {
+      // Name the map the form holds when it is gone and the unit does not store it: a new key, or
+      // the unchanged key of a form opened before a rename moved the unit to the new name.
+      const stored = await env.DB
+        .prepare('SELECT size_map_key FROM ad_units WHERE publisher_id = ? AND id = ?')
+        .bind(publisherId, adUnitId)
+        .first<{ size_map_key: string | null }>();
+      const named = sizeMaps.length || stored?.size_map_key !== sizeMapKey ? sizeMapNames([sizeMapKey]) : [];
+      return sizeMapRefused(env.DB, publisherId, named, 'saved', "Site settings changed. Reload before editing this ad unit.");
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);
@@ -523,6 +559,7 @@ export async function duplicateAdUnit(
   const carried = carriedRuleConfig(configJson, rows, {
     kind: 'copy', from: source.code, to: code, type, copyRule: copyUnitRule,
   });
+  const sizeMaps = sizeMapNames([sizeMapKey]);
 
   const statements: D1PreparedStatement[] = [
     env.DB
@@ -531,6 +568,7 @@ export async function duplicateAdUnit(
            id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
          ) SELECT ?, ?, 'ad_unit.duplicated', ?, 'ad_unit', ?, ?, ?
          WHERE (SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1) IS ?
+           AND ${SIZE_MAPS_SAVED_SQL}
            AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}`,
       )
       .bind(
@@ -547,7 +585,8 @@ export async function duplicateAdUnit(
           copyBidderAdUnitOverrides: input.copyBidderAdUnitOverrides !== false,
           ...(carried.kept.length ? { keptUnitRuleIntervals: carried.kept } : {}),
         }),
-        now, publisherId, configJson, ...unitRuleRowsUnchangedArgs(publisherId, rows),
+        now, publisherId, configJson, ...sizeMapsSavedArgs(publisherId, sizeMaps),
+        ...unitRuleRowsUnchangedArgs(publisherId, rows),
       ),
     ...carriedConfigStatement(env.DB, publisherId, configJson, carried.configJson, now, auditId),
     env.DB
@@ -622,7 +661,7 @@ export async function duplicateAdUnit(
 
   try {
     const result = await env.DB.batch(statements);
-    if (result[0].meta.changes !== 1) return apiError('Site settings changed. Reload before copying this ad unit.', 409);
+    if (result[0].meta.changes !== 1) return sizeMapRefused(env.DB, publisherId, sizeMaps, 'copied', 'Site settings changed. Reload before copying this ad unit.');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);

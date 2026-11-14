@@ -14,7 +14,7 @@ const pins = {
   '11.11.0': {commit: '0f6ba177203d5f63e0a11453ed0c887fcf5efe33', lockSha256: '8207a5e5551ec1d02125276b412e1cb18db5ff305c2babbb8c68fc361b109b7b'},
   '11.34.0': {commit: '195e0c6069928ed906bde550cb4e4183d1dc8474', lockSha256: '077338389169c8834d5bd1dedacd92094fb3b0e05a1c54fb4de7ffaa4b7d02d9'},
 };
-const modules = ['rtdModule', 'contextualSignalsRtdProvider', 'allowActivities', 'connectadBidAdapter', 'openxBidAdapter',
+const modules = ['rtdModule', 'contextualSignalsRtdProvider', 'contextualAuditRtdProvider', 'consentManagementTcf', 'allowActivities', 'connectadBidAdapter', 'openxBidAdapter',
   'pubmaticBidAdapter', 'ixBidAdapter', 'rubiconBidAdapter', 'teadsBidAdapter', 'richaudienceBidAdapter'];
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const args = process.argv.slice(2);
@@ -28,7 +28,8 @@ function run(command, argv, cwd, capture = false) {
   return (result.stdout || '').trim();
 }
 const modulePath = resolve(runtimeRoot, 'worker/runtime-321/prebid-module.mjs');
-const runtimePath = resolve(runtimeRoot, 'worker/runtime-321/browser-contextual.mjs');
+const runtimePath = resolve(runtimeRoot, 'worker/runtime-3211/browser-contextual.mjs');
+const auditModule = await readFile(resolve(root, 'tests/contextual-native/audit-rtd-provider.js'), 'utf8');
 const moduleSourceHash = sha256(await readFile(modulePath));
 const runtimeSourceHash = sha256(await readFile(runtimePath));
 const {PREBID_CONTEXTUAL_MODULE_SOURCE: moduleSource} = await import(pathToFileURL(modulePath));
@@ -53,14 +54,25 @@ for (const version of versions) {
   const customModule = resolve(upstream, 'modules/contextualSignalsRtdProvider.js');
   assert.equal(run('git', ['ls-files', 'modules/contextualSignalsRtdProvider.js'], upstream, true), '', 'Refusing to overwrite an upstream module');
   await writeFile(customModule, moduleSource);
+  assert.equal(run('git', ['ls-files', 'modules/contextualAuditRtdProvider.js'], upstream, true), '', 'Refusing to overwrite an upstream audit module');
+  await writeFile(resolve(upstream, 'modules/contextualAuditRtdProvider.js'), auditModule);
   run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], upstream);
   run('npx', ['--no-install', 'gulp', 'build', `--modules=${modules.join(',')}`], upstream);
   assert.equal(sha256(await readFile(lockPath)), pin.lockSha256, 'Build changed the locked dependencies');
   assert.equal(run('git', ['status', '--porcelain', '--untracked-files=no'], upstream, true), '', 'Build changed upstream tracked sources');
-  const buildPath = resolve(upstream, 'build/dist/prebid.js'), build = await readFile(buildPath);
+  const build = await readFile(resolve(upstream, 'build/dist/prebid.js'));
   assert(build.includes(Buffer.from('contextualSignals')), 'Custom provider missing from the build');
   const destination = resolve(output, version);
   await mkdir(destination, {recursive: true});
+  const buildPath = resolve(destination, 'prebid.js');
+  await writeFile(buildPath, build);
+  const missingProviderModules = modules.filter(name => name !== 'contextualSignalsRtdProvider');
+  run('npx', ['--no-install', 'gulp', 'build', `--modules=${missingProviderModules.join(',')}`], upstream);
+  assert.equal(sha256(await readFile(lockPath)), pin.lockSha256, 'Missing-provider build changed the locked dependencies');
+  assert.equal(run('git', ['status', '--porcelain', '--untracked-files=no'], upstream, true), '', 'Missing-provider build changed upstream tracked sources');
+  const missingProviderPath = resolve(destination, 'prebid-without-contextual.js');
+  const missingProviderBuild = await readFile(resolve(upstream, 'build/dist/prebid.js'));
+  await writeFile(missingProviderPath, missingProviderBuild);
   const browserRuntime = `window.createContextualSignals = ${createContextualSignals.toString()};\n`;
   const browserRuntimePath = resolve(destination, 'browser-contextual.js');
   await writeFile(browserRuntimePath, browserRuntime);
@@ -71,6 +83,8 @@ for (const version of versions) {
     npmVersion: run('npm', ['--version'], upstream, true), buildPath, buildSha256: sha256(build),
     moduleSourcePath: modulePath, moduleSourceSha256: moduleSourceHash,
     moduleContentSha256: sha256(moduleSource), runtimeSourcePath: runtimePath,
+    runtimeVersion: '3.21.1', auditModuleSha256: sha256(auditModule),
+    missingProviderPath, missingProviderSha256: sha256(missingProviderBuild),
     runtimeSourceSha256: runtimeSourceHash, browserRuntimePath, browserRuntimeSha256: sha256(browserRuntime),
     scope: 'Pinned upstream build with unchanged adapters and the canonical contextual RTD module. Build success is not wire or SSP acceptance evidence.'};
   await writeFile(resolve(destination, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');

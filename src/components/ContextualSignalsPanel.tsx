@@ -1,9 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
 import type {ContextualSignals} from '../../shared/contextual-signals/settings.mjs';
+import type {ContextualPrebidStatus} from '../../worker/site-runtime/contextual-prebid-status.mjs';
 import '../contextual-signals.css';
 
 type Props={publisherId:string;onChanged?:()=>void|Promise<void>;endpoint?:string};
-type ContextualSignalsPayload={revision:string;settings:ContextualSignals;bidders:{bidder:string;enabled:boolean;configured:boolean}[];enablePrebid:boolean;prebidVersion:string|null;runtimeEligible:boolean;compatibility:{bidder:string;delivery:string;note:string;source:string|null;evidence:string;serverAcceptance:string}[];taxonomies:{id:string;label:string;segtax:number;categories:{id:string;name:string}[]}[];published:false};
+type ContextualSignalsPayload={revision:string;settings:ContextualSignals;bidders:{bidder:string;enabled:boolean;configured:boolean}[];enablePrebid:boolean;prebidVersion:string|null;runtimeEligible:boolean;compatibility:{bidder:string;delivery:string;note:string;source:string|null;evidence:string;serverAcceptance:string}[];taxonomies:{id:string;label:string;segtax:number;categories:{id:string;name:string}[]}[];published:false;prebidIntegration:ContextualPrebidStatus};
 type MappingDraft={value:string;ids22:string;ids30:string};
 type Draft=Omit<ContextualSignals,'mappings'>&{mappings:MappingDraft[]};
 const splitIds=(value:string)=>value.split(/[\s,]+/).filter(Boolean);
@@ -47,7 +48,7 @@ export default function ContextualSignalsPanel({publisherId,onChanged,endpoint}:
     try{
       const value=await request({revision:data.revision,settings:contextualSignalsFromDraft(draft)});
       if(!alive.current||id!==operation.current)return;
-      setData(value);setDraft(draftFor(value.settings));setMessage('Saved. Generate a new script with version 3.21.0 to use these settings. Existing scripts are unchanged.');
+      setData(value);setDraft(draftFor(value.settings));setMessage('Saved. Generate a new script with version 3.21.0, 3.21.1 or 3.21.2 to use these settings. Existing scripts are unchanged.');
       try{await onChanged?.();}catch{ /* The settings save succeeded; a parent refresh does not undo it. */ }
     }catch(e){if(alive.current&&id===operation.current)setError((e as Error).message);}
     finally{if(id===operation.current){savingRef.current=false;if(alive.current)setSaving(false);}}
@@ -68,7 +69,7 @@ export default function ContextualSignalsPanel({publisherId,onChanged,endpoint}:
         <legend>1. Category source</legend>
         <label className="check-row"><input type="checkbox" checked={draft.enabled} onChange={event=>change({enabled:event.target.checked})}/><span>Enable contextual signals for this site</span></label>
         <label className="contextual-signals-field"><span>Page category key</span><input value={draft.sourceKey} onChange={event=>change({sourceKey:event.target.value})} placeholder="category" autoComplete="off"/><small>Reads <code>window.adsKeywords[{JSON.stringify(draft.sourceKey||'category')}]</code>. Set it before ads.js. Values match exactly; a missing or unmapped category sends no mapped signals and never delays ads.</small></label>
-        {!data.runtimeEligible?<p className="contextual-signals-note">You can save the setup now. Select and save script version 3.21.0 before generating a package with contextual signals.</p>:null}
+        {!data.runtimeEligible?<p className="contextual-signals-note">You can save the setup now. Select and save script version 3.21.2 before generating a package with contextual signals.</p>:null}
       </fieldset>
       <fieldset className="contextual-signals-card" disabled={saving}>
         <legend>2. Destinations and taxonomy versions</legend>
@@ -89,6 +90,15 @@ export default function ContextualSignalsPanel({publisherId,onChanged,endpoint}:
           </label>;
         })}</div>:<p className="contextual-signals-help">No bidders configured. You can still configure Google PPS independently.</p>}
         {data.prebidVersion?<p className="contextual-signals-help">Current Prebid build: {data.prebidVersion}. Verify support again when changing adapters or versions.</p>:null}
+        {hasPrebidRoutes&&data.enablePrebid?<div className="contextual-signals-note" data-contextual-build-status={data.prebidIntegration?.status??'unknown'}>
+          {data.prebidIntegration?.status==='modules-present'
+            ?<p>The current build lists the required contextual modules. Confirm the active provider and outgoing request on the page; module presence does not confirm SSP receipt.</p>
+            :<p><strong>Bidder signals need a compatible Prebid build.</strong> {data.prebidIntegration?.status==='modules-missing'
+              ?<>The current build is missing: {data.prebidIntegration.missingModules.join(', ')}.</>
+              :data.prebidIntegration?.status==='no-build'?'No current Prebid build is available.':'The current build’s module list could not be verified.'} Ads can continue, but these bidder signals are not confirmed. Use the integration kit below.</p>}
+          {data.prebidIntegration?.selectedBuildId&&!data.prebidIntegration.selectionMatches?<p>The saved script selection refers to a different Prebid build. Save the intended build selection before generating.</p>:null}
+          <p>If your page uses another real-time data provider, include all providers, including contextualSignals, in the first realTimeData configuration before ads.js. A later configuration cannot activate a new provider.</p>
+        </div>:null}
         <details className="contextual-signals-integration"><summary>Prebid integration required</summary><p>Build the custom contextual signals module into your Prebid file. It is not available on Prebid.org. Without it, ads continue and these bidder signals are omitted.</p><a className="button secondary" href={`${url}/build-kit`} download>Download Prebid integration kit</a></details>
       </fieldset>
       <fieldset className="contextual-signals-card" disabled={saving}>

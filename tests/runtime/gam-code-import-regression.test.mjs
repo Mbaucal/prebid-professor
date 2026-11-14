@@ -12,6 +12,8 @@ function fixture(){
  for(const file of readdirSync('migrations').filter(f=>f.endsWith('.sql')).sort())sqlite.exec(readFileSync('migrations/'+file,'utf8'));
  sqlite.prepare("INSERT INTO publishers(id,name,domain,gam_path) VALUES('qa','QA','qa.invalid','/123/qa/')").run();
  sqlite.prepare("INSERT INTO publisher_configs(id,publisher_id,config_json) VALUES('cfg','qa','{}')").run();
+ // The units below name this saved map: ad-unit writes refuse a size map that does not exist (F3).
+ sqlite.prepare("INSERT INTO size_maps(id,publisher_id,name,map_json) VALUES('display-map','qa','display',?)").run(JSON.stringify([{minViewPort:[0,0],sizes:[[300,250]]}]));
  function prepare(sql,args=[]){return{sql,args,bind(...values){return prepare(sql,values);},async first(){return sqlite.prepare(sql).get(...args)??null;},async all(){return{success:true,results:sqlite.prepare(sql).all(...args),meta:{changes:0}};},async run(){return{success:true,meta:{changes:Number(sqlite.prepare(sql).run(...args).changes)}};}};}
  const env={DB:{prepare,async batch(items){sqlite.exec('BEGIN IMMEDIATE');try{const result=items.map(({sql,args})=>{const stmt=sqlite.prepare(sql);return stmt.columns().length?{success:true,results:stmt.all(...args),meta:{changes:0}}:{success:true,meta:{changes:Number(stmt.run(...args).changes)}};});sqlite.exec('COMMIT');return result;}catch(error){sqlite.exec('ROLLBACK');throw error;}}}};
  return{env,sqlite,close(){sqlite.close();}};
