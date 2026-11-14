@@ -23,7 +23,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, readFileSync} from 'node:fs';
+import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import {stripTypeScriptTypes} from 'node:module';
 import {dirname, relative, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -85,6 +85,15 @@ const reviewedToString = {
 };
 
 // ---------------------------------------------------------------- static scan
+function sourceFiles(directory) {
+  const files = [];
+  for (const entry of readdirSync(resolve(root, directory), {withFileTypes: true})) {
+    const path = `${directory}/${entry.name}`;
+    if (entry.isDirectory()) { if (entry.name !== 'node_modules') files.push(...sourceFiles(path)); }
+    else if (/\.(?:[cm]?js|jsx|tsx?)$/.test(entry.name) && !/\.d\.[cm]?ts$/.test(entry.name)) files.push(path);
+  }
+  return files;
+}
 const modules = new Map();
 /** Lexical scopes, enough to tell a function binding from a parameter or value of the same name. */
 function scopes(ast) {
@@ -440,4 +449,36 @@ test('installed text is the unbundled source and no Worker code serializes an un
   const {prebidScript} = await import('../../worker/test-workspace/prebid-page.mjs');
   assert(prebidScript.includes(canonicalSources['worker/test-workspace/prebid-versions.mjs'].fetchPrebidVersions));
   assert.deepEqual([...uncovered.keys()], [], 'Worker code serialized a function without canonical text');
+});
+
+// ---------------------------------------------------------------- admin console commands
+/** Identifiers a function reads from outside itself (its own name excepted). */
+function outsideReferences(info, fn) {
+  const own = fn.id?.name, outside = new Set();
+  walk(fn, (node, parent) => {
+    if (node.type !== 'Identifier' || node === fn.id || node.name === own) return;
+    if (parent?.type === 'MemberExpression' && parent.property === node && !parent.computed) return;
+    if ((parent?.type === 'Property' || parent?.type === 'MethodDefinition' || parent?.type === 'PropertyDefinition') && parent.key === node && !parent.computed) return;
+    if (['LabeledStatement', 'BreakStatement', 'ContinueStatement'].includes(parent?.type)) return;
+    const binding = info.lookup(node, node.name);
+    if (binding && !(binding.at >= fn.start && binding.at < fn.end)) outside.add(node.name);
+  });
+  return [...outside].sort();
+}
+
+test('functions that admin code outside the Worker serializes are self-contained', () => {
+  // The admin SPA bundle (Vite) renames and minifies these too. That is harmless
+  // only while each function reads nothing from its module, so the console
+  // command or page script it is written into still runs.
+  const adminFiles = sourceFiles('src').filter(path => !inWorker.has(path));
+  const {sites} = serializationSites(adminFiles, {strict: false});
+  const problems = [];
+  for (const {file, how, fn} of sites) {
+    const info = moduleInfo(fn.path), node = fn.node ?? info.program.bindings.get(fn.local)?.node;
+    if (!node) { problems.push(`${file} ${how} ${fn.path} ${fn.local}: not a function declaration`); continue; }
+    const outside = outsideReferences(info, node);
+    if (outside.length) problems.push(`${file} ${how} ${fn.path} ${fn.local} reads ${outside.join(', ')} from outside the serialized function`);
+  }
+  assert.deepEqual(problems, [], 'Serialized admin functions must not depend on module scope');
+  assert(sites.some(site => site.file.startsWith('src/debug/schain-inspect.mjs:')), 'src/debug serialization sites not found');
 });
