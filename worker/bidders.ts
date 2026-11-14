@@ -12,6 +12,7 @@ import type {
 } from '../src/shared/types';
 import { apiError, getActor, json, readJson } from './http';
 import type { DatabaseEnv } from './publishers';
+import { assertCompilerStrings } from './compiler-input-compatibility.mjs';
 
 type BidderRow = {
   id: string;
@@ -55,6 +56,7 @@ function normalizeObject(value: unknown, field = 'params'): JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${field} must be a JSON object, not an array or primitive.`);
   }
+  assertCompilerStrings(value, field);
   return value as JsonObject;
 }
 

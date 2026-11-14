@@ -35,10 +35,30 @@ export async function readJson<T>(request: Request): Promise<T> {
   return (await request.json()) as T;
 }
 
+// This Symbol cannot arrive over HTTP. Keep identity on the verified request,
+// rather than trusting Cloudflare Access or x-user-email headers from callers.
+const actorKey = Symbol('verified-server-actor');
+type ActorRequest = Request & { [actorKey]?: string };
+
+export function withAuthenticatedActor(request: Request, actor: string): Request {
+  const headers = new Headers(request.headers);
+  headers.delete('cf-access-authenticated-user-email');
+  // Some legacy helpers still consume this internal header. Always overwrite it.
+  headers.set('x-user-email', actor);
+  const verified: ActorRequest = new Request(request, { headers });
+  Object.defineProperty(verified, actorKey, { value: actor });
+  return verified;
+}
+
 export function getActor(request: Request): string {
-  return (
-    request.headers.get('cf-access-authenticated-user-email') ??
-    request.headers.get('x-user-email') ??
-    'system'
-  );
+  return (request as ActorRequest)[actorKey] ?? 'system';
+}
+
+// Internal adapters must carry the verified identity when rebuilding a body.
+export function copyAuthenticatedActor(source: Request, target: Request): Request {
+  return withAuthenticatedActor(target, getActor(source));
+}
+
+export function cloneAuthenticatedRequest(request: Request): Request {
+  return copyAuthenticatedActor(request, request.clone());
 }

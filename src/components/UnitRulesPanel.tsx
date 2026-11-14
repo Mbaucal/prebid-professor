@@ -1,5 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { api } from '../api';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { api, ApiError } from '../api';
+import type { RebaseReview } from '../edit-rebase';
+import { BASELINE_RULE, dialogAfterRefusal, formFromRule, ruleFromForm, type DialogBaseline, type RuleForm } from '../unit-rule-form';
+import { runtimeLabel } from '../site-workspace/runtime-labels';
+import EditRebaseReview from './EditRebaseReview';
 import type {
   AdUnit,
   SizeMap,
@@ -19,44 +23,33 @@ type Props = {
 
 type FormMode = 'create' | 'edit' | 'duplicate';
 
-type RuleForm = {
-  ruleKey: string;
-  overrideTimeout: boolean;
-  timeout: number;
-  overrideLazy: boolean;
-  lazyEnabled: boolean;
-  fetchMarginPx: number;
-  renderMarginPx: number;
-  overrideRefresh: boolean;
-  refreshEnabled: boolean;
-  minSeconds: number;
-  minViewPct: number;
-  requirePreviousViewable: boolean;
-  checkEveryMs: number;
-  conditionalMappings: UnitRuleConditionalMapping[];
+// 404/409 from a rule save means another tab deleted or changed the rules first.
+function isStaleRuleError(error: unknown): error is ApiError {
+  return error instanceof ApiError && (error.status === 404 || error.status === 409);
+}
+
+type LoadingSummary = {
+  runtimeVersion: string | null;
+  issue: string | null;
+  units: Array<{ code: string; label: string; detail: string; source: string }>;
+  refresh?: {units: Array<{code: string; label: string; detail: string; timeout: number}>; warnings: string[]};
 };
+
+async function loadLoadingSummary(publisherId: string): Promise<LoadingSummary> {
+  const response = await fetch(`/api/publishers/${encodeURIComponent(publisherId)}/builtin-site-settings`, {
+    credentials: 'same-origin', cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('Loading behavior is unavailable. Reload to try again.');
+  const data = await response.json() as { loadingSummary: LoadingSummary; refreshSummary?: LoadingSummary['refresh'] };
+  if (!Array.isArray(data.loadingSummary?.units)) throw new Error('Loading behavior is unavailable. Reload to try again.');
+  return {...data.loadingSummary, refresh: data.refreshSummary};
+}
 
 const RESERVED_RULES = [
   { key: '__DEFAULT__', label: 'Default', description: 'Base behavior inherited by every ad unit.' },
   { key: '__ATF__', label: 'ATF', description: 'Overrides for all above-the-fold ad units.' },
   { key: '__BTF__', label: 'BTF', description: 'Overrides for all below-the-fold ad units.' },
 ] as const;
-
-const BASELINE_RULE: Required<Pick<UnitRuleConfig, 'timeout' | 'lazy' | 'refresh'>> = {
-  timeout: 2500,
-  lazy: {
-    enabled: false,
-    fetchMarginPx: 500,
-    renderMarginPx: 200,
-  },
-  refresh: {
-    enabled: true,
-    minSeconds: 30,
-    minViewPct: 50,
-    requirePreviousViewable: false,
-    checkEveryMs: 5000,
-  },
-};
 
 function uid(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -128,54 +121,6 @@ function presetForKey(ruleKey: string): UnitRuleConfig {
   return { conditionalMappings: [] };
 }
 
-function formFromRule(ruleKey: string, rule: UnitRuleConfig): RuleForm {
-  return {
-    ruleKey,
-    overrideTimeout: rule.timeout !== undefined,
-    timeout: rule.timeout ?? BASELINE_RULE.timeout,
-    overrideLazy: rule.lazy !== undefined,
-    lazyEnabled: rule.lazy?.enabled ?? BASELINE_RULE.lazy.enabled,
-    fetchMarginPx: rule.lazy?.fetchMarginPx ?? BASELINE_RULE.lazy.fetchMarginPx,
-    renderMarginPx: rule.lazy?.renderMarginPx ?? BASELINE_RULE.lazy.renderMarginPx,
-    overrideRefresh: rule.refresh !== undefined,
-    refreshEnabled: rule.refresh?.enabled ?? BASELINE_RULE.refresh.enabled,
-    minSeconds: rule.refresh?.minSeconds ?? BASELINE_RULE.refresh.minSeconds,
-    minViewPct: rule.refresh?.minViewPct ?? BASELINE_RULE.refresh.minViewPct,
-    requirePreviousViewable:
-      rule.refresh?.requirePreviousViewable ?? BASELINE_RULE.refresh.requirePreviousViewable,
-    checkEveryMs: rule.refresh?.checkEveryMs ?? BASELINE_RULE.refresh.checkEveryMs,
-    conditionalMappings: (rule.conditionalMappings ?? []).map((mapping) => ({
-      ...mapping,
-      conditions: mapping.conditions.map((condition) => ({ ...condition })),
-    })),
-  };
-}
-
-function ruleFromForm(form: RuleForm): UnitRuleConfig {
-  const rule: UnitRuleConfig = {};
-  if (form.overrideTimeout) rule.timeout = Number(form.timeout);
-  if (form.overrideLazy) {
-    rule.lazy = {
-      enabled: form.lazyEnabled,
-      fetchMarginPx: Number(form.fetchMarginPx),
-      renderMarginPx: Number(form.renderMarginPx),
-    };
-  }
-  if (form.overrideRefresh) {
-    rule.refresh = {
-      enabled: form.refreshEnabled,
-      minSeconds: Number(form.minSeconds),
-      minViewPct: Number(form.minViewPct),
-      requirePreviousViewable: form.requirePreviousViewable,
-      checkEveryMs: Number(form.checkEveryMs),
-    };
-  }
-  if (form.conditionalMappings.length) {
-    rule.conditionalMappings = form.conditionalMappings;
-  }
-  return rule;
-}
-
 function mergeEffectiveRule(...rules: Array<UnitRuleConfig | undefined>): UnitRuleConfig {
   const merged: UnitRuleConfig = {
     timeout: BASELINE_RULE.timeout,
@@ -207,7 +152,18 @@ function scopeLabel(ruleKey: string): string {
   if (ruleKey === '__DEFAULT__') return 'Default';
   if (ruleKey === '__ATF__') return 'ATF group';
   if (ruleKey === '__BTF__') return 'BTF group';
+  if (ruleKey === '__INTERSTITIAL__') return 'Interstitial fallback';
   return `Exact · ${ruleKey}`;
+}
+
+/** Names rules whose Unit rules interval a save gave its own fixed schedule. */
+function keptIntervalsNotice(keys: string[]): string | null {
+  if (!keys.length) return null;
+  const names = keys.map((key) => key === '__DEFAULT__' ? 'Default' : key === '__ATF__' ? 'ATF group' : key === '__BTF__' ? 'BTF group' : key);
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return names.length === 1
+    ? `${list} uses its own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows it as “Same every time”.`
+    : `${list} use their own refresh interval from Unit rules instead of an inherited Refresh schedule. Refresh schedules shows them as “Same every time”.`;
 }
 
 function timeoutText(rule: UnitRuleConfig): string {
@@ -235,34 +191,52 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
   const [sizeMaps, setSizeMaps] = useState<SizeMap[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [mode, setMode] = useState<FormMode | null>(null);
   const [source, setSource] = useState<UnitRule | null>(null);
   const [form, setForm] = useState<RuleForm>(() => formFromRule('__DEFAULT__', presetForKey('__DEFAULT__')));
   const [formError, setFormError] = useState<string | null>(null);
+  const [rebaseNote, setRebaseNote] = useState<RebaseReview | null>(null);
+  // After a refused save: what the dialog counts as loaded for the next one (see rebasedBaseline).
+  const [rebasedFrom, setRebasedFrom] = useState<DialogBaseline | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [creatingBaseRules, setCreatingBaseRules] = useState(false);
+  const [loadingSummary, setLoadingSummary] = useState<LoadingSummary | null>(null);
+  const loadSequence = useRef(0);
 
-  const load = useCallback(async () => {
+  // Resolves to the loaded rules, or null when the load failed or a newer load replaced it.
+  const load = useCallback(async (): Promise<UnitRule[] | null> => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
+    setLoadingSummary(null);
     try {
-      const [rules, units, maps] = await Promise.all([
+      const [rules, units, maps, summary] = await Promise.all([
         api.listUnitRules(publisherId),
         api.listAdUnits(publisherId),
         api.listSizeMaps(publisherId),
+        loadLoadingSummary(publisherId).catch(() => ({
+          runtimeVersion: null, units: [], issue: 'Loading behavior is unavailable. Reload to try again.',
+        })),
       ]);
+      if (sequence !== loadSequence.current) return null;
       setUnitRules(rules);
       setAdUnits(units);
       setSizeMaps(maps);
+      setLoadingSummary(summary);
       setError(null);
+      return rules;
     } catch (requestError) {
+      if (sequence !== loadSequence.current) return null;
       setError(requestError instanceof Error ? requestError.message : 'Could not load unit rules.');
+      return null;
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, [publisherId]);
 
   useEffect(() => {
     void load();
+    return () => { loadSequence.current++; };
   }, [load]);
 
   const rulesByKey = useMemo(
@@ -273,6 +247,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
   const targetOptions = useMemo(() => {
     return [
       ...RESERVED_RULES.map((item) => ({ key: item.key, label: item.label })),
+      { key: '__INTERSTITIAL__', label: 'Interstitial fallback' },
       ...adUnits.map((unit) => ({ key: unit.code, label: `${unit.code} · ${unit.type}` })),
     ];
   }, [adUnits]);
@@ -282,6 +257,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
   }, [rulesByKey, targetOptions]);
 
   const missingReserved = RESERVED_RULES.filter((item) => !rulesByKey.has(item.key));
+  const isInterstitial = form.ruleKey === '__INTERSTITIAL__';
 
   function openCreate(ruleKey?: string) {
     const target = ruleKey ?? availableTargetOptions[0]?.key ?? '';
@@ -289,6 +265,8 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
     setSource(null);
     setForm(formFromRule(target, presetForKey(target)));
     setFormError(null);
+    setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function openEdit(rule: UnitRule) {
@@ -296,6 +274,8 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
     setSource(rule);
     setForm(formFromRule(rule.ruleKey, rule.rule));
     setFormError(null);
+    setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function openDuplicate(rule: UnitRule) {
@@ -304,6 +284,8 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
     setSource(rule);
     setForm(formFromRule(target, rule.rule));
     setFormError(null);
+    setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function closeForm() {
@@ -311,14 +293,39 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
     setMode(null);
     setSource(null);
     setFormError(null);
+    setRebaseNote(null);
+    setRebasedFrom(null);
   }
 
   function updateForm<K extends keyof RuleForm>(key: K, value: RuleForm[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function addCountryMapping() {
+    const mapping = emptyMapping();
+    mapping.name = 'Country mapping';
+    mapping.conditions = [{ id: uid(), key: 'geo_country', operator: 'equals', value: 'RS' }];
+    if (isInterstitial) mapping.slotAction = 'disable';
+    updateForm('conditionalMappings', [...form.conditionalMappings, mapping]);
+  }
+
+  function addOnlySerbiaPreset() {
+    const mapping = emptyMapping();
+    mapping.name = 'Only Serbia';
+    mapping.priority = 10000;
+    mapping.match = 'any';
+    mapping.slotAction = 'disable';
+    mapping.conditions = [
+      { id: uid(), key: 'geo_country', operator: 'notEquals', value: 'RS' },
+      { id: uid(), key: 'geo_country', operator: 'notExists', value: '' },
+    ];
+    updateForm('conditionalMappings', [mapping, ...form.conditionalMappings]);
+  }
+
   function addMapping() {
-    updateForm('conditionalMappings', [...form.conditionalMappings, emptyMapping()]);
+    const mapping = emptyMapping();
+    if (isInterstitial) mapping.slotAction = 'disable';
+    updateForm('conditionalMappings', [...form.conditionalMappings, mapping]);
   }
 
   function updateMapping(mappingId: string, patch: Partial<UnitRuleConditionalMapping>) {
@@ -385,6 +392,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
+    setRebaseNote(null);
 
     if (!form.ruleKey) {
       setFormError('Select a rule target.');
@@ -392,6 +400,11 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
     }
 
     const rule = ruleFromForm(form);
+    if (isInterstitial && mode !== 'duplicate') {
+      delete rule.timeout;
+      delete rule.lazy;
+      delete rule.refresh;
+    }
     if (
       rule.timeout === undefined &&
       rule.lazy === undefined &&
@@ -403,19 +416,52 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
     }
 
     setSubmitting(true);
+    setNotice(null);
     try {
-      if (mode === 'edit' && source) {
-        await api.updateUnitRule(publisherId, source.id, { rule });
-      } else if (mode === 'duplicate' && source) {
-        await api.duplicateUnitRule(publisherId, source.id, { ruleKey: form.ruleKey });
-      } else {
-        await api.createUnitRule(publisherId, { ruleKey: form.ruleKey, rule });
-      }
+      const saved = mode === 'edit' && source
+        ? await api.updateUnitRule(publisherId, source.id, { rule, expectedUpdatedAt: source.updatedAt })
+        : mode === 'duplicate' && source
+          ? await api.duplicateUnitRule(publisherId, source.id, { ruleKey: form.ruleKey })
+          : await api.createUnitRule(publisherId, { ruleKey: form.ruleKey, rule });
+      setNotice(keptIntervalsNotice(saved.keptUnitRuleIntervals));
       await load();
       await onChanged?.();
       closeForm();
     } catch (requestError) {
-      setFormError(requestError instanceof Error ? requestError.message : 'Unit rule operation failed.');
+      const message = requestError instanceof Error ? requestError.message : 'Unit rule operation failed.';
+      if (isStaleRuleError(requestError)) {
+        // Another tab changed or deleted the rule and nothing was saved. Refresh the list
+        // behind the dialog, but keep the dialog and every entered value.
+        const rules = await load();
+        // The rule as saved now, with its version from the same list read.
+        const latest = mode === 'edit' && source ? rules?.find((item) => item.id === source.id) : undefined;
+        if (requestError.status === 409 && source && latest && latest.updatedAt !== source.updatedAt) {
+          // Edit the rule as it is saved now: only the fields changed in this dialog stay,
+          // so saving again cannot put back what the other tab replaced. The next save is
+          // checked against this reloaded version, never the one the dialog opened with.
+          const { rebased, review, next } = dialogAfterRefusal(
+            form,
+            rebasedFrom ?? { form: formFromRule(source.ruleKey, source.rule), carried: {} },
+            formFromRule(latest.ruleKey, latest.rule),
+          );
+          setRebasedFrom(next);
+          setSource(latest);
+          setForm(rebased.form);
+          setRebaseNote(review);
+          setFormError(rebased.changed.length
+            ? 'This rule was changed in another tab, so nothing was saved. The dialog now shows the saved rule with your changes applied. Review it and select Save rule again.'
+            : 'This rule was changed in another tab, so nothing was saved. You had not changed anything in this dialog, so it now shows the rule as saved in the other tab.');
+          return;
+        }
+        if (requestError.status === 404 && mode === 'edit') {
+          setMode('create');
+          setSource(null);
+          setRebasedFrom(null);
+          setFormError(`${message} Your entries are kept: select Save rule to create this rule again, or Cancel.`);
+          return;
+        }
+      }
+      setFormError(message);
     } finally {
       setSubmitting(false);
     }
@@ -425,11 +471,15 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
     if (!window.confirm(`Delete rule ${scopeLabel(rule.ruleKey)}? Its values will fall back to inherited rules.`)) {
       return;
     }
+    setNotice(null);
     try {
-      await api.deleteUnitRule(publisherId, rule.id);
+      const deleted = await api.deleteUnitRule(publisherId, rule.id);
+      setNotice(keptIntervalsNotice(deleted.keptUnitRuleIntervals));
       await load();
       await onChanged?.();
     } catch (requestError) {
+      // A successful reload clears the panel error, so reload first and report after.
+      if (isStaleRuleError(requestError)) await load();
       setError(requestError instanceof Error ? requestError.message : 'Could not delete unit rule.');
     }
   }
@@ -438,13 +488,19 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
     if (!missingReserved.length) return;
     setCreatingBaseRules(true);
     setError(null);
+    setNotice(null);
     try {
+      const kept: string[] = [];
       for (const item of missingReserved) {
-        await api.createUnitRule(publisherId, {
+        // Presets are starting values: a schedule already saved in Refresh schedules keeps applying.
+        const saved = await api.createUnitRule(publisherId, {
           ruleKey: item.key,
           rule: presetForKey(item.key),
+          followInheritedSchedule: true,
         });
+        kept.push(...saved.keptUnitRuleIntervals);
       }
+      setNotice(keptIntervalsNotice(kept));
       await load();
       await onChanged?.();
     } catch (requestError) {
@@ -483,6 +539,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
             </p>
           </div>
           <div className="unit-rule-toolbar-actions">
+            <button className="button secondary" disabled={loading || submitting || creatingBaseRules} onClick={() => void load()} type="button">Reload rules</button>
             {missingReserved.length ? (
               <button
                 className="button secondary"
@@ -505,6 +562,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
         </div>
 
         {error ? <div className="form-error config-error">{error}</div> : null}
+        {notice ? <p role="status" className="loading-summary-help unit-rules-notice">{notice}</p> : null}
         {loading ? <div className="config-loading">Loading unit rules from D1…</div> : null}
 
         <div className="rule-inheritance-strip">
@@ -567,15 +625,17 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 <div className="unit-rule-heading">
                   <div>
                     <span className="rule-scope-chip exact">Exact</span>
-                    <h3>{rule.ruleKey}</h3>
-                    <p>Overrides inherited behavior only for this ad unit.</p>
+                    <h3>{rule.ruleKey === '__INTERSTITIAL__' ? 'Interstitial fallback' : rule.ruleKey}</h3>
+                    <p>{rule.ruleKey === '__INTERSTITIAL__' ? 'Controls only the script-managed TakeOver fallback.' : 'Overrides inherited behavior only for this ad unit.'}</p>
                   </div>
                   <span className="rule-status configured">configured</span>
                 </div>
                 <div className="rule-summary-list">
-                  <div><span>Timeout</span><strong>{timeoutText(rule.rule)}</strong></div>
-                  <div><span>Lazy</span><strong>{lazyText(rule.rule)}</strong></div>
-                  <div><span>Refresh</span><strong>{refreshText(rule.rule)}</strong></div>
+                  {rule.ruleKey !== '__INTERSTITIAL__' ? <>
+                    <div><span>Timeout</span><strong>{timeoutText(rule.rule)}</strong></div>
+                    <div><span>Lazy</span><strong>{lazyText(rule.rule)}</strong></div>
+                    <div><span>Refresh</span><strong>{refreshText(rule.rule)}</strong></div>
+                  </> : null}
                   <div><span>Key-value mappings</span><strong>{rule.rule.conditionalMappings?.length ?? 0}</strong></div>
                 </div>
                 <div className="ad-unit-actions">
@@ -601,8 +661,11 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
             <span className="panel-kicker">Resolved configuration</span>
             <h3>Effective behavior by ad unit</h3>
           </div>
-          <span>Includes inheritance</span>
+          <span>{loadingSummary?.runtimeVersion ? `Loading · script ${runtimeLabel(loadingSummary.runtimeVersion)}` : 'Includes inheritance'}</span>
         </div>
+        <p className="loading-summary-help">Loading follows the selected script’s ATF/BTF defaults, group rules and Display &amp; loading overrides. These are saved settings for the next generated package.</p>
+        {loadingSummary?.issue ? <p role="status" className="form-error">{loadingSummary.issue}</p> : null}
+        {loadingSummary?.refresh?.warnings.map(warning => <p role="status" className="loading-summary-help" key={warning}>{warning}</p>)}
 
         <div className="effective-rule-table-wrap">
           <table className="effective-rule-table">
@@ -611,7 +674,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 <th>Ad unit</th>
                 <th>Scope</th>
                 <th>Timeout</th>
-                <th>Lazy auction</th>
+                <th>Loading</th>
                 <th>Refresh</th>
                 <th>Mappings</th>
               </tr>
@@ -621,12 +684,17 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 <tr key={unit.id}>
                   <td><strong>{unit.code}</strong><small>{unit.type}</small></td>
                   <td>{exact ? 'Exact override' : `${unit.type} inherited`}</td>
-                  <td>{effective.timeout} ms</td>
-                  <td>{effective.lazy?.enabled ? `${effective.lazy.fetchMarginPx}px → ${effective.lazy.renderMarginPx}px` : 'Disabled'}</td>
+                  <td>{loadingSummary?.refresh?.units.find(item => item.code === unit.code)?.timeout ?? effective.timeout} ms</td>
+                  <td className="effective-loading-cell">{(() => {
+                    const summary = loadingSummary?.units.find(item => item.code === unit.code);
+                    return summary ? <><strong>{summary.label}</strong><small>{summary.source}</small><small>{summary.detail}</small></>
+                      : <span>{loading ? 'Loading settings…' : 'Loading behavior unavailable'}</span>;
+                  })()}</td>
                   <td>
-                    {effective.refresh?.enabled
-                      ? `${effective.refresh.minSeconds}s · ${effective.refresh.minViewPct}%`
-                      : 'Disabled'}
+                    {(() => {
+                      const refresh = loadingSummary?.refresh?.units.find(item => item.code === unit.code);
+                      return refresh ? <><strong>{refresh.label}</strong><small>{refresh.detail}</small></> : 'Refresh behavior unavailable';
+                    })()}
                   </td>
                   <td>{effective.conditionalMappings?.filter((mapping) => mapping.enabled).length ?? 0}</td>
                 </tr>
@@ -661,7 +729,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 <div>
                   <span className="rule-section-kicker">Target</span>
                   <h3>Inheritance scope</h3>
-                  <p>Exact ad-unit rules are applied after Default and ATF/BTF rules.</p>
+                  <p>{isInterstitial ? 'Applies only to the Interstitial fallback requested by this script after TakeOver. It does not activate a standalone Interstitial. Configure independently loaded GAM codeless Interstitials in GAM.' : 'Exact ad-unit rules are applied after Default and ATF/BTF rules.'}</p>
                 </div>
                 <label>
                   <span>Rule target</span>
@@ -684,6 +752,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 </label>
               </section>
 
+              {!isInterstitial ? <>
               <section className="rule-form-section">
                 <div className="rule-section-heading">
                   <div>
@@ -699,7 +768,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 {form.overrideTimeout ? (
                   <label className="compact-number-field">
                     <span>Timeout</span>
-                    <div><input min="100" max="60000" onChange={(event) => updateForm('timeout', Number(event.target.value))} type="number" value={form.timeout} /><b>ms</b></div>
+                    <div><input min="100" max="30000" onChange={(event) => updateForm('timeout', Number(event.target.value))} type="number" value={form.timeout} /><b>ms</b></div>
                   </label>
                 ) : <div className="inherit-note">This scope inherits timeout from its parent rule.</div>}
               </section>
@@ -763,15 +832,24 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                 ) : <div className="inherit-note">This scope inherits refresh behavior from its parent rule.</div>}
               </section>
 
+              </> : null}
+
               <section className="rule-form-section conditional-section">
                 <div className="rule-section-heading">
                   <div>
                     <span className="rule-section-kicker">Key-values</span>
-                    <h3>Conditional size-map and slot rules</h3>
-                    <p>Example: when pageType equals home, use Billboard_Home. Higher priority runs first.</p>
+                    <h3>{isInterstitial ? 'Conditional Interstitial fallback' : 'Conditional size-map and slot rules'}</h3>
+                    <p>Script 3.19.0 adds geo_country from country detection. Example: geo_country equals DE selects a map for Germany. Only positions with country conditions wait for that result. Page keys such as category still come from window.adsKeywords, set before ads.js. Higher priority runs first; no match keeps the assigned map and state.</p>
+                    {isInterstitial ? <p>This rule controls the script-managed TakeOver fallback only. Independently loaded GAM codeless Interstitials need their own GAM targeting. Known country is also sent to GAM as geo_country.</p> : <p>Conditional rules support Banner and Sticky. In scripts 3.21.1 and 3.21.2, Default, ATF and BTF conditions apply only to those formats; TakeOver and Outstream keep their own maps and serving behavior. Other scripts, including 3.22.0, can reject packages when those group rules reach TakeOver or Outstream. Interstitial fallback has its own rule target.</p>}
+                    <p>The Only Serbia preset disables eligible positions in this scope for other or unknown countries. A Default or group preset does not restrict TakeOver or Outstream. Keep it ahead of other matching rules; an Enable action alone does not restrict a position to a country.</p>
                   </div>
-                  <button className="button secondary" onClick={addMapping} type="button">＋ Mapping</button>
                 </div>
+                <div className="runtime-actions">
+                  <button className="button secondary" onClick={addMapping} type="button">＋ Mapping</button>
+                  <button className="button secondary" onClick={addCountryMapping} type="button">＋ Country mapping</button>
+                  <button className="button secondary" onClick={addOnlySerbiaPreset} type="button">Only Serbia preset</button>
+                </div>
+                <datalist id={`rule-keys-${publisherId}`}><option value="category" /><option value="pageType" /><option value="geo_country" /></datalist>
 
                 <div className="conditional-mapping-list">
                   {form.conditionalMappings.map((mapping, mappingIndex) => (
@@ -790,9 +868,9 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                       <div className="condition-list">
                         {mapping.conditions.map((condition, conditionIndex) => (
                           <div className="condition-row" key={condition.id}>
-                            <label><span>Key</span><input onChange={(event) => updateCondition(mapping.id, condition.id, { key: event.target.value })} placeholder="pageType" value={condition.key} /></label>
-                            <label><span>Operator</span><select onChange={(event) => updateCondition(mapping.id, condition.id, { operator: event.target.value as UnitRuleConditionOperator })} value={condition.operator}><option value="equals">equals</option><option value="notEquals">does not equal</option><option value="contains">contains</option><option value="notContains">does not contain</option><option value="exists">exists</option><option value="notExists">does not exist</option></select></label>
-                            <label><span>Value</span><input disabled={condition.operator === 'exists' || condition.operator === 'notExists'} onChange={(event) => updateCondition(mapping.id, condition.id, { value: event.target.value })} placeholder="home" value={condition.value} /></label>
+                            <label><span>Key</span><input onChange={(event) => updateCondition(mapping.id, condition.id, { key: event.target.value, ...(event.target.value === 'geo_country' && ['contains', 'notContains'].includes(condition.operator) ? { operator: 'equals' } : {}) })} list={`rule-keys-${publisherId}`} placeholder="category or geo_country" value={condition.key} /></label>
+                            <label><span>Operator</span><select onChange={(event) => updateCondition(mapping.id, condition.id, { operator: event.target.value as UnitRuleConditionOperator })} value={condition.operator}><option value="equals">equals</option><option value="notEquals">does not equal</option>{condition.key !== 'geo_country' ? <><option value="contains">contains</option><option value="notContains">does not contain</option></> : null}<option value="exists">exists</option><option value="notExists">does not exist</option></select></label>
+                            <label><span>Value</span><input disabled={condition.operator === 'exists' || condition.operator === 'notExists'} onChange={(event) => updateCondition(mapping.id, condition.id, { value: condition.key === 'geo_country' ? event.target.value.toUpperCase() : event.target.value })} placeholder={condition.key === 'geo_country' ? 'RS' : 'Naslovna'} value={condition.value} /></label>
                             <button aria-label={`Remove condition ${conditionIndex + 1}`} className="condition-remove" disabled={mapping.conditions.length === 1} onClick={() => removeCondition(mapping.id, condition.id)} type="button">×</button>
                           </div>
                         ))}
@@ -800,7 +878,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
                       </div>
 
                       <div className="mapping-action-grid">
-                        <label><span>Use size map</span><select onChange={(event) => updateMapping(mapping.id, { sizeMapKey: event.target.value || null })} value={mapping.sizeMapKey ?? ''}><option value="">Keep inherited map</option>{sizeMaps.map((map) => <option key={map.id} value={map.name}>{map.name}</option>)}</select></label>
+                        {!isInterstitial ? <label><span>Use size map</span><select onChange={(event) => updateMapping(mapping.id, { sizeMapKey: event.target.value || null })} value={mapping.sizeMapKey ?? ''}><option value="">Keep inherited map</option>{sizeMaps.map((map) => <option key={map.id} value={map.name}>{map.name}</option>)}</select></label> : null}
                         <label><span>Slot action</span><select onChange={(event) => updateMapping(mapping.id, { slotAction: event.target.value as UnitRuleSlotAction })} value={mapping.slotAction}><option value="inherit">Keep inherited state</option><option value="enable">Enable slot</option><option value="disable">Disable slot</option></select></label>
                       </div>
                     </article>
@@ -813,6 +891,7 @@ export default function UnitRulesPanel({ publisherId, onChanged }: Props) {
               </section>
 
               {formError ? <div className="form-error">{formError}</div> : null}
+              {rebaseNote ? <EditRebaseReview review={rebaseNote} /> : null}
               <div className="modal-actions unit-rule-modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeForm} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting || !form.ruleKey} type="submit">

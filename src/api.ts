@@ -47,6 +47,7 @@ import type {
   SizeMapsResponse,
   UnitRule,
   UnitRuleResponse,
+  UnitRuleSaveResult,
   UnitRulesResponse,
   UpdateAdUnitInput,
   UpdateBidderInput,
@@ -57,11 +58,24 @@ import type {
   UpdateUnitRuleInput,
 } from './shared/types';
 
+// Carries the HTTP status so panels can react to 404/409 save refusals.
+export class ApiError extends Error {
+  readonly status: number;
+  readonly details: unknown;
+
+  constructor(message: string, status: number, details?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.details = details;
+  }
+}
+
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
-  const payload = (await response.json()) as T & { error?: string };
+  const payload = (await response.json()) as T & { error?: string; details?: unknown };
   if (!response.ok) {
-    throw new Error(payload.error || `Request failed with status ${response.status}.`);
+    throw new ApiError(payload.error || `Request failed with status ${response.status}.`, response.status, payload.details);
   }
   return payload;
 }
@@ -222,8 +236,8 @@ export const api = {
     publisherId: string,
     adUnitId: string,
     input: UpdateAdUnitInput,
-  ): Promise<AdUnit> {
-    const payload = await requestJson<AdUnitResponse>(
+  ): Promise<{ adUnit: AdUnit; keptUnitRuleIntervals: string[] }> {
+    const payload = await requestJson<AdUnitResponse & { keptUnitRuleIntervals?: string[] }>(
       `/api/publishers/${encodeURIComponent(publisherId)}/ad-units/${encodeURIComponent(adUnitId)}`,
       {
         method: 'PATCH',
@@ -231,15 +245,15 @@ export const api = {
         body: JSON.stringify(input),
       },
     );
-    return payload.adUnit;
+    return { adUnit: payload.adUnit, keptUnitRuleIntervals: payload.keptUnitRuleIntervals ?? [] };
   },
 
   async duplicateAdUnit(
     publisherId: string,
     adUnitId: string,
     input: DuplicateAdUnitInput,
-  ): Promise<AdUnit> {
-    const payload = await requestJson<AdUnitResponse>(
+  ): Promise<{ adUnit: AdUnit; keptUnitRuleIntervals: string[] }> {
+    const payload = await requestJson<AdUnitResponse & { keptUnitRuleIntervals?: string[] }>(
       `/api/publishers/${encodeURIComponent(publisherId)}/ad-units/${encodeURIComponent(adUnitId)}/duplicate`,
       {
         method: 'POST',
@@ -247,7 +261,7 @@ export const api = {
         body: JSON.stringify(input),
       },
     );
-    return payload.adUnit;
+    return { adUnit: payload.adUnit, keptUnitRuleIntervals: payload.keptUnitRuleIntervals ?? [] };
   },
 
   async deleteAdUnit(publisherId: string, adUnitId: string): Promise<string> {
@@ -309,10 +323,12 @@ export const api = {
     return payload.sizeMap;
   },
 
-  async deleteSizeMap(publisherId: string, sizeMapId: string): Promise<string> {
+  async deleteSizeMap(publisherId: string, sizeMapId: string, confirmPageTypeChanges?: string): Promise<string> {
     const payload = await requestJson<DeleteSizeMapResponse>(
       `/api/publishers/${encodeURIComponent(publisherId)}/size-maps/${encodeURIComponent(sizeMapId)}`,
-      { method: 'DELETE' },
+      confirmPageTypeChanges
+        ? { method: 'DELETE', headers: jsonHeaders, body: JSON.stringify({ confirmPageTypeChanges }) }
+        : { method: 'DELETE' },
     );
     return payload.deletedId;
   },
@@ -324,7 +340,7 @@ export const api = {
     return payload.unitRules;
   },
 
-  async createUnitRule(publisherId: string, input: CreateUnitRuleInput): Promise<UnitRule> {
+  async createUnitRule(publisherId: string, input: CreateUnitRuleInput): Promise<UnitRuleSaveResult> {
     const payload = await requestJson<UnitRuleResponse>(
       `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules`,
       {
@@ -333,14 +349,14 @@ export const api = {
         body: JSON.stringify(input),
       },
     );
-    return payload.unitRule;
+    return { unitRule: payload.unitRule, keptUnitRuleIntervals: payload.keptUnitRuleIntervals ?? [] };
   },
 
   async updateUnitRule(
     publisherId: string,
     unitRuleId: string,
     input: UpdateUnitRuleInput,
-  ): Promise<UnitRule> {
+  ): Promise<UnitRuleSaveResult> {
     const payload = await requestJson<UnitRuleResponse>(
       `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules/${encodeURIComponent(unitRuleId)}`,
       {
@@ -349,14 +365,14 @@ export const api = {
         body: JSON.stringify(input),
       },
     );
-    return payload.unitRule;
+    return { unitRule: payload.unitRule, keptUnitRuleIntervals: payload.keptUnitRuleIntervals ?? [] };
   },
 
   async duplicateUnitRule(
     publisherId: string,
     unitRuleId: string,
     input: DuplicateUnitRuleInput,
-  ): Promise<UnitRule> {
+  ): Promise<UnitRuleSaveResult> {
     const payload = await requestJson<UnitRuleResponse>(
       `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules/${encodeURIComponent(unitRuleId)}/duplicate`,
       {
@@ -365,15 +381,15 @@ export const api = {
         body: JSON.stringify(input),
       },
     );
-    return payload.unitRule;
+    return { unitRule: payload.unitRule, keptUnitRuleIntervals: payload.keptUnitRuleIntervals ?? [] };
   },
 
-  async deleteUnitRule(publisherId: string, unitRuleId: string): Promise<string> {
+  async deleteUnitRule(publisherId: string, unitRuleId: string): Promise<{ deletedId: string; keptUnitRuleIntervals: string[] }> {
     const payload = await requestJson<DeleteUnitRuleResponse>(
       `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules/${encodeURIComponent(unitRuleId)}`,
       { method: 'DELETE' },
     );
-    return payload.deletedId;
+    return { deletedId: payload.deletedId, keptUnitRuleIntervals: payload.keptUnitRuleIntervals ?? [] };
   },
 
   async listBidders(publisherId: string): Promise<Bidder[]> {

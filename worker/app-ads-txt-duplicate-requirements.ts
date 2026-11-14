@@ -1,3 +1,4 @@
+import { withAuthenticatedActor, copyAuthenticatedActor } from './http';
 import {
   getAuthenticatedUser,
   isSameOriginMutation,
@@ -32,11 +33,7 @@ const downstream = baseApp as {
   scheduled?(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> | void;
 };
 
-function withAuthenticatedActor(request: Request, email: string): Request {
-  const headers = new Headers(request.headers);
-  headers.set('x-user-email', email);
-  return new Request(request, { headers });
-}
+
 
 function normalizeVerifiedSameOriginRequest(request: Request): Request {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return request;
@@ -127,7 +124,7 @@ export default {
           let rollbackError = '';
           try {
             const rollbackResponse = await downstream.fetch(
-              new Request(rollbackUrl, { method: 'DELETE', headers: rollbackHeaders }),
+              copyAuthenticatedActor(verified, new Request(rollbackUrl, { method: 'DELETE', headers: rollbackHeaders })),
               env,
               ctx,
             );

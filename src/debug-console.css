@@ -205,6 +205,26 @@
   line-height: 1.5;
 }
 
+.debug-position-target {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.debug-position-target input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+}
+
 .debug-command-scope {
   display: flex;
   flex-wrap: wrap;

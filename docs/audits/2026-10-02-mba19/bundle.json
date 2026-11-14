@@ -1,0 +1,9 @@
+{
+  "sha256": "30d6a2409558d89fea6f5463f934bdba3983936a4f782d4094d4de25552a799f",
+  "rawBytes": 6539496,
+  "gzipBytes": 1851335,
+  "configurationsIdentical": true,
+  "wranglerUploadKiB": 6386.23,
+  "wranglerGzipKiB": 1819.36,
+  "scope": "Local credential-free dry-run only"
+}

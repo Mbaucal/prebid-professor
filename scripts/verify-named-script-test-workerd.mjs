@@ -1,0 +1,64 @@
+import assert from 'node:assert/strict';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {namedScriptFixture,ORIGIN,EMAIL,PASSWORD} from './named-script-test-fixture.mjs';
+import {buildSavedScript,buildSavedTest} from './saved-script-package.mjs';
+import {sha256} from './static-aa-package.mjs';
+const f=await namedScriptFixture(),checks=[];
+const check=(name,value)=>{assert(value,name);checks.push(name);};
+const base='/api/publishers/test-named-script';
+let cookie='';
+async function call(path,method='GET',body,headers={}){
+  return f.mf.dispatchFetch(ORIGIN+path,{method,redirect:'manual',headers:{...(cookie?{cookie}:{}),...(method!=='GET'?{origin:ORIGIN,'content-type':'application/json'}:{}),...headers},body:body===undefined?undefined:JSON.stringify(body)});
+}
+async function json(path,method='GET',body,status=200,headers={}){const response=await call(path,method,body,headers);const data=await response.json();assert.equal(response.status,status,JSON.stringify(data));return data;}
+const original=async()=>JSON.stringify((await f.db.prepare("SELECT p.*,c.config_json FROM publishers p JOIN publisher_configs c ON c.publisher_id=p.id WHERE p.id='test-site'").first()));
+try{
+  const before=await original();
+  await f.bucket.put('publishers/test-site/kept-fixture.txt','Existing TEST object');
+  check('Signed-out named API is refused',(await call(base+'/script-library')).status===401);
+  check('Signed-out named page redirects to TEST login',(await call('/named-scripts')).status===303);
+  const login=await f.mf.dispatchFetch(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:EMAIL,password:PASSWORD}),redirect:'manual'});
+  assert.equal(login.status,303);cookie=login.headers.get('set-cookie').split(';')[0];
+  check('GET does not prepare named data',(await json('/test-api/named-scripts/status')).ready===false&&(await f.db.prepare('SELECT COUNT(*) n FROM publishers').first()).n===1);
+  await f.db.prepare("UPDATE publishers SET domain='https://www.TANJUG.rs/' WHERE id='test-site'").run();
+  await json('/test-api/named-scripts/prepare','POST',{confirm:'prepare-named-script-test-copy'},409);
+  check('Collision refuses without creating or modifying a fixture',(await f.db.prepare('SELECT COUNT(*) n FROM publishers').first()).n===1&&(await f.db.prepare("SELECT domain FROM publishers WHERE id='test-site'").first()).domain==='https://www.TANJUG.rs/');
+  await f.db.prepare("UPDATE publishers SET domain='example.invalid' WHERE id='test-site'").run();
+  const setup=await Promise.all([json('/test-api/named-scripts/prepare','POST',{confirm:'prepare-named-script-test-copy'}),json('/test-api/named-scripts/prepare','POST',{confirm:'prepare-named-script-test-copy'})]);
+  check('Concurrent explicit setup creates one exact fixture',setup.every(x=>x.ready)&&setup.filter(x=>x.created).length===1&&(await f.db.prepare('SELECT COUNT(*) n FROM publishers').first()).n===2);
+  check('Setup preserves existing TEST identity and settings',await original()===before);
+  check('Only exact fixed-site mutation routes exist',(await call('/api/publishers/test-site/prebid-mode','PUT',{})).status===405&&(await call(base+'/ad-units','POST',{})).status===404);
+  const mode=await json(base+'/prebid-mode');
+  const update={revision:mode.revision,enabled:true,bidCache:{enabled:false,maxBidAgeSeconds:60,positionOverrides:{Billboard:false,Sticky:true}}};
+  await json(base+'/prebid-mode','PUT',update,403,{origin:'https://foreign.invalid'});
+  await json(base+'/prebid-mode','PUT',update,200,{'cf-access-authenticated-user-email':'forged@example.invalid'});
+  await json(base+'/prebid-mode','PUT',update,409);
+  check('Shared cache writer preserves trusted actor and stale-form guard',(await f.db.prepare("SELECT actor FROM audit_log WHERE action='prebid_mode.updated'").first()).actor===EMAIL);
+  const inputs={base:await readFile('.generated/tanjug-pilot/ads.js'),previousArchive:await readFile('.generated/tanjug-cmp/tanjug-aa-1.0.2.zip')};
+  const state=await json(base+'/script-library');
+  const request={revision:state.revision,name:'Position test copy',refreshSeconds:2};
+  const saved=await json(base+'/script-library/scripts','POST',request,201);
+  const expected=await buildSavedScript({...inputs,name:request.name,settings:{mode:'fresh-only',refreshSeconds:2,maxBidAgeSeconds:60,positionOverrides:{Billboard:false,Sticky:true}}});
+  const path=base+'/script-library/scripts/'+saved.item.id+'.zip';
+  const bytes=new Uint8Array(await(await call(path)).arrayBuffer());
+  check('Compiled TEST generator matches the reviewed offline ZIP exactly',saved.item.id===expected.id&&sha256(bytes)===expected.archiveSha256);
+  check('Retry reuses the original version',(await json(base+'/script-library/scripts','POST',request)).item.id===saved.item.id);
+  const testRequest={revision:state.revision,name:'Named test A/A',scriptA:saved.item.id,scriptB:saved.item.id,trafficBPercent:50};
+  const paired=await json(base+'/script-library/tests','POST',testRequest,201);
+  const expectedTest=await buildSavedTest({...inputs,name:testRequest.name,trafficBPercent:50,scripts:{A:expected,B:expected}});
+  check('A/B composition retains the exact saved runtime bytes',sha256(new Uint8Array(await(await call(base+'/script-library/tests/'+paired.item.id+'.zip')).arrayBuffer()))===expectedTest.archiveSha256);
+  const confirmation={confirmId:saved.item.id,sha256:saved.item.sha256};
+  await json(path,'DELETE',{confirmId:'wrong',sha256:saved.item.sha256},422);
+  await json(path,'DELETE',confirmation);check('Deleted script cannot be downloaded',(await call(path)).status===410);
+  await json(path,'PUT',confirmation);
+  check('Restore returns the original ZIP',sha256(new Uint8Array(await(await call(path)).arrayBuffer()))===expected.archiveSha256);
+  const changed=await json(base+'/prebid-mode');
+  await json(base+'/prebid-mode','PUT',{revision:changed.revision,enabled:true,bidCache:{enabled:true,maxBidAgeSeconds:30}});
+  check('Later settings do not change saved packages',sha256(new Uint8Array(await(await call(path)).arrayBuffer()))===expected.archiveSha256);
+  check('All named R2 writes stay inside the fixture site prefix',(await f.bucket.list()).objects.every(o=>o.key==='publishers/test-site/kept-fixture.txt'||o.key.startsWith('site-script-library/v1/test-named-script/')));
+  check('Existing site and object remain unchanged',await original()===before&&await(await f.bucket.get('publishers/test-site/kept-fixture.txt')).text()==='Existing TEST object');
+  check('No outgoing application request',f.outbound()===0);
+  await mkdir('.generated/named-script-test-evidence',{recursive:true});
+  await writeFile('.generated/named-script-test-evidence/workerd.json',JSON.stringify({scope:'Local compiled TEST Worker, real ephemeral D1/R2; no hosted claims',checks,passed:checks.length,failed:0,packageSha256:expected.archiveSha256},null,2));
+  console.log(JSON.stringify({passed:checks.length,failed:0}));
+}finally{await f.close();}

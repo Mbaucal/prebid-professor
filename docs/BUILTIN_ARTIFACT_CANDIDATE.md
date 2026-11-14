@@ -8,6 +8,8 @@ The ZIP includes ads.js, ads.min.js, sticky.css, min-height.css, config.json, ma
 
 Minification uses pinned Terser 5.44.0 with compress and mangle disabled: parser-based comment/whitespace formatting, no regex comment removal, no remote compilation. Syntax errors fail the whole bundle. The readable output honors cleanComments. The same sticky CSS source is injected by ads.js and exported as sticky.css; the stylesheet is optional in the HTML example. The existing full-width centered bar appearance is preserved. Compact/right-aligned/transparent and Flex settings remain MBA-47/MBA-24, not silently implemented here.
 
+Parser-based formatting is not transpilation to older JavaScript versions. Terser's `ecma: 2015` setting can print ES2015 constructs, and later frozen runtime layers contain ES2018 object spread or ES2020 optional chaining. Do not describe these outputs as ES5-compatible. Acorn parsing of the vendored Prebid 11.34.0 file requires ES2022 independently of the Tessera wrapper. The October audit verified syntax levels; it did not measure affected browser traffic or establish a supported-browser policy. Browser-compatibility work must specify that policy and verify the final wrapper and separate Prebid file without rewriting historical runtime sources.
+
 Responsive placeholders explicitly reset to zero at empty or fluid-only breakpoints. Selected Sticky and separate TakeOver are excluded from placeholder CSS. Height-based size-map breakpoints and duplicate widths fail rather than emit inconsistent layout.
 
 ## Consistency and safety

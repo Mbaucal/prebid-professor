@@ -1,63 +1,27 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { api } from '../api';
-import type { AdUnit, UnitRule } from '../shared/types';
+import { api, ApiError } from '../api';
+import type { RebaseReview } from '../edit-rebase';
+import {
+  afterEdit, afterRefusal, atfGlobalRefresh, atfIsGlobalSource, baselineFromListing, defaultForm, formError, inheritedFrom, listingAfterSave, listingScript,
+  parseSequence, refreshSources, requestBody, scopeName, storesNothing, withEdit,
+  type AdvancedRule, type Baseline, type FormState, type Listing, type MirroredRow, type Saved,
+} from '../refresh-form';
+import type { RefreshScript } from '../../worker/refresh-inheritance';
+import type { AdUnit } from '../shared/types';
+import EditRebaseReview from './EditRebaseReview';
 
 type Props = {
   publisherId: string;
   onChanged?: () => void | Promise<void>;
 };
 
-type RefreshMode = 'fixed' | 'firstThenFixed' | 'percentage' | 'sequence';
+/** The listing, with each position's ATF/BTF group from the same read: the parents its form inherits from. */
+type AdvancedPayload = Listing & { ok: true };
 
-type RefreshSchedule = {
-  mode: RefreshMode;
-  fixedSeconds: number;
-  firstSeconds: number;
-  nextSeconds: number;
-  growthPercent: number;
-  maxSeconds: number;
-  sequenceSeconds: number[];
-  repeatLast: boolean;
-};
-
-type AdvancedRefresh = {
-  enabled: boolean;
-  minSeconds: number;
-  minViewPct: number;
-  exitViewPct: number;
-  accumulateViewTime: boolean;
-  minGapSeconds: number;
-  maxRefreshes: number;
-  requirePreviousViewable: boolean;
-  checkEveryMs: number;
-  schedule: RefreshSchedule;
-};
-
-type AdvancedRule = {
-  timeout?: number;
-  cmpTimeout?: number;
-  refresh?: Partial<AdvancedRefresh> & { schedule?: Partial<RefreshSchedule> };
-};
-
-type FormState = {
-  ruleKey: string;
-  timeout: number;
-  cmpTimeout: number;
-  refreshEnabled: boolean;
-  mode: RefreshMode;
-  fixedSeconds: number;
-  firstSeconds: number;
-  nextSeconds: number;
-  growthPercent: number;
-  maxSeconds: number;
-  sequenceText: string;
-  minViewPct: number;
-  exitViewPct: number;
-  accumulateViewTime: boolean;
-  minGapSeconds: number;
-  maxRefreshes: number;
-  requirePreviousViewable: boolean;
-  checkEveryMs: number;
+type SavePayload = Saved & {
+  ok: true;
+  keptUnitRuleIntervals?: string[];
+  appliesToAdUnits?: string[];
 };
 
 const TARGETS = [
@@ -65,87 +29,6 @@ const TARGETS = [
   { key: '__ATF__', label: 'ATF group' },
   { key: '__BTF__', label: 'BTF group' },
 ];
-
-function defaultForm(ruleKey = '__DEFAULT__'): FormState {
-  return {
-    ruleKey,
-    timeout: ruleKey === '__ATF__' ? 2200 : 2500,
-    cmpTimeout: 1500,
-    refreshEnabled: true,
-    mode: 'fixed',
-    fixedSeconds: 30,
-    firstSeconds: 20,
-    nextSeconds: 30,
-    growthPercent: 20,
-    maxSeconds: 120,
-    sequenceText: '20, 30',
-    minViewPct: ruleKey === '__ATF__' ? 60 : 50,
-    exitViewPct: 10,
-    accumulateViewTime: true,
-    minGapSeconds: 0,
-    maxRefreshes: 20,
-    requirePreviousViewable: false,
-    checkEveryMs: 5000,
-  };
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function numberValue(value: unknown, fallback: number): number {
-  const candidate = Number(value);
-  return Number.isFinite(candidate) ? candidate : fallback;
-}
-
-function parseSequence(value: string): number[] {
-  return value
-    .split(/[;,\s]+/)
-    .map((item) => Number(item))
-    .filter((item) => Number.isFinite(item) && item > 0);
-}
-
-function formFromRule(ruleKey: string, rule: AdvancedRule | undefined): FormState {
-  const base = defaultForm(ruleKey);
-  if (!rule) return base;
-  const refresh = asRecord(rule.refresh);
-  const schedule = asRecord(refresh.schedule);
-  const legacySeconds = numberValue(refresh.minSeconds, base.fixedSeconds);
-  const sequence = Array.isArray(schedule.sequenceSeconds)
-    ? schedule.sequenceSeconds.map((item) => Number(item)).filter((item) => Number.isFinite(item))
-    : [base.firstSeconds, base.nextSeconds];
-
-  return {
-    ruleKey,
-    timeout: numberValue(rule.timeout, base.timeout),
-    cmpTimeout: numberValue(rule.cmpTimeout, base.cmpTimeout),
-    refreshEnabled: typeof refresh.enabled === 'boolean' ? refresh.enabled : base.refreshEnabled,
-    mode: ['fixed', 'firstThenFixed', 'percentage', 'sequence'].includes(String(schedule.mode))
-      ? (String(schedule.mode) as RefreshMode)
-      : 'fixed',
-    fixedSeconds: numberValue(schedule.fixedSeconds, legacySeconds),
-    firstSeconds: numberValue(schedule.firstSeconds, legacySeconds),
-    nextSeconds: numberValue(schedule.nextSeconds, legacySeconds),
-    growthPercent: numberValue(schedule.growthPercent, base.growthPercent),
-    maxSeconds: numberValue(schedule.maxSeconds, base.maxSeconds),
-    sequenceText: sequence.length ? sequence.join(', ') : base.sequenceText,
-    minViewPct: numberValue(refresh.minViewPct, base.minViewPct),
-    exitViewPct: numberValue(refresh.exitViewPct, base.exitViewPct),
-    accumulateViewTime:
-      typeof refresh.accumulateViewTime === 'boolean'
-        ? refresh.accumulateViewTime
-        : base.accumulateViewTime,
-    minGapSeconds: numberValue(refresh.minGapSeconds, base.minGapSeconds),
-    maxRefreshes: numberValue(refresh.maxRefreshes, base.maxRefreshes),
-    requirePreviousViewable:
-      typeof refresh.requirePreviousViewable === 'boolean'
-        ? refresh.requirePreviousViewable
-        : base.requirePreviousViewable,
-    checkEveryMs: numberValue(refresh.checkEveryMs, base.checkEveryMs),
-  };
-}
 
 function schedulePreview(form: FormState, count = 7): number[] {
   const values: number[] = [];
@@ -163,18 +46,77 @@ function schedulePreview(form: FormState, count = 7): number[] {
   return values;
 }
 
+function keptIntervalsText(keys: string[]): string {
+  const names = keys.map((key) => key === '__DEFAULT__' ? 'Default' : key === '__ATF__' ? 'ATF group' : key === '__BTF__' ? 'BTF group' : key);
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `${list} ${names.length === 1 ? 'keeps its' : 'keep their'} own interval from Unit rules.`;
+}
+
+function savedScheduleText(ruleKey: string, kept: string[], appliesTo?: string[]): string {
+  if (!kept.length) return `Saved ${ruleKey}. The runtime profile will apply this schedule during release generation.`;
+  // Every position below this scope keeps a more specific interval: say so instead of promising an effect.
+  if (appliesTo && !appliesTo.length) return `Saved ${ruleKey}. This schedule currently applies to no ad unit. ${keptIntervalsText(kept)}`;
+  return `Saved ${ruleKey}. The runtime profile will apply this schedule during release generation. ${keptIntervalsText(kept)}`;
+}
+
+// While Default stores no refresh settings, the script reads its global refresh values from the ATF group's.
+const ATF_GLOBAL = 'the ATF group’s refresh settings, which the script uses globally while Default has none';
+
+// "Exit at and Maximum refreshes come from …": the refresh values this form shows from the ATF group's settings.
+function atfFills(fields: string[]): string {
+  const list = fields.length > 1 ? `${fields.slice(0, -1).join(', ')} and ${fields[fields.length - 1]}` : fields[0];
+  return `${list.charAt(0).toUpperCase()}${list.slice(1)} ${fields.length > 1 ? 'come' : 'comes'} from ${ATF_GLOBAL}`;
+}
+
+// Where a section the scope does not store comes from, under its inputs: the parent scopes, closest first,
+// and for refresh values none of them sets, the ATF group as the script's global source (`atfFields`).
+function inheritedNote(ruleKey: string, sources: string[], change: string, atfFields: string[] = []): string {
+  const from = sources.length
+    ? `Inherited from ${sources.map(scopeName).join(' and ')}.${atfFields.length ? ` ${atfFills(atfFields)}.` : ''}`
+    : atfFields.length
+      ? `Not set ${ruleKey === '__DEFAULT__' ? 'for Default' : 'here, in Default or in the group'}. ${atfFills(atfFields)}; the script’s own setting applies to the rest.`
+      : ruleKey === '__DEFAULT__'
+        ? 'Not set for Default: the script’s own setting applies.'
+        : 'Not set here, in Default or in the group: the script’s own setting applies.';
+  return `${from} ${change}`;
+}
+
+// The ATF group while Default has no refresh settings: what else its refresh settings decide.
+function atfSourceNote({ withSwitch, stickyApart }: { withSwitch: boolean; stickyApart: boolean }): string {
+  // Before 3.16.1 the interval a BTF scope takes is the minimum wall-clock gap if one is saved, and this switch stops every
+  // position but a BTF bottom Sticky, whose timer checks only its own rules. A saved Enter at of 0% falls back to this group's.
+  const values = withSwitch
+    ? `Enter at, Exit at and Maximum refreshes for BTF positions and the BTF group where they do not set them, and as their interval its minimum wall-clock gap when one is saved, otherwise its first interval${stickyApart ? ' (the bottom Sticky keeps its own timer)' : ''}. Turning Refresh enabled off here stops refresh for every position${stickyApart ? ' except the bottom Sticky' : ''}.`
+    : 'first interval, Enter at, Exit at and Maximum refreshes for BTF positions and the BTF group where they do not set them.';
+  return `While Default has no refresh settings, the script also uses this group’s ${values} This group’s other refresh settings apply only to ATF positions. A BTF position that saves Enter at 0% still waits for this group’s Enter at before its dwell timer counts.`;
+}
+
+const SAVES_IT = 'Changing it saves it for this scope; leaving it unchanged keeps it inherited.';
+const SAVES_SECTION = 'Changing any refresh or dwell value saves all of them for this scope, as shown';
+
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
   const payload = (await response.json()) as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error || `Request failed with status ${response.status}.`);
+  if (!response.ok) throw new ApiError(payload.error || `Request failed with status ${response.status}.`, response.status);
   return payload;
+}
+
+// The form and the version it is saved against both come from this one response.
+async function loadAdvancedRules(publisherId: string): Promise<AdvancedPayload> {
+  const payload = await requestJson<AdvancedPayload>(`/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced`);
+  return { ...payload, unitRuleRows: payload.unitRuleRows ?? {}, unitTypes: payload.unitTypes ?? {} };
 }
 
 export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) {
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
-  const [rules, setRules] = useState<UnitRule[]>([]);
+  const [rows, setRows] = useState<Record<string, MirroredRow>>({});
   const [advancedRules, setAdvancedRules] = useState<Record<string, AdvancedRule>>({});
   const [form, setForm] = useState<FormState>(() => defaultForm());
+  const [unitTypes, setUnitTypes] = useState<Record<string, string>>({});
+  // The selected script (and the bottom Sticky it may time on its own) decides what a refresh value no scope sets resolves to.
+  const [script, setScript] = useState<RefreshScript>({ runtime: null, stickyAdUnit: null });
+  const [loaded, setLoaded] = useState<Baseline>(() => ({ form: defaultForm(), rowId: null, updatedAt: null, unstored: [], inheritedRefresh: {}, carried: {} }));
+  const [rebaseNote, setRebaseNote] = useState<RebaseReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,19 +126,15 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) 
     setLoading(true);
     setError(null);
     try {
-      const [units, unitRules, advancedPayload] = await Promise.all([
-        api.listAdUnits(publisherId),
-        api.listUnitRules(publisherId),
-        requestJson<{ ok: true; advancedRules: Record<string, AdvancedRule> }>(
-          `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced`,
-        ),
-      ]);
+      const [units, advancedPayload] = await Promise.all([api.listAdUnits(publisherId), loadAdvancedRules(publisherId)]);
       setAdUnits(units);
-      setRules(unitRules);
+      setRows(advancedPayload.unitRuleRows);
       setAdvancedRules(advancedPayload.advancedRules);
-      const selected = unitRules.find((rule) => rule.ruleKey === form.ruleKey);
-      const baseRule = selected?.rule as AdvancedRule | undefined;
-      setForm(formFromRule(form.ruleKey, advancedPayload.advancedRules[form.ruleKey] ?? baseRule));
+      setUnitTypes(advancedPayload.unitTypes);
+      setScript(listingScript(advancedPayload));
+      const baseline = baselineFromListing(form.ruleKey, advancedPayload);
+      setForm(baseline.form);
+      setLoaded(baseline);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Advanced schedules could not be loaded.');
     } finally {
@@ -214,17 +152,32 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) 
   );
 
   const preview = useMemo(() => schedulePreview(form), [form]);
+  const sources = useMemo(() => {
+    const unitType = unitTypes[form.ruleKey] ?? null;
+    const from = inheritedFrom(form.ruleKey, unitType, advancedRules, rows);
+    return {
+      ownTimeout: from.ownTimeout ? [from.ownTimeout] : [],
+      ownCmpTimeout: from.ownCmpTimeout ? [from.ownCmpTimeout] : [],
+      ownRefresh: refreshSources(form.ruleKey, unitType, advancedRules, rows),
+      atfFields: atfGlobalRefresh(form.ruleKey, unitType, advancedRules, rows, script),
+      atfSource: atfIsGlobalSource(form.ruleKey, advancedRules, rows, unitTypes, script),
+    };
+  }, [form.ruleKey, unitTypes, advancedRules, rows, script]);
 
+  // An entered value makes its section this scope's own; untouched inherited sections are not
+  // saved, and a section whose values are all put back shows as inherited again.
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm((current) => afterEdit(withEdit(current, key, value), loaded));
     setSavedMessage(null);
   }
 
   function selectTarget(ruleKey: string) {
-    const rule = rules.find((item) => item.ruleKey === ruleKey);
-    setForm(formFromRule(ruleKey, advancedRules[ruleKey] ?? (rule?.rule as AdvancedRule | undefined)));
+    const baseline = baselineFromListing(ruleKey, { advancedRules, unitRuleRows: rows, unitTypes, ...script });
+    setForm(baseline.form);
+    setLoaded(baseline);
     setSavedMessage(null);
     setError(null);
+    setRebaseNote(null);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -232,59 +185,110 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) 
     setError(null);
     setSavedMessage(null);
 
-    const sequence = parseSequence(form.sequenceText);
-    if (form.mode === 'sequence' && sequence.length === 0) {
-      setError('Enter at least one sequence interval.');
+    if (storesNothing(form)) {
+      setRebaseNote(null);
+      setError(`Nothing to save: ${form.ruleKey} inherits every setting shown here. Change a value to set it for this scope.`);
       return;
     }
-    if (form.exitViewPct > form.minViewPct) {
-      setError('Exit view % should be lower than or equal to entry view %.');
+    // Only sections changed here, or timeouts the scope stores, are sent and checked.
+    const body = requestBody(form, loaded);
+    if (!Object.keys(body).length) {
+      setRebaseNote(null);
+      setError(`Nothing to save: no value was changed for ${form.ruleKey}.`);
       return;
     }
+    const invalid = formError(form, loaded);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    // A review note after a 409 stays while a save stops at this check, so the values to
+    // correct stay named.
+    setRebaseNote(null);
+
+    // What this form was built from: the scope's Unit rules row (id and version) goes with
+    // the save, so a save from a tab opened before another tab's save is refused (409).
+    const baseline = loaded;
+    const submitted = form;
 
     setSaving(true);
     try {
-      await requestJson(
+      const saved = await requestJson<SavePayload>(
         `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced/${encodeURIComponent(form.ruleKey)}`,
         {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            timeout: Number(form.timeout),
-            cmpTimeout: Number(form.cmpTimeout),
-            refresh: {
-              enabled: form.refreshEnabled,
-              minViewPct: Number(form.minViewPct),
-              exitViewPct: Number(form.exitViewPct),
-              accumulateViewTime: form.accumulateViewTime,
-              minGapSeconds: Number(form.minGapSeconds),
-              maxRefreshes: Number(form.maxRefreshes),
-              requirePreviousViewable: form.requirePreviousViewable,
-              checkEveryMs: Number(form.checkEveryMs),
-              schedule: {
-                mode: form.mode,
-                fixedSeconds: Number(form.fixedSeconds),
-                firstSeconds: Number(form.firstSeconds),
-                nextSeconds: Number(form.nextSeconds),
-                growthPercent: Number(form.growthPercent),
-                maxSeconds: Number(form.maxSeconds),
-                sequenceSeconds: sequence,
-              },
-            },
+            expectedUpdatedAt: baseline.updatedAt,
+            expectedUnitRuleId: baseline.rowId,
+            // An unchanged schedule or inherited timeout stays as saved.
+            ...body,
           }),
         },
       );
-      const [unitRules, advancedPayload] = await Promise.all([
-        api.listUnitRules(publisherId),
-        requestJson<{ ok: true; advancedRules: Record<string, AdvancedRule> }>(
-          `/api/publishers/${encodeURIComponent(publisherId)}/unit-rules-advanced`,
-        ),
-      ]);
-      setRules(unitRules);
-      setAdvancedRules(advancedPayload.advancedRules);
-      setSavedMessage(`Saved ${form.ruleKey}. The runtime profile will apply this schedule during release generation.`);
+      // The form now shows the scope as stored (its Unit rules row and Refresh record from this
+      // save's response), and its next save is checked against the row version this save wrote,
+      // taken from its own response rather than paired from a later list read. Positions that
+      // kept their Unit rules interval in this save get their records from it too.
+      const next = listingAfterSave({ advancedRules, unitRuleRows: rows, unitTypes, ...script }, submitted.ruleKey, saved);
+      const stored = baselineFromListing(submitted.ruleKey, next);
+      setForm(stored.form);
+      setLoaded(stored);
+      setAdvancedRules(next.advancedRules);
+      setRows(next.unitRuleRows);
+      setSavedMessage(savedScheduleText(submitted.ruleKey, saved.keptUnitRuleIntervals ?? [], saved.appliesToAdUnits));
+      // Other scopes may have changed with this save (kept intervals); refresh them from one
+      // consistent read. The baseline above stays: it is what this form was saved as.
+      try {
+        const latest = await loadAdvancedRules(publisherId);
+        setAdvancedRules(latest.advancedRules);
+        setRows(latest.unitRuleRows);
+        setUnitTypes(latest.unitTypes);
+        setScript(listingScript(latest));
+      } catch {
+        // The save itself succeeded and this scope's baseline is set; other scopes refresh on the next load.
+      }
       await onChanged?.();
     } catch (requestError) {
+      if (requestError instanceof ApiError && requestError.status === 409) {
+        // Nothing was saved. Reload (form values and row version from one read) and show the
+        // scope as saved now, with only the fields changed in this form applied, so saving
+        // again cannot put back the other tab's values. The next save is checked against
+        // the reloaded version, never the one this form was opened with.
+        try {
+          const [units, latest] = await Promise.all([api.listAdUnits(publisherId), loadAdvancedRules(publisherId)]);
+          // The scope's parents come from the same read as its row, so a group change counts.
+          const current = baselineFromListing(submitted.ruleKey, latest);
+          setAdUnits(units);
+          setAdvancedRules(latest.advancedRules);
+          setRows(latest.unitRuleRows);
+          setUnitTypes(latest.unitTypes);
+          setScript(listingScript(latest));
+          const outcome = afterRefusal(submitted, baseline, current);
+          if (outcome.kind === 'rebased') {
+            const key = submitted.ruleKey;
+            setLoaded(outcome.next);
+            setForm(outcome.form);
+            setRebaseNote(outcome.unchanged && !outcome.invalid ? null : outcome.review);
+            const changedElsewhere = {
+              changed: `${key} was changed in another tab`,
+              deleted: `The rule for ${key} was deleted in another tab`,
+              parents: `The settings ${key} inherits were changed in another tab`,
+            }[outcome.cause];
+            const shown = outcome.cause === 'deleted' ? `what ${key} inherits` : 'the settings saved in the other tab';
+            setError(!outcome.changed
+              ? `${changedElsewhere}, so nothing was saved. You had not changed anything here, so the form now shows ${shown}.`
+              : outcome.invalid
+                ? `${changedElsewhere}, so nothing was saved. With the settings saved there, the values shown here no longer fit together: ${outcome.invalid} Correct them, then select Save ${key} again.`
+                : outcome.unchanged
+                ? `${changedElsewhere}, so nothing was saved. None of the values shown here changed: select Save ${key} again.`
+                : `${changedElsewhere}, so nothing was saved. The form now shows the saved settings with your changes applied. Review them and select Save ${key} again.`);
+            return;
+          }
+        } catch {
+          // Keep the refusal below; the operator can still reload.
+        }
+      }
       setError(requestError instanceof Error ? requestError.message : 'Advanced schedule could not be saved.');
     } finally {
       setSaving(false);
@@ -306,6 +310,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) 
       </div>
 
       {error ? <div className="form-error config-error">{error}</div> : null}
+      {rebaseNote ? <EditRebaseReview review={rebaseNote} /> : null}
       {savedMessage ? <div className="advanced-save-message">✓ {savedMessage}</div> : null}
       {loading ? <div className="config-loading">Loading rules…</div> : null}
 
@@ -336,13 +341,15 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) 
             <div className="advanced-field-grid two">
               <label>
                 <span>Prebid auction timeout</span>
-                <div className="number-with-unit"><input min="100" max="60000" onChange={(event) => update('timeout', Number(event.target.value))} type="number" value={form.timeout} /><b>ms</b></div>
+                <div className="number-with-unit"><input min="100" max="30000" onChange={(event) => update('timeout', Number(event.target.value))} type="number" value={form.timeout} /><b>ms</b></div>
                 <small>Already supported by the frozen runtime per position.</small>
+                {form.ownTimeout ? null : <small className="advanced-inherited-note">{inheritedNote(form.ruleKey, sources.ownTimeout, SAVES_IT)}</small>}
               </label>
               <label>
                 <span>CMP wait timeout</span>
                 <div className="number-with-unit"><input min="100" max="30000" onChange={(event) => update('cmpTimeout', Number(event.target.value))} type="number" value={form.cmpTimeout} /><b>ms</b></div>
                 <small>Per-auction wrapper consent wait. The Prebid consent module itself remains globally configured.</small>
+                {form.ownCmpTimeout ? null : <small className="advanced-inherited-note">{inheritedNote(form.ruleKey, sources.ownCmpTimeout, SAVES_IT)}</small>}
               </label>
             </div>
           </article>
@@ -355,6 +362,14 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged }: Props) 
               </div>
               <label className="advanced-toggle"><input checked={form.refreshEnabled} onChange={(event) => update('refreshEnabled', event.target.checked)} type="checkbox" /><span>Refresh enabled</span></label>
             </div>
+
+            {!form.ownRefresh ? (
+              <p className="advanced-inherited-note">{inheritedNote(form.ruleKey, sources.ownRefresh, `${SAVES_SECTION}; leaving them unchanged keeps them inherited.`, sources.atfFields)}</p>
+            ) : loaded.form.ownRefresh && loaded.unstored.length ? (
+              // Stored in part (a Unit rules row holds only some refresh settings): the rest is filled from the parents or the script.
+              <p className="advanced-inherited-note">{`This scope stores only some of these values${sources.atfFields.length ? `. ${atfFills(sources.atfFields)};` : ';'} ${sources.ownRefresh.length ? `the others are inherited from ${sources.ownRefresh.map(scopeName).join(' and ')}` : 'the others are the script’s own settings'}. ${SAVES_SECTION}.`}</p>
+            ) : null}
+            {sources.atfSource ? <p className="advanced-inherited-note">{atfSourceNote(sources.atfSource)}</p> : null}
 
             <div className="schedule-mode-grid">
               <label className={form.mode === 'fixed' ? 'selected' : ''}>

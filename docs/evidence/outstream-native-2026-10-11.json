@@ -1,0 +1,297 @@
+{
+  "prebidSha256": "384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b",
+  "pucSha256": "b5c6d2ffc72f2df3316a4a29ab6210f1cbb9a74ed20c3b7f8dde559d4502539d",
+  "checks": [
+    {
+      "scenario": "winner",
+      "generated": null,
+      "generatedSha256": null,
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 1,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "direct-banner",
+      "generated": null,
+      "generatedSha256": null,
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "changed-consent",
+      "generated": null,
+      "generatedSha256": null,
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "expired",
+      "generated": null,
+      "generatedSha256": null,
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "delayed-consent",
+      "generated": null,
+      "generatedSha256": null,
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "winner",
+      "generated": "outstream.js",
+      "generatedSha256": "ea9751cfd3342b262592bf20ab8b5ffc7aa9672339085877e2e29057da8c39dd",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 1,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "direct-banner",
+      "generated": "outstream.js",
+      "generatedSha256": "ea9751cfd3342b262592bf20ab8b5ffc7aa9672339085877e2e29057da8c39dd",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "changed-consent",
+      "generated": "outstream.js",
+      "generatedSha256": "ea9751cfd3342b262592bf20ab8b5ffc7aa9672339085877e2e29057da8c39dd",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "expired",
+      "generated": "outstream.js",
+      "generatedSha256": "ea9751cfd3342b262592bf20ab8b5ffc7aa9672339085877e2e29057da8c39dd",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "delayed-consent",
+      "generated": "outstream.js",
+      "generatedSha256": "ea9751cfd3342b262592bf20ab8b5ffc7aa9672339085877e2e29057da8c39dd",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "no-refresh",
+      "generated": "outstream.js",
+      "generatedSha256": "ea9751cfd3342b262592bf20ab8b5ffc7aa9672339085877e2e29057da8c39dd",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 1,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "winner",
+      "generated": "outstream.min.js",
+      "generatedSha256": "d93affc8970fcd1195afa8a3cc47229df684b287b63ac068d5ab1befaa3657ca",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 1,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "direct-banner",
+      "generated": "outstream.min.js",
+      "generatedSha256": "d93affc8970fcd1195afa8a3cc47229df684b287b63ac068d5ab1befaa3657ca",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "changed-consent",
+      "generated": "outstream.min.js",
+      "generatedSha256": "d93affc8970fcd1195afa8a3cc47229df684b287b63ac068d5ab1befaa3657ca",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "expired",
+      "generated": "outstream.min.js",
+      "generatedSha256": "d93affc8970fcd1195afa8a3cc47229df684b287b63ac068d5ab1befaa3657ca",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "delayed-consent",
+      "generated": "outstream.min.js",
+      "generatedSha256": "d93affc8970fcd1195afa8a3cc47229df684b287b63ac068d5ab1befaa3657ca",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "no-refresh",
+      "generated": "outstream.min.js",
+      "generatedSha256": "d93affc8970fcd1195afa8a3cc47229df684b287b63ac068d5ab1befaa3657ca",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 1,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "winner",
+      "generated": "outstream-only.js",
+      "generatedSha256": "e55f456c299b0204edf61f014fe21fcae914efe9d3a0b499f3d3ce7f7e5130ff",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 1,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "direct-banner",
+      "generated": "outstream-only.js",
+      "generatedSha256": "e55f456c299b0204edf61f014fe21fcae914efe9d3a0b499f3d3ce7f7e5130ff",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "changed-consent",
+      "generated": "outstream-only.js",
+      "generatedSha256": "e55f456c299b0204edf61f014fe21fcae914efe9d3a0b499f3d3ce7f7e5130ff",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "expired",
+      "generated": "outstream-only.js",
+      "generatedSha256": "e55f456c299b0204edf61f014fe21fcae914efe9d3a0b499f3d3ce7f7e5130ff",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "delayed-consent",
+      "generated": "outstream-only.js",
+      "generatedSha256": "e55f456c299b0204edf61f014fe21fcae914efe9d3a0b499f3d3ce7f7e5130ff",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "no-refresh",
+      "generated": "outstream-only.js",
+      "generatedSha256": "e55f456c299b0204edf61f014fe21fcae914efe9d3a0b499f3d3ce7f7e5130ff",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 1,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "winner",
+      "generated": "outstream-only.min.js",
+      "generatedSha256": "5ee1152a6adeab1a4c0cf3cd69edb91b71ba0d88f03243d697eb311d2971e6e1",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 1,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "direct-banner",
+      "generated": "outstream-only.min.js",
+      "generatedSha256": "5ee1152a6adeab1a4c0cf3cd69edb91b71ba0d88f03243d697eb311d2971e6e1",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "changed-consent",
+      "generated": "outstream-only.min.js",
+      "generatedSha256": "5ee1152a6adeab1a4c0cf3cd69edb91b71ba0d88f03243d697eb311d2971e6e1",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "expired",
+      "generated": "outstream-only.min.js",
+      "generatedSha256": "5ee1152a6adeab1a4c0cf3cd69edb91b71ba0d88f03243d697eb311d2971e6e1",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "delayed-consent",
+      "generated": "outstream-only.min.js",
+      "generatedSha256": "5ee1152a6adeab1a4c0cf3cd69edb91b71ba0d88f03243d697eb311d2971e6e1",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 0,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    },
+    {
+      "scenario": "no-refresh",
+      "generated": "outstream-only.min.js",
+      "generatedSha256": "5ee1152a6adeab1a4c0cf3cd69edb91b71ba0d88f03243d697eb311d2971e6e1",
+      "nativeVideoBids": 1,
+      "rendererBootstrapCount": 1,
+      "nativeRequestHasVideo": true,
+      "externalNetwork": 0,
+      "passed": true
+    }
+  ],
+  "limitation": "Native adapter and renderer code with synthetic vendor bootstrap sink; actual pinned PUC friendly-iframe handoff; no real BlueBillywig player or live GAM selection."
+}

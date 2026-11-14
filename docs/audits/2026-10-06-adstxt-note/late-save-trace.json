@@ -1,0 +1,84 @@
+{
+  "scope": "Synthetic local390px late-save failure; exact original late-export cause remains unproven",
+  "appSha256": "3a27391b9c56901f185d303dcf7a0e02b9f0aa06cf075f1897f823ccd68e48bd",
+  "events": [
+    {
+      "width": 390,
+      "document": 1791289840320.7,
+      "time": 855,
+      "event": "dom",
+      "heading": "site-a.invalid",
+      "panel": "Current sitesite-b.invalidsite-b.invalid \u00b7 ID: site-b",
+      "input": 4,
+      "value": "",
+      "focused": false
+    },
+    {
+      "event": "phase",
+      "name": "choose-return-site-a",
+      "width": 390
+    },
+    {
+      "event": "phase",
+      "name": "before-fill-New visit note",
+      "width": 390
+    },
+    {
+      "width": 390,
+      "document": 1791289840320.7,
+      "time": 865.4000000059605,
+      "event": "input",
+      "heading": "site-a.invalid",
+      "panel": "Current sitesite-b.invalidsite-b.invalid \u00b7 ID: site-b",
+      "input": 4,
+      "value": "New visit note",
+      "focused": true,
+      "target": 4
+    },
+    {
+      "width": 390,
+      "document": 1791289840320.7,
+      "time": 866.2000000029802,
+      "event": "dom",
+      "heading": "site-a.invalid",
+      "panel": null,
+      "input": null,
+      "value": null,
+      "focused": false
+    },
+    {
+      "event": "phase",
+      "name": "after-fill-New visit note",
+      "width": 390
+    },
+    {
+      "width": 390,
+      "document": 1791289840320.7,
+      "time": 874.3000000044703,
+      "event": "dom",
+      "heading": "site-a.invalid",
+      "panel": "Current sitesite-a.invalidsite-a.invalid \u00b7 ID: site-a",
+      "input": null,
+      "value": null,
+      "focused": false
+    },
+    {
+      "width": 390,
+      "document": 1791289840320.7,
+      "time": 877.2000000029802,
+      "event": "dom",
+      "heading": "site-a.invalid",
+      "panel": "Current sitesite-a.invalidsite-a.invalid \u00b7 ID: site-a",
+      "input": 5,
+      "value": "",
+      "focused": false
+    },
+    {
+      "event": "fixture-exit",
+      "passed": 9,
+      "failed": true,
+      "exception": "AssertionError",
+      "message": "Locator expected to have Value 'New visit note'\nActual value:  \nCall log:\n  - Expect \"to_have_value\" with timeout 5000ms\n  - waiting for locator(\".ads-txt-versions-card\").get_by_label(\"Version note (optional)\")\n    9 \u00d7 locator resolved to <input value=\"\" maxlength=\"160\" placeholder=\"Example: Added Equativ and removed an old reseller\"/>\n      - unexpected value \"\"\n"
+    }
+  ]
+}

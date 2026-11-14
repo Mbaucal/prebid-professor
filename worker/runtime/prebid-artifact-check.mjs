@@ -43,6 +43,7 @@ export function prebidRequirements(input, savedConfig = {}) {
   }
   if (input.options.floors?.enabled) modules.push('priceFloors');
   if (input.options.currencyConversion?.enabled) modules.push('currency');
+  if (input.options.schain?.nodes?.length) modules.push('schain');
   const configured = savedConfig?.userIdConfig?.modules;
   for (const id of input.core.userSync?.userIds ?? []) {
     modules.push('userId');
@@ -56,6 +57,23 @@ export function prebidRequirements(input, savedConfig = {}) {
     } else modules.push(chosen);
   }
   return { required: true, modules: unique(modules), issues };
+}
+
+/** Explanations use code-owned names; never reflect partner parameters or storage errors. */
+export function moduleReason(name) {
+  const fixed = {consentManagementTcf:'CMP consent',tcfControl:'TCF consent enforcement',currency:'Currency conversion',priceFloors:'Price floors',schain:'Supply chain',userId:'Enabled User IDs'};
+  if (Object.hasOwn(fixed,name)) return fixed[name];
+  const bidder=Object.entries(ADAPTERS).find(([,code])=>code===name);
+  if(bidder)return 'Bidder: '+bidder[0];
+  const id=Object.entries(USER_IDS).find(([,code])=>code===name);
+  return id?'User ID: '+id[0]:'Configured User ID';
+}
+export function prebidFailureMessage(report) {
+  const missing=report.missingModules.filter(m=>MODULE.test(m)&&m.length<=120);
+  const safe = {storage_unavailable:'Prebid storage is unavailable.',storage_read_failed:'The saved Prebid file could not be read. Retry the same file.',build_file_missing:'The selected Prebid file is missing.',checksum_missing:'The saved file has no verified upload checksum. Upload the original file again.',checksum_mismatch:'The saved file does not match its upload checksum.',version_mismatch:'The file version does not match its stored metadata.',module_metadata_mismatch:'The file module header differs from its stored metadata.',invalid_build_header:'The file needs its original Prebid version and Modules header.',invalid_build_content:'An HTML page cannot be used as Prebid.js.',invalid_build_size:'The stored Prebid file size is invalid.',build_size_mismatch:'The file length does not match its stored metadata.'};
+  const messages=report.issues.filter(i=>Object.hasOwn(safe,i.code)).map(i=>safe[i.code]);
+  if(missing.length)messages.push('Missing modules: '+missing.map(m=>m+' ('+moduleReason(m)+')').join(', ')+'. Download a new build using prebid-config.json.');
+  return messages.join(' ')||'The selected Prebid file or its stored metadata could not be verified.';
 }
 
 export function parsePrebidHeader(text) {

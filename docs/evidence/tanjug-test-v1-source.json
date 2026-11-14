@@ -1,0 +1,126 @@
+{
+  "input": {
+    "correlation_id": "builtin-test-be0c6c81-222a-4d11-8930-0f1e745a1e97",
+    "callback_url": "https://prebid-professor-test.mbaucal.workers.dev/test-api/deployment-runner/builtin-test-be0c6c81-222a-4d11-8930-0f1e745a1e97/report",
+    "site_id": "tanjug-test",
+    "release_id": "builtin-draft-ec1b1c51c870b8e2a5583666c5e48d215cf8c3d3bc3a27549930510856c0d6d0",
+    "release_version": "builtin-draft-ec1b1c51c870b8e2a5583666c5e48d215cf8c3d3bc3a27549930510856c0d6d0",
+    "release_base_url": "https://prebid-professor-test.mbaucal.workers.dev/test-api/deployment-runner/builtin-test-be0c6c81-222a-4d11-8930-0f1e745a1e97",
+    "manifest_sha256": "c94d991269f16b09bbc787c73447d1a2a5cc59df154be169aadae64f6ac6a8cc",
+    "github_environment": "CLOUDFLARE_API_TOKEN",
+    "account_id": "6cb2ac6a0a1a0d8b8fc7f9db917cce3d",
+    "project_name": "tanjug",
+    "branch": "tessera-test",
+    "channel": "staging"
+  },
+  "runId": "34858629084",
+  "commit": "3052d613eb52838ee4f4e6e1cc7b725ec044d641",
+  "project": {
+    "accountId": "6cb2ac6a0a1a0d8b8fc7f9db917cce3d",
+    "projectName": "tanjug",
+    "productionBranch": "main",
+    "branch": "tessera-test",
+    "channel": "staging"
+  },
+  "zipSha256": "eed72a11c2f6db7c90a9ae71f329ba842e34832c91c3e705b1f00469158ba334",
+  "verified": {
+    "schemaVersion": 1,
+    "kind": "builtin-stored-draft",
+    "completeRelease": false,
+    "siteId": "tanjug-test",
+    "releaseId": "builtin-draft-ec1b1c51c870b8e2a5583666c5e48d215cf8c3d3bc3a27549930510856c0d6d0",
+    "version": "builtin-draft-ec1b1c51c870b8e2a5583666c5e48d215cf8c3d3bc3a27549930510856c0d6d0",
+    "packageSha256": "ec1b1c51c870b8e2a5583666c5e48d215cf8c3d3bc3a27549930510856c0d6d0",
+    "byteSize": 673541,
+    "configHash": "ee97a7a42947be8144270d5f62eb6c7d31fccc95ac0eee82769affb3b8bf3712",
+    "runtime": {
+      "schemaVersion": 1,
+      "runtimeId": "tessera-reference391-preview-2",
+      "runtimeVersion": "3.9.1-tessera.preview.2",
+      "runtimeSha256": "222569881b377c085f0b5d373523d092d64e2ac5dab05d421c3cc9f371078de9",
+      "configSchemaVersion": 1,
+      "capabilities": [
+        "advanced-refresh",
+        "config-preview",
+        "gpt-only",
+        "takeover"
+      ]
+    },
+    "prebidBuild": {
+      "id": "tanjug-11-34-0-v1",
+      "version": "11.34.0",
+      "sha256": "384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b",
+      "byteSize": 299591,
+      "modules": [
+        "consentManagementTcf",
+        "criteoBidAdapter",
+        "criteoIdSystem",
+        "currency",
+        "id5IdSystem",
+        "lotamePanoramaIdSystem",
+        "openxBidAdapter",
+        "priceFloors",
+        "pubmaticBidAdapter",
+        "schain",
+        "sharedIdSystem",
+        "tcfControl",
+        "teadsBidAdapter",
+        "teadsIdSystem",
+        "userId"
+      ]
+    },
+    "files": [
+      {
+        "name": "README.txt",
+        "byteSize": 1137,
+        "sha256": "823d157ef90388838b208225551f54e5ff6a1c50c73495ee0bf39504c582136c"
+      },
+      {
+        "name": "ads.js",
+        "byteSize": 207067,
+        "sha256": "0faec2eccdcedbd29153357c7a94c879cdec4a8d037b16593a94a7884f242e2b"
+      },
+      {
+        "name": "ads.min.js",
+        "byteSize": 122756,
+        "sha256": "62fc33c7ece330d87cc3e684b7f3eba5009e36d74e43cc426b636eb956a6d2c4"
+      },
+      {
+        "name": "config.json",
+        "byteSize": 32633,
+        "sha256": "6bec9c7d355f5d693477fe992fff9407ea7995ae5a8da2cf3d658b17c369a9f7"
+      },
+      {
+        "name": "div-export.csv",
+        "byteSize": 1262,
+        "sha256": "f8ce3675d194df7fd3f5046b912d3ec055be19dc7b4ede708db5bb077199e729"
+      },
+      {
+        "name": "implementation.html",
+        "byteSize": 1534,
+        "sha256": "50e404568858975da8f4995ba038bf6a10b0af44044b239b0ee7290181089790"
+      },
+      {
+        "name": "manifest.json",
+        "byteSize": 3885,
+        "sha256": "c94d991269f16b09bbc787c73447d1a2a5cc59df154be169aadae64f6ac6a8cc"
+      },
+      {
+        "name": "min-height.css",
+        "byteSize": 2477,
+        "sha256": "63ca14821b74cde199c716a5edfba44a842322866ebf966e180a687d313c2860"
+      },
+      {
+        "name": "prebid.js",
+        "byteSize": 299591,
+        "sha256": "384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b"
+      },
+      {
+        "name": "sticky.css",
+        "byteSize": 1199,
+        "sha256": "6485c0d25d17fd5aec692d1c175fe3db7e2ea72551d58dde14c2ce3d5483ba3f"
+      }
+    ],
+    "manifestSha256": "c94d991269f16b09bbc787c73447d1a2a5cc59df154be169aadae64f6ac6a8cc"
+  }
+}

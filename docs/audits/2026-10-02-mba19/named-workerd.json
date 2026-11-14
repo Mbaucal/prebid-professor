@@ -1,0 +1,25 @@
+{
+  "scope": "Local compiled TEST Worker, real ephemeral D1/R2; no hosted claims",
+  "checks": [
+    "Signed-out named API is refused",
+    "Signed-out named page redirects to TEST login",
+    "GET does not prepare named data",
+    "Collision refuses without creating or modifying a fixture",
+    "Concurrent explicit setup creates one exact fixture",
+    "Setup preserves existing TEST identity and settings",
+    "Only exact fixed-site mutation routes exist",
+    "Shared cache writer preserves trusted actor and stale-form guard",
+    "Compiled TEST generator matches the reviewed offline ZIP exactly",
+    "Retry reuses the original version",
+    "A/B composition retains the exact saved runtime bytes",
+    "Deleted script cannot be downloaded",
+    "Restore returns the original ZIP",
+    "Later settings do not change saved packages",
+    "All named R2 writes stay inside the fixture site prefix",
+    "Existing site and object remain unchanged",
+    "No outgoing application request"
+  ],
+  "passed": 17,
+  "failed": 0,
+  "packageSha256": "58f1194f298c216c40d96657fefba94424d72a4404542f08afacb8d96bbe0ae6"
+}

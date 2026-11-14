@@ -60,6 +60,24 @@ function normalizeNumberMap(value: unknown): Record<string, number> {
   return output;
 }
 
+function validateFloorMap(value: unknown, label: string): Record<string, number> | Response {
+  if (value === undefined) return {};
+  if (!isRecord(value)) return apiError(`${label} must be a map of numeric values between 0 and 1000.`, 422);
+  const result: Record<string, number> = {};
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    const key = rawKey.trim();
+    const numeric = (typeof rawValue === 'number' || (typeof rawValue === 'string' && rawValue.trim() !== '')) ? Number(rawValue) : NaN;
+    if (!key || ['__proto__', 'constructor', 'prototype'].includes(key) || Object.hasOwn(result, key)) {
+      return apiError(`${label}: use unique, non-empty keys.`, 422);
+    }
+    if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1000) {
+      return apiError(`${label} "${key}" must be a number between 0 and 1000.`, 422);
+    }
+    result[key] = numeric;
+  }
+  return result;
+}
+
 function nullableString(value: unknown): string | null {
   const normalized = String(value ?? '').trim();
   return normalized || null;
@@ -75,7 +93,7 @@ function controlsFromConfig(config: JsonRecord, adUnitCodes: string[]): RuntimeC
 
   return {
     sticky: {
-      bottomAdUnitId: nullableString(sticky.bottomAdUnitId) ?? defaultBottom,
+      bottomAdUnitId: Object.hasOwn(sticky,'bottomAdUnitId') ? nullableString(sticky.bottomAdUnitId) : defaultBottom,
       topAdUnitId: nullableString(sticky.topAdUnitId),
       allowClosePortal: sticky.allowClosePortal === true,
     },
@@ -167,8 +185,10 @@ function validateControls(body: JsonRecord, adUnitCodes: Set<string>): RuntimeCo
     return apiError('Global floor must be a number between 0 and 1000.', 422);
   }
 
-  const bidderFloors = normalizeNumberMap(floorsInput.bidderFloors);
-  const rules = normalizeNumberMap(floorsInput.rules);
+  const bidderFloors = validateFloorMap(floorsInput.bidderFloors, 'Bidder floor');
+  if (bidderFloors instanceof Response) return bidderFloors;
+  const rules = validateFloorMap(floorsInput.rules, 'Floor rule');
+  if (rules instanceof Response) return rules;
 
   return {
     sticky: {
@@ -194,6 +214,8 @@ async function buildPayload(db: D1Database, siteId: string, config: JsonRecord) 
   const references = await loadReferenceData(db, siteId);
   return {
     ok: true,
+    bottomManagedByPositions: Boolean(config.builtinRuntimeSelection),
+    unsupportedStickyControls: Boolean(config.builtinRuntimeSelection),
     controls: controlsFromConfig(config, references.adUnits.map((unit) => unit.code)),
     ...references,
     floorRuleSchema: {
@@ -236,23 +258,34 @@ export async function updateRuntimeControls(
   if (!row) return apiError('Publisher config was not found.', 404);
   const config = parseConfig(row.config_json);
   const references = await loadReferenceData(env.DB, siteId);
-  const controls = validateControls(body, new Set(references.adUnits.map((unit) => unit.code)));
-  if (controls instanceof Response) return controls;
-
   const previous = controlsFromConfig(config, references.adUnits.map((unit) => unit.code));
-  config.runtimeControls = controls;
+  // Versioned sites use the ad-unit editor as the sole owner of bottom Sticky.
+  const input = config.builtinRuntimeSelection ? { ...body, sticky: {
+    ...(isRecord(body.sticky) ? body.sticky : {}), bottomAdUnitId: previous.sticky.bottomAdUnitId,
+  } } : body;
+  const controls = validateControls(input, new Set(references.adUnits.map((unit) => unit.code)));
+  if (controls instanceof Response) return controls;
+  if (config.builtinRuntimeSelection && (
+    (controls.sticky.topAdUnitId && controls.sticky.topAdUnitId !== previous.sticky.topAdUnitId)
+    || (controls.sticky.allowClosePortal && !previous.sticky.allowClosePortal)
+  )) {
+    return apiError('The selected built-in script does not support Top sticky or close-button portal. Use Bottom Sticky under Ad units → Display & loading. Existing saved values are kept; remove an unsupported setting explicitly before Generate.', 422);
+  }
+
+  // Preserve versioned position/TakeOver options owned by the ad-unit editor.
+  config.runtimeControls = { ...(isRecord(config.runtimeControls)?config.runtimeControls:{}), ...controls };
   const actor = getActor(request);
   const now = new Date().toISOString();
 
   try {
-    await env.DB.batch([
+    const result = await env.DB.batch([
       env.DB
-        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ?')
-        .bind(JSON.stringify(config), now, siteId),
+        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ? AND config_json = ?')
+        .bind(JSON.stringify(config), now, siteId, row.config_json),
       env.DB
         .prepare(`INSERT INTO audit_log (
           id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-        ) VALUES (?, ?, 'runtime_controls.updated', ?, 'runtime_controls', ?, ?, ?)`) 
+        ) SELECT ?, ?, 'runtime_controls.updated', ?, 'runtime_controls', ?, ?, ? WHERE changes() = 1`) 
         .bind(
           crypto.randomUUID(),
           actor,
@@ -262,6 +295,7 @@ export async function updateRuntimeControls(
           now,
         ),
     ]);
+    if(result[0].meta.changes!==1)return apiError('Site settings changed. Reload before saving.',409);
   } catch (error) {
     return apiError(
       'Runtime controls could not be saved.',

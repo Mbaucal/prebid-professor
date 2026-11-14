@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from '../api';
+import DealsPanel from './DealsPanel';
 import type {
   AdUnit,
   Bidder,
@@ -407,6 +408,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
 
   return (
     <>
+      <DealsPanel publisherId={publisherId} onChanged={onChanged}/>
       <section className="config-page bidders-page">
         <div className="config-toolbar">
           <div>

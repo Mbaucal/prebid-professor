@@ -1,0 +1,78 @@
+{
+  "scope": "LOCAL compiled workerd + Miniflare D1/R2; NOT hosted Cloudflare",
+  "compiledSha256": "30d6a2409558d89fea6f5463f934bdba3983936a4f782d4094d4de25552a799f",
+  "checks": [
+    {
+      "name": "Compiled settings GET preserves existing runtimes and default, adds opt-in 3.14 and has no implicit saved selection",
+      "passed": true
+    },
+    {
+      "name": "Compiled settings writer requires Preview opt-in",
+      "passed": true
+    },
+    {
+      "name": "Atomic JSON snapshot assertion and selection write work on Miniflare D1",
+      "passed": true
+    },
+    {
+      "name": "A stale reviewed revision is rejected by compiled settings API",
+      "passed": true
+    },
+    {
+      "name": "Fresh repeated selection is a no-op",
+      "passed": true
+    },
+    {
+      "name": "One successful choice has exactly one audit entry",
+      "passed": true
+    },
+    {
+      "name": "Transaction leaves no assertion rows behind",
+      "passed": true
+    },
+    {
+      "name": "Compiled editor reads only the isolated TEST copy",
+      "passed": true
+    },
+    {
+      "name": "Bulk JSON upserts and full before/after assertions commit on real local D1",
+      "passed": true
+    },
+    {
+      "name": "Compiled editor rejects stale revision",
+      "passed": true
+    },
+    {
+      "name": "Read-back contains the changed path and added position",
+      "passed": true
+    },
+    {
+      "name": "Repeated normalized edit is a no-op",
+      "passed": true
+    },
+    {
+      "name": "Compiled generator consumes edited positions, sizes and TakeOver fallback",
+      "passed": true
+    },
+    {
+      "name": "Compiled generator reads persisted TakeOver dimensions and zero timer",
+      "passed": true
+    },
+    {
+      "name": "Edited site and positions survive workerd restart",
+      "passed": true
+    },
+    {
+      "name": "Saved draft remains byte-identical after workerd restart",
+      "passed": true
+    },
+    {
+      "name": "No outbound fetch was attempted",
+      "passed": true
+    }
+  ],
+  "passed": 17,
+  "failed": 0,
+  "outbound": 0,
+  "hostedTest": false
+}

@@ -1,0 +1,49 @@
+[
+  {
+    "name": "verify-organization-workerd",
+    "exitCode": 0,
+    "seconds": 1.7
+  },
+  {
+    "name": "verify-gam-workerd",
+    "exitCode": 0,
+    "initialFailure": "Wrong/missing local compiled-artifact directory; rerun with required compilation.",
+    "retryLog": "verify-gam-workerd-retry.log"
+  },
+  {
+    "name": "verify-workerd-site-editor",
+    "exitCode": 0,
+    "seconds": 3.9
+  },
+  {
+    "name": "verify-workerd-prebid",
+    "exitCode": 0,
+    "seconds": 5.9
+  },
+  {
+    "name": "verify-workerd-workspace",
+    "exitCode": 0,
+    "initialFailure": "Wrong/missing local compiled-artifact directory; rerun with required compilation.",
+    "retryLog": "verify-workerd-workspace-retry.log"
+  },
+  {
+    "name": "verify-workerd-selection",
+    "exitCode": 0,
+    "seconds": 4.2
+  },
+  {
+    "name": "verify-workerd-delivery",
+    "exitCode": 0,
+    "seconds": 2.8
+  },
+  {
+    "name": "verify-ab-editor-workerd",
+    "exitCode": 0,
+    "seconds": 5.5
+  },
+  {
+    "name": "verify-script-library-workerd",
+    "exitCode": 0,
+    "seconds": 16.8
+  }
+]

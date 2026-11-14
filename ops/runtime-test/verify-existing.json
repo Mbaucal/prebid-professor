@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "sourcePath": "docs/evidence/tanjug-test-v1-source.json",
+  "sourceSha256": "afc9722740fe36aa9ee9612290b2c6de59ea1d94fa7904c8a218a61f55d66ebf",
+  "sourceArtifactId": "10354340938",
+  "sourceArtifactSha256": "8e013c477c9f91fe80017c0067a149ddfb571a96f0944a2871acd23e24a9d55f",
+  "deploymentRunId": "34858629084",
+  "deploymentCommit": "3052d613eb52838ee4f4e6e1cc7b725ec044d641",
+  "deploymentUrl": "https://276a50d0.tanjug.pages.dev"
+}
