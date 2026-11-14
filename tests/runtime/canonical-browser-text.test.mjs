@@ -4,10 +4,11 @@
  * name (see worker/runtime-canonical/functions.mjs).
  *
  * The scan reads every repository file that esbuild bundles into a Worker entry
- * (worker/**, shared/**, scripts/**, src/**, vendor/** and .generated modules).
- * It resolves serialized expressions to function declarations (through aliases,
- * namespace imports, local object literals and local functions that serialize
- * a parameter) and is strict where it cannot resolve them:
+ * (every wrangler*.jsonc main: worker/**, shared/**, scripts/**, src/**,
+ * vendor/** and .generated modules). It resolves serialized expressions to
+ * function declarations (through local const aliases, imports of exported
+ * function declarations, namespace imports, local object literals and functions
+ * that serialize a parameter) and is strict where it cannot resolve them:
  * - toString may only be called directly (x.toString(...)), on a listed function
  *   or on a value the scan proves is not a function; reviewedToString below
  *   lists the few remaining uses by hand. toString.call/apply/bind, any other
@@ -16,11 +17,16 @@
  * - a function in an array literal must be listed: join, map(String) and
  *   String(array) serialize it.
  * - templates, String(), + and concat() of a resolved function must be listed.
- * A static scan cannot follow a function through other data (an object property
- * read back with Object.values, a computed name). Executed paths are covered
- * by the recording Function.prototype.toString in the third test and by the
- * guard that scripts/verify-workerd-generation-parity.mjs installs in the sealed
- * Worker.
+ * Known static limits: the scan does not follow a function through other data
+ * (an object property assigned later or read back with Object.values, a
+ * computed name), conditional, logical or sequence expressions, reassigned
+ * variables, default parameters, class methods, return values, re-exported
+ * aliases or destructuring. It does not treat other built-ins that read source
+ * text (encodeURIComponent, TextEncoder, toLocaleString, Array.of(...).join) as
+ * serialization.
+ * Executed paths are covered by the recording Function.prototype.toString in the
+ * third test and by the guard that scripts/verify-workerd-generation-parity.mjs
+ * installs in the sealed Worker.
  * Run after scripts/prepare-builtin-runtime.mjs (it writes the canonical text).
  */
 import test from 'node:test';
@@ -36,7 +42,17 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const repoPath = file => relative(root, file).replaceAll('\\', '/');
 
 // ---------------------------------------------------------------- Worker graph
-const entries = [...new Set(['wrangler.jsonc', 'ops/runtime-test/wrangler.jsonc', 'ops/runtime-test/wrangler.active.jsonc'].map(config =>
+/** Every Wrangler configuration in the repository (build outputs excluded). */
+function wranglerConfigs(directory = '.') {
+  const found = [];
+  for (const entry of readdirSync(resolve(root, directory), {withFileTypes: true})) {
+    const path = directory === '.' ? entry.name : `${directory}/${entry.name}`;
+    if (entry.isDirectory()) { if (!['node_modules', '.git', '.generated', '.wrangler', 'dist'].includes(entry.name)) found.push(...wranglerConfigs(path)); }
+    else if (/^wrangler(?:\.[\w-]+)?\.jsonc?$/.test(entry.name)) found.push(path);
+  }
+  return found.sort();
+}
+const entries = [...new Set(wranglerConfigs().map(config =>
   repoPath(resolve(root, dirname(config), JSON.parse(readFileSync(resolve(root, config), 'utf8')).main))))];
 const graphs = new Map();
 for (const entry of entries) {
