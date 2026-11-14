@@ -2,7 +2,7 @@ name: TEST site editor checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [tools/**, package.json, package-lock.json, ops/runtime-test/**, wrangler.jsonc, worker/**, src/**, public/**, index.html, shared/inventory/**, shared/contextual-signals/**, tests/**, scripts/**, .github/workflows/site-editor-checks.yml]
+    paths: [tools/**, package.json, package-lock.json, ops/runtime-test/**, wrangler.jsonc, worker/**, src/**, public/**, index.html, shared/inventory/**, shared/contextual-signals/**, shared/size-maps/**, shared/outstream/**, tests/**, scripts/**, .github/workflows/site-editor-checks.yml]
   push:
     branches: [main, feature/isolated-runtime-workspace-v1]
 permissions:
@@ -10,7 +10,7 @@ permissions:
 jobs:
   editor:
     runs-on: ubuntu-24.04 # Playwright 1.55 browser dependencies are pinned to this supported OS.
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       TZ: UTC
       TESSERA_TEST_TOOLCHAIN: isolated
@@ -35,6 +35,8 @@ jobs:
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/admin-rules-and-sync-audit.test.mjs tests/runtime/admin-unit-rule-concurrency.test.mjs tests/runtime/prebid-digit-modules-flow.test.mjs tests/runtime/compiler-input-compatibility.test.mjs tests/runtime/refresh-summary.test.mjs tests/runtime/size-map-compatibility.test.mjs tests/runtime/generator-guard-audit.test.mjs tests/runtime/inactive-override-package-qa.test.mjs tests/runtime/runtime3201-package-qa.test.mjs tests/runtime/outstream-runtime-eligibility.test.mjs
       - name: Verify contextual taxonomy settings, auction isolation and build integration
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/contextual-signals-*.test.mjs
+      - name: Reproduce and prevent the independent audit failures
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/audit-size-map-selection.test.mjs tests/runtime/consent-storage3211.test.mjs tests/runtime/contextual-rtd-ownership.test.mjs tests/runtime/size-map-references.test.mjs tests/runtime/runtime3211-package-qa.test.mjs tests/runtime/boot3212.test.mjs tests/runtime/runtime3212-package-qa.test.mjs
       - name: Verify console SChain evidence and transparent network observation
         run: node --test tests/runtime/schain-inspect.test.mjs tests/runtime/experiment-inspect.test.mjs
       - run: node scripts/isolated-toolchain.mjs build
@@ -43,6 +45,8 @@ jobs:
       - name: Verify anonymous login branding and protected asset boundary
         run: node scripts/verify-login-logo.mjs
       - run: node scripts/verify-site-duplication-workerd.mjs
+      - name: Size-map rename cascade, delete confirmation and rule map gate on compiled Worker and local D1
+        run: node scripts/verify-size-map-references-workerd.mjs
       - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/loading-summary.test.mjs
       - name: Compile TEST only; no deployment
         env:
@@ -63,8 +67,20 @@ jobs:
           python scripts/verify-runtime-controls-validation-ui.py
           python scripts/verify-inactive-media-ui-qa.py
           python scripts/verify-draft-inventory-ui.py
+      - name: Rule map references, rename recovery and supported scope on desktop and narrow screens
+        run: python scripts/verify-size-map-references-ui.py
+      - name: Page-type size maps keep their selection after a base-map rename (GPT mock, no network)
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-page-type-map-selection.mjs && python scripts/verify-page-type-map-selection.py
       - name: Contextual signal editor on desktop and narrow screens
         run: python scripts/verify-contextual-signals-ui.py
+      - name: Full generated storage and CMP regression on readable and minified 3.21.1 and 3.21.2 scripts
+        run: |
+          node scripts/prepare-storage3211-browser.mjs
+          python scripts/verify-storage3211-browser.py
+          node scripts/prepare-storage3212-browser.mjs
+          python scripts/verify-storage3211-browser.py .generated/storage3212-browser
+      - name: 3.21.2 boot at load, held GPT start, TakeOver cap and load-time page targeting against 3.21.0
+        run: node scripts/prepare-boot3212-browser.mjs && python scripts/verify-boot3212-browser.py
       - run: python scripts/verify-site-editor.py
       - run: python scripts/verify-site-workspace.py
       - run: node --experimental-strip-types scripts/prepare-test-page-browser-fixture.mjs && python scripts/verify-site-test-page.py
@@ -80,6 +96,11 @@ jobs:
           name: site-editor-evidence
           path: |
             .generated/release-deletion-ui/
+            .generated/storage3211-browser/
+            .generated/storage3212-browser/
+            .generated/boot3212-browser/
+            .generated/size-map-references-ui/
+            .generated/page-type-map-selection/
             .generated/size-map-height-ui/
             .generated/runtime-controls-validation-ui/
             .generated/inactive-media-ui-qa/

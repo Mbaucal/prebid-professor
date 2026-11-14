@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import BulkImportPanel from './BulkImportPanel';
 import OutstreamSettingsPanel from './OutstreamSettingsPanel';
-import type { AdUnit, SizeMap } from '../shared/types';
+import type { AdUnit, SizeMap, SizeMapPageTypeConfirmation, SizeMapReference } from '../shared/types';
 import { reservedHeightSummary } from '../shared/size-map-height-summary';
+import { comparePageTypeChanges, describePageTypeChange, pageTypeOf, pageTypeRenames } from '../../shared/size-maps/page-type.mjs';
 
 type Props = {
   publisherId: string;
@@ -26,6 +27,33 @@ type BreakpointForm = {
 };
 
 const EMPTY_SIZE_TOKENS = new Set(['', 'none', 'off', 'disabled', '[]', '-']);
+// Ad units and saved rules must be reassigned first; page-type use is confirmed instead.
+const BLOCKING_SOURCES = new Set<SizeMapReference['source']>(['ad-unit', 'rule', 'advanced-rule']);
+
+function pageTypeConfirmation(error: unknown): SizeMapPageTypeConfirmation | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const details = error.details as { confirmation?: SizeMapPageTypeConfirmation } | undefined;
+  return details?.confirmation?.token && Array.isArray(details.confirmation.changes) ? details.confirmation : null;
+}
+
+/** Scrolls the dialog so the confirmation note and the row with "Confirm and save" are both
+ * visible below the sticky heading. A note taller than the dialog keeps the button in view. */
+function revealConfirmation(note: HTMLElement, actions: HTMLElement | null) {
+  const scroller = note.closest('.modal-card');
+  if (!(scroller instanceof HTMLElement) || !actions) {
+    note.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  const box = scroller.getBoundingClientRect();
+  const heading = scroller.querySelector('.modal-heading')?.getBoundingClientRect().height ?? 0;
+  const top = box.top + scroller.clientTop + heading;
+  const bottom = box.top + scroller.clientTop + scroller.clientHeight;
+  const first = note.getBoundingClientRect().top;
+  const last = actions.getBoundingClientRect().bottom;
+  let delta = last > bottom ? last - bottom : 0;
+  if (first - delta < top && last - first <= bottom - top) delta = first - top;
+  if (delta) scroller.scrollBy({ top: delta });
+}
 
 function rowId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -134,6 +162,9 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
   const [name, setName] = useState('');
   const [rows, setRows] = useState<BreakpointForm[]>([emptyBreakpoint()]);
   const [formError, setFormError] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<SizeMapPageTypeConfirmation | null>(null);
+  // True when "Confirm and save" came back with a different confirmation (another tab changed the impact).
+  const [confirmationUpdated, setConfirmationUpdated] = useState(false);
   const [formatReview, setFormatReview] = useState<Array<{code:string;message:string}>>([]);
   const [formatReviewError, setFormatReviewError] = useState('');
   const [reviewingFormat, setReviewingFormat] = useState<string | null>(null);
@@ -149,6 +180,20 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
   }, [publisherId]);
   useEffect(() => {if(formatReview.length && !mode && !reviewingFormat){reviewNotice.current?.scrollIntoView({block:'center'});reviewNotice.current?.focus();}}, [formatReview,mode,reviewingFormat]);
   const [submitting, setSubmitting] = useState(false);
+  const errorNotice = useRef<HTMLDivElement>(null);
+  const formNotice = useRef<HTMLDivElement>(null);
+  const confirmNotice = useRef<HTMLDivElement>(null);
+  const formActions = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (error) errorNotice.current?.scrollIntoView({ block: 'nearest' }); }, [error]);
+  useEffect(() => { if (formError) formNotice.current?.scrollIntoView({ block: 'nearest' }); }, [formError]);
+  // A new or re-issued confirmation: show it with its button, then move focus to it so it is read
+  // out (the name field and the button were disabled while saving, so focus had fallen to the page).
+  useEffect(() => {
+    const note = confirmNotice.current;
+    if (!confirmation || !note) return;
+    revealConfirmation(note, formActions.current);
+    note.focus({ preventScroll: true });
+  }, [confirmation]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -174,8 +219,38 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
       if (!unit.sizeMapKey) return;
       result.set(unit.sizeMapKey, [...(result.get(unit.sizeMapKey) ?? []), unit.code]);
     });
+    sizeMaps.forEach((map) => {
+      if (map.references) result.set(map.name, map.references.map(reference => reference.label));
+    });
     return result;
-  }, [adUnits]);
+  }, [adUnits, sizeMaps]);
+
+  // Page-type maps (<page type>_<name>) follow a rename; the server re-checks this list.
+  // Maps that ad units use directly, and page-type maps of other bases, never move with it.
+  const pageTypeMapRenames = useMemo(() => {
+    const next = name.trim();
+    if (mode !== 'edit' || !source || !next || next === source.name) return [];
+    const unitBases = new Set(adUnits.map((unit) => unit.sizeMapKey).filter((key): key is string => Boolean(key)));
+    return [...pageTypeRenames(sizeMaps.map((item) => item.name), source.name, next, unitBases)].filter(([from]) => from !== source.name);
+  }, [mode, source, name, sizeMaps, adUnits]);
+
+  function withdrawConfirmation() {
+    setConfirmation(null);
+    setConfirmationUpdated(false);
+  }
+
+  // A page-type map of a base that ad units use is renamed on its own (only a base carries its
+  // page-type maps); the help under the name field says so instead of promising a cascade.
+  const variantOf = useMemo(() => {
+    if (mode !== 'edit' || !source) return null;
+    for (const unit of adUnits) {
+      const base = unit.sizeMapKey;
+      if (!base || base === source.name) continue;
+      const pageType = pageTypeOf(source.name, base);
+      if (pageType !== null) return { base, pageType };
+    }
+    return null;
+  }, [mode, source, adUnits]);
 
   function openCreate() {
     setMode('create');
@@ -183,6 +258,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
     setName('');
     setRows([emptyBreakpoint(0)]);
     setFormError(null);
+    withdrawConfirmation();
   }
 
   function openEdit(item: FlexibleMap) {
@@ -191,6 +267,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
     setName(item.name);
     setRows(rowsFromMap(item.map));
     setFormError(null);
+    withdrawConfirmation();
   }
 
   function openDuplicate(item: FlexibleMap) {
@@ -199,6 +276,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
     setName(nextCopyName(item.name));
     setRows(rowsFromMap(item.map));
     setFormError(null);
+    withdrawConfirmation();
   }
 
   function closeForm() {
@@ -206,18 +284,22 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
     setMode(null);
     setSource(null);
     setFormError(null);
+    withdrawConfirmation();
   }
 
   function updateRow(id: string, patch: Partial<BreakpointForm>) {
+    withdrawConfirmation();
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   }
 
   function addBreakpoint() {
+    withdrawConfirmation();
     const currentMax = rows.reduce((max, row) => Math.max(max, Number(row.minWidth) || 0), 0);
     setRows((current) => [...current, emptyBreakpoint(currentMax ? currentMax + 1 : 469)]);
   }
 
   function removeBreakpoint(id: string) {
+    withdrawConfirmation();
     setRows((current) => current.filter((row) => row.id !== id));
   }
 
@@ -246,6 +328,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
         await api.updateSizeMap(publisherId, source.id, {
           name: cleanName,
           map: map as never,
+          ...(confirmation ? { confirmPageTypeChanges: confirmation.token } : {}),
         });
       } else {
         await api.createSizeMap(publisherId, {
@@ -255,23 +338,62 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
       }
       await load();
       await onChanged?.();
-      closeForm();
+      setMode(null);
+      setSource(null);
+      setFormError(null);
+      withdrawConfirmation();
     } catch (requestError) {
-      setFormError(requestError instanceof Error ? requestError.message : 'Size map operation failed.');
+      const required = pageTypeConfirmation(requestError);
+      setConfirmationUpdated(Boolean(required && confirmation && required.token !== confirmation.token));
+      setConfirmation(required);
+      setFormError(required ? null : requestError instanceof Error ? requestError.message : 'Size map operation failed.');
     } finally {
       setSubmitting(false);
     }
   }
 
   async function remove(item: FlexibleMap) {
-    const usedBy = usage.get(item.name) ?? [];
-    const message = usedBy.length
-      ? `${item.name} is used by ${usedBy.join(', ')} and cannot be deleted until those ad units are reassigned.`
-      : `Delete size map ${item.name}?`;
-    if (!window.confirm(message)) return;
+    const blocking = item.references
+      ? item.references.filter((reference) => BLOCKING_SOURCES.has(reference.source)).map((reference) => reference.label)
+      : usage.get(item.name) ?? [];
+    if (blocking.length) {
+      setError(`${item.name} is used by ${blocking.join(', ')}. Reassign these references before deleting it.`);
+      return;
+    }
+    // Page-type maps fall back to their base map; the listing says which positions that affects.
+    const references = item.references ?? [];
+    const shownChanges = references
+      .filter((reference) => reference.source === 'page-type' && reference.pageType && reference.baseMap)
+      .map((reference) => ({ pageType: reference.pageType!, base: reference.baseMap!, codes: reference.units ?? [], from: item.name, to: null }))
+      .sort(comparePageTypeChanges)
+      .map(describePageTypeChange);
+    const shownVideo = [...new Set(references.filter((reference) => reference.source === 'outstream').map((reference) => reference.scope))];
+    const prompt = (changes: string[], videoUnits: string[], videoSizes: string[] = []) => [`Delete size map ${item.name}?`, ...changes,
+      ...(videoUnits.length ? [`Saved Outstream video sizes for this map are removed from ${videoUnits.join(', ')}.`] : []),
+      ...videoSizes,
+      ...(changes.length ? ['The next Generate uses these sizes. Existing packages do not change.'] : [])].join('\n\n');
+    if (!window.confirm(prompt(shownChanges, shownVideo))) return;
 
     try {
-      await api.deleteSizeMap(publisherId, item.id);
+      // The server re-checks the impact. A delete is sent with its token only after the
+      // operator has seen exactly those lines; changed lines are shown again first.
+      let shown = JSON.stringify([shownChanges, shownVideo, []]);
+      let token: string | undefined;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          await api.deleteSizeMap(publisherId, item.id, token);
+          break;
+        } catch (requestError) {
+          const required = pageTypeConfirmation(requestError);
+          if (!required || attempt >= 3) throw requestError;
+          const changes = required.changes.map((change) => change.message), videoUnits = required.videoUnits ?? [];
+          const videoSizes = (required.videoSizes ?? []).map((line) => line.message);
+          const fresh = JSON.stringify([changes, videoUnits, videoSizes]);
+          if (fresh !== shown && !window.confirm(prompt(changes, videoUnits, videoSizes))) return;
+          shown = fresh;
+          token = required.token;
+        }
+      }
       await load();
       await onChanged?.();
     } catch (requestError) {
@@ -311,7 +433,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
           />
         </details>
 
-        {error ? <div className="form-error config-error">{error}</div> : null}
+        {error ? <div ref={errorNotice} role="alert" className="form-error config-error"><p>{error}</p><button className="button secondary" disabled={loading} onClick={() => void load()} type="button">Reload size maps</button></div> : null}
         {loading ? <div className="config-loading">Loading size maps from D1…</div> : null}
 
         <div className="size-map-grid">
@@ -320,9 +442,9 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
             return (
               <article className="size-map-card" key={item.id}>
                 <div className="size-map-heading">
-                  <div><h3>{item.name}</h3><span>{item.map.length} breakpoint(s)</span></div>
+                  <div className="size-map-title"><h3>{item.name}</h3><span>{item.map.length} breakpoint(s)</span></div>
                   <span className={usedBy.length ? 'map-usage used' : 'map-usage'}>
-                    {usedBy.length ? `${usedBy.length} unit(s)` : 'unused'}
+                    {usedBy.length ? `${usedBy.length} reference(s)` : 'unused'}
                   </span>
                 </div>
 
@@ -375,15 +497,23 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                 <span className="panel-kicker">Responsive size workflow</span>
                 <h2 id="size-map-editor-title">{mode === 'create' ? 'Create size map' : mode === 'duplicate' ? `Duplicate ${source?.name ?? 'size map'}` : `Edit ${source?.name ?? 'size map'}`}</h2>
               </div>
-              <button className="icon-button" onClick={closeForm} type="button">×</button>
+              <button className="icon-button" disabled={submitting} onClick={closeForm} type="button">×</button>
             </div>
 
             <form className="publisher-form" onSubmit={submit}>
               <label>
                 <span>Size map name</span>
-                <input autoFocus onChange={(event) => setName(event.target.value)} placeholder="Billboard" value={name} />
-                <small>Renaming a map updates all ad units that reference it.</small>
+                <input aria-describedby={pageTypeMapRenames.length ? 'size-map-page-type-renames' : undefined} autoFocus disabled={submitting} onChange={(event) => { withdrawConfirmation(); setName(event.target.value); }} placeholder="Billboard" value={name} />
+                {variantOf && source
+                  ? <small>Renaming a map updates ad units, saved rules and Outstream video sizes that reference it. {source.name} is the {variantOf.pageType} page-type map of {variantOf.base}, so no other map is renamed with it.</small>
+                  : <small>Renaming a map updates ad units, saved rules and Outstream video sizes that reference it, and renames its page-type maps (&lt;page type&gt;_{mode === 'edit' && source ? source.name : 'name'}).</small>}
               </label>
+              {pageTypeMapRenames.length ? (
+                <div className="page-type-renames" id="size-map-page-type-renames">
+                  <span>Also renames:</span>
+                  <ul>{pageTypeMapRenames.map(([from, to]) => <li key={from}>{from} → {to}</li>)}</ul>
+                </div>
+              ) : null}
 
               <div className="breakpoint-editor size-map-compat-editor">
                 <div className="breakpoint-editor-heading">
@@ -391,7 +521,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                     <span>Breakpoints</span>
                     <small>Viewport width chooses when a row applies. Sizes lists the allowed creatives, for example 970x250 | fluid. Leave Sizes empty when no ad should serve.</small>
                   </div>
-                  {mode !== 'duplicate' ? <button className="button secondary" onClick={addBreakpoint} type="button">Add breakpoint</button> : null}
+                  {mode !== 'duplicate' ? <button className="button secondary" disabled={submitting} onClick={addBreakpoint} type="button">Add breakpoint</button> : null}
                 </div>
 
                 <p className="size-map-reservation-help">Reserved ad height is calculated from Sizes for standard slots and exported as CSS min-height. Sticky and overlay positions use their own layout. It is separate from the browser viewport height.</p>
@@ -401,14 +531,14 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                   <div className="breakpoint-form-row" key={row.id}>
                     <label>
                       <span>Viewport width ≥ (px)</span>
-                      <input aria-label={`Breakpoint ${index + 1} minimum browser viewport width`} disabled={mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minWidth: Number(event.target.value) })} type="number" value={row.minWidth} />
+                      <input aria-label={`Breakpoint ${index + 1} minimum browser viewport width`} disabled={submitting || mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minWidth: Number(event.target.value) })} type="number" value={row.minWidth} />
                     </label>
                     <label className="sizes-field">
                       <span>Sizes</span>
-                      <input aria-label={`Breakpoint ${index + 1} sizes`} disabled={mode === 'duplicate'} onChange={(event) => updateRow(row.id, { sizesText: event.target.value })} placeholder="970x250 | 728x90 | fluid · or leave empty" value={row.sizesText} />
+                      <input aria-label={`Breakpoint ${index + 1} sizes`} disabled={submitting || mode === 'duplicate'} onChange={(event) => updateRow(row.id, { sizesText: event.target.value })} placeholder="970x250 | 728x90 | fluid · or leave empty" value={row.sizesText} />
                     </label>
                     {mode !== 'duplicate' ? (
-                      <button aria-label={`Remove breakpoint ${index + 1}`} className="breakpoint-remove" disabled={rows.length === 1} onClick={() => removeBreakpoint(row.id)} type="button">×</button>
+                      <button aria-label={`Remove breakpoint ${index + 1}`} className="breakpoint-remove" disabled={submitting || rows.length === 1} onClick={() => removeBreakpoint(row.id)} type="button">×</button>
                     ) : null}
                     <div className="breakpoint-reserved-height" aria-live="polite">
                       <span>Reserved ad height / CSS min-height</span>
@@ -419,7 +549,7 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
                       <summary>Advanced: browser viewport height{row.minHeight ? ` ≥ ${row.minHeight}px` : ''}</summary>
                       <label>
                         <span>Minimum browser viewport height (px)</span>
-                        <input aria-label={`Breakpoint ${index + 1} minimum browser viewport height`} disabled={mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minHeight: Number(event.target.value) })} type="number" value={row.minHeight} />
+                        <input aria-label={`Breakpoint ${index + 1} minimum browser viewport height`} disabled={submitting || mode === 'duplicate'} min="0" onChange={(event) => updateRow(row.id, { minHeight: Number(event.target.value) })} type="number" value={row.minHeight} />
                         <small>Additional condition on the browser window, not reserved ad space. Keep 0 for width-only rules. Nonzero values require a script and ad format that support viewport-height rules.</small>
                       </label>
                     </details>
@@ -428,11 +558,21 @@ export default function SizeMapsCompatPanel({ publisherId, onChanged }: Props) {
               </div>
 
               {mode === 'duplicate' ? <div className="form-options">The copied map keeps all {source?.map.length ?? 0} breakpoint(s). Save it first, then edit if needed.</div> : null}
-              {formError ? <div role="alert" className="form-error">{formError}</div> : null}
-              <div className="modal-actions">
+              {confirmation ? (
+                <div ref={confirmNotice} tabIndex={-1} role="status" aria-live="polite" aria-atomic="true" className={`size-map-compat-note page-type-confirmation${confirmationUpdated ? ' updated' : ''}`}>
+                  <strong>Confirm the page-type change</strong>
+                  {confirmationUpdated ? <p className="page-type-confirmation-updated">Updated: the impact changed since your last attempt, for example in another tab. Review these lines before you confirm.</p> : null}
+                  <ul>{confirmation.changes.map((change) => <li key={`${change.base}\u0000${change.pageType}`}>{change.message}</li>)}</ul>
+                  {confirmation.videoUnits?.length ? <p>Saved Outstream video sizes for this map are removed from {confirmation.videoUnits.join(', ')}.</p> : null}
+                  {confirmation.videoSizes?.map((line) => <p className="page-type-video-size" key={`${line.code}\u0000${line.map}`}>{line.message}</p>)}
+                  <p>The next Generate uses these sizes. Existing packages do not change.</p>
+                </div>
+              ) : null}
+              {formError ? <div ref={formNotice} role="alert" className="form-error">{formError}</div> : null}
+              <div className="modal-actions" ref={formActions}>
                 <button className="button secondary" disabled={submitting} onClick={closeForm} type="button">Cancel</button>
                 <button className="button primary" disabled={submitting} type="submit">
-                  {submitting ? 'Saving…' : mode === 'duplicate' ? 'Duplicate size map' : 'Save size map'}
+                  {submitting ? 'Saving…' : mode === 'duplicate' ? 'Duplicate size map' : confirmation ? 'Confirm and save' : 'Save size map'}
                 </button>
               </div>
             </form>
