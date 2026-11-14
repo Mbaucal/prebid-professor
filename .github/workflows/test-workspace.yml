@@ -7,6 +7,7 @@ on:
       - src/builtin-runtime-preview.css
       - src/preview/**
       - src/site-workspace/**
+      - src/shared/**
       - src/components/ScriptLibraryPanel.tsx
       - src/components/PositionBidCachePanel.tsx
       - src/components/PrebidModePanel.tsx
@@ -14,9 +15,9 @@ on:
       - src/components/ab-experiments.css
       - src/components/confirm-delete.css
       - worker/**
-      - shared/outstream/**
-      - shared/size-maps/**
+      - shared/**
       - ops/runtime-test/**
+      - wrangler.jsonc
       - scripts/**
       - tools/**
       - tests/**
@@ -128,6 +129,53 @@ jobs:
             .generated/demand-evidence/browser-results.json
             .generated/named-script-test-evidence/*.json
             .generated/named-script-test-evidence/*.png
+          if-no-files-found: ignore
+          retention-days: 14
+  generation-parity:
+    # Generated ads.js from the deployed TEST Worker bundle must equal a direct compile and run.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TZ: UTC
+      TESSERA_TEST_TOOLCHAIN: isolated
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.3
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Install locked tools without lifecycle scripts
+        run: node scripts/bootstrap-toolchain.mjs --profile test
+      - name: Build and seal the TEST Worker exactly as test-deploy uploads it
+        working-directory: ops/runtime-test
+        env:
+          CI: 'true'
+        run: |
+          node ../../scripts/isolated-toolchain.mjs test-build --profile test
+          node ../../scripts/isolated-toolchain.mjs test-deploy-check --profile test
+      - name: Every serialized function has canonical source text installed by its Worker entry
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/canonical-browser-text.test.mjs
+      - name: Every selectable runtime from the sealed Worker on LOCAL workerd equals the direct compile
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/verify-workerd-generation-parity.mjs
+      - name: Install pinned Chromium verification tools
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Run every generated ads.js and ads.min.js with GPT mock and granted consent (no network)
+        run: python scripts/verify-generation-parity-browser.py
+      - name: Keep only the synthetic generation report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: generation-parity-evidence
+          path: |
+            .generated/generation-parity/manifest.json
+            .generated/generation-parity/browser-results.json
           if-no-files-found: ignore
           retention-days: 14
   adapter-wire:

@@ -1,3 +1,5 @@
+// First: functions embedded in generated code must serialize to their source text.
+import '../runtime-canonical/install-test-workspace.mjs';
 import {countryResponse} from '../geo-country.mjs';
 import {inventoryImportResponse} from './inventory-imports.mjs';
 import {creativeTemplatesResponse} from './creative-templates.mjs';

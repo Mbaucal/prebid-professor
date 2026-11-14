@@ -27,6 +27,7 @@ import { prepareDemandRuntime } from './prepare-demand-runtime.mjs';
 import { prepareNextRuntime } from './prepare-next-runtime.mjs';
 import { prepareReportingRuntime } from './prepare-reporting-runtime.mjs';
 import { prepareTestPageClient } from './prepare-test-page-client.mjs';
+import { prepareBrowserCanonical } from './prepare-browser-canonical.mjs';
 const currentRuntimeRelease=runtimeReleaseHistory.find(r=>r.codeSha256==='222569881b377c085f0b5d373523d092d64e2ac5dab05d421c3cc9f371078de9');
 
 export const BUILDER_SHA256 = '2f0e5c93a9c1dc2137fac63e08d0b0f493f74b91c5df4419a8403886d28b91ec';
@@ -107,6 +108,8 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareRuntime3211(root);
   await prepareRuntime3212(root);
   await prepareTestPageClient(root);
+  // Source text the Worker entries install; see worker/runtime-canonical/functions.mjs.
+  await prepareBrowserCanonical(root);
   return descriptor;
 }
 
