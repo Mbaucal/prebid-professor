@@ -8,8 +8,9 @@
  * .generated modules). When dist/prebid_professor exists, every repository
  * module that Rolldown bundled into the production Worker must be in that graph.
  * The scan resolves serialized expressions to function declarations (through
- * aliases, namespace imports, local object literals and local functions that
- * serialize a parameter) and is strict where it cannot resolve them:
+ * local const aliases, imports of exported function declarations, namespace
+ * imports, local object literals and functions that serialize a parameter) and
+ * is strict where it cannot resolve them:
  * - toString may only be called directly (x.toString(...)), on a listed function
  *   or on a value the scan proves is not a function; reviewedToString below
  *   lists the few remaining uses by hand. toString.call/apply/bind, any other
@@ -18,11 +19,17 @@
  * - a function in an array literal must be listed: join, map(String) and
  *   String(array) serialize it.
  * - templates, String(), + and concat() of a resolved function must be listed.
- * A static scan cannot follow a function through other data (an object property
- * read back with Object.values, a computed name). Executed paths are covered by
- * the recording Function.prototype.toString in the installed-text test and by the
- * guard (scripts/canonical-text-guard.mjs) that scripts/verify-dist-generation-parity.mjs
- * and scripts/verify-script-library-workerd.mjs install around the compiled Worker.
+ * Known static limits: the scan does not follow a function through other data
+ * (an object property assigned later or read back with Object.values, a
+ * computed name), conditional, logical or sequence expressions, reassigned
+ * variables, default parameters, class methods, return values, re-exported
+ * aliases or destructuring. It does not treat other built-ins that read source
+ * text (encodeURIComponent, TextEncoder, toLocaleString, Array.of(...).join) as
+ * serialization.
+ * Executed paths are covered by the recording Function.prototype.toString in the
+ * installed-text test and by the guard (scripts/canonical-text-guard.mjs) that
+ * scripts/verify-dist-generation-parity.mjs and scripts/verify-script-library-workerd.mjs
+ * install around the compiled Worker.
  * This test is the only check that the installer lists are complete for paths
  * those runs do not execute, so CI runs it as a required step.
  * Run after scripts/isolated-toolchain.mjs build (it writes the canonical text and dist).
