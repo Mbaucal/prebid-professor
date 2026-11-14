@@ -71,8 +71,12 @@ export default {
       if(packageMatch[2])return packageAssetResponse(request,env,packageMatch[1],packageMatch[2],packageMatch[4]??null);
       return packageResponse(request,env,packageMatch[1],actor.email);
     }
-    // Built-in releases are changed only through the verified package workflow.
-    if(/^\/api\/publishers\/[^/]+\/releases\/builtin-release-[a-f0-9]{64}(?:\/|$)/.test(url.pathname)&&!['GET','HEAD'].includes(request.method))return new Response(JSON.stringify({error:'Use Generate and releases for this built-in package.'}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});
+    // Channel changes must use the verified package workflow. The shared delete
+    // endpoint already authenticates, confirms the exact ID and protects active
+    // releases; allow only that exact route through (never a channel sub-route).
+    const builtinReleasePath=/^\/api\/publishers\/[^/]+\/releases\/builtin-release-[a-f0-9]{64}(?:\/|$)/.test(url.pathname);
+    const builtinReleaseDelete=request.method==='DELETE'&&/^\/api\/publishers\/[^/]+\/releases\/builtin-release-[a-f0-9]{64}$/.test(url.pathname);
+    if(builtinReleasePath&&!builtinReleaseDelete&&!['GET','HEAD'].includes(request.method))return new Response(JSON.stringify({error:'Use Generate and releases for this built-in package.'}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});
     const oldGenerate=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/releases\/(generate|validate)$/);
     if(oldGenerate){
       if(!await getAuthenticatedUser(request,env))return new Response('Authentication required.',{status:401});
