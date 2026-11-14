@@ -553,6 +553,35 @@ test('F3: a refused ad-unit save still explains other concurrent changes; an ear
  result=await f.json('/ad-units/unit-P2','PATCH',{notes:'fixed',sizeMapKey:'home'});assert.equal(result.response.status,200);assert.equal(unitRow(f,'P2').size_map_key,'home');
 });
 
+// The form sends the key the request read, so the map gate exempts it; the rename moves the unit off it.
+for(const clock of ['a later millisecond','the same millisecond'])test(`F3: a stale form racing a rename of its own map in ${clock} is refused and names the map`,async()=>{
+ const f=await setup(),Real=Date;
+ try{
+  if(clock==='the same millisecond'){
+   const fixed=Real.now();globalThis.Date=class extends Real{constructor(...args){super(...(args.length?args:[fixed]));}static now(){return fixed;}};
+   // An edit just before gives the unit this millisecond as its version, which the rename then writes again.
+   assert.equal((await f.http('/ad-units/audit-unit','PATCH',{notes:'just edited'})).status,200);
+  }
+  const p1=unitRow(f,'P1');
+  const race=beforeUnitBatch(f,()=>f.http('/size-maps/audit-map','PATCH',{name:'renamed',map}));
+  const {response,data}=await f.json('/ad-units/audit-unit','PATCH',staleForm(p1,'display'));
+  assert.equal(race.other?.status,200,'the other tab ran first');
+  const moved=race.concurrent.units.find(row=>row.id==='audit-unit');assert.equal(moved.size_map_key,'renamed');
+  assert.equal(moved.updated_at===p1.updated_at,clock==='the same millisecond');
+  assert.equal(response.status,409,JSON.stringify(data));assert.equal(data.error,notSaved('display'));
+  assert.deepEqual(saved(f),race.concurrent,'only the rename is saved');
+ }finally{globalThis.Date=Real;}
+});
+
+test('F3: a unit already on a missing map is not blamed on that map when another change refuses its save',async()=>{
+ const f=await setup();
+ f.sqlite.prepare("INSERT INTO ad_units(id,publisher_id,code,type,size_map_key) VALUES('unit-P2',?,'P2','BTF','gone')").run(site);
+ const race=beforeUnitBatch(f,async()=>{f.sqlite.prepare("UPDATE ad_units SET notes='other tab',updated_at='2000-01-01T00:00:00.000Z' WHERE id='unit-P2'").run();return {status:200};});
+ const {response,data}=await f.json('/ad-units/unit-P2','PATCH',{notes:'stale form',sizeMapKey:'gone'});
+ assert.equal(race.other?.status,200);assert.equal(response.status,409);assert.equal(data.error,'Site settings changed. Reload before editing this ad unit.');
+ assert.deepEqual(saved(f),race.concurrent);
+});
+
 test('F3: the CSV ad-unit preview names each missing map on its row and apply refuses the whole file',async()=>{
  const f=await setup();
  assert.equal((await f.http('/size-maps/audit-map','PATCH',{name:'renamed',map})).status,200);
