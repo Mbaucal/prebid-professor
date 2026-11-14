@@ -443,17 +443,17 @@ test('renaming a TakeOver map into a page-type family with different sizes is re
  assert.equal(f.sqlite.prepare("SELECT size_map_key FROM ad_units WHERE code='TO'").get().size_map_key,'Y');
 });
 
-test('documented gap (R4.7, out of scope): a stale ad-unit form saved after a cascade rename writes the old base back, and Generate then refuses',async()=>{
+test('F3 (was R4.7): a stale ad-unit form saved after a cascade rename is refused, so Generate keeps working',async()=>{
  const f=await pageSetup();let state=(await f.json('/builtin-site-settings')).data;const runtime=state.runtimes.find(row=>row.version==='3.21.1');
  assert.equal((await f.http('/builtin-site-settings','POST',{action:'setup',revision:state.revision,runtime:runtime.pin,allowPreview:false,enablePrebid:false})).status,200);
  const p2=(await f.json('/ad-units')).data.adUnits.find(unit=>unit.code==='P2');
  assert.equal((await f.http('/size-maps/p-map','PATCH',{name:'X',map:P})).status,200);
- const {response}=await f.json('/ad-units/'+p2.id,'PATCH',{code:p2.code,type:p2.type,mediaType:p2.mediaType,enabled:p2.enabled,sortOrder:p2.sortOrder,notes:'edited',sizeMapKey:p2.sizeMapKey});
- assert.equal(response.status,200,'ad-unit saves do not check the map yet; flip this when R4.7 is fixed');
- assert.equal(f.sqlite.prepare("SELECT size_map_key FROM ad_units WHERE code='P2'").get().size_map_key,'P');
- assert.deepEqual((await refsOf(f,'naslovna_X')).map(row=>row.label),['Page type naslovna: P1, P3 (via X)']);
+ const {response,data}=await f.json('/ad-units/'+p2.id,'PATCH',{code:p2.code,type:p2.type,mediaType:p2.mediaType,enabled:p2.enabled,sortOrder:p2.sortOrder,notes:'edited',sizeMapKey:p2.sizeMapKey});
+ assert.equal(response.status,409);assert.equal(data.error,'Size map "P" does not exist on this site, so nothing was saved. Reload ad units and choose a current size map.');
+ assert.deepEqual({...f.sqlite.prepare("SELECT size_map_key,notes FROM ad_units WHERE code='P2'").get()},{size_map_key:'X',notes:null});
+ assert.deepEqual((await refsOf(f,'naslovna_X')).map(row=>row.label),['Page type naslovna: P1–P3 (via X)']);
  state=(await f.json('/builtin-site-settings')).data;const bundle=await f.http('/builtin-site-settings','POST',{action:'bundle',revision:state.revision,acknowledge:true});
- assert.equal(bundle.status,422);assert.match(await bundle.text(),/P2 needs a saved size map/);
+ assert.equal(bundle.status,200,await bundle.clone().text());
 });
 test('DELETE reads its optional confirmation body only when it is JSON; an empty JSON body counts as none',async()=>{
  const f=await pageSetup();const before=saved(f);
@@ -464,4 +464,147 @@ test('DELETE reads its optional confirmation body only when it is JSON; an empty
  assert.deepEqual(saved(f),before);
  const token=(await (await remove()).json()).details.confirmation.token;
  assert.equal((await remove({confirmPageTypeChanges:token})).status,200);
+});
+
+// F3: an ad-unit write stores only size map names that are saved when its batch commits.
+const unitRow=(f,code)=>f.sqlite.prepare('SELECT * FROM ad_units WHERE code=?').get(code)??null;
+const siteUpdatedAt=f=>f.sqlite.prepare('SELECT updated_at FROM publishers WHERE id=?').get(site).updated_at;
+const notSaved=name=>`Size map "${name}" does not exist on this site, so nothing was saved. Reload ad units and choose a current size map.`;
+const staleForm=(unit,sizeMapKey)=>({code:unit.code,type:unit.type,mediaType:unit.media_type,enabled:Boolean(unit.enabled),sortOrder:unit.sort_order,notes:'stale form',sizeMapKey});
+const unitsCsv=rows=>'code,type,mediaType,sizeMapKey,enabled,sortOrder\n'+rows.map(([code,key])=>[code,'BTF','banner',key,'true','1'].join(',')).join('\n');
+// Runs `other` (another tab) just before the first batch that writes an ad unit, as D1 would order them.
+function beforeUnitBatch(f,other){
+ const original=f.env.DB.batch;const result={};
+ f.env.DB.batch=async items=>{
+  if(items.some(item=>/(INSERT INTO|UPDATE) ad_units/.test(item.sql))){f.env.DB.batch=original;result.other=await other();result.concurrent=saved(f);}
+  return original(items);
+ };
+ return result;
+}
+
+test('F3: ad-unit create and update store saved, trimmed or empty keys and refuse any other name, case variants included',async()=>{
+ const f=await setup();
+ const create=(code,sizeMapKey)=>f.json('/ad-units','POST',{code,type:'BTF',mediaType:'banner',enabled:true,sortOrder:1,...(sizeMapKey===undefined?{}:{sizeMapKey})});
+ for(const [code,key,stored] of [['C1','home','home'],['C2','  home  ','home'],['C3','',null],['C4','   ',null],['C5',null,null],['C6',undefined,null]]){
+  const {response,data}=await create(code,key);assert.equal(response.status,201,JSON.stringify(data));assert.equal(unitRow(f,code).size_map_key,stored,code);
+ }
+ let before=saved(f);
+ for(const [code,key,name] of [['C7','Home','Home'],['C8','HOME','HOME'],['C9','missing','missing'],['C10',' home_ ','home_']]){
+  const {response,data}=await create(code,key);assert.equal(response.status,409,JSON.stringify(data));assert.equal(data.error,notSaved(name));
+ }
+ assert.deepEqual(saved(f),before,'a refused create writes no ad unit and no audit');
+ const patch=body=>f.json('/ad-units/audit-unit','PATCH',body);
+ for(const [body,stored] of [[{sizeMapKey:'home'},'home'],[{notes:'absent key keeps the map'},'home'],[{sizeMapKey:' display '},'display'],[{sizeMapKey:''},null],[{notes:'absent key keeps no map'},null],[{sizeMapKey:'display'},'display']]){
+  const {response,data}=await patch(body);assert.equal(response.status,200,JSON.stringify(data));assert.equal(unitRow(f,'P1').size_map_key,stored,JSON.stringify(body));
+ }
+ before=saved(f);
+ for(const name of ['Display','DISPLAY','display_v2','missing']){
+  const {response,data}=await patch({notes:'refused',sizeMapKey:name});assert.equal(response.status,409,JSON.stringify(data));assert.equal(data.error,notSaved(name));
+ }
+ assert.deepEqual(saved(f),before,'a refused update keeps the row, its version and the audit log');
+});
+
+test('F3: an ad-unit form opened before a map rename or delete cannot save the old name back',async()=>{
+ const f=await setup();const p1=unitRow(f,'P1');
+ assert.equal((await f.http('/size-maps/audit-map','PATCH',{name:'renamed',map})).status,200);assert.equal(unitRow(f,'P1').size_map_key,'renamed');
+ assert.equal((await f.http('/size-maps/home-map','DELETE')).status,200);
+ const before=saved(f);
+ for(const [name,request] of [['display',()=>f.json('/ad-units/audit-unit','PATCH',staleForm(p1,'display'))],['home',()=>f.json('/ad-units/audit-unit','PATCH',staleForm(p1,'home'))],
+  ['display',()=>f.json('/ad-units','POST',{code:'P9',type:'BTF',sizeMapKey:'display'})]]){
+  const {response,data}=await request();assert.equal(response.status,409,JSON.stringify(data));assert.equal(data.error,notSaved(name));
+ }
+ assert.deepEqual(saved(f),before);
+ // Choosing the current map in the same form saves, and the listing names P1 under it.
+ const {response,data}=await f.json('/ad-units/audit-unit','PATCH',staleForm(p1,'renamed'));assert.equal(response.status,200,JSON.stringify(data));
+ assert.deepEqual([unitRow(f,'P1').size_map_key,unitRow(f,'P1').notes],['renamed','stale form']);
+ assert.deepEqual((await refsOf(f,'renamed')).map(row=>row.label),['P1']);
+});
+
+for(const [step,action] of [['create','rename'],['create','delete'],['update','rename'],['update','delete'],['duplicate','rename'],['duplicate','delete']])test(`F3: an ad-unit ${step} racing a map ${action} writes nothing and names the map`,async()=>{
+ const f=await setup();
+ // The unused map "home": the other tab's rename or delete touches no ad-unit row, so only the map gate can refuse.
+ if(step==='duplicate')f.sqlite.prepare("INSERT INTO ad_units(id,publisher_id,code,type,size_map_key) VALUES('unit-P2',?,'P2','BTF','home')").run(site);
+ // The copy's source P2 uses "home", and HTTP refuses to delete a map in use: that writer removes only the map row.
+ const race=beforeUnitBatch(f,async()=>action==='rename'?f.http('/size-maps/home-map','PATCH',{name:'renamed',map})
+  :step==='duplicate'?(f.sqlite.prepare("DELETE FROM size_maps WHERE id='home-map'").run(),{status:200}):f.http('/size-maps/home-map','DELETE'));
+ const {response,data}=step==='create'?await f.json('/ad-units','POST',{code:'P9',type:'BTF',sizeMapKey:'home'})
+  :step==='update'?await f.json('/ad-units/audit-unit','PATCH',{notes:'raced',sizeMapKey:'home'})
+  :await f.json('/ad-units/unit-P2/duplicate','POST',{code:'P9'});
+ assert.equal(race.other?.status,200,'the other tab ran first');
+ assert.equal(response.status,409,JSON.stringify(data));
+ assert.equal(data.error,step==='duplicate'?'Size map "home" does not exist on this site, so nothing was copied. Reload ad units, or copy without the size-map reference.':notSaved('home'));
+ assert.deepEqual(saved(f),race.concurrent,'only the other tab change is saved');
+});
+
+test('F3: a refused ad-unit save still explains other concurrent changes; an earlier missing key is kept, never copied',async()=>{
+ const f=await setup();
+ const race=beforeUnitBatch(f,async()=>{f.sqlite.prepare("UPDATE ad_units SET updated_at='2000-01-01T00:00:00.000Z' WHERE id='audit-unit'").run();return {status:200};});
+ const {response,data}=await f.json('/ad-units/audit-unit','PATCH',{notes:'raced',sizeMapKey:'home'});
+ assert.equal(response.status,409);assert.equal(data.error,'Site settings changed. Reload before editing this ad unit.');assert.deepEqual(saved(f),race.concurrent);
+ // A unit saved earlier with a missing map (before this check) keeps that key on other edits; another missing name or a copy of it is refused.
+ f.sqlite.prepare("INSERT INTO ad_units(id,publisher_id,code,type,size_map_key) VALUES('unit-P2',?,'P2','BTF','gone')").run(site);
+ let result=await f.json('/ad-units/unit-P2','PATCH',{notes:'absent key'});assert.equal(result.response.status,200,JSON.stringify(result.data));
+ result=await f.json('/ad-units/unit-P2','PATCH',{notes:'unchanged key',sizeMapKey:' gone '});assert.equal(result.response.status,200,JSON.stringify(result.data));
+ assert.deepEqual([unitRow(f,'P2').size_map_key,unitRow(f,'P2').notes],['gone','unchanged key']);
+ result=await f.json('/ad-units/unit-P2','PATCH',{notes:'refused',sizeMapKey:'Gone'});assert.equal(result.response.status,409);assert.equal(result.data.error,notSaved('Gone'));
+ result=await f.json('/ad-units/unit-P2/duplicate','POST',{code:'P3'});assert.equal(result.response.status,409);
+ assert.equal(result.data.error,'Size map "gone" does not exist on this site, so nothing was copied. Reload ad units, or copy without the size-map reference.');assert.equal(unitRow(f,'P3'),null);
+ result=await f.json('/ad-units/unit-P2/duplicate','POST',{code:'P3',copySizeMapReference:false});assert.equal(result.response.status,201,JSON.stringify(result.data));assert.equal(unitRow(f,'P3').size_map_key,null);
+ result=await f.json('/ad-units/unit-P2','PATCH',{notes:'fixed',sizeMapKey:'home'});assert.equal(result.response.status,200);assert.equal(unitRow(f,'P2').size_map_key,'home');
+});
+
+// The form sends the key the request read, so the map gate exempts it; the rename moves the unit off it.
+for(const clock of ['a later millisecond','the same millisecond'])test(`F3: a stale form racing a rename of its own map in ${clock} is refused and names the map`,async()=>{
+ const f=await setup(),Real=Date;
+ try{
+  if(clock==='the same millisecond'){
+   const fixed=Real.now();globalThis.Date=class extends Real{constructor(...args){super(...(args.length?args:[fixed]));}static now(){return fixed;}};
+   // An edit just before gives the unit this millisecond as its version, which the rename then writes again.
+   assert.equal((await f.http('/ad-units/audit-unit','PATCH',{notes:'just edited'})).status,200);
+  }
+  const p1=unitRow(f,'P1');
+  const race=beforeUnitBatch(f,()=>f.http('/size-maps/audit-map','PATCH',{name:'renamed',map}));
+  const {response,data}=await f.json('/ad-units/audit-unit','PATCH',staleForm(p1,'display'));
+  assert.equal(race.other?.status,200,'the other tab ran first');
+  const moved=race.concurrent.units.find(row=>row.id==='audit-unit');assert.equal(moved.size_map_key,'renamed');
+  assert.equal(moved.updated_at===p1.updated_at,clock==='the same millisecond');
+  assert.equal(response.status,409,JSON.stringify(data));assert.equal(data.error,notSaved('display'));
+  assert.deepEqual(saved(f),race.concurrent,'only the rename is saved');
+ }finally{globalThis.Date=Real;}
+});
+
+test('F3: a unit already on a missing map is not blamed on that map when another change refuses its save',async()=>{
+ const f=await setup();
+ f.sqlite.prepare("INSERT INTO ad_units(id,publisher_id,code,type,size_map_key) VALUES('unit-P2',?,'P2','BTF','gone')").run(site);
+ const race=beforeUnitBatch(f,async()=>{f.sqlite.prepare("UPDATE ad_units SET notes='other tab',updated_at='2000-01-01T00:00:00.000Z' WHERE id='unit-P2'").run();return {status:200};});
+ const {response,data}=await f.json('/ad-units/unit-P2','PATCH',{notes:'stale form',sizeMapKey:'gone'});
+ assert.equal(race.other?.status,200);assert.equal(response.status,409);assert.equal(data.error,'Site settings changed. Reload before editing this ad unit.');
+ assert.deepEqual(saved(f),race.concurrent);
+});
+
+test('F3: the CSV ad-unit preview names each missing map on its row and apply refuses the whole file',async()=>{
+ const f=await setup();
+ assert.equal((await f.http('/size-maps/audit-map','PATCH',{name:'renamed',map})).status,200);
+ const rows=[['P1','home'],['P2',' renamed '],['P3',''],['P4','Home'],['P5','display'],['P6','missing']];
+ const missing=name=>[`Size map "${name}" does not exist on this site. Import or create it first, or use a current size map name.`];
+ const before=saved(f),stamp=siteUpdatedAt(f);
+ let {response,data}=await f.json('/imports/preview','POST',{kind:'ad-units',csv:unitsCsv(rows)});
+ assert.equal(response.status,200);assert.equal(data.preview.errorCount,3);
+ assert.deepEqual(data.preview.rows.map(row=>[row.key,row.status,row.errors]),[['P1','update',[]],['P2','create',[]],['P3','create',[]],['P4','error',missing('Home')],['P5','error',missing('display')],['P6','error',missing('missing')]]);
+ ({response,data}=await f.json('/imports/apply','POST',{kind:'ad-units',csv:unitsCsv(rows)}));
+ assert.equal(response.status,422);assert.equal(data.error,'CSV contains validation errors. Preview and fix the failing rows first.');assert.equal(data.details.errorCount,3);
+ assert.deepEqual(saved(f),before);assert.equal(siteUpdatedAt(f),stamp);
+ ({response,data}=await f.json('/imports/apply','POST',{kind:'ad-units',csv:unitsCsv(rows.slice(0,3))}));assert.equal(response.status,200,JSON.stringify(data));
+ assert.deepEqual(['P1','P2','P3'].map(code=>unitRow(f,code).size_map_key),['home','renamed',null]);
+});
+
+for(const action of ['rename','delete'])test(`F3: a CSV ad-unit apply racing a map ${action} writes no row, no audit and names the map`,async()=>{
+ const f=await setup();const stamp=siteUpdatedAt(f);
+ const race=beforeUnitBatch(f,()=>action==='rename'?f.http('/size-maps/home-map','PATCH',{name:'renamed',map}):f.http('/size-maps/home-map','DELETE'));
+ const {response,data}=await f.json('/imports/apply','POST',{kind:'ad-units',csv:unitsCsv([['P1','display'],['P2','home'],['P3','']])});
+ assert.equal(race.other?.status,200);assert.equal(response.status,409,JSON.stringify(data));
+ assert.equal(data.error,'Size map "home" does not exist on this site, so nothing was imported. Preview the CSV again and use a current size map name.');
+ assert.deepEqual(saved(f),race.concurrent);assert.equal(siteUpdatedAt(f),stamp);
+ // Without a map name the import keeps its ungated statements.
+ const ok=await f.json('/imports/apply','POST',{kind:'ad-units',csv:unitsCsv([['P3','']])});assert.equal(ok.response.status,200,JSON.stringify(ok.data));assert.equal(unitRow(f,'P3').size_map_key,null);
 });

@@ -1,4 +1,4 @@
-/** Size-map rename cascade, delete confirmation and the ADM-5 rule gate on the actual
+/** Size-map rename cascade, delete confirmation, the ADM-5 rule gate and the F3 ad-unit gate on the actual
  * compiled production Worker with local Miniflare D1 (not node:sqlite). Synthetic site,
  * no hosted API, bindings or outbound traffic. Run after `isolated-toolchain.mjs build`.
  */
@@ -87,6 +87,29 @@ try{
  const removal=await json(api+'/size-maps/'+v2,undefined,'DELETE');
  const crossed=await json(api+'/size-maps/'+v2,{name:'Naslovna_V2',map:NP,confirmPageTypeChanges:removal.data.details.confirmation.token},'PATCH');
  check('F4: a delete token never confirms a rename of the same map on D1, nothing written',removal.status===409&&crossed.status===409&&/Reload size maps to review and confirm this change\.$/.test(crossed.data.error)&&JSON.stringify(crossed.data.details.confirmation.changes)===JSON.stringify(removal.data.details.confirmation.changes)&&(await names()).includes('naslovna.v2_X'));
+ // F3: an ad-unit write stores only size maps saved when its D1 batch commits (no pre-check for forms: the gate decides).
+ const unitKey=async code=>(await db.prepare('SELECT size_map_key FROM ad_units WHERE publisher_id=? AND code=?').bind(site,code).first())?.size_map_key;
+ const staleForm=await json(api+'/ad-units/unit-P2',{code:'P2',type:'BTF',mediaType:'banner',enabled:true,sortOrder:1,notes:'stale',sizeMapKey:'P'},'PATCH');
+ const gone=await json(api+'/ad-units/unit-P2',{sizeMapKey:'1x_X'},'PATCH');
+ const missingMap=await json(api+'/ad-units',{code:'P5',type:'BTF',sizeMapKey:'naslovna_P'});
+ check('F3: a stale ad-unit form or create naming a renamed or deleted map is refused by the D1 batch gate, nothing written',staleForm.status===409&&staleForm.data.error==='Size map "P" does not exist on this site, so nothing was saved. Reload ad units and choose a current size map.'
+  &&gone.status===409&&gone.data.error.startsWith('Size map "1x_X" does not exist')&&missingMap.status===409&&await unitKey('P2')==='X'&&await unitKey('P5')===undefined);
+ const currentMap=await json(api+'/ad-units/unit-P2',{notes:'current',sizeMapKey:'home'},'PATCH');
+ const fresh=await json(api+'/ad-units',{code:'P5',type:'BTF',sizeMapKey:'članak_X'});
+ check('F3: ad-unit update and create naming saved maps pass the same gate on D1 (diacritic name)',currentMap.status===200&&await unitKey('P2')==='home'&&fresh.status===201&&await unitKey('P5')==='članak_X');
+ const unitsCsv=rows=>'code,type,mediaType,sizeMapKey,enabled,sortOrder\n'+rows.map(row=>row.join(',')).join('\n');
+ const refusedCsv=await json(api+'/imports/apply',{kind:'ad-units',csv:unitsCsv([['P2','BTF','banner','P','true','1'],['P6','BTF','banner','X','true','6']])});
+ const refusedKeys=[await unitKey('P2'),await unitKey('P6')];
+ const appliedCsv=await json(api+'/imports/apply',{kind:'ad-units',csv:unitsCsv([['P2','BTF','banner','X','true','1'],['P6','BTF','banner','sport_Q','true','6'],['P7','DRAFT','banner','','false','7']])});
+ check('F3: an ad-unit CSV naming a renamed map is refused whole; a valid one upserts through the gated INSERT ... SELECT ... ON CONFLICT on D1',refusedCsv.status===422
+  &&refusedCsv.data.details.rows[0].errors[0].startsWith('Size map "P" does not exist')&&refusedKeys[0]==='home'&&refusedKeys[1]===undefined
+  &&appliedCsv.status===200&&appliedCsv.data.created===2&&appliedCsv.data.updated===1&&await unitKey('P6')==='sport_Q'&&await unitKey('P7')===null);
+ // The row guard compares the stored key with IS, so a unit without a size map (NULL) still saves on D1.
+ const p7=await db.prepare('SELECT id FROM ad_units WHERE publisher_id=? AND code=?').bind(site,'P7').first();
+ const noMap=await json(api+'/ad-units/'+p7.id,{notes:'no size map'},'PATCH');
+ const staleNoMap=await json(api+'/ad-units/'+p7.id,{notes:'stale',sizeMapKey:'P'},'PATCH');
+ check('F3: an edit of a unit without a size map passes the row guard on D1; a stale map name on it is still refused',noMap.status===200&&noMap.data.adUnit.notes==='no size map'&&await unitKey('P7')===null
+  &&staleNoMap.status===409&&staleNoMap.data.error.startsWith('Size map "P" does not exist')&&await unitKey('P7')===null);
  check('No outbound fetch was attempted',outbound===0);
  await mkdir('.generated/size-map-references-ui',{recursive:true});
  const report={scope:'compiled production Worker + local Miniflare D1; NOT hosted Cloudflare',checks,passed:checks.length,failed:0,outbound};
