@@ -2,7 +2,7 @@ name: TEST site editor checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [tools/**, package.json, package-lock.json, ops/runtime-test/**, wrangler.jsonc, worker/**, src/**, public/**, index.html, shared/**, migrations/**, tests/**, scripts/**, .github/workflows/site-editor-checks.yml]
+    paths: [tools/**, package.json, package-lock.json, ops/runtime-test/**, ops/test-worker/**, wrangler.jsonc, worker/**, src/**, public/**, index.html, shared/**, vendor/**, migrations/**, tests/**, scripts/**, .github/workflows/site-editor-checks.yml]
   push:
     branches: [main, feature/isolated-runtime-workspace-v1]
 permissions:
