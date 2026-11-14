@@ -13,6 +13,7 @@ import { prepareRuntime3161 } from './prepare-runtime3161.mjs';
 import { prepareRuntime3191 } from './prepare-runtime3191.mjs';
 import { prepareRuntime321 } from './prepare-runtime321.mjs';
 import { prepareRuntime3211 } from './prepare-runtime3211.mjs';
+import { prepareRuntime3212 } from './prepare-runtime3212.mjs';
 import { prepareRuntime3201 } from './prepare-runtime3201.mjs';
 import { prepareRuntime320 } from './prepare-runtime320.mjs';
 import { prepareRuntime319 } from './prepare-runtime319.mjs';
@@ -98,6 +99,7 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareRuntime3201(root);
   await prepareRuntime321(root);
   await prepareRuntime3211(root);
+  await prepareRuntime3212(root);
   await prepareTestPageClient(root);
   return descriptor;
 }
