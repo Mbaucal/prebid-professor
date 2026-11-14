@@ -9,7 +9,7 @@ permissions:
   contents: read
 jobs:
   editor:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright 1.55 browser dependencies are pinned to this supported OS.
     timeout-minutes: 15
     env:
       TZ: UTC
@@ -29,6 +29,8 @@ jobs:
       - name: Verify login redirects and publisher HTML isolation
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/auth-redirect.test.mjs tests/runtime/login-rate-limit.test.mjs tests/runtime/test-login-security.test.mjs tests/runtime/test-workspace-schema-guards.test.mjs tests/runtime/release-html-security.test.mjs
       - run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/site-draft.test.mjs tests/runtime/test-site-editor-http.test.mjs tests/runtime/ad-position-runtime.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/site-duplication.test.mjs tests/runtime/site-package-flow.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/size-map-csv-template.test.mjs tests/runtime/site-test-page.test.mjs
+      - name: Verify release deletion through the authenticated dashboard route
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/release-deletion-http.test.mjs tests/runtime/stored-draft-legacy-guards.test.mjs
       - name: Preserve audited rule edits, user sync defaults and exact Prebid files
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/admin-rules-and-sync-audit.test.mjs tests/runtime/admin-unit-rule-concurrency.test.mjs tests/runtime/prebid-digit-modules-flow.test.mjs tests/runtime/compiler-input-compatibility.test.mjs tests/runtime/refresh-summary.test.mjs tests/runtime/size-map-compatibility.test.mjs tests/runtime/generator-guard-audit.test.mjs tests/runtime/inactive-override-package-qa.test.mjs tests/runtime/runtime3201-package-qa.test.mjs tests/runtime/outstream-runtime-eligibility.test.mjs
       - name: Verify contextual taxonomy settings, auction isolation and build integration
@@ -67,6 +69,7 @@ jobs:
       - run: python scripts/verify-site-workspace.py
       - run: node --experimental-strip-types scripts/prepare-test-page-browser-fixture.mjs && python scripts/verify-site-test-page.py
       - run: python scripts/verify-release-setup.py
+      - run: python scripts/verify-release-deletion-ui.py
       - run: python scripts/verify-loading-summary.py
       - name: Verify copied SChain commands and Debug UI on desktop and mobile
         run: node scripts/prepare-schain-debug-fixture.mjs && python scripts/verify-schain-debug.py
@@ -76,6 +79,7 @@ jobs:
         with:
           name: site-editor-evidence
           path: |
+            .generated/release-deletion-ui/
             .generated/size-map-height-ui/
             .generated/runtime-controls-validation-ui/
             .generated/inactive-media-ui-qa/
