@@ -5,17 +5,19 @@
  *
  * The scan reads every repository file that esbuild bundles into a Worker entry
  * (worker/**, shared/**, scripts/**, src/**, vendor/** and .generated modules).
- * It resolves serialized expressions to function declarations and is strict
- * where it cannot resolve them:
+ * It resolves serialized expressions to function declarations (through aliases,
+ * namespace imports, local object literals and local functions that serialize
+ * a parameter) and is strict where it cannot resolve them:
  * - toString may only be called directly (x.toString(...)), on a listed function
  *   or on a value the scan proves is not a function; reviewedToString below
- *   lists the few remaining calls by hand. toString.call/apply/bind, any other
- *   use of a toString member and destructuring toString are refused.
+ *   lists the few remaining uses by hand. toString.call/apply/bind, any other
+ *   use of a toString member, destructuring toString and the string 'toString'
+ *   (Reflect.get, getOwnPropertyDescriptor) are refused.
  * - a function in an array literal must be listed: join, map(String) and
  *   String(array) serialize it.
  * - templates, String(), + and concat() of a resolved function must be listed.
  * A static scan cannot follow a function through other data (an object property
- * read back with Object.values, a computed member). Executed paths are covered
+ * read back with Object.values, a computed name). Executed paths are covered
  * by the recording Function.prototype.toString in the third test and by the
  * guard that scripts/verify-workerd-generation-parity.mjs installs in the sealed
  * Worker.
@@ -79,9 +81,14 @@ const reviewedToString = {
   // escapeCssId: n = value.charCodeAt(i), a number.
   'shared/gam/ad-unit-code.mjs': {'n.toString()': 1},
   // Vendored XML parser: code point numbers, path matcher objects and the XML input
-  // (string or bytes; xmlData.toString without a call is a presence test).
-  'vendor/gam-xml-parser/parser.mjs': {'cp.toString()': 1, 'this._matcher.toString()': 1, 'jPath.toString()': 4, 'matcher.toString()': 1,
+  // (string or bytes; xmlData.toString without a call is a presence test). The
+  // string is an entry of its list of property names it refuses to set.
+  'vendor/gam-xml-parser/parser.mjs': {"'toString'": 1, 'cp.toString()': 1, 'this._matcher.toString()': 1, 'jPath.toString()': 4, 'matcher.toString()': 1,
     'readonlyMatcher.toString()': 2, 'xmlData.toString()': 1, 'xmlData.toString': 1},
+  // The installer: Object.hasOwn(fn, 'toString') and Object.defineProperty(fn, 'toString', ...).
+  'worker/runtime-canonical/install.mjs': {"'toString'": 2},
+  // A list of reserved GAM codes that older runtimes refuse.
+  'worker/test-workspace/runtime-catalog.mjs': {"'toString'": 1},
 };
 
 // ---------------------------------------------------------------- static scan
@@ -211,9 +218,29 @@ function functionExports(path) {
   const info = moduleInfo(path);
   return [...info.exports.keys(), ...info.reexports.keys()].map(name => exportedFunction(path, name)).filter(Boolean);
 }
+/** A string literal or a template without expressions: its text, else null. */
+const staticText = node => node?.type === 'Literal' && typeof node.value === 'string' ? node.value
+  : node?.type === 'TemplateLiteral' && !node.expressions.length ? node.quasis[0].value.cooked : null;
+const memberName = node => node.type === 'MemberExpression' && (node.computed ? staticText(node.property) ?? (node.property.type === 'Literal' && node.property.value) : node.property.name);
+const keyName = node => !node.computed && node.key.type === 'Identifier' ? node.key.name : node.key.type === 'Literal' ? node.key.value : null;
+/** The module a namespace import binding (or an alias of one) refers to, or null. */
+function namespaceSource(info, node, depth = 0) {
+  if (depth > 4 || node?.type !== 'Identifier') return null;
+  const binding = info.lookup(node, node.name);
+  if (binding?.kind === 'import') { const imported = info.imports.get(node.name); return imported.name === '*' ? imported.from : null; }
+  return binding?.kind === 'alias' ? namespaceSource(info, binding.node, depth + 1) : null;
+}
+/** The object literal a binding (or an alias of one) is initialized with, or null. */
+function objectLiteral(info, node, depth = 0) {
+  if (depth > 4 || node?.type !== 'Identifier') return null;
+  const binding = info.lookup(node, node.name);
+  if (binding?.node?.type === 'ObjectExpression') return binding.node;
+  return binding?.kind === 'alias' ? objectLiteral(info, binding.node, depth + 1) : null;
+}
 /** What a serialized expression refers to: a function, every function of a namespace, or null. */
 function resolveFunction(info, node, depth = 0) {
   if (depth > 4) return null;
+  if (['FunctionExpression', 'ArrowFunctionExpression'].includes(node.type)) return [{path: info.path, name: null, local: info.text.slice(node.start, node.start + 40), node}];
   if (node.type === 'Identifier') {
     const binding = info.lookup(node, node.name);
     if (!binding) return null;
@@ -228,16 +255,20 @@ function resolveFunction(info, node, depth = 0) {
     if (binding.kind === 'alias') return resolveFunction(info, binding.node, depth + 1);
     return null;
   }
-  if (node.type === 'MemberExpression' && node.object.type === 'Identifier' && info.lookup(node, node.object.name)?.kind === 'import' && info.imports.get(node.object.name).name === '*') {
-    const from = info.imports.get(node.object.name).from;
-    if (!node.computed) { const fn = exportedFunction(from, node.property.name); return fn ? [fn] : null; }
-    if (node.property.type === 'Literal') { const fn = exportedFunction(from, String(node.property.value)); return fn ? [fn] : null; }
+  if (node.type !== 'MemberExpression') return null;
+  const name = memberName(node);
+  const from = namespaceSource(info, node.object);
+  if (from) {
+    if (typeof name === 'string') { const fn = exportedFunction(from, name); return fn ? [fn] : null; }
     return functionExports(from); // a computed member may be any function of the namespace
   }
-  return null;
+  // A member of a local object literal ({zzHelper}, {run() {}} or {run: zzHelper}).
+  const object = objectLiteral(info, node.object);
+  if (!object) return null;
+  const properties = object.properties.filter(p => p.type === 'Property' && (typeof name !== 'string' || keyName(p) === name));
+  const found = properties.flatMap(p => resolveFunction(info, p.value, depth + 1) ?? []);
+  return found.length ? found : null;
 }
-const memberName = node => node.type === 'MemberExpression' && (node.computed ? node.property.type === 'Literal' && node.property.value : node.property.name);
-const keyName = node => !node.computed && node.key.type === 'Identifier' ? node.key.name : node.key.type === 'Literal' ? node.key.value : null;
 
 // Proof that a toString receiver is not a function, for the common non-function
 // receivers: primitives, built-in object instances and bytes of a typed array.
@@ -312,25 +343,46 @@ function nonFunction(info, node, depth = 0) {
   return false;
 }
 
-/** Serializations in the given files: resolved functions, refused forms and unproven toString calls. */
+/** The function AST node a resolved function refers to, or null. */
+const functionNode = fn => fn.node ?? moduleInfo(fn.path).program.bindings.get(fn.local)?.node ?? null;
+
+/** Serializations in the given files: resolved functions, refused forms and unproven toString uses. */
 function serializationSites(files, {strict}) {
-  const sites = [], refused = [], unproven = new Map();
+  const sites = [], refused = [], unproven = new Map(), calls = [];
+  // Parameters a local function serializes: function node -> parameter index -> how.
+  const serializedParams = new Map();
+  const serializesParam = (info, node, how) => {
+    const binding = node.type === 'Identifier' ? info.lookup(node, node.name) : null;
+    if (binding?.kind !== 'param') return false;
+    const params = serializedParams.get(binding.fn) ?? new Map();
+    serializedParams.set(binding.fn, params);
+    if (params.has(binding.index)) return false;
+    params.set(binding.index, how);
+    return true;
+  };
   for (const path of files) {
     const info = moduleInfo(path);
     const at = node => `${path}:${node.loc.start.line}`;
     const add = (node, how) => {
-      for (const fn of resolveFunction(info, node) ?? []) sites.push({file: at(node), how, fn});
+      const fns = resolveFunction(info, node);
+      for (const fn of fns ?? []) sites.push({file: at(node), how, fn});
+      if (!fns) serializesParam(info, node, `${how} at ${at(node)}`);
     };
+    const reviewed = (node, key) => unproven.set(`${path}\t${key}`, [...(unproven.get(`${path}\t${key}`) ?? []), at(node)]);
     walk(info.ast, (node, parent) => {
+      if (node.type === 'CallExpression' || node.type === 'NewExpression') calls.push({info, node, at});
       if (memberName(node) === 'toString') {
         const called = parent?.type === 'CallExpression' && parent.callee === node;
         const fns = called ? resolveFunction(info, node.object) : null;
         if (fns) add(node.object, '.toString');
-        else if (strict && !(called && nonFunction(info, node.object))) {
-          const key = info.text.slice(node.start, node.end).replace(/\s+/g, '') + (called ? '()' : '');
-          unproven.set(`${path}\t${key}`, [...(unproven.get(`${path}\t${key}`) ?? []), at(node)]);
+        else {
+          if (called) serializesParam(info, node.object, `.toString at ${at(node)}`);
+          if (strict && !(called && nonFunction(info, node.object))) reviewed(node, info.text.slice(node.start, node.end).replace(/\s+/g, '') + (called ? '()' : ''));
         }
       }
+      // The name as data reaches the prototype method too: Reflect.get(Function.prototype, 'toString').
+      if (strict && staticText(node) === 'toString' && !(parent?.type === 'MemberExpression' && parent.property === node && parent.computed)
+        && !(parent?.type === 'Property' && parent.key === node)) reviewed(node, "'toString'");
       if (strict && node.type === 'ObjectPattern' && node.properties.some(p => p.type === 'Property' && keyName(p) === 'toString')) refused.push(`${at(node)} destructures toString`);
       if (node.type === 'TemplateLiteral') for (const expression of node.expressions) add(expression, 'template');
       if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && node.callee.name === 'String') for (const argument of node.arguments) add(argument, 'String()');
@@ -339,6 +391,25 @@ function serializationSites(files, {strict}) {
       if (memberName(node) === 'concat') for (const argument of parent?.type === 'CallExpression' && parent.callee === node ? parent.arguments : []) add(argument, '.concat()');
       if (strict && node.type === 'ArrayExpression') for (const element of node.elements) if (element) add(element.type === 'SpreadElement' ? element.argument : element, 'array element');
     });
+  }
+  // A function that serializes its parameter serializes each argument passed there
+  // (const embed = fn => `${fn}`; embed(helper)), also through further parameters.
+  const done = new Set();
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const {info, node, at} of calls) {
+      for (const target of resolveFunction(info, node.callee) ?? []) {
+        const params = serializedParams.get(functionNode(target));
+        for (const [index, how] of params ?? []) {
+          const argument = node.arguments[index];
+          if (!argument || argument.type === 'SpreadElement' || done.has(argument)) continue;
+          done.add(argument);
+          const via = `argument ${index + 1} of ${target.name ?? target.local} (${how})`;
+          for (const fn of resolveFunction(info, argument) ?? []) sites.push({file: at(argument), how: via, fn});
+          if (serializesParam(info, argument, via)) changed = true;
+        }
+      }
+    }
   }
   return {sites, refused, unproven};
 }
@@ -356,7 +427,10 @@ test('every function serialized by a Worker-bundled file is listed for a canonic
   for (const [key, lines] of unproven) {
     const [path, call] = key.split('\t');
     (counts[path] ??= {})[call] = lines.length;
-    if (reviewedToString[path]?.[call] !== lines.length) problems.push(`${lines.join(', ')} ${call}: toString on a value the scan cannot prove is not a function. ` +
+    if (reviewedToString[path]?.[call] === lines.length) continue;
+    if (call === "'toString'") problems.push(`${lines.join(', ')} ${call}: the name as data can read Function.prototype.toString (Reflect.get, getOwnPropertyDescriptor). ` +
+      'Call x.toString() directly on a listed function, or add the use to reviewedToString after checking it reads nothing.');
+    else problems.push(`${lines.join(', ')} ${call}: toString on a value the scan cannot prove is not a function. ` +
       (call.endsWith('()') ? 'Serialize only a listed function, or add the call to reviewedToString after checking the receiver.' : 'Call x.toString() directly on a listed function instead.'));
   }
   for (const [path, calls] of Object.entries(reviewedToString)) for (const [call, count] of Object.entries(calls)) {
