@@ -1,5 +1,48 @@
 [
   {
+    "id": "tessera-3.21.2",
+    "version": "3.21.2",
+    "codeSha256": "d4a09add9be3af38fff4610682ea0fb9e89cf23e9a1a231d502e034c3cf37bb7",
+    "configSchemaVersion": 1,
+    "channel": "stable",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules",
+      "viewport-height-size-maps",
+      "gam-code-compatibility",
+      "contextual-signals"
+    ],
+    "date": "2026-11-13",
+    "title": "Tessera 3.21.2 — TakeOver interval no longer delays the page boot",
+    "sourceManifest": "scripts/prepare-runtime3212.mjs",
+    "sourceCommit": "bb5ce472538e6d5477f74bafcc34173097beb63d",
+    "changes": [
+      "With a TakeOver interval above 0, ads.js again does at page load what 3.21.0 does there: it defines slots, reserves size-map space, prepares Sticky hosts, decides keyword-conditioned unit rules and sets page-level key-values. 3.21.1 did these at the CMP decision. On pages where the TakeOver can show, only the TakeOver frequency cap, the Google interstitial protection, GPT services, slot display and the first ad requests wait for the visitor's CMP decision.",
+      "Ad containers inserted after load and later changes to window.adsKeywords are handled as in 3.21.0. Container discovery (only on pages without content containers at load), the geo_country country pass and the short early keyword check work as in 3.21.0, and only they add later keywords to page key-values or use them for the rules of ad containers. Values are added, not replaced. With a TakeOver interval, on pages where the TakeOver can show, 3.21.1 instead defined containers inserted before the decision and used the keywords current at the decision.",
+      "The CMP decision defines no slots for ad containers and adds no window.adsKeywords to page key-values; on an active page it defines the TakeOver guard and the TakeOver slot. The Interstitial fallback rule uses the keywords current when the TakeOver releases the fallback, as in 3.21.0 and 3.21.1. Containers defined while the decision is pending are displayed once after GPT services start. Set window.adsKeywords before ads.js, put the ad containers in the page HTML, and load ads.js with the defer tag shown in implementation.html.",
+      "The TakeOver frequency cap is still checked only after the current CMP decision, with the 3.21.1 storage rules. On pages where the TakeOver can show, window.TAKEOVER_ACTIVE_FOR_PAGE is null and the TakeOver status is waiting-consent until the decision, instead of false and inactive. On other pages (in an iframe, or a viewport without a TakeOver size) they are false and inactive, and GPT starts at load, as in 3.21.1.",
+      "An active TakeOver still defines its codeless guard before GPT services start. Capped and viewport-skipped pages get no guard and keep the publisher's interstitial attributes.",
+      "Without a TakeOver interval the generated script behaves exactly as 3.21.1; only its version label differs. Previous release sources, selected versions and saved packages remain unchanged. Select and save 3.21.2 explicitly to apply this correction."
+    ]
+  },
+  {
     "id": "tessera-3.21.1",
     "version": "3.21.1",
     "codeSha256": "26652665bed6736708dc54218e46e239844b5b6b3c5ccccf5ce24a7271d10494",
