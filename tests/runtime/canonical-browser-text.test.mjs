@@ -550,6 +550,11 @@ test('installed text is the unbundled source and no Worker code serializes an un
   assert.deepEqual(refused.filter(line => !line.startsWith('3.9.1-')), []);
   const {countryClientSource} = await import('../../shared/geo-country.mjs');
   countryClientSource('https://example.invalid/geo');
+  // The route the production Worker serves it from, with anything it appends.
+  const {countryResponse} = await import('../../worker/geo-country.mjs');
+  const client = countryResponse(new Request('https://example.invalid/geo/v1/client.js'));
+  assert.equal(client.status, 200);
+  await client.text();
   const {baseReadable} = await import('../../.generated/site-ab-baseline.mjs');
   const {preparePackageTemplates} = await import('../../worker/experiments/configurable-cache-v1.mjs');
   const {preparePositionCacheTemplate} = await import('../../worker/experiments/position-cache-v2.mjs');
