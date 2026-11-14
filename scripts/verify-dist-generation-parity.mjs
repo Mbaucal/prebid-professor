@@ -14,6 +14,11 @@
  * the legacy TakeOver), a 3.9.1 package with the saved legacy TakeOver, and one
  * review candidate (builtin-site-settings bundle) per configuration.
  *
+ * The Worker runs behind scripts/canonical-text-guard.mjs, with every module Vite
+ * emitted for it: any Function.prototype.toString call on a non-native function
+ * (a function serialized without installed canonical text, in any form) fails
+ * the check even when the output happens to match.
+ *
  * Site inventory (units, size map, rules, bidder, Prebid file) is seeded into
  * local D1/R2 as the other compiled-Worker checks do; selection, TakeOver,
  * Generate and downloads go through the Worker routes.
@@ -24,12 +29,13 @@
  */
 import assert from 'node:assert/strict';
 import {createHash, randomBytes} from 'node:crypto';
-import {mkdtemp, readFile, mkdir, writeFile, rm} from 'node:fs/promises';
+import {mkdtemp, readFile, readdir, mkdir, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {unzipSync} from 'fflate';
 import {Miniflare} from './local-miniflare.mjs';
+import {guardedModules, guardCalls, describeCalls} from './canonical-text-guard.mjs';
 import {readPreviewSnapshot, runtimeDescriptor} from '../worker/runtime/builtin-preview-service.mjs';
 import {previewInput} from '../worker/runtime/preview-snapshot.mjs';
 import {pinRuntime} from '../worker/runtime/version-pin.mjs';
@@ -41,9 +47,14 @@ import {takeOverForBuild, defaultTakeOver} from '../worker/test-workspace/takeov
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(root, process.argv[2] ?? '.generated/generation-parity');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-const script = await readFile(resolve(root, 'dist/prebid_professor/index.js'), 'utf8');
-const config = JSON.parse(await readFile(resolve(root, 'dist/prebid_professor/wrangler.json'), 'utf8'));
+const dist = resolve(root, 'dist/prebid_professor');
+const script = await readFile(join(dist, 'index.js'), 'utf8');
+const config = JSON.parse(await readFile(join(dist, 'wrangler.json'), 'utf8'));
 assert.equal(config.no_bundle, true, 'Run scripts/isolated-toolchain.mjs build first: dist is not the deployed no_bundle Worker.');
+assert.equal(config.main, 'index.js');
+// Any other module Vite emitted (a chunk) is uploaded beside index.js at its own path.
+const chunks = (await readdir(dist, {recursive: true})).filter(path => /\.m?js$/.test(path) && path !== 'index.js' && !path.startsWith('.vite')).sort();
+const chunkModules = await Promise.all(chunks.map(async path => ({type: 'ESModule', path, contents: await readFile(join(dist, path), 'utf8')})));
 const origin = 'https://generation-parity.example.invalid', email = 'parity@example.invalid', password = randomBytes(24).toString('hex');
 // Synthetic Prebid file: the generated scripts only reference it; the browser check uses the repository mock.
 const MODULES = ['adpod', 'appnexusBidAdapter', 'consentManagementGpp', 'consentManagementTcf', 'consentManagementUsp', 'currency', 'dfpAdServerVideo',
@@ -63,11 +74,11 @@ assert.equal(runtimeDescriptor.version, reference);
 const REWRITTEN = new Set(['README.txt', 'config.json', 'implementation.html', 'manifest.json']);
 
 let outbound = 0;
-const entries = [], failures = [];
+const entries = [], failures = [], guard = {};
 await rm(output, {recursive: true, force: true});
 await mkdir(output, {recursive: true});
 const directory = await mkdtemp(join(tmpdir(), 'tessera-dist-generation-parity-'));
-const mf = new Miniflare({modules: true, script, compatibilityDate: config.compatibility_date, compatibilityFlags: config.compatibility_flags, cf: false,
+const mf = new Miniflare({modules: [...guardedModules(script), ...chunkModules], compatibilityDate: config.compatibility_date, compatibilityFlags: config.compatibility_flags, cf: false,
   host: '127.0.0.1', port: 0, resourcePersistencePath: directory, d1Databases: {DB: 'generation-parity-d1'}, r2Buckets: {BUILDS: 'generation-parity-r2'},
   bindings: {ADMIN_EMAIL: email, ADMIN_PASSWORD: password, SESSION_SECRET: randomBytes(48).toString('hex')},
   assets: {directory: resolve(root, 'dist/client'), binding: 'ASSETS', routerConfig: {has_user_worker: true, invoke_user_worker_ahead_of_assets: true},
@@ -262,14 +273,21 @@ try {
         await record(entry, bundled, await directSiteRuntime(site, manifestOf(bundled).buildTimestamp));
       } catch (error) { failed(entry, error); }
     }
+    // Every serialization in the Worker since the last report (startup included in the first).
+    const calls = await guardCalls(mf, origin);
+    guard[configName] = describeCalls(calls);
+    if (calls.length) failures.push(`${configName}: Function.prototype.toString ran on ${calls.length} non-native functions in the compiled Worker: ${guard[configName].join('; ')}`);
+    console.log(`${calls.length ? 'GUARD    ' : 'guard ok '} ${configName}${calls.length ? ': ' + guard[configName].join('; ') : ''}`);
   }
 } finally {
   await mf.dispose();
   await rm(directory, {recursive: true, force: true});
 }
 const report = {scope: 'LOCAL Miniflare/workerd with local D1/R2; compiled production Worker (dist) vs unbundled Node compile; NOT hosted',
-  compiledSha256: sha(script), outbound, runtimes: runtimeCatalog.map(r => r.version), entries, failures, passed: failures.length === 0 && outbound === 0};
+  compiledSha256: sha(script), chunks: Object.fromEntries(chunkModules.map(chunk => [chunk.path, sha(chunk.contents)])), outbound,
+  runtimes: runtimeCatalog.map(r => r.version), guard, entries, failures, passed: failures.length === 0 && outbound === 0};
 await writeFile(join(output, 'manifest.json'), JSON.stringify(report, null, 2) + '\n');
-console.log(JSON.stringify({entries: entries.length, identical: entries.filter(e => e.identical).length, failures: failures.length, outbound}));
+console.log(JSON.stringify({entries: entries.length, identical: entries.filter(e => e.identical).length,
+  guardCalls: Object.values(guard).flat().length, failures: failures.length, outbound}));
 assert.equal(outbound, 0, 'The Worker attempted an outbound request');
-assert.deepEqual(failures, [], `${failures.length} generated packages differ from the direct compile or failed`);
+assert.deepEqual(failures, [], `${failures.length} checks failed: output differs from the direct compile, a function was serialized without canonical text, or generation failed`);
