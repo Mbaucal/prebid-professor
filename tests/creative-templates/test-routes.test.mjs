@@ -24,6 +24,8 @@ test('CSV preview performs no writes and full generic draft saves through revisi
   const units=await (await call(f,'/test-api/inventory-preview',cookie,{kind:'ad-units',csv:adUnitsTemplateCsv})).json();
   assert.equal(maps.preview.errorCount,0);assert.equal(units.preview.errorCount,0);
   assert.equal(maps.preview.rows.length,7);assert.equal(units.preview.rows.length,26);
+  // The ad-unit rows name maps that so far exist only in the draft: none of them is saved in D1.
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM size_maps WHERE name IN (SELECT value FROM json_each(?))').get(JSON.stringify(maps.preview.rows.map(row=>row.data.name))).n,0);
   assert.equal((await (await call(f,'/test-api/site-settings',cookie)).json()).revision,before.revision);
   const draft=structuredClone(before.draft);
   for(const {data:d} of maps.preview.rows){const m={name:d.name,breakpoints:d.map.map(r=>({minWidth:r.minViewPort[0],sizes:r.sizes}))};const i=draft.maps.findIndex(x=>x.name===m.name);if(i<0)draft.maps.push(m);else draft.maps[i]=m;}

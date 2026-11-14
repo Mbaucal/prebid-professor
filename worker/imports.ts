@@ -20,6 +20,15 @@ type ImportBuild = {
   entities: JsonObject[];
 };
 
+export type CsvPreviewOptions = {
+  /**
+   * The TEST editor previews ad units for its unsaved draft, where the size maps it imported
+   * are not in D1 yet. It checks every name itself when the rows are added to the draft and
+   * again in its revision-checked save, so this preview leaves map names to the draft.
+   */
+  draftSizeMaps?: boolean;
+};
+
 const MAX_DATA_ROWS = 250;
 
 function databaseMissing(): Response {
@@ -193,17 +202,24 @@ async function publisherExists(db: D1Database, publisherId: string): Promise<boo
   return Boolean(row);
 }
 
-async function buildAdUnits(db: D1Database, publisherId: string, csv: string): Promise<ImportBuild> {
+async function buildAdUnits(
+  db: D1Database,
+  publisherId: string,
+  csv: string,
+  savedSizeMaps = true,
+): Promise<ImportBuild> {
   const parsed = parseCsvRecords(csv);
   requireColumns(parsed.headers, [['code']]);
 
   const [existingResult, mapsResult] = await Promise.all([
     db.prepare('SELECT code FROM ad_units WHERE publisher_id = ?').bind(publisherId).all<{ code: string }>(),
-    db.prepare('SELECT name FROM size_maps WHERE publisher_id = ?').bind(publisherId).all<{ name: string }>(),
+    savedSizeMaps
+      ? db.prepare('SELECT name FROM size_maps WHERE publisher_id = ?').bind(publisherId).all<{ name: string }>()
+      : null,
   ]);
   const existing = new Set((existingResult.results ?? []).map((item) => item.code));
   // Exact saved names, as Generate looks them up; cells are already trimmed.
-  const sizeMaps = new Set((mapsResult.results ?? []).map((item) => item.name));
+  const sizeMaps = mapsResult ? new Set((mapsResult.results ?? []).map((item) => item.name)) : null;
   const seen = new Set<string>();
   const previewRows: CsvImportPreviewRow[] = [];
   const entities: JsonObject[] = [];
@@ -222,7 +238,7 @@ async function buildAdUnits(db: D1Database, publisherId: string, csv: string): P
     if (!['ATF', 'BTF', 'DRAFT'].includes(type)) errors.push('type must be ATF, BTF or DRAFT.');
     if (seen.has(code)) errors.push(`Duplicate ad unit code "${code}" inside this CSV.`);
     if (code) seen.add(code);
-    if (sizeMapKey && !sizeMaps.has(sizeMapKey)) {
+    if (sizeMapKey && sizeMaps && !sizeMaps.has(sizeMapKey)) {
       errors.push(`${sizeMapsMissing([sizeMapKey])} on this site. Import or create it first, or use a current size map name.`);
     }
 
@@ -477,12 +493,13 @@ async function buildImport(
   db: D1Database,
   publisherId: string,
   input: CsvImportInput,
+  options: CsvPreviewOptions = {},
 ): Promise<ImportBuild> {
   if (!String(input.csv ?? '').trim()) throw new Error('CSV content is empty.');
 
   switch (input.kind) {
     case 'ad-units':
-      return buildAdUnits(db, publisherId, input.csv);
+      return buildAdUnits(db, publisherId, input.csv, !options.draftSizeMaps);
     case 'bidders':
       return buildBidders(db, publisherId, input.csv);
     case 'bidder-overrides':
@@ -498,6 +515,7 @@ export async function previewCsvImport(
   request: Request,
   env: DatabaseEnv,
   publisherId: string,
+  options: CsvPreviewOptions = {},
 ): Promise<Response> {
   if (!env.DB) return databaseMissing();
   if (!(await publisherExists(env.DB, publisherId))) return apiError('Publisher not found.', 404);
@@ -505,7 +523,7 @@ export async function previewCsvImport(
   let input: CsvImportInput;
   try {
     input = await readJson<CsvImportInput>(request);
-    const build = await buildImport(env.DB, publisherId, input);
+    const build = await buildImport(env.DB, publisherId, input, options);
     return json({ ok: true, preview: build.preview });
   } catch (error) {
     return apiError(error instanceof Error ? error.message : 'CSV preview failed.', 422);
