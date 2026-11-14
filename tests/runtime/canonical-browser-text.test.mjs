@@ -2,25 +2,85 @@
  * canonical-text installer that its Worker entry imports first. A bundler may
  * rename the function or its locals, and generated code calls it by its source
  * name (see worker/runtime-canonical/functions.mjs).
- * Run after scripts/prepare-builtin-runtime.mjs (it writes the canonical text).
+ *
+ * The scan reads every repository file that esbuild bundles into a Worker entry
+ * (every wrangler*.jsonc main: worker/**, shared/**, scripts/**, vendor/** and
+ * .generated modules). When dist/prebid_professor exists, every repository
+ * module that Rolldown bundled into the production Worker must be in that graph.
+ * The scan resolves serialized expressions to function declarations (through
+ * aliases, namespace imports, local object literals and local functions that
+ * serialize a parameter) and is strict where it cannot resolve them:
+ * - toString may only be called directly (x.toString(...)), on a listed function
+ *   or on a value the scan proves is not a function; reviewedToString below
+ *   lists the few remaining uses by hand. toString.call/apply/bind, any other
+ *   use of a toString member, destructuring toString and the string 'toString'
+ *   (Reflect.get, getOwnPropertyDescriptor) are refused.
+ * - a function in an array literal must be listed: join, map(String) and
+ *   String(array) serialize it.
+ * - templates, String(), + and concat() of a resolved function must be listed.
+ * A static scan cannot follow a function through other data (an object property
+ * read back with Object.values, a computed name). Executed paths are covered by
+ * the recording Function.prototype.toString in the installed-text test and by the
+ * guard (scripts/canonical-text-guard.mjs) that scripts/verify-dist-generation-parity.mjs
+ * and scripts/verify-script-library-workerd.mjs install around the compiled Worker.
+ * This test is the only check that the installer lists are complete for paths
+ * those runs do not execute, so CI runs it as a required step.
+ * Run after scripts/isolated-toolchain.mjs build (it writes the canonical text and dist).
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, readFileSync, readdirSync} from 'node:fs';
+import {stripTypeScriptTypes} from 'node:module';
 import {dirname, relative, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {parse} from 'acorn';
 import {build, transformSync} from 'esbuild';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const repoPath = file => relative(root, file).replaceAll('\\', '/');
+
+// ---------------------------------------------------------------- Worker graph
+/** Every Wrangler configuration in the repository (build outputs excluded). */
+function wranglerConfigs(directory = '.') {
+  const found = [];
+  for (const entry of readdirSync(resolve(root, directory), {withFileTypes: true})) {
+    const path = directory === '.' ? entry.name : `${directory}/${entry.name}`;
+    if (entry.isDirectory()) { if (!['node_modules', '.git', '.generated', '.wrangler', 'dist'].includes(entry.name)) found.push(...wranglerConfigs(path)); }
+    else if (/^wrangler(?:\.[\w-]+)?\.jsonc?$/.test(entry.name)) found.push(path);
+  }
+  return found.sort();
+}
+const configs = wranglerConfigs();
+const productionEntry = repoPath(resolve(root, JSON.parse(readFileSync(resolve(root, 'wrangler.jsonc'), 'utf8')).main));
+const entries = [...new Set(configs.map(config =>
+  repoPath(resolve(root, dirname(config), JSON.parse(readFileSync(resolve(root, config), 'utf8')).main))))];
+const graphs = new Map();
+for (const entry of entries) {
+  const result = await build({absWorkingDir: root, entryPoints: [entry], bundle: true, write: false, metafile: true, format: 'esm', platform: 'neutral',
+    mainFields: ['module', 'main'], conditions: ['workerd', 'worker', 'browser'], external: ['node:*', 'cloudflare:*'], logLevel: 'silent'});
+  graphs.set(entry, new Set(Object.keys(result.metafile.inputs)));
+}
+/** Repository source files bundled into a Worker entry (dependencies excluded). */
+const workerFiles = [...new Set([...graphs.values()].flatMap(graph => [...graph]))]
+  .filter(path => !path.split('/').includes('node_modules') && /\.(?:[cm]?js|jsx|tsx?)$/.test(path)).sort();
+const inWorker = new Set(workerFiles);
+
 const nativeText = Function.prototype.toString;
-// Recorded before any Worker module loads: a Worker or shared module that
-// serializes a function without an installed canonical toString lands here.
+// Recorded before any Worker module loads: a bundled module that serializes a
+// function without an installed canonical toString lands here.
 const uncovered = new Map();
+const frameFile = line => {
+  const match = /(file:\/\/\/[^\s()]+?)(?::\d+){1,2}\)?$/.exec(line);
+  return match ? repoPath(fileURLToPath(match[1])) : null;
+};
 Function.prototype.toString = function toString() {
   const text = nativeText.call(this);
   if (!/\{\s*\[native code\]\s*\}$/.test(text)) {
-    const site = new Error().stack.split('\n').slice(2).map(line => line.trim()).find(line => /\/(worker|shared)\//.test(line) && !line.includes('/node_modules/'));
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 64;
+    const stack = new Error().stack;
+    Error.stackTraceLimit = limit;
+    const site = stack.split('\n').slice(2).map(line => line.trim()).find(line => inWorker.has(frameFile(line)));
     if (site) uncovered.set(`${this.name || '(anonymous)'} at ${site.replace(pathToFileURL(root).href + '/', '').replace(/^at /, '')}`, true);
   }
   return text;
@@ -31,23 +91,42 @@ const groups = {'worker/runtime-canonical/install.mjs': runtimeFunctions, 'worke
 const installerOf = new Map(Object.entries(groups).flatMap(([installer, listed]) =>
   Object.entries(listed).flatMap(([path, names]) => names.map(name => [`${path}#${name}`, installer]))));
 
+/** toString uses whose receiver the scan cannot prove is not a function, checked
+ * by hand: file -> use (a call ends in "()") -> count. Counts are exact, so a new
+ * use fails until someone checks its receiver here. */
+const reviewedToString = {
+  // The minified arm bytes (Buffer) that compact() returns.
+  'scripts/configurable-ab-package.mjs': {'b.toString()': 1},
+  // escapeCssId: n = value.charCodeAt(i), a number.
+  'shared/gam/ad-unit-code.mjs': {'n.toString()': 1},
+  // Vendored XML parser: code point numbers, path matcher objects and the XML input
+  // (string or bytes; xmlData.toString without a call is a presence test). The
+  // string is an entry of its list of property names it refuses to set.
+  'vendor/gam-xml-parser/parser.mjs': {"'toString'": 1, 'cp.toString()': 1, 'this._matcher.toString()': 1, 'jPath.toString()': 4, 'matcher.toString()': 1,
+    'readonlyMatcher.toString()': 2, 'xmlData.toString()': 1, 'xmlData.toString': 1},
+  // The installer: Object.hasOwn(fn, 'toString') and Object.defineProperty(fn, 'toString', ...).
+  'worker/runtime-canonical/install.mjs': {"'toString'": 2},
+  // A list of reserved GAM codes that older runtimes refuse.
+  'worker/test-workspace/runtime-catalog.mjs': {"'toString'": 1},
+};
+
 // ---------------------------------------------------------------- static scan
 function sourceFiles(directory) {
   const files = [];
   for (const entry of readdirSync(resolve(root, directory), {withFileTypes: true})) {
     const path = `${directory}/${entry.name}`;
     if (entry.isDirectory()) { if (entry.name !== 'node_modules') files.push(...sourceFiles(path)); }
-    else if (/\.(?:mjs|js|ts)$/.test(entry.name) && !/\.d\.m?ts$/.test(entry.name)) files.push(path);
+    else if (/\.(?:[cm]?js|jsx|tsx?)$/.test(entry.name) && !/\.d\.[cm]?ts$/.test(entry.name)) files.push(path);
   }
   return files;
 }
 const modules = new Map();
 /** Lexical scopes, enough to tell a function binding from a parameter or value of the same name. */
 function scopes(ast) {
-  const scopeOf = new WeakMap(), program = {parent: null, function: true, bindings: new Map()};
+  const scopeOf = new WeakMap(), loopHeads = new WeakSet(), program = {parent: null, function: true, bindings: new Map()};
   const declare = (scope, pattern, binding) => {
     if (!pattern) return;
-    if (pattern.type === 'Identifier') scope.bindings.set(pattern.name, binding);
+    if (pattern.type === 'Identifier') scope.bindings.set(pattern.name, {...binding, scope, at: pattern.start});
     else if (pattern.type === 'ObjectPattern') for (const p of pattern.properties) declare(scope, p.type === 'RestElement' ? p.argument : p.value, {kind: 'value'});
     else if (pattern.type === 'ArrayPattern') for (const e of pattern.elements) declare(scope, e, {kind: 'value'});
     else if (pattern.type === 'AssignmentPattern') declare(scope, pattern.left, {kind: 'value'});
@@ -58,10 +137,13 @@ function scopes(ast) {
     if (!node || typeof node.type !== 'string') return;
     scopeOf.set(node, scope);
     if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression') {
-      if (node.type === 'FunctionDeclaration' && node.id) scope.bindings.set(node.id.name, {kind: 'function', node});
+      if (node.type === 'FunctionDeclaration' && node.id) declare(scope, node.id, {kind: 'function', node});
       const inner = {parent: scope, function: true, bindings: new Map()};
-      if (node.type === 'FunctionExpression' && node.id) inner.bindings.set(node.id.name, {kind: 'function', node});
-      for (const param of node.params) { declare(inner, param, {kind: 'value'}); visit(param, inner); }
+      if (node.type === 'FunctionExpression' && node.id) declare(inner, node.id, {kind: 'function', node});
+      node.params.forEach((param, index) => {
+        declare(inner, param, param.type === 'Identifier' ? {kind: 'param', fn: node, index} : {kind: 'value'});
+        visit(param, inner);
+      });
       if (node.body.type === 'BlockStatement') { scopeOf.set(node.body, inner); for (const statement of node.body.body) visit(statement, inner); }
       else visit(node.body, inner);
       return;
@@ -69,41 +151,61 @@ function scopes(ast) {
     let inner = scope;
     if (['BlockStatement', 'ForStatement', 'ForInStatement', 'ForOfStatement', 'CatchClause', 'SwitchStatement', 'StaticBlock'].includes(node.type)) inner = {parent: scope, bindings: new Map()};
     if (node.type === 'CatchClause') declare(inner, node.param, {kind: 'value'});
-    if (node.type === 'ClassDeclaration' && node.id) scope.bindings.set(node.id.name, {kind: 'value'});
-    if (node.type === 'ImportDeclaration') for (const s of node.specifiers) scope.bindings.set(s.local.name, {kind: 'import'});
+    if ((node.type === 'ForOfStatement' || node.type === 'ForInStatement') && node.left.type === 'VariableDeclaration') loopHeads.add(node.left);
+    if (node.type === 'ClassDeclaration' && node.id) declare(scope, node.id, {kind: 'value'});
+    if (node.type === 'ImportDeclaration') for (const s of node.specifiers) declare(scope, s.local, {kind: 'import'});
     if (node.type === 'VariableDeclaration') {
       let target = inner;
       if (node.kind === 'var') while (!target.function) target = target.parent;
       for (const d of node.declarations) {
         const kind = ['FunctionExpression', 'ArrowFunctionExpression'].includes(d.init?.type) ? 'function'
           : ['Identifier', 'MemberExpression'].includes(d.init?.type) ? 'alias' : 'value';
-        declare(target, d.id, {kind, node: d.init});
+        // A loop head's binding takes each element, not its (missing) initializer.
+        declare(target, d.id, {kind, node: d.init, declaration: loopHeads.has(node) ? 'loop' : node.kind});
       }
     }
     for (const child of children(node)) visit(child, inner);
   }
   visit(ast, program);
   return {program, scopeOf, lookup(node, name) {
-    for (let scope = scopeOf.get(node); scope; scope = scope.parent) if (scope.bindings.has(name)) return {scope, ...scope.bindings.get(name)};
+    for (let scope = scopeOf.get(node); scope; scope = scope.parent) if (scope.bindings.has(name)) return scope.bindings.get(name);
     return null;
   }};
+}
+function walk(node, visit, parent = null) {
+  if (!node || typeof node.type !== 'string') return;
+  visit(node, parent);
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) for (const child of value) walk(child, visit, node);
+    else if (value && typeof value.type === 'string') walk(value, visit, node);
+  }
 }
 function moduleInfo(path) {
   if (modules.has(path)) return modules.get(path);
   let text = readFileSync(resolve(root, path), 'utf8');
-  if (path.endsWith('.ts')) text = transformSync(text, {loader: 'ts', format: 'esm', target: 'es2022'}).code;
+  // Erasing types keeps line numbers (Node runs these .ts files the same way); JSX needs a transform.
+  if (path.endsWith('.ts')) text = stripTypeScriptTypes(text);
+  else if (/\.[jt]sx$/.test(path)) text = transformSync(text, {loader: path.slice(-3), format: 'esm', target: 'es2022'}).code;
   const ast = parse(text, {ecmaVersion: 'latest', sourceType: 'module', locations: true});
-  const info = {path, ast, ...scopes(ast), imports: new Map(), exports: new Map(), reexports: new Map(), star: []};
+  const info = {path, text, ast, ...scopes(ast), parents: new WeakMap(), assignments: new Map(), imports: new Map(), exports: new Map(), reexports: new Map(), star: []};
   modules.set(path, info);
+  walk(ast, (node, parent) => {
+    info.parents.set(node, parent);
+    // Every later value of a let or var binding, for the non-function proof.
+    if (node.type === 'AssignmentExpression' && node.left.type === 'Identifier' && ['=', '||=', '&&=', '??='].includes(node.operator)) {
+      const binding = info.lookup(node, node.left.name);
+      if (binding) info.assignments.set(binding, [...(info.assignments.get(binding) ?? []), node.right]);
+    }
+  });
   const specifier = value => {
     if (!value.startsWith('.')) return null;
-    const base = relative(root, resolve(root, dirname(path), value)).replaceAll('\\', '/');
+    const base = repoPath(resolve(root, dirname(path), value));
     return [base, base + '.ts', base + '.mjs', base + '.js'].find(candidate => existsSync(resolve(root, candidate)) && /\.(?:mjs|js|ts)$/.test(candidate)) ?? null;
   };
   for (const node of ast.body) {
     if (node.type === 'ImportDeclaration') {
       const from = specifier(node.source.value);
-      for (const s of node.specifiers) info.imports.set(s.local.name, {from, name: s.type === 'ImportNamespaceSpecifier' ? '*' : s.type === 'ImportDefaultSpecifier' ? 'default' : s.imported.name});
+      for (const s of node.specifiers) info.imports.set(s.local.name, {from, source: node.source.value, name: s.type === 'ImportNamespaceSpecifier' ? '*' : s.type === 'ImportDefaultSpecifier' ? 'default' : s.imported.name});
     } else if (node.type === 'ExportNamedDeclaration') {
       const from = node.source ? specifier(node.source.value) : null;
       if (node.declaration?.type === 'FunctionDeclaration') info.exports.set(node.declaration.id.name, node.declaration.id.name);
@@ -117,15 +219,7 @@ function moduleInfo(path) {
   }
   return info;
 }
-function walk(node, visit, parent = null) {
-  if (!node || typeof node.type !== 'string') return;
-  visit(node, parent);
-  for (const value of Object.values(node)) {
-    if (Array.isArray(value)) for (const child of value) walk(child, visit, node);
-    else if (value && typeof value.type === 'string') walk(value, visit, node);
-  }
-}
-/** {path, name} of the exported function, or null when the export is not a function. */
+/** {path, name, local} of the exported function, or null when the export is not a function. */
 function exportedFunction(path, name, depth = 0) {
   if (!path || depth > 8) return null;
   const info = moduleInfo(path);
@@ -143,9 +237,29 @@ function functionExports(path) {
   const info = moduleInfo(path);
   return [...info.exports.keys(), ...info.reexports.keys()].map(name => exportedFunction(path, name)).filter(Boolean);
 }
+/** A string literal or a template without expressions: its text, else null. */
+const staticText = node => node?.type === 'Literal' && typeof node.value === 'string' ? node.value
+  : node?.type === 'TemplateLiteral' && !node.expressions.length ? node.quasis[0].value.cooked : null;
+const memberName = node => node.type === 'MemberExpression' && (node.computed ? staticText(node.property) ?? (node.property.type === 'Literal' && node.property.value) : node.property.name);
+const keyName = node => !node.computed && node.key.type === 'Identifier' ? node.key.name : node.key.type === 'Literal' ? node.key.value : null;
+/** The module a namespace import binding (or an alias of one) refers to, or null. */
+function namespaceSource(info, node, depth = 0) {
+  if (depth > 4 || node?.type !== 'Identifier') return null;
+  const binding = info.lookup(node, node.name);
+  if (binding?.kind === 'import') { const imported = info.imports.get(node.name); return imported.name === '*' ? imported.from : null; }
+  return binding?.kind === 'alias' ? namespaceSource(info, binding.node, depth + 1) : null;
+}
+/** The object literal a binding (or an alias of one) is initialized with, or null. */
+function objectLiteral(info, node, depth = 0) {
+  if (depth > 4 || node?.type !== 'Identifier') return null;
+  const binding = info.lookup(node, node.name);
+  if (binding?.node?.type === 'ObjectExpression') return binding.node;
+  return binding?.kind === 'alias' ? objectLiteral(info, binding.node, depth + 1) : null;
+}
 /** What a serialized expression refers to: a function, every function of a namespace, or null. */
 function resolveFunction(info, node, depth = 0) {
   if (depth > 4) return null;
+  if (['FunctionExpression', 'ArrowFunctionExpression'].includes(node.type)) return [{path: info.path, name: null, local: info.text.slice(node.start, node.start + 40), node}];
   if (node.type === 'Identifier') {
     const binding = info.lookup(node, node.name);
     if (!binding) return null;
@@ -155,49 +269,191 @@ function resolveFunction(info, node, depth = 0) {
     }
     if (binding.kind === 'function') {
       const exported = binding.scope === info.program && [...info.exports].find(([, local]) => local === node.name);
-      return [{path: info.path, name: exported ? exported[0] : null, local: node.name}];
+      return [{path: info.path, name: exported ? exported[0] : null, local: node.name, node: binding.node}];
     }
     if (binding.kind === 'alias') return resolveFunction(info, binding.node, depth + 1);
     return null;
   }
-  if (node.type === 'MemberExpression' && node.object.type === 'Identifier' && info.lookup(node, node.object.name)?.kind === 'import' && info.imports.get(node.object.name).name === '*') {
-    const from = info.imports.get(node.object.name).from;
-    if (!node.computed) { const fn = exportedFunction(from, node.property.name); return fn ? [fn] : null; }
-    if (node.property.type === 'Literal') { const fn = exportedFunction(from, String(node.property.value)); return fn ? [fn] : null; }
+  if (node.type !== 'MemberExpression') return null;
+  const name = memberName(node);
+  const from = namespaceSource(info, node.object);
+  if (from) {
+    if (typeof name === 'string') { const fn = exportedFunction(from, name); return fn ? [fn] : null; }
     return functionExports(from); // a computed member may be any function of the namespace
   }
-  return null;
+  // A member of a local object literal ({zzHelper}, {run() {}} or {run: zzHelper}).
+  const object = objectLiteral(info, node.object);
+  if (!object) return null;
+  const properties = object.properties.filter(p => p.type === 'Property' && (typeof name !== 'string' || keyName(p) === name));
+  const found = properties.flatMap(p => resolveFunction(info, p.value, depth + 1) ?? []);
+  return found.length ? found : null;
 }
-const memberName = node => node.type === 'MemberExpression' && (node.computed ? node.property.type === 'Literal' && node.property.value : node.property.name);
-function serializationSites() {
-  const sites = [], forbidden = [];
-  for (const path of [...sourceFiles('worker'), ...sourceFiles('shared')]) {
-    const info = moduleInfo(path);
-    const add = (node, how) => {
-      for (const fn of resolveFunction(info, node) ?? []) sites.push({file: `${path}:${node.loc.start.line}`, how, fn});
-    };
-    walk(info.ast, (node, parent) => {
-      if (memberName(node) === 'toString') {
-        add(node.object, '.toString');
-        if (memberName(node.object) === 'prototype' && node.object.object.type === 'Identifier' && node.object.object.name === 'Function') forbidden.push(`${path}:${node.loc.start.line}`);
+
+// Proof that a toString receiver is not a function, for the common non-function
+// receivers: primitives, built-in object instances and bytes of a typed array.
+const instances = new Set(['URL', 'URLSearchParams', 'Date', 'Headers', 'Request', 'Response', 'Map', 'Set', 'WeakMap', 'RegExp', 'Error', 'TypeError',
+  'RangeError', 'TextEncoder', 'TextDecoder', 'ArrayBuffer', 'DataView', 'Blob', 'FormData']);
+const typedArray = /^(?:Big)?(?:Ui|I)nt(?:8|16|32|64)(?:Clamped)?Array$|^Float(?:32|64)Array$/;
+const valueCalls = new Set(['String', 'Number', 'BigInt', 'Boolean', 'parseInt', 'parseFloat', 'encodeURIComponent', 'encodeURI', 'decodeURIComponent', 'decodeURI', 'btoa', 'atob']);
+const valueStatics = {Buffer: ['from', 'concat', 'alloc'], JSON: ['stringify'], Math: null, Number: null, Date: ['now', 'parse', 'UTC']};
+/** A global built-in, or the same built-in imported from node: (import {Buffer} from 'node:buffer'). */
+function isGlobal(info, node, names) {
+  if (node.type !== 'Identifier' || !(names instanceof RegExp ? names.test(node.name) : names.has(node.name))) return false;
+  const binding = info.lookup(node, node.name), imported = binding?.kind === 'import' && info.imports.get(node.name);
+  return !binding || Boolean(imported && imported.source.startsWith('node:') && imported.name === node.name);
+}
+/** Values a function can return (undefined when it has no return value). */
+function returnValues(fn) {
+  if (fn.body.type !== 'BlockStatement') return [fn.body];
+  const values = [];
+  (function visit(node) {
+    if (!node || typeof node.type !== 'string' || (node !== fn.body && /Function/.test(node.type))) return;
+    if (node.type === 'ReturnStatement' && node.argument) values.push(node.argument);
+    for (const value of Object.values(node)) for (const child of Array.isArray(value) ? value : [value]) if (child && typeof child.type === 'string') visit(child);
+  })(fn.body);
+  return values;
+}
+function bytes(info, node, depth = 0) {
+  if (depth > 6) return false;
+  if (node.type === 'NewExpression') return isGlobal(info, node.callee, typedArray);
+  if (node.type === 'ArrayExpression') return node.elements.length === 1 && node.elements[0]?.type === 'SpreadElement' && bytes(info, node.elements[0].argument, depth + 1);
+  if (node.type === 'CallExpression' && node.arguments.length === 1 && memberName(node.callee) === 'from' && isGlobal(info, node.callee.object, new Set(['Array']))) return bytes(info, node.arguments[0], depth + 1);
+  if (node.type === 'Identifier') {
+    const binding = info.lookup(node, node.name);
+    return binding?.declaration === 'const' && Boolean(binding.node) && bytes(info, binding.node, depth + 1);
+  }
+  return false;
+}
+/** A parameter that receives the elements of a typed array (Array.from(bytes, fn), [...bytes].map(fn)). */
+function byteParameter(info, binding) {
+  if (binding.index !== 0) return false;
+  const call = info.parents.get(binding.fn);
+  if (call?.type !== 'CallExpression') return false;
+  if (call.arguments[1] === binding.fn && memberName(call.callee) === 'from' && isGlobal(info, call.callee.object, new Set(['Array']))) return bytes(info, call.arguments[0]);
+  return call.arguments[0] === binding.fn && ['map', 'forEach', 'filter', 'some', 'every', 'find', 'findIndex'].includes(memberName(call.callee)) && bytes(info, call.callee.object);
+}
+function nonFunction(info, node, depth = 0) {
+  if (depth > 6) return false;
+  switch (node.type) {
+    case 'Literal': case 'TemplateLiteral': case 'BinaryExpression': case 'UnaryExpression': case 'UpdateExpression': case 'ArrayExpression': return true;
+    case 'AwaitExpression': return nonFunction(info, node.argument, depth + 1);
+    case 'NewExpression': return isGlobal(info, node.callee, instances) || isGlobal(info, node.callee, typedArray);
+    case 'CallExpression': {
+      const callee = node.callee;
+      if (isGlobal(info, callee, valueCalls)) return true;
+      if (memberName(callee) && callee.object.type === 'Identifier' && isGlobal(info, callee.object, new Set(Object.keys(valueStatics)))) {
+        const methods = valueStatics[callee.object.name];
+        return methods === null || methods.includes(memberName(callee));
       }
+      // A repository function whose every return value is proven (async: the awaited value).
+      const [fn, ...more] = resolveFunction(info, callee) ?? [];
+      if (!fn || more.length) return false;
+      const fnInfo = moduleInfo(fn.path), declaration = fn.node ?? fnInfo.program.bindings.get(fn.local)?.node;
+      return Boolean(declaration) && returnValues(declaration).every(value => nonFunction(fnInfo, value, depth + 1));
+    }
+    case 'Identifier': {
+      const binding = info.lookup(node, node.name);
+      if (binding?.kind === 'param') return byteParameter(info, binding);
+      // const, let or var: the initializer (undefined when absent) and every later assignment.
+      if (!binding || !['const', 'let', 'var'].includes(binding.declaration)) return false;
+      return (!binding.node || nonFunction(info, binding.node, depth + 1)) && (info.assignments.get(binding) ?? []).every(value => nonFunction(info, value, depth + 1));
+    }
+  }
+  return false;
+}
+
+/** The function AST node a resolved function refers to, or null. */
+const functionNode = fn => fn.node ?? moduleInfo(fn.path).program.bindings.get(fn.local)?.node ?? null;
+
+/** Serializations in the given files: resolved functions, refused forms and unproven toString uses. */
+function serializationSites(files, {strict}) {
+  const sites = [], refused = [], unproven = new Map(), calls = [];
+  // Parameters a local function serializes: function node -> parameter index -> how.
+  const serializedParams = new Map();
+  const serializesParam = (info, node, how) => {
+    const binding = node.type === 'Identifier' ? info.lookup(node, node.name) : null;
+    if (binding?.kind !== 'param') return false;
+    const params = serializedParams.get(binding.fn) ?? new Map();
+    serializedParams.set(binding.fn, params);
+    if (params.has(binding.index)) return false;
+    params.set(binding.index, how);
+    return true;
+  };
+  for (const path of files) {
+    const info = moduleInfo(path);
+    const at = node => `${path}:${node.loc.start.line}`;
+    const add = (node, how) => {
+      const fns = resolveFunction(info, node);
+      for (const fn of fns ?? []) sites.push({file: at(node), how, fn});
+      if (!fns) serializesParam(info, node, `${how} at ${at(node)}`);
+    };
+    const reviewed = (node, key) => unproven.set(`${path}\t${key}`, [...(unproven.get(`${path}\t${key}`) ?? []), at(node)]);
+    walk(info.ast, (node, parent) => {
+      if (node.type === 'CallExpression' || node.type === 'NewExpression') calls.push({info, node, at});
+      if (memberName(node) === 'toString') {
+        const called = parent?.type === 'CallExpression' && parent.callee === node;
+        const fns = called ? resolveFunction(info, node.object) : null;
+        if (fns) add(node.object, '.toString');
+        else {
+          if (called) serializesParam(info, node.object, `.toString at ${at(node)}`);
+          if (strict && !(called && nonFunction(info, node.object))) reviewed(node, info.text.slice(node.start, node.end).replace(/\s+/g, '') + (called ? '()' : ''));
+        }
+      }
+      // The name as data reaches the prototype method too: Reflect.get(Function.prototype, 'toString').
+      if (strict && staticText(node) === 'toString' && !(parent?.type === 'MemberExpression' && parent.property === node && parent.computed)
+        && !(parent?.type === 'Property' && parent.key === node)) reviewed(node, "'toString'");
+      if (strict && node.type === 'ObjectPattern' && node.properties.some(p => p.type === 'Property' && keyName(p) === 'toString')) refused.push(`${at(node)} destructures toString`);
       if (node.type === 'TemplateLiteral') for (const expression of node.expressions) add(expression, 'template');
       if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && node.callee.name === 'String') for (const argument of node.arguments) add(argument, 'String()');
       if (node.type === 'BinaryExpression' && node.operator === '+') { add(node.left, '+'); add(node.right, '+'); }
       if (node.type === 'AssignmentExpression' && node.operator === '+=') add(node.right, '+=');
       if (memberName(node) === 'concat') for (const argument of parent?.type === 'CallExpression' && parent.callee === node ? parent.arguments : []) add(argument, '.concat()');
+      if (strict && node.type === 'ArrayExpression') for (const element of node.elements) if (element) add(element.type === 'SpreadElement' ? element.argument : element, 'array element');
     });
   }
-  return {sites, forbidden};
+  // A function that serializes its parameter serializes each argument passed there
+  // (const embed = fn => `${fn}`; embed(helper)), also through further parameters.
+  const done = new Set();
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const {info, node, at} of calls) {
+      for (const target of resolveFunction(info, node.callee) ?? []) {
+        const params = serializedParams.get(functionNode(target));
+        for (const [index, how] of params ?? []) {
+          const argument = node.arguments[index];
+          if (!argument || argument.type === 'SpreadElement' || done.has(argument)) continue;
+          done.add(argument);
+          const via = `argument ${index + 1} of ${target.name ?? target.local} (${how})`;
+          for (const fn of resolveFunction(info, argument) ?? []) sites.push({file: at(argument), how: via, fn});
+          if (serializesParam(info, argument, via)) changed = true;
+        }
+      }
+    }
+  }
+  return {sites, refused, unproven};
 }
 
-test('every function serialized in worker/** or shared/** is listed for a canonical-text installer', () => {
-  const {sites, forbidden} = serializationSites();
-  assert.deepEqual(forbidden, [], 'Function.prototype.toString bypasses the installed canonical text; call fn.toString() on a listed function instead.');
-  const problems = [];
+test('every function serialized by a Worker-bundled file is listed for a canonical-text installer', () => {
+  // The scan follows the bundles, not a directory list.
+  for (const prefix of ['worker/', 'shared/', 'scripts/', 'vendor/', '.generated/']) assert(workerFiles.some(path => path.startsWith(prefix)), `no ${prefix} file in the Worker graph`);
+  const {sites, refused, unproven} = serializationSites(workerFiles, {strict: true});
+  const problems = [...refused];
   for (const {file, how, fn} of sites) {
     if (!fn.name) problems.push(`${file} ${how} ${fn.local}: not exported from ${fn.path}, so no installer can reach it; export it and list it in worker/runtime-canonical/functions.mjs`);
     else if (!installerOf.has(`${fn.path}#${fn.name}`)) problems.push(`${file} ${how} ${fn.path} ${fn.name}: missing from worker/runtime-canonical/functions.mjs`);
+  }
+  const counts = {};
+  for (const [key, lines] of unproven) {
+    const [path, call] = key.split('\t');
+    (counts[path] ??= {})[call] = lines.length;
+    if (reviewedToString[path]?.[call] === lines.length) continue;
+    if (call === "'toString'") problems.push(`${lines.join(', ')} ${call}: the name as data can read Function.prototype.toString (Reflect.get, getOwnPropertyDescriptor). ` +
+      'Call x.toString() directly on a listed function, or add the use to reviewedToString after checking it reads nothing.');
+    else problems.push(`${lines.join(', ')} ${call}: toString on a value the scan cannot prove is not a function. ` +
+      (call.endsWith('()') ? 'Serialize only a listed function, or add the call to reviewedToString after checking the receiver.' : 'Call x.toString() directly on a listed function instead.'));
+  }
+  for (const [path, calls] of Object.entries(reviewedToString)) for (const [call, count] of Object.entries(calls)) {
+    if (counts[path]?.[call] !== count) problems.push(`${path} ${call}: reviewedToString expects ${count}, the scan found ${counts[path]?.[call] ?? 0}`);
   }
   assert.deepEqual(problems, [], 'Generated code would embed bundler-renamed source.');
   // Sanity: the scan finds the known compiler sites, so it cannot silently pass.
@@ -207,27 +463,51 @@ test('every function serialized in worker/** or shared/** is listed for a canoni
   assert(sites.some(site => site.file.startsWith('worker/runtime-3211/storage-compiler.mjs:')), '3.21.1 storage compiler site not found');
 });
 
-// ---------------------------------------------------------------- Worker entries
-const entries = ['wrangler.jsonc', 'ops/runtime-test/wrangler.jsonc', 'ops/runtime-test/wrangler.active.jsonc'].map(config =>
-  relative(root, resolve(root, dirname(config), JSON.parse(readFileSync(resolve(root, config), 'utf8')).main)).replaceAll('\\', '/'));
+test('the scanned graph holds every repository module Rolldown bundled into the production Worker', () => {
+  // dist/prebid_professor is what deploy uploads (no_bundle). Rolldown marks each
+  // bundled module with a //#region comment; every Vite output chunk is read.
+  const dist = resolve(root, 'dist/prebid_professor');
+  if (!existsSync(resolve(dist, 'index.js'))) {
+    assert(!process.env.CI, 'Run scripts/isolated-toolchain.mjs build before this test in CI');
+    return;
+  }
+  const chunks = sourceFiles('dist/prebid_professor').filter(path => /\.m?js$/.test(path) && !path.includes('/.vite/'));
+  const regions = new Set(chunks.flatMap(path => [...readFileSync(resolve(root, path), 'utf8').matchAll(/^\/\/#region (.+)$/gm)].map(match => match[1]))
+    .filter(id => !id.startsWith('\\0') && !id.split('/').includes('node_modules')));
+  assert(regions.size > 100 && regions.has('worker/runtime-canonical/install.mjs'), 'dist/prebid_professor has no Rolldown module regions');
+  assert.deepEqual([...regions].filter(id => !graphs.get(productionEntry).has(id)), [], `Rolldown bundled modules that the esbuild graph of ${productionEntry} lacks`);
+});
 
-test('each Worker entry imports first the installer for every serialized function it bundles', async () => {
-  const {sites} = serializationSites();
-  for (const entry of [...new Set(entries)]) {
+// ---------------------------------------------------------------- Worker entries
+/** GitHub path filter globs as regular expressions (** any path, * one segment). */
+const pathFilter = glob => new RegExp('^' + glob.split('**').map(part => part.split('*').map(text => text.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')).join('.*') + '$');
+
+test('each Worker entry imports first the installer for every serialized function it bundles', () => {
+  assert(entries.includes(productionEntry) && entries.includes('worker/test-workspace/index.mjs'), `Worker entries: ${entries.join(', ')}`);
+  const {sites} = serializationSites(workerFiles, {strict: false});
+  for (const [entry, graph] of graphs) {
+    const bundled = sites.filter(({file}) => graph.has(file.replace(/:\d+$/, '')));
+    // A Worker that serializes nothing (the ops/test-worker bootstrap shell) needs no installer.
+    if (!bundled.length && ![...graph].some(path => path.startsWith('worker/runtime-canonical/'))) continue;
     const first = moduleInfo(entry).ast.body.find(node => node.type === 'ImportDeclaration');
-    const installer = relative(root, resolve(root, dirname(entry), first.source.value)).replaceAll('\\', '/');
+    const installer = first && repoPath(resolve(root, dirname(entry), first.source.value));
     assert(installer in groups, `${entry} must import a canonical-text installer before any other module, not ${installer}`);
-    const result = await build({absWorkingDir: root, entryPoints: [entry], bundle: true, write: false, metafile: true, format: 'esm', platform: 'neutral',
-      mainFields: ['module', 'main'], conditions: ['workerd', 'worker', 'browser'], external: ['node:*', 'cloudflare:*'], logLevel: 'silent'});
-    const graph = new Set(Object.keys(result.metafile.inputs));
-    for (const {file, fn} of sites) {
-      if (!graph.has(file.replace(/:\d+$/, ''))) continue;
+    for (const {file, fn} of bundled) {
       const needed = installerOf.get(`${fn.path}#${fn.name}`);
       if (!needed) continue; // reported by the coverage test above
       assert(graph.has(needed), `${entry} bundles ${file}, which serializes ${fn.name}, but not ${needed}`);
     }
     if (installer !== 'worker/runtime-canonical/install.mjs') assert(graph.has('worker/runtime-canonical/install.mjs'));
   }
+  // A change to any committed file of a Worker bundle must run the generation-parity job.
+  const workflow = readFileSync(resolve(root, '.github/workflows/site-editor-checks.yml'), 'utf8');
+  const flow = /^ {2}pull_request:\n(?: {4}.*\n)*? {4}paths: \[([^\]]+)\]/m.exec(workflow);
+  assert(flow, 'site-editor-checks.yml has no pull_request path filter');
+  assert.match(workflow, /^ {2}generation-parity:$/m, 'site-editor-checks.yml has no generation-parity job');
+  const filters = flow[1].split(',').map(glob => pathFilter(glob.trim()));
+  const unfiltered = workerFiles.filter(path => !path.startsWith('.generated/') && !filters.some(filter => filter.test(path)));
+  assert.deepEqual(unfiltered, [], 'Worker-bundled files outside the site-editor-checks.yml pull_request paths');
+  for (const config of configs) assert(filters.some(filter => filter.test(config)), `${config} is outside the site-editor-checks.yml pull_request paths`);
 });
 
 // ---------------------------------------------------------------- installed text
@@ -283,3 +563,4 @@ test('installed text is the unbundled source and no Worker code serializes an un
   assert(prebidScript.includes(canonicalSources['worker/test-workspace/prebid-versions.mjs'].fetchPrebidVersions));
   assert.deepEqual([...uncovered.keys()], [], 'Worker code serialized a function without canonical text');
 });
+
