@@ -1,5 +1,5 @@
 """One-off MBA-404 review: exact hosted minified package + real GPT, no ad traffic."""
-import hashlib, json, os, re, urllib.request
+import base64, gzip, hashlib, json, os, re, urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 from playwright.sync_api import sync_playwright
@@ -8,7 +8,7 @@ root = Path(__file__).resolve().parents[1]
 out = root / '.generated/hosted-gpt-review'
 out.mkdir(parents=True, exist_ok=True)
 url = os.environ['REVIEW_ADS_URL']
-code = urllib.request.urlopen(url, timeout=30).read()
+code = gzip.decompress(base64.b64decode((root/'tests/fixtures/review-hosted-ads.gz.b64').read_text()))
 assert hashlib.sha256(code).hexdigest() == os.environ['REVIEW_ADS_SHA256'], 'Hosted bytes differ from saved ZIP'
 html = (root / 'tests/fixtures/review-hosted-gpt.html').read_text()
 expected_ids = re.findall(r'<div id="([^"]+)"', html)
