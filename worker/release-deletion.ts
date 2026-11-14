@@ -80,7 +80,11 @@ export async function deleteRelease(
   if (isStoredBuiltinDraft(release)) return apiError(STORED_DRAFT_BLOCK, 409);
   if (!DELETABLE_STATUSES.has(release.status)) {
     return apiError(
-      `A ${release.status} release cannot be deleted. Only draft, failed and archived releases may be removed.`,
+      release.status === 'staging'
+        ? 'This release is in staging. Stage another release in Releases before deleting this one.'
+        : release.status === 'production'
+          ? 'This release is in production. Publish or restore another release in Releases before deleting this one.'
+          : `A ${release.status} release cannot be deleted. Only draft, failed and archived releases may be removed.`,
       409,
     );
   }
@@ -94,21 +98,21 @@ export async function deleteRelease(
     .first<SiteReference>();
 
   if (siteReference?.current_release_id === release.id || siteReference?.current_version === release.version) {
-    return apiError('The release is still referenced as the current site release and cannot be deleted.', 409);
+    return apiError('This release is still the current site release. Publish or restore another release in Releases before deleting this one.', 409);
   }
 
   const hasExternalDeployments = await tableExists(env.DB, 'external_deployments');
   let externalDeploymentCount = 0;
   if (hasExternalDeployments) {
     const activeDeployment = await env.DB
-      .prepare(`SELECT id FROM external_deployments
+      .prepare(`SELECT id, status FROM external_deployments
                 WHERE publisher_id = ? AND release_id = ?
                   AND status IN ('queued', 'running')
                 LIMIT 1`)
       .bind(siteId, releaseId)
-      .first<{ id: string }>();
+      .first<{ id: string; status: string }>();
     if (activeDeployment) {
-      return apiError('This release still has a queued or running external deployment.', 409);
+      return apiError(`An external deployment of this release is ${activeDeployment.status}. Check deployment history below the saved releases and wait for it to finish before deleting this release.`, 409);
     }
 
     const count = await env.DB
