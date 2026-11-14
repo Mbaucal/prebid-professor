@@ -1,0 +1,237 @@
+/** Generated scripts from the deployed TEST Worker bundle must equal a direct compile.
+ *
+ * Runs the sealed TEST Worker (.generated/test-workspace-active-dry-run/index.js,
+ * the exact bytes test-deploy uploads with --no-bundle) in LOCAL Miniflare with
+ * local D1/R2 and all outbound requests refused. For every runtime the site can
+ * select, GAM-only and Prebid, without TakeOver and with an ad-position TakeOver at
+ * intervals 0 and 5, it generates the package through the Worker routes, compiles
+ * the same saved snapshot with the unbundled modules in Node at the same build
+ * timestamp, and requires every package file to be byte-identical. The 3.9.1
+ * Generate and Save path (/test-api/generate: without a saved selection, and with
+ * 3.9.1 saved for GAM-only and Prebid; with and without the legacy TakeOver) and
+ * one saved package per configuration are checked the same way.
+ *
+ * Writes the generated programs for scripts/verify-generation-parity-browser.py.
+ * Run after test-build: TESSERA_TEST_TOOLCHAIN=isolated node --experimental-strip-types
+ *   --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/verify-workerd-generation-parity.mjs
+ */
+import assert from 'node:assert/strict';
+import {createHash, randomBytes} from 'node:crypto';
+import {mkdtemp, readFile, mkdir, writeFile, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join, resolve, dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {unzipSync} from 'fflate';
+import {Miniflare} from './local-miniflare.mjs';
+import {readPreviewSnapshot} from '../worker/runtime/builtin-preview-service.mjs';
+import {runtimeCatalog, readPinnedSiteRuntime, buildArtifactCandidate} from '../worker/test-workspace/runtime-catalog.mjs';
+import {takeOverForBuild} from '../worker/test-workspace/takeover-settings.mjs';
+import {selectedWorkspaceRuntime} from '../worker/test-workspace/runtime-selection.mjs';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const output = resolve(root, process.argv[2] ?? '.generated/generation-parity');
+const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+const compiledPath = resolve(root, '.generated/test-workspace-active-dry-run/index.js');
+const script = await readFile(compiledPath, 'utf8');
+const seal = JSON.parse(await readFile(resolve(root, '.generated/toolchain-evidence/test-build.json'), 'utf8'));
+assert.equal(sha(script), seal.compiled['.generated/test-workspace-active-dry-run'], 'Run test-build first: this is not the sealed TEST Worker.');
+const config = JSON.parse(await readFile(resolve(root, 'ops/runtime-test/wrangler.active.jsonc'), 'utf8'));
+const origin = config.vars.TEST_PUBLIC_ORIGIN;
+const password = randomBytes(24).toString('hex');
+const bindings = {...config.vars, TEST_ADMIN_EMAIL: 'tester@example.invalid', TEST_ADMIN_PASSWORD: password, TEST_SESSION_SECRET: randomBytes(48).toString('hex')};
+// Synthetic Prebid file: the generated scripts only reference it; the browser check uses the repository mock.
+const PREBID_FILE = '/* prebid.js v11.11.0\nModules: adformBidAdapter, consentManagementTcf, tcfControl, currency, gptPreAuction, priceFloors, userId, sharedIdSystem, schain */\nwindow.fixtureOnly=true;';
+const TAKEOVERS = {none: null, 'interval-0': 0, 'interval-5': 5};
+// Only the reference runtime predates ad-position TakeOver and refuses it.
+const reference = runtimeCatalog[1].version;
+assert.match(reference, /^3\.9\.1/);
+
+let outbound = 0;
+const entries = [], failures = [];
+await rm(output, {recursive: true, force: true});
+await mkdir(output, {recursive: true});
+
+async function start(name) {
+  const directory = await mkdtemp(join(tmpdir(), 'tessera-generation-parity-'));
+  const mf = new Miniflare({name: 'generation-parity-' + name, modules: true, script, compatibilityDate: config.compatibility_date,
+    compatibilityFlags: config.compatibility_flags ?? [], host: '127.0.0.1', port: 0, cf: false, bindings, resourcePersistencePath: directory,
+    d1Databases: {DB: 'generation-parity-d1'}, r2Buckets: {BUILDS: 'generation-parity-r2'},
+    outboundService: () => { outbound++; return new Response('External requests disabled', {status: 503}); }});
+  await mf.ready;
+  const session = {mf, directory, cookie: ''};
+  session.call = (path, body) => mf.dispatchFetch(origin + path, {method: body === undefined ? 'GET' : 'POST', redirect: 'manual',
+    headers: {cookie: session.cookie, ...(body === undefined ? {} : {origin, 'content-type': 'application/json'})},
+    body: body === undefined ? undefined : JSON.stringify(body)});
+  session.json = async (path, body, status = 200) => {
+    const response = await session.call(path, body), data = await response.json();
+    if (response.status !== status) throw Object.assign(Error(`${path} ${response.status}: ${data.error ?? ''}`), {data});
+    return data;
+  };
+  const login = await mf.dispatchFetch(origin + '/api/auth/login', {method: 'POST', redirect: 'manual', headers: {origin, 'content-type': 'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({email: bindings.TEST_ADMIN_EMAIL, password}).toString()});
+  assert.equal(login.status, 303);
+  session.cookie = login.headers.get('set-cookie').split(';')[0];
+  await session.json('/test-api/setup', {confirm: 'prepare-empty-test-database'});
+  const db = await mf.getD1Database('DB');
+  // The same storage objects the Worker reads, for the direct compile.
+  session.env = {DB: {withSession: () => db}, BUILDS: await mf.getR2Bucket('BUILDS')};
+  return session;
+}
+async function addUnits(s) {
+  const state = await s.json('/test-api/site-settings');
+  state.draft.units.push({code: 'P1', type: 'BTF', sizeMap: 'display', enabled: true}, {code: 'P2', type: 'BTF', sizeMap: 'display', enabled: true},
+    {code: 'Overlay', type: 'ATF', sizeMap: 'display', enabled: true});
+  await s.json('/test-api/site-settings', {expectedRevision: state.revision, acknowledge: true, draft: state.draft});
+}
+async function setLegacyTakeOver(s, enabled) {
+  const state = await s.json('/test-api/site-settings');
+  state.draft.takeOver = {...state.draft.takeOver, enabled};
+  await s.json('/test-api/site-settings', {expectedRevision: state.revision, acknowledge: true, draft: state.draft});
+}
+async function enablePrebid(s) {
+  const response = await s.mf.dispatchFetch(origin + '/test-api/prebid/upload', {method: 'POST',
+    headers: {cookie: s.cookie, origin, 'content-type': 'application/javascript', 'x-tessera-upload': 'prebid-test-file'}, body: PREBID_FILE});
+  const upload = await response.json();
+  assert.equal(response.status, 200, upload.error);
+  const before = await s.json('/test-api/prebid-settings');
+  await s.json('/test-api/prebid-settings', {expectedRevision: before.revision, acknowledge: true,
+    draft: {...before.draft, enablePrebid: true, buildId: upload.file.id, bidders: [{bidder: 'adform', params: {mid: 123}, enabled: true}]}});
+}
+async function select(s, runtime, prebid) {
+  const state = await s.json('/test-api/site-runtime');
+  const body = {action: state.selected ? 'version' : 'setup', revision: state.revision, runtime: runtime.pin, allowPreview: true};
+  if (!state.selected) body.enablePrebid = prebid;
+  await s.json('/test-api/site-runtime', body);
+}
+async function addTakeOver(s, demand, frequencyMinutes) {
+  const state = await s.json('/test-api/site-runtime');
+  await s.json('/test-api/site-runtime', {action: 'position', revision: state.revision, position: {code: 'Overlay', display: 'takeover', lazy: null,
+    overlay: {demand: demand === 'prebid' ? 'site' : 'gam', desktopMinWidth: 1024, desktopSeconds: 10, mobileSeconds: 5, countdown: true, frequencyMinutes}}});
+}
+const saved = s => readPreviewSnapshot(s.env.DB.withSession('first-primary'), 'test-site', {includePrebid: true});
+// Unbundled equivalent of siteRuntimeBundle and the saved-package route (worker/site-runtime/*).
+async function directSiteRuntime(s, buildTimestamp) {
+  const snapshot = await saved(s);
+  const selected = await readPinnedSiteRuntime({siteId: 'test-site', snapshot, catalog: runtimeCatalog}, s.env.BUILDS);
+  return (await buildArtifactCandidate({snapshot: selected.snapshot, pin: selected.pin, prebid: selected.prebid,
+    takeOver: takeOverForBuild(snapshot), buildTimestamp, countryTarget: 'test'})).files;
+}
+// Unbundled equivalent of candidate() in worker/test-workspace/index.mjs (/test-api/generate and /test-api/save).
+async function directGenerate(s, buildTimestamp, takeOverEnabled) {
+  const settings = await saved(s);
+  const resolved = await selectedWorkspaceRuntime(settings, s.env.BUILDS);
+  const {prebidBuilds, ...configuration} = settings;
+  return (await buildArtifactCandidate({snapshot: configuration, pin: resolved.pin, buildTimestamp, countryTarget: 'test',
+    takeOver: takeOverForBuild(settings, takeOverEnabled), prebid: resolved.prebid})).files;
+}
+const zipFiles = async response => unzipSync(new Uint8Array(await response.arrayBuffer()));
+const stampOf = files => JSON.parse(new TextDecoder().decode(files['manifest.json'])).buildTimestamp;
+
+async function record(entry, bundled, direct) {
+  const names = [...new Set([...Object.keys(bundled), ...Object.keys(direct)])].sort();
+  const differing = names.filter(name => !bundled[name] || !direct[name] || !Buffer.from(bundled[name]).equals(Buffer.from(direct[name])));
+  const manifest = JSON.parse(new TextDecoder().decode(bundled['manifest.json']));
+  if (manifest.runtime.runtimeVersion !== entry.version) differing.push(`manifest.json (runtime ${manifest.runtime.runtimeVersion}, expected ${entry.version})`);
+  entry.dir = `${entry.config}/${entry.path}/${entry.version}`;
+  entry.files = {};
+  await mkdir(join(output, entry.dir), {recursive: true});
+  for (const name of ['ads.js', 'ads.min.js', 'implementation.html']) {
+    assert(bundled[name], `${entry.dir}: ${name} missing from the package`);
+    await writeFile(join(output, entry.dir, name), bundled[name]);
+    entry.files[name] = sha(bundled[name]);
+  }
+  entry.identical = differing.length === 0;
+  if (!entry.identical) {
+    entry.differing = differing;
+    failures.push(`${entry.dir}: bundled Worker output differs from the direct compile in ${differing.join(', ')}`);
+  }
+  entries.push(entry);
+  console.log(`${entry.identical ? 'identical' : 'DIFFERS  '} ${entry.dir}${entry.identical ? '' : ' ' + differing.join(',')}`);
+}
+function refused(entry, error) {
+  entry.error = String(error.message).slice(0, 300);
+  failures.push(`${entry.config}/${entry.path}/${entry.version}: ${entry.error}`);
+  console.log(`FAILED    ${entry.config}/${entry.path}/${entry.version}: ${entry.error}`);
+}
+
+// /test-api/generate, /test-api/save and download: the default (legacy) Generate path.
+async function generatePath(s, entry, takeOverEnabled) {
+  try {
+    const generated = await s.json('/test-api/generate', {acknowledge: true, takeOverEnabled});
+    assert.equal(generated.descriptor.runtime.runtimeVersion, entry.version);
+    const stored = await s.json('/test-api/save', {receipt: generated.receipt, acknowledge: true, note: 'Generation parity ' + entry.config});
+    const bundled = await zipFiles(await s.call(`/test-api/releases/${stored.draft.id}/download`));
+    assert.equal(new TextDecoder().decode(bundled['ads.js']), generated.adsJs, 'Save regenerated a different ads.js than Generate');
+    await record(entry, bundled, await directGenerate(s, stampOf(bundled), takeOverEnabled));
+  } catch (error) { refused(entry, error); }
+}
+
+for (const demand of ['gam', 'prebid']) for (const [takeover, frequency] of Object.entries(TAKEOVERS)) {
+  const configName = `${demand}-${takeover}`;
+  const s = await start(configName);
+  try {
+    const legacy = takeover === 'none' ? [false, true] : [];
+    // No saved runtime selection yet: the seeded GAM-only site uses the default runtime.
+    if (demand === 'gam') for (const takeOverEnabled of legacy) {
+      await generatePath(s, {config: `gam-${takeOverEnabled ? 'legacy-takeover' : 'none'}`, demand, takeover: takeOverEnabled ? 'legacy' : 'none',
+        path: 'default-generate', version: reference}, takeOverEnabled);
+    }
+    // Editing the site requires a saved selection; start from 3.9.1 (it predates ad positions).
+    await select(s, (await s.json('/test-api/site-runtime')).runtimes.find(r => r.version === reference), false);
+    await addUnits(s);
+    if (demand === 'prebid') await enablePrebid(s);
+    // The same Generate path with 3.9.1 explicitly saved, GAM-only and Prebid. Once
+    // site settings are saved, the legacy TakeOver follows the saved setting.
+    for (const takeOverEnabled of legacy) {
+      if (takeOverEnabled) await setLegacyTakeOver(s, true);
+      await generatePath(s, {config: `${demand}-${takeOverEnabled ? 'legacy-takeover' : 'none'}`, demand, takeover: takeOverEnabled ? 'legacy' : 'none',
+        path: 'generate', version: reference}, takeOverEnabled);
+      if (takeOverEnabled) await setLegacyTakeOver(s, false);
+    }
+    const runtimes = (await s.json('/test-api/site-runtime')).runtimes;
+    assert.deepEqual(runtimes.map(r => r.version), runtimeCatalog.map(r => r.version), 'The Worker offers a different runtime catalog');
+    let positioned = false, latest = null;
+    for (const runtime of runtimes) {
+      const entry = {config: configName, demand, takeover, path: 'site-runtime', version: runtime.version};
+      try {
+        try { await select(s, runtime, demand === 'prebid'); }
+        catch (error) {
+          if (takeover !== 'none' && runtime.version === reference) { console.log(`refused   ${configName}/${runtime.version} (no ad-position TakeOver before 3.10.0)`); continue; }
+          throw error;
+        }
+        if (frequency !== null && !positioned) { await addTakeOver(s, demand, frequency); positioned = true; }
+        const state = await s.json('/test-api/site-runtime');
+        assert.equal(JSON.stringify(state.selected), JSON.stringify(runtime.pin));
+        assert.equal(state.positions.some(p => p.display === 'takeover'), frequency !== null, 'TakeOver position state differs from the configuration');
+        const response = await s.call('/test-api/site-runtime', {action: 'bundle', revision: state.revision, acknowledge: true});
+        if (response.status !== 200) throw Error(`Generate ${response.status}: ${(await response.json()).error}`);
+        const bundled = await zipFiles(response);
+        await record(entry, bundled, await directSiteRuntime(s, stampOf(bundled)));
+        latest = runtime;
+      } catch (error) { refused(entry, error); }
+    }
+    if (frequency !== null) assert(positioned, `${configName}: no runtime accepted the TakeOver position`);
+    // A saved package (site-packages generate and download) of the last catalog runtime that generated.
+    if (latest) {
+      const entry = {config: configName, demand, takeover, path: 'saved-package', version: latest.version};
+      try {
+        await select(s, latest, demand === 'prebid');
+        const state = await s.json('/test-api/site-runtime');
+        const generated = await s.json('/test-api/site-packages', {action: 'generate', notes: 'Generation parity', revision: state.revision}, 201);
+        const response = await s.call('/test-api/site-packages', {action: 'download', releaseId: generated.release.id});
+        assert.equal(response.status, 200);
+        const bundled = await zipFiles(response);
+        await record(entry, bundled, await directSiteRuntime(s, stampOf(bundled)));
+      } catch (error) { refused(entry, error); }
+    }
+  } finally {
+    await s.mf.dispose();
+    await rm(s.directory, {recursive: true, force: true});
+  }
+}
+const report = {scope: 'LOCAL Miniflare/workerd with local D1/R2; sealed TEST Worker bundle vs unbundled Node compile; NOT hosted',
+  compiledSha256: sha(script), outbound, runtimes: runtimeCatalog.map(r => r.version), entries, failures, passed: failures.length === 0 && outbound === 0};
+await writeFile(join(output, 'manifest.json'), JSON.stringify(report, null, 2) + '\n');
+console.log(JSON.stringify({entries: entries.length, identical: entries.filter(e => e.identical).length, failures: failures.length, outbound}));
+assert.equal(outbound, 0, 'The Worker attempted an outbound request');
+assert.deepEqual(failures, [], `${failures.length} generated packages differ from the direct compile or failed`);
