@@ -1,3 +1,5 @@
+// First: functions embedded in generated code must serialize to their source text.
+import './runtime-canonical/install.mjs';
 import {contextualBuildKitResponse} from './site-runtime/contextual-signals-build-kit.mjs';
 import {requireContextualRuntime} from '../shared/contextual-signals/settings.mjs';
 import {requireBidderRulesRuntime} from '../shared/bidder-rules/settings.mjs';
