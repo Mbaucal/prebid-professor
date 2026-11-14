@@ -12,6 +12,8 @@ the package's implementation.html, an initial ad request for every container tha
 is not lazy, pbjs.requestBids when Prebid is enabled, and the TakeOver slot requested
 on the first view exactly when the configuration has one. Lazy requests depend on
 IntersectionObserver rendering, not on the virtual clock, so they are only recorded.
+An error a program throws (also inside a virtual-clock timer) fails that program
+only; every program runs and browser-results.json is always written.
 """
 import hashlib
 import json
@@ -48,6 +50,7 @@ GRANT = r'''
 '''
 STATE = '''() => ({defined: window.__defined, enableServices: window.__enable,
  requests: __testAds.observations.requests.map(request => request.id), bids: __testAds.observations.bids.length})'''
+EMPTY = {'defined': [], 'enableServices': 0, 'requests': [], 'bids': 0}
 
 
 def containers(html):
@@ -106,22 +109,30 @@ with sync_playwright() as pw:
             fixtures[origin] = body
             errors = []
             listener = lambda error, errors=errors: errors.append(str(error).split('\n')[0])
+
+            def attempt(label, action, fallback=None):
+                # An error thrown by the program (also inside a virtual-clock timer)
+                # fails this program only; every program still runs and is reported.
+                try:
+                    return action()
+                except Exception as error:
+                    errors.append('%s: %s' % (label, str(error).split('\n')[0]))
+                    return fallback
+
+            def advance(steps):
+                for _ in range(steps):
+                    attempt('timer', lambda: page.clock.run_for(500))
             page.on('pageerror', listener)
             try:
                 page.goto(origin)
                 page.add_script_tag(content=mock)
                 page.evaluate(GRANT)
-                try:
-                    page.add_script_tag(content=(directory / name).read_text())
-                except Exception as error:
-                    errors.append('script: ' + str(error).split('\n')[0])
-                for _ in range(6):
-                    page.clock.run_for(500)
-                initial = page.evaluate(STATE)
-                page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-                for _ in range(12):
-                    page.clock.run_for(500)
-                final = page.evaluate(STATE)
+                attempt('script', lambda: page.add_script_tag(content=(directory / name).read_text()))
+                advance(6)
+                initial = attempt('state', lambda: page.evaluate(STATE), EMPTY)
+                attempt('scroll', lambda: page.evaluate('window.scrollTo(0, document.body.scrollHeight)'))
+                advance(12)
+                final = attempt('state', lambda: page.evaluate(STATE), EMPTY)
             finally:
                 page.remove_listener('pageerror', listener)
             problems = check(entry, errors, initial, final, slots)
@@ -141,5 +152,5 @@ report = {'scope': 'Chromium %s, repository GPT/Prebid mock, TCF stub with all p
 (output / 'browser-results.json').write_text(json.dumps(report, indent=1) + '\n')
 print(json.dumps({'programs': report['programs'], 'failures': len(failures), 'seconds': report['seconds']}))
 if not manifest['passed']:
-    failures.insert(0, 'the Worker generation parity check failed: %d entries' % len(manifest['failures']))
+    failures.insert(0, 'the Worker generation parity check failed: %d checks' % len(manifest['failures']))
 assert not failures, '%d programs failed:\n%s' % (len(failures), '\n'.join(failures))
