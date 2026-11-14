@@ -1,5 +1,5 @@
 import { useMemo, useState, type ChangeEvent } from 'react';
-import { api } from '../api';
+import { ApiError, api } from '../api';
 import { sizeMapsTemplateCsv } from '../shared/size-map-csv-template';
 import type { CsvImportKind, CsvImportPreview } from '../shared/types';
 
@@ -90,6 +90,12 @@ export default function BulkImportPanel(props: Props) {
   return <ImportEditor key={`${props.publisherId}:${props.onlyKind ?? 'all'}`} {...props} />;
 }
 
+function isPreview(value: unknown, kind: CsvImportKind): value is CsvImportPreview {
+  const preview = value as Partial<CsvImportPreview> | null;
+  return Boolean(preview && typeof preview === 'object' && preview.kind === kind && Array.isArray(preview.rows)
+    && typeof preview.errorCount === 'number');
+}
+
 function ImportEditor({ publisherId, onChanged, onlyKind }: Props) {
   const [kind, setKind] = useState<CsvImportKind>(onlyKind ?? 'ad-units');
   const [csv, setCsv] = useState(templates[onlyKind ?? 'ad-units'].csv);
@@ -167,6 +173,9 @@ function ImportEditor({ publisherId, onChanged, onlyKind }: Props) {
       setPreview(null);
       await onChanged?.();
     } catch (requestError) {
+      // A refused apply returns the fresh check (for example a size map renamed in another
+      // tab since the preview): show its row errors in the preview table.
+      if (requestError instanceof ApiError && requestError.status === 422 && isPreview(requestError.details, kind)) setPreview(requestError.details);
       setError(requestError instanceof Error ? requestError.message : 'CSV import failed.');
     } finally {
       setBusy(null);
