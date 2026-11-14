@@ -1,3 +1,4 @@
+import { mutateSizeMap } from './size-map-references';
 import type { CsvImportInput, CsvImportPreview, CsvImportPreviewRow, JsonObject } from '../src/shared/types';
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
@@ -184,9 +185,9 @@ export async function updateFlexibleSizeMap(
 ): Promise<Response> {
   if (!env.DB) return databaseMissing();
   const existingRow = await env.DB
-    .prepare('SELECT id, name, map_json FROM size_maps WHERE publisher_id = ? AND id = ? LIMIT 1')
+    .prepare('SELECT id, name, map_json, updated_at FROM size_maps WHERE publisher_id = ? AND id = ? LIMIT 1')
     .bind(siteId, sizeMapId)
-    .first<{ id: string; name: string; map_json: string }>();
+    .first<{ id: string; name: string; map_json: string; updated_at: string }>();
   if (!existingRow) return apiError('Size map not found.', 404);
 
   let body: Record<string, unknown>;
@@ -205,39 +206,12 @@ export async function updateFlexibleSizeMap(
     return apiError(error instanceof Error ? error.message : 'Invalid size map.', 422);
   }
 
-  const now = new Date().toISOString();
-  const actor = getActor(request);
-  const statements: D1PreparedStatement[] = [
-    env.DB.prepare(`UPDATE size_maps SET name = ?, map_json = ?, updated_at = ?
-                    WHERE publisher_id = ? AND id = ?`)
-      .bind(name, JSON.stringify(map), now, siteId, sizeMapId),
-  ];
-  if (name !== existingRow.name) {
-    statements.push(
-      env.DB.prepare(`UPDATE ad_units SET size_map_key = ?, updated_at = ?
-                      WHERE publisher_id = ? AND size_map_key = ?`)
-        .bind(name, now, siteId, existingRow.name),
-    );
-  }
-  statements.push(
-    env.DB.prepare(`INSERT INTO audit_log (
-        id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-      ) VALUES (?, ?, 'size_map.updated', ?, 'size_map', ?, ?, ?)`)
-      .bind(
-        crypto.randomUUID(),
-        actor,
-        siteId,
-        sizeMapId,
-        JSON.stringify({ previousName: existingRow.name, name, breakpoints: map.length }),
-        now,
-      ),
-  );
-
   try {
-    await env.DB.batch(statements);
+    const failure = await mutateSizeMap(env.DB, siteId, { id: existingRow.id, name: existingRow.name, updatedAt: existingRow.updated_at }, getActor(request), { name, map }, body.confirmPageTypeChanges);
+    if (failure) return apiError(failure.error, failure.status, failure.confirmation ? { confirmation: failure.confirmation } : undefined);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return apiError(/unique|constraint/i.test(message) ? `Size map "${name}" already exists on this site.` : 'Size map update failed.', /unique|constraint/i.test(message) ? 409 : 500, message);
+    const conflict = /unique|constraint/i.test(error instanceof Error ? error.message : '');
+    return apiError(conflict ? `Size map "${name}" already exists on this site.` : 'Size map update failed. Reload and review the saved rules before trying again.', conflict ? 409 : 500);
   }
 
   return json({ ok: true, sizeMap: await fetchSizeMap(env.DB, siteId, sizeMapId) });

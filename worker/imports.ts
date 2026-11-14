@@ -6,6 +6,7 @@ import type {
   CsvImportPreviewRow,
   JsonObject,
 } from '../src/shared/types';
+import { SIZE_MAPS_SAVED_SQL, missingSizeMaps, sizeMapNames, sizeMapsMissing, sizeMapsSavedArgs } from './ad-unit-size-maps';
 import { apiError, getActor, json, readJson } from './http';
 import type { DatabaseEnv } from './publishers';
 
@@ -196,11 +197,13 @@ async function buildAdUnits(db: D1Database, publisherId: string, csv: string): P
   const parsed = parseCsvRecords(csv);
   requireColumns(parsed.headers, [['code']]);
 
-  const existingResult = await db
-    .prepare('SELECT code FROM ad_units WHERE publisher_id = ?')
-    .bind(publisherId)
-    .all<{ code: string }>();
+  const [existingResult, mapsResult] = await Promise.all([
+    db.prepare('SELECT code FROM ad_units WHERE publisher_id = ?').bind(publisherId).all<{ code: string }>(),
+    db.prepare('SELECT name FROM size_maps WHERE publisher_id = ?').bind(publisherId).all<{ name: string }>(),
+  ]);
   const existing = new Set((existingResult.results ?? []).map((item) => item.code));
+  // Exact saved names, as Generate looks them up; cells are already trimmed.
+  const sizeMaps = new Set((mapsResult.results ?? []).map((item) => item.name));
   const seen = new Set<string>();
   const previewRows: CsvImportPreviewRow[] = [];
   const entities: JsonObject[] = [];
@@ -219,6 +222,9 @@ async function buildAdUnits(db: D1Database, publisherId: string, csv: string): P
     if (!['ATF', 'BTF', 'DRAFT'].includes(type)) errors.push('type must be ATF, BTF or DRAFT.');
     if (seen.has(code)) errors.push(`Duplicate ad unit code "${code}" inside this CSV.`);
     if (code) seen.add(code);
+    if (sizeMapKey && !sizeMaps.has(sizeMapKey)) {
+      errors.push(`${sizeMapsMissing([sizeMapKey])} on this site. Import or create it first, or use a current size map name.`);
+    }
 
     try {
       enabled = parseBoolean(value(row, 'enabled'), true);
@@ -530,6 +536,12 @@ export async function applyCsvImport(
   const actor = getActor(request);
   const now = new Date().toISOString();
   const statements: D1PreparedStatement[] = [];
+  // Ad-unit rows store size map names that existed when the CSV was checked. Every statement
+  // of the import repeats the same check, so a map renamed or deleted after that (for example
+  // in another tab) leaves the whole import unwritten.
+  const sizeMaps = input.kind === 'ad-units' ? sizeMapNames(build.entities.map((entity) => entity.sizeMapKey)) : [];
+  const gate = sizeMaps.length ? ` AND ${SIZE_MAPS_SAVED_SQL}` : '';
+  const gateArgs = sizeMaps.length ? sizeMapsSavedArgs(publisherId, sizeMaps) : [];
 
   if (input.kind === 'ad-units') {
     build.entities.forEach((entity) => {
@@ -538,7 +550,7 @@ export async function applyCsvImport(
           `INSERT INTO ad_units (
              id, publisher_id, code, type, media_type, size_map_key, enabled, sort_order,
              notes, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE 1${gate}
            ON CONFLICT(publisher_id, code) DO UPDATE SET
              type = excluded.type,
              media_type = excluded.media_type,
@@ -559,6 +571,7 @@ export async function applyCsvImport(
           entity.notes,
           now,
           now,
+          ...gateArgs,
         ),
       );
     });
@@ -646,12 +659,12 @@ export async function applyCsvImport(
   }
 
   statements.push(
-    env.DB.prepare('UPDATE publishers SET updated_at = ? WHERE id = ?').bind(now, publisherId),
+    env.DB.prepare(`UPDATE publishers SET updated_at = ? WHERE id = ?${gate}`).bind(now, publisherId, ...gateArgs),
     env.DB
       .prepare(
         `INSERT INTO audit_log (
            id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-         ) VALUES (?, ?, 'csv_import.applied', ?, 'csv_import', ?, ?, ?)`,
+         ) SELECT ?, ?, 'csv_import.applied', ?, 'csv_import', ?, ?, ? WHERE 1${gate}`,
       )
       .bind(
         crypto.randomUUID(),
@@ -665,11 +678,18 @@ export async function applyCsvImport(
           imported: build.entities.length,
         }),
         now,
+        ...gateArgs,
       ),
   );
 
   try {
-    await env.DB.batch(statements);
+    const result = await env.DB.batch(statements);
+    if (gate && result[result.length - 1]?.meta.changes !== 1) {
+      const missing = await missingSizeMaps(env.DB, publisherId, sizeMaps);
+      return apiError(missing.length
+        ? `${sizeMapsMissing(missing)} on this site, so nothing was imported. Preview the CSV again and use a current size map name.`
+        : 'Size maps changed while importing, so nothing was imported. Preview the CSV again.', 409);
+    }
   } catch (error) {
     return apiError(
       'CSV import could not be applied.',

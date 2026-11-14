@@ -13,7 +13,8 @@ const stamp='20261011_140000';
 test('explicit selection preserves the old default and refuses discarded active settings',()=>{
   assert.equal(runtimeCatalog[0].id,'tessera-positions-preview-1');
   const snapshot=dealsRuntimeFixture();
-  for(const old of runtimeCatalog.filter(r=>!['tessera-revenue-preview-1','tessera-revenue-preview-2','tessera-revenue-preview-3','tessera-3.16.0','tessera-3.16.1','tessera-3.16.2','tessera-3.17.0','tessera-3.18.0','tessera-3.19.0','tessera-3.19.1','tessera-3.20.0','tessera-3.20.1','tessera-3.21.0'].includes(r.id)))assert.throws(()=>previewInput(snapshot,old,stamp),/Active Deals or Outstream/);
+  for(const old of runtimeCatalog.filter(r=>!['tessera-revenue-preview-1','tessera-revenue-preview-2','tessera-revenue-preview-3','tessera-3.16.0','tessera-3.16.1','tessera-3.16.2','tessera-3.17.0','tessera-3.18.0','tessera-3.19.0','tessera-3.19.1','tessera-3.20.0','tessera-3.20.1','tessera-3.21.0','tessera-3.21.1','tessera-3.21.2'].includes(r.id)))assert.throws(()=>previewInput(snapshot,old,stamp),/Active Deals or Outstream/);
+  assert.equal(previewInput(snapshot,runtimeCatalog.find(r=>r.id==='tessera-3.21.1'),stamp).deals.entries[0].dealId,'0000199');
   const next=previewInput(snapshot,descriptor,stamp);
   assert.equal(next.deals.entries[0].dealId,'0000199');
   assert.deepEqual(next.outstream.disabledRefreshCodes,[]);
