@@ -64,8 +64,11 @@ export default function ReleaseDeleteButton({
   const [deleting, setDeleting] = useState(false);
   const estimatedBytes = useMemo(() => manifestBytes(release.manifest), [release.manifest]);
   const deletable = ['draft', 'failed', 'archived'].includes(release.status);
-
-  if (!deletable) return null;
+  const blockedReason = release.status === 'staging'
+    ? 'In staging. Stage another release here before deleting this one.'
+    : release.status === 'production'
+      ? 'In production. Publish or restore another release before deleting this one.'
+      : !deletable ? `Cannot delete a release with status “${release.status}”.` : null;
 
   async function remove(): Promise<void> {
     setDeleting(true);
@@ -88,7 +91,7 @@ export default function ReleaseDeleteButton({
       }
 
       const freed = formatBytes(payload.deleted.bytesFreed);
-      const message = `Deleted ${payload.deleted.version}: ${payload.deleted.objectsDeleted} R2 object(s), ${freed} freed.`;
+      const message = `Deleted ${release.displayName || release.version}. ${freed} freed.`;
       await onDeleted(message);
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Release could not be deleted.');
@@ -98,7 +101,9 @@ export default function ReleaseDeleteButton({
     }
   }
 
-  return <ConfirmDeleteButton name={release.displayName||release.version} disabled={disabled||deleting}
+  return <span className="release-delete-control"><ConfirmDeleteButton name={release.displayName||release.version} disabled={disabled||deleting||!deletable}
     description="Delete this saved release and its files permanently? Download a ZIP first if you need a backup. Active releases cannot be deleted."
-    label={estimatedBytes ? `Delete · ${formatBytes(estimatedBytes)}` : 'Delete release'} onConfirm={remove}/>;
+    label={estimatedBytes ? `Delete · ${formatBytes(estimatedBytes)}` : 'Delete release'} onConfirm={remove}/>
+    {blockedReason && <small className="release-delete-reason">{blockedReason}</small>}
+  </span>;
 }

@@ -9,7 +9,7 @@ permissions:
   contents: read
 jobs:
   editor:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04 # Playwright 1.55 browser dependencies are pinned to this supported OS.
     timeout-minutes: 15
     env:
       TZ: UTC
@@ -50,7 +50,7 @@ jobs:
 
   contextual-native:
     name: Contextual signals · Prebid ${{ matrix.prebid }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04 # Playwright 1.55 browser dependencies are pinned to this supported OS.
     timeout-minutes: 30
     strategy:
       fail-fast: false
