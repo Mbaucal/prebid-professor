@@ -421,8 +421,8 @@ export async function updateAdUnit(
   // Unit rules or Refresh schedules save built from the older row is refused.
   const ruleRow = rows.find((row) => row.rule_key === current.code);
   // A new or changed size map key must name a saved map. An absent or unchanged key is the
-  // one this request read, and the row guard proves the unit still has it (a map rename moves
-  // the unit's key, a map in use cannot be deleted), so it keeps its meaning.
+  // one this request read, and the row guard checks that the unit still stores it (a map
+  // rename moves the unit's key, a map in use cannot be deleted), so it keeps its meaning.
   const sizeMaps = sizeMapKey === current.sizeMapKey ? [] : sizeMapNames([sizeMapKey]);
 
   try {
@@ -433,7 +433,7 @@ export async function updateAdUnit(
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
            ) SELECT ?, ?, 'ad_unit.updated', ?, 'ad_unit', ?, ?, ?
            WHERE (SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1) IS ?
-             AND EXISTS (SELECT 1 FROM ad_units WHERE publisher_id = ? AND id = ? AND code = ? AND updated_at IS ?)
+             AND EXISTS (SELECT 1 FROM ad_units WHERE publisher_id = ? AND id = ? AND code = ? AND updated_at IS ? AND size_map_key IS ?)
              AND ${SIZE_MAPS_SAVED_SQL}
              ${carries ? `AND ${UNIT_RULE_ROWS_UNCHANGED_SQL}` : ''}`,
         )
@@ -443,7 +443,7 @@ export async function updateAdUnit(
           publisherId,
           adUnitId,
           JSON.stringify({ previousCode: current.code, code, type, mediaType, sizeMapKey, ...(carried.kept.length ? { keptUnitRuleIntervals: carried.kept } : {}) }),
-          now, publisherId, guard.configJson, publisherId, adUnitId, current.code, current.updatedAt,
+          now, publisherId, guard.configJson, publisherId, adUnitId, current.code, current.updatedAt, current.sizeMapKey,
           ...sizeMapsSavedArgs(publisherId, sizeMaps),
           ...(carries ? unitRuleRowsUnchangedArgs(publisherId, rows) : []),
         ),
@@ -485,7 +485,16 @@ export async function updateAdUnit(
             .bind(code, nextRowVersion(ruleRow.updated_at, now), publisherId, current.code, auditId)]
         : []),
     ]);
-    if (result[0].meta.changes !== 1) return sizeMapRefused(env.DB, publisherId, sizeMaps, 'saved', "Site settings changed. Reload before editing this ad unit.");
+    if (result[0].meta.changes !== 1) {
+      // Name the map the form holds when it is gone and the unit does not store it: a new key, or
+      // the unchanged key of a form opened before a rename moved the unit to the new name.
+      const stored = await env.DB
+        .prepare('SELECT size_map_key FROM ad_units WHERE publisher_id = ? AND id = ?')
+        .bind(publisherId, adUnitId)
+        .first<{ size_map_key: string | null }>();
+      const named = sizeMaps.length || stored?.size_map_key !== sizeMapKey ? sizeMapNames([sizeMapKey]) : [];
+      return sizeMapRefused(env.DB, publisherId, named, 'saved', "Site settings changed. Reload before editing this ad unit.");
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);
