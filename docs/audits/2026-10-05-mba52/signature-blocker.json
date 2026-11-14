@@ -1,0 +1,8 @@
+{
+  "baselineLockSha256": "7d9787650ad10fcafee21db223ce2bb76b2e9dc6ac6b943404b260e3b7f47280",
+  "candidateLockSha256": "9b02ee3fd8e927dc494676eb3be7c151ad1b034dc55e326ac83ee0907f93ac50",
+  "blocked": true,
+  "error": "Runtime source changed. Register a new exact runtime version with its source checksum and change notes before building. Do not replace an existing release record.",
+  "rootPackageUnchanged": true,
+  "frozenGuardChanged": false
+}
