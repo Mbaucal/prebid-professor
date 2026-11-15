@@ -40,7 +40,7 @@ async function sri(bytes){
   const hash=new Uint8Array(await crypto.subtle.digest('SHA-384',bytes));
   return 'sha384-'+btoa(String.fromCharCode(...hash));
 }
-const json=(bytes,message)=>{try{return JSON.parse(decode.decode(bytes));}catch{return refuse('package-unverified',message);}};
+const json=(bytes,message)=>{try{return JSON.parse(decode.decode(bytes));}catch{return refuse('package-unverified',message,'packages');}};
 
 /** Reads one saved version and checks its bytes against its own manifest. */
 async function savedVersion(pkg,side){

@@ -289,6 +289,13 @@ test('a package without ads.min.js or its manifest, or with a changed byte, is r
   await refused(compose({...P.A, files}, P.B), 'package-unverified', 'packages', /^Version A does not match its saved manifest\./);
   await refused(compose({...P.A, release: {...P.A.release, id: P.B.release.id}}, P.B), 'package-unverified', 'packages', /^Version A does not match/);
   await refused(compose({files: P.A.files, release: {id: 'tanjug-script-1.0.0-' + '0'.repeat(64)}}, P.B), 'package-unverified', 'packages', /^Version A is not a saved built-in version\./);
+  // Bytes that are not JSON are refused like any other unverified package, with the same check.
+  for (const name of ['manifest.json', 'config.json']) {
+    const broken = {...P.B, files: {...P.B.files, [name]: bytesOf('{not json')}};
+    await refused(compose(P.A, broken), 'package-unverified', 'packages', /^Version B does not match its saved manifest\./);
+    assert.deepEqual((await checkAbCompatibility({site: 'test-site', a: P.A, b: broken})).refusal, {code: 'package-unverified', check: 'packages',
+      message: 'Version B does not match its saved manifest. Generate that version again, or choose another saved version.'}, name);
+  }
   const dry = await checkAbCompatibility({site: 'test-site', a: P.A, b: {files: P.B.files}});
   assert.deepEqual(dry, {compatible: false, refusal: {code: 'package-incomplete', check: 'packages', message: 'Version B is not a saved package. Choose a saved version under Releases.'}, checks: [], warnings: [], configDiff: null});
 });
