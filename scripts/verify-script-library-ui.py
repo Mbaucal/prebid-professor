@@ -36,6 +36,7 @@ try:
   check('Releases has a cache summary, not a second cache form',page.get_by_label('Auction mode',exact=True).count()==0 and page.get_by_text('Bid caching: Off',exact=True).is_visible())
   page.get_by_role('button',name='Edit Prebid settings',exact=True).click()
   cache=page.get_by_role('checkbox',name='Reuse valid, unused bids',exact=True);cache.wait_for();cache.check()
+  check('Demand says new named scripts use the cache setting too',page.get_by_text('Select script 3.23.0 in Script setup to apply bid caching. Your setting is saved. New named scripts in Releases → Scripts and A/B tests use it too; saved scripts and tests keep their own settings.',exact=True).is_visible())
   page.get_by_label('Maximum bid age (seconds)',exact=True).fill('60')
   page.get_by_role('button',name='Save Prebid settings',exact=True).click()
   page.get_by_text('Prebid settings saved.',exact=False).wait_for()

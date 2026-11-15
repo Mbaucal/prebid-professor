@@ -13,3 +13,21 @@ export async function seedScriptLibrary(db) {
     CREATE TABLE audit_log(id TEXT PRIMARY KEY,actor TEXT,action TEXT,publisher_id TEXT,entity_type TEXT,entity_id TEXT,details_json TEXT,created_at TEXT);
   `.replace(/\n/g,' '));
 }
+/** A second synthetic site that is not Tanjug (example.invalid), with its own inventory. Eligible
+ * for bid caching: Footer, Home_Top, In_Article. Not eligible: a video unit, a disabled unit, a
+ * Draft, the TakeOver ad position and an Outstream position. builtinRuntimeSelection is optional. */
+export const EXAMPLE_SITE='example';
+export const EXAMPLE_ELIGIBLE=Object.freeze(['Footer','Home_Top','In_Article']);
+export async function seedExampleSite(db,{builtinRuntimeSelection}={}) {
+  const config={enablePrebid:true,currency:'EUR',consent:{cmpApi:'iab'},
+    runtimeControls:{adPositions:{Takeover_Unit:{display:'takeover'}},outstream:{schemaVersion:1,units:{Outstream_Unit:{format:'outstream'}}}},
+    ...(builtinRuntimeSelection?{builtinRuntimeSelection}:{})};
+  const units=[['Home_Top','ATF','banner',1],['In_Article','BTF','banner',1],['Footer','BTF','banner',1],['Video_Slot','BTF','video',1],
+    ['Off_Unit','BTF','banner',0],['Draft_Unit','DRAFT','banner',1],['Takeover_Unit','ATF','banner',1],['Outstream_Unit','BTF','banner',1]];
+  await db.batch([
+    db.prepare("INSERT INTO publishers VALUES(?,'Example site','example.invalid','/123/example/')").bind(EXAMPLE_SITE),
+    db.prepare("INSERT INTO publisher_configs VALUES('config-example',?,?,NULL)").bind(EXAMPLE_SITE,JSON.stringify(config)),
+    db.prepare("INSERT INTO bidders VALUES(?,1)").bind(EXAMPLE_SITE),
+    ...units.map(([code,type,media,enabled],i)=>db.prepare("INSERT INTO ad_units VALUES(?,?,?,?,?,?,?,?,NULL,'2026-11-01','2026-11-01')").bind('example-'+code,EXAMPLE_SITE,code,type,media,'display',enabled,i)),
+  ]);
+}
