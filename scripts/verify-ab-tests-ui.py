@@ -28,6 +28,8 @@ process=subprocess.Popen(shlex.split(args.fixture),cwd=root,stdin=subprocess.PIP
 fixture=json.loads(process.stdout.readline());assert fixture['ready']
 origin=fixture['origin'];assert urlsplit(origin).hostname=='127.0.0.1'
 errors=[];requests=[];external=[];dialogs=[];checks=[];shots_taken=[]
+# hold: the next list request waits in pending, so the loading line and a failed load can be checked.
+mode={'hold':False};pending=[]
 NO_PRODUCTION='This site has no production version on TEST. Choose A yourself: use the version your test page runs now.'
 PUBLIC='The test name, the TestId and both version names are published inside /ads.js. Do not use private notes.'
 UPLOAD='Download the ZIP and upload all of its files, unchanged, as one Pages deployment.'
@@ -48,6 +50,8 @@ def route(r):
  url=urlsplit(r.request.url)
  if url.netloc!=urlsplit(origin).netloc:
   external.append(r.request.url);r.abort();return
+ if mode['hold'] and url.path==args.endpoint and r.request.method=='GET':
+  mode['hold']=False;pending.append(r);return
  result=send({'path':url.path+('?'+url.query if url.query else ''),'method':r.request.method,'body':r.request.post_data})
  requests.append({'path':url.path,'method':r.request.method,'status':result['status']})
  r.fulfill(status=result['status'],headers=result['headers'],body=base64.b64decode(result['body']))
@@ -88,8 +92,24 @@ try:
   page.goto(origin+'/')
   link=page.get_by_role('link',name='A/B tests',exact=True);link.wait_for()
   check('The TEST home page links the A/B tests panel',link.get_attribute('href')=='/site-workspace#ab-tests')
+  # Loading, a failed load and Reload: the loading line is the panel's own status class, never .runtime-message.
+  mode['hold']=True
   page.goto(origin+args.page)
   panel.get_by_role('heading',name='A/B tests',exact=True).wait_for()
+  loading=panel.locator('.ab-tests-status[role="status"]').filter(has_text='Loading A/B tests…')
+  for _ in range(500):
+   if pending:break
+   page.wait_for_timeout(10)
+  check('The list request is held while loading',len(pending)==1)
+  loading.wait_for()
+  check('While loading, no .runtime-message or .runtime-error has role=status',page.locator('.runtime-message[role="status"], .runtime-error[role="status"]').count()==0)
+  shots('loading')
+  pending.pop().fulfill(status=503,content_type='application/json',body=json.dumps({'error':'Synthetic A/B tests failure. Retry.'}))
+  failed=panel.get_by_role('alert').filter(has_text='Synthetic A/B tests failure. Retry.');failed.wait_for()
+  check('A failed load says why, offers Reload and has no status line',loading.count()==0 and button('Reload A/B tests').is_visible()
+   and page.locator('.runtime-message[role="status"], .runtime-error[role="status"]').count()==0)
+  shots('load-error')
+  button('Reload A/B tests').click()
   expect(field('TestId')).to_have_value('test_site_1')
   saved=page.get_by_role('heading',name='Saved versions',exact=True);saved.wait_for()
   page.get_by_text(long_name,exact=True).wait_for()
