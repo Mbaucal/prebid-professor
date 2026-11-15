@@ -28,7 +28,8 @@ try{
   const setup=await Promise.all([json('/test-api/named-scripts/prepare','POST',{confirm:'prepare-named-script-test-copy'}),json('/test-api/named-scripts/prepare','POST',{confirm:'prepare-named-script-test-copy'})]);
   check('Concurrent explicit setup creates one exact fixture',setup.every(x=>x.ready)&&setup.filter(x=>x.created).length===1&&(await f.db.prepare('SELECT COUNT(*) n FROM publishers').first()).n===2);
   check('Setup preserves existing TEST identity and settings',await original()===before);
-  check('Only exact fixed-site mutation routes exist',(await call('/api/publishers/test-site/prebid-mode','PUT',{})).status===405&&(await call(base+'/ad-units','POST',{})).status===404);
+  // test-site has its own bid caching route; an incomplete form there is refused without a write.
+  check('Only exact fixed-site mutation routes exist',(await call('/api/publishers/test-site/prebid-mode','PUT',{})).status===422&&await original()===before&&(await call('/api/publishers/test-named-script-other/prebid-mode','PUT',{})).status===405&&(await call(base+'/ad-units','POST',{})).status===404);
   const mode=await json(base+'/prebid-mode');
   const update={revision:mode.revision,enabled:true,bidCache:{enabled:false,maxBidAgeSeconds:60,positionOverrides:{Billboard:false,Sticky:true}}};
   await json(base+'/prebid-mode','PUT',update,403,{origin:'https://foreign.invalid'});
