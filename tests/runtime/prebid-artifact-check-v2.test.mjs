@@ -17,8 +17,8 @@ async function fixture(list=[...required,...extras]) {
   return {args,build,metadata,object,bytes,bucket,reads:()=>reads,inspect:()=>inspectPrebidArtifact(args,bucket)};
 }
 
-test('admin checker accepts valid digit-leading names while frozen requirements and parser stay unchanged',async()=>{
-  assert.equal(prebidRequirements,frozen.prebidRequirements);assert.equal(moduleReason,frozen.moduleReason);assert.equal(sha256,frozen.sha256);
+test('admin checker accepts valid digit-leading names while frozen parser stays unchanged',async()=>{
+  assert.equal(moduleReason,frozen.moduleReason);assert.equal(sha256,frozen.sha256);
   for(const module of extras){
     assert.throws(()=>frozen.parsePrebidHeader(source([...required,module])),/Invalid module declarations/);
     assert(parsePrebidHeader(source([...required,module])).modules.includes(module));
@@ -42,4 +42,24 @@ test('malformed stored metadata is rejected before storage with an actionable re
   const report=await f.inspect();assert.equal(report.issues[0].code,'invalid_module_metadata');assert.equal(f.reads(),0);
   assert.match(prebidFailureMessage(report),/Stored Prebid module declarations are invalid/);
   assert.doesNotMatch(prebidFailureMessage(report),/<script>/);
+});
+
+const legacyInput=()=>({core:{bidders:[{bidder:'openx',params:{}}],userSync:{userIds:[]}},options:{enablePrebid:true,floors:{enabled:false},currencyConversion:{enabled:false}}});
+for(const variant of ['base','gam-only','floors-currency','user-id','unknown-bidder'])test('account-aware requirements retain frozen legacy result: '+variant,()=>{
+ const input=legacyInput(),config={};
+ if(variant==='gam-only')input.options.enablePrebid=false;
+ if(variant==='floors-currency'){input.options.floors.enabled=true;input.options.currencyConversion.enabled=true;}
+ if(variant==='user-id')input.core.userSync.userIds=[{name:'id5Id'}];
+ if(variant==='unknown-bidder')input.core.bidders=[{bidder:'unmapped_alias',params:{}}];
+ const before=structuredClone(input);
+ assert.deepEqual(prebidRequirements(input,config),frozen.prebidRequirements(input,config));
+ assert.deepEqual(input,before);
+});
+test('account-aware requirements use each original adapter module once and preserve CMP requirements',()=>{
+ const input=legacyInput();input.core.bidders=[{bidder:'adf',params:{mid:1}},{bidder:'agency_adf',params:{mid:2}}];
+ input.bidderAccounts=[{bidder:'adf',baseAdapter:'adf',schain:{mode:'inherit'}},{bidder:'agency_adf',baseAdapter:'adf',schain:{mode:'none'}}];
+ const before=structuredClone(input),result=prebidRequirements(input);
+ assert.deepEqual(result.issues,[]);
+ assert.deepEqual(result.modules,['adfBidAdapter','consentManagementTcf','tcfControl']);
+ assert.deepEqual(input,before);
 });

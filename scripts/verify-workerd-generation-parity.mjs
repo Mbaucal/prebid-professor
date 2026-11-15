@@ -52,7 +52,7 @@ const origin = config.vars.TEST_PUBLIC_ORIGIN;
 const password = randomBytes(24).toString('hex');
 const bindings = {...config.vars, TEST_ADMIN_EMAIL: 'tester@example.invalid', TEST_ADMIN_PASSWORD: password, TEST_SESSION_SECRET: randomBytes(48).toString('hex')};
 // Synthetic Prebid file: the generated scripts only reference it; the browser check uses the repository mock.
-const PREBID_FILE = '/* prebid.js v11.11.0\nModules: adformBidAdapter, consentManagementTcf, tcfControl, currency, gptPreAuction, priceFloors, userId, sharedIdSystem, schain */\nwindow.fixtureOnly=true;';
+const PREBID_FILE = '/* prebid.js v11.11.0\nModules: adfBidAdapter, adformBidAdapter, pubmaticBidAdapter, consentManagementTcf, tcfControl, currency, gptPreAuction, priceFloors, userId, sharedIdSystem, schain */\nwindow.fixtureOnly=true;';
 const TAKEOVERS = {none: null, 'interval-0': 0, 'interval-5': 5};
 // Only the reference runtime predates ad-position TakeOver and refuses it.
 const reference = runtimeCatalog[1].version;
@@ -314,6 +314,46 @@ for (const demand of ['gam', 'prebid']) for (const [takeover, frequency] of Obje
     await s.mf.dispose();
     await rm(s.directory, {recursive: true, force: true});
   }
+}
+// The account path is a saved package from the sealed TEST Worker, including
+// capped TakeOver plus independent site/custom/omitted upstream chains.
+{
+  const s = await start('prebid-accounts');
+  const entry = {config:'prebid-accounts',demand:'prebid',takeover:'interval-5',path:'saved-package',version:'3.22.1',accountCase:true};
+  try {
+    const runtime=(await s.json('/test-api/site-runtime')).runtimes.find(r=>r.version===entry.version);
+    assert(runtime, 'The account runtime must be selectable explicitly');
+    await select(s,runtime,false);
+    await addUnits(s);
+    await enablePrebid(s);
+    const state=await s.json('/test-api/prebid-settings');
+    const bidders=[
+      {bidder:'pubmatic',params:{publisherId:'999990',adSlot:'fixture'},enabled:true},
+      ...[
+        ['adf_smn',999991,{mode:'inherit'}],
+        ['adf_ag',999992,{mode:'none'}],
+        ['adf_other',999993,{mode:'custom',config:{ver:'1.0',complete:1,nodes:[{asi:'other.example',sid:'other',hp:1}]}}]
+      ].map(([bidder,mid,schain])=>({bidder,baseAdapter:'adf',params:{mid},schain,enabled:true}))
+    ];
+    await s.json('/test-api/prebid-settings',{expectedRevision:state.revision,acknowledge:true,draft:{...state.draft,bidders}});
+    const db=await s.mf.getD1Database('DB');
+    const row=await db.prepare("SELECT config_json FROM publisher_configs WHERE publisher_id='test-site'").first();
+    const savedConfig=JSON.parse(row.config_json);
+    savedConfig.runtimeControls??={};
+    savedConfig.runtimeControls.schain={enabled:true,version:'1.0',complete:1,nodes:[{asi:'seller.example',sid:'site',hp:1}]};
+    await db.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").bind(JSON.stringify(savedConfig)).run();
+    await addTakeOver(s,'prebid',5);
+    const selected=await s.json('/test-api/site-runtime');
+    const generated=await s.json('/test-api/site-packages',{action:'generate',notes:'Account generation parity',revision:selected.revision},201);
+    const response=await s.call('/test-api/site-packages',{action:'download',releaseId:generated.release.id});
+    assert.equal(response.status,200);
+    const bundled=await zipFiles(response);
+    await record(entry,bundled,await directSiteRuntime(s,stampOf(bundled)));
+    const calls=await guardCalls(s.mf,origin);
+    guard['prebid-accounts']=describeCalls(calls);
+    if(calls.length)failures.push('prebid-accounts: non-canonical serialization: '+guard['prebid-accounts'].join('; '));
+  } catch(error) {refused(entry,error);}
+  finally {await s.mf.dispose();await rm(s.directory,{recursive:true,force:true});}
 }
 const report = {scope: 'LOCAL Miniflare/workerd with local D1/R2; sealed TEST Worker bundle vs unbundled Node compile; NOT hosted',
   compiledSha256: sha(script), outbound, runtimes: runtimeCatalog.map(r => r.version), served, guard, entries, failures, passed: failures.length === 0 && outbound === 0};

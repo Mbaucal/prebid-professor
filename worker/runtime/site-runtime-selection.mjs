@@ -6,7 +6,7 @@
  */
 import { validateRuntimeDescriptor, pinRuntime, assertPinnedRuntime } from './version-pin.mjs';
 import { previewInput, digest } from './preview-snapshot.mjs';
-import { prebidRequirements } from '../runtime-demand-v1/requirements.mjs';
+import { prebidRequirements } from '../test-workspace/prebid-requirements.mjs';
 import { inspectPrebidArtifact } from './prebid-artifact-check-v2.mjs';
 import { prebidFailureMessage } from '../runtime-demand-v1/requirements.mjs';
 import { assertSnapshotCompilerCompatibility } from '../compiler-input-compatibility.mjs';

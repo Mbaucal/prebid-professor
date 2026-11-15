@@ -4,7 +4,7 @@ import type {ContextualPrebidStatus} from '../../worker/site-runtime/contextual-
 import '../contextual-signals.css';
 
 type Props={publisherId:string;onChanged?:()=>void|Promise<void>;endpoint?:string};
-type ContextualSignalsPayload={revision:string;settings:ContextualSignals;bidders:{bidder:string;enabled:boolean;configured:boolean}[];enablePrebid:boolean;prebidVersion:string|null;runtimeEligible:boolean;compatibility:{bidder:string;delivery:string;note:string;source:string|null;evidence:string;serverAcceptance:string}[];taxonomies:{id:string;label:string;segtax:number;categories:{id:string;name:string}[]}[];published:false;prebidIntegration:ContextualPrebidStatus};
+type ContextualSignalsPayload={revision:string;settings:ContextualSignals;bidders:{bidder:string;baseAdapter?:string;enabled:boolean;configured:boolean}[];enablePrebid:boolean;prebidVersion:string|null;runtimeEligible:boolean;compatibility:{bidder:string;delivery:string;note:string;source:string|null;evidence:string;serverAcceptance:string}[];taxonomies:{id:string;label:string;segtax:number;categories:{id:string;name:string}[]}[];published:false;prebidIntegration:ContextualPrebidStatus};
 type MappingDraft={value:string;ids22:string;ids30:string};
 type Draft=Omit<ContextualSignals,'mappings'>&{mappings:MappingDraft[]};
 const splitIds=(value:string)=>value.split(/[\s,]+/).filter(Boolean);
@@ -81,7 +81,7 @@ export default function ContextualSignalsPanel({publisherId,onChanged,endpoint}:
         {data.bidders.length?<div className="contextual-signals-bidders">{data.bidders.map(bidder=>{
           const route=draft.bidders.find(item=>item.bidder===bidder.bidder);
           const compatibility=data.compatibility.find(item=>item.bidder===bidder.bidder);
-          return <label className="contextual-signals-field" key={bidder.bidder}><span>{bidder.bidder}{!bidder.configured?' · not configured':!bidder.enabled?' · disabled':''}</span>
+          return <label className="contextual-signals-field" key={bidder.bidder}><span>{bidder.bidder}{bidder.baseAdapter && bidder.baseAdapter !== bidder.bidder ? ' · '+bidder.baseAdapter : ''}{!bidder.configured?' · not configured':!bidder.enabled?' · disabled':''}</span>
             <select aria-label={`Taxonomy for ${bidder.bidder}`} value={route?.taxonomy??''} onChange={event=>{
               const without=draft.bidders.filter(item=>item.bidder!==bidder.bidder);
               change({bidders:event.target.value?[...without,{bidder:bidder.bidder,taxonomy:event.target.value as ContextualSignals['bidders'][number]['taxonomy']}]:without});

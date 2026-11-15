@@ -25,7 +25,7 @@ import { runtimeSelectionPage, runtimeSelectionScript } from './runtime-selectio
 import { runtimeDescriptor, runtimeCatalog, descriptorForPin, buildArtifactCandidate } from './runtime-catalog.mjs';
 import { describeCandidate, saveDraftRelease, readDraftRelease, readDraftReleaseIndex, readDraftReleaseFile } from '../runtime/draft-release-store.mjs';
 import { WorkspaceError, workspaceBoundary, sameOrigin, boundedText, jsonBody, TEST_SITE } from './boundary.mjs';
-import { inspectTestSchema, initializeTestSchema } from './schema.mjs';
+import { inspectTestSchema, initializeTestSchema, migrateBidderAccountSchema } from './schema.mjs';
 import { issueReceipt, verifyReceipt } from './receipt.mjs';
 import { loginPage, workspacePage, workspaceScript } from './page.mjs';
 import { takeOverForBuild } from './takeover-settings.mjs';
@@ -180,6 +180,7 @@ async function route(request,env) {
   }
   if (path==='/test-api/setup') {
     const body=await jsonBody(request,['confirm']);
+    if(body.confirm==='migrate-bidder-accounts')return json(await migrateBidderAccountSchema(env.DB,actor.email));
     if(body.confirm!=='prepare-empty-test-database')throw new WorkspaceError(422,'Confirm preparation of the empty test database.');
     return json(await initializeTestSchema(env.DB,actor.email));
   }

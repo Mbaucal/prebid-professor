@@ -1,3 +1,4 @@
+import {applyBidderAccountSchema} from '../support/bidder-account-schema.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -17,6 +18,7 @@ const deletion=(f,site,id)=>deletePrebidBuild(new Request('https://audit.example
 async function setup(prebid=true){
  const f=workspaceStore();fixtures.push(f);
  f.sqlite.exec((await readFile('migrations/0001_initial.sql','utf8')).split('INSERT OR IGNORE INTO publishers')[0]);
+  applyBidderAccountSchema(f.sqlite);
  f.sqlite.exec((await readFile('migrations/0002_publisher_accounts.sql','utf8')).split('-- Politika.rs')[0]);
  assert.equal((await createSite(req({id:'source',name:'Source',domain:'source.example.invalid',gamPath:'/123/source/'}),f.env)).status,201);
  f.sqlite.exec(`INSERT INTO ad_units(id,publisher_id,code,type,media_type,size_map_key,enabled,sort_order) VALUES('unit','source','Billboard','ATF','banner','Billboard',1,0);

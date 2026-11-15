@@ -1,6 +1,7 @@
+import {normalizeBidderAccount, normalizeBidderAccounts} from '../../shared/bidder-accounts/settings.mjs';
 /** Data-only editor validation; no execution, network or database access. */
 import { WorkspaceError } from './boundary.mjs';
-export const SUPPORTED_BIDDERS = Object.freeze(['adform','connectad','criteo','eskimi','ix','magnite','ogury','openx','pubmatic','richaudience','rtbhouse','smartadserver','teads']);
+export const SUPPORTED_BIDDERS = Object.freeze(['adf','adform','connectad','criteo','eskimi','ix','magnite','ogury','openx','pubmatic','richaudience','rtbhouse','smartadserver','teads']);
 const blocked = new Set(['__proto__', 'constructor', 'prototype']);
 const fail = (message) => { throw new WorkspaceError(422, message); };
 export function fields(value, keys, label) {
@@ -36,14 +37,17 @@ export function params(input) {
 export function normalizePrebidDraft(input, units, {planning = false} = {}) {
   fields(input,['enablePrebid','buildId','bidders','overrides'],'Prebid settings');
   if (typeof input.enablePrebid !== 'boolean' || (input.buildId !== null && !/^test-pb-[a-f0-9]{64}$/.test(input.buildId))) fail('Choose a stored TEST build and an explicit Prebid mode.');
-  if (!Array.isArray(input.bidders) || input.bidders.length > SUPPORTED_BIDDERS.length || !Array.isArray(input.overrides) || input.overrides.length > 200) fail('Too many bidder rows.');
+  if (!Array.isArray(input.bidders) || input.bidders.length > 500 || !Array.isArray(input.overrides) || input.overrides.length > 200) fail('Too many bidder rows.');
   const names = new Set(), keys = new Set();
   const bidders = input.bidders.map((row) => {
-    fields(row,['bidder','params','enabled'],'bidder');
-    if (!SUPPORTED_BIDDERS.includes(row.bidder) || names.has(row.bidder) || typeof row.enabled !== 'boolean') fail('Choose each supported bidder once.');
+    const metadataKeys = ['baseAdapter','displayName','schain'].filter(key => Object.hasOwn(row,key));
+    fields(row,['bidder','params','enabled',...metadataKeys],'bidder');
+    const account=normalizeBidderAccount(Object.fromEntries(metadataKeys.map(key=>[key,row[key]])),{bidder:row.bidder});
+    if ((!SUPPORTED_BIDDERS.includes(account.baseAdapter) && !metadataKeys.length) || names.has(row.bidder) || typeof row.enabled !== 'boolean') fail('Choose each supported bidder once, with a distinct account code.');
     names.add(row.bidder);
-    return {bidder:row.bidder, params:params(row.params), enabled:row.enabled};
+    return {bidder:row.bidder, params:params(row.params), enabled:row.enabled, ...(metadataKeys.length?{baseAdapter:account.baseAdapter,displayName:account.displayName,schain:account.schain}:{})};
   }).sort((a,b) => a.bidder < b.bidder ? -1 : 1);
+  normalizeBidderAccounts(bidders.map(row=>normalizeBidderAccount({baseAdapter:row.baseAdapter,displayName:row.displayName,schain:row.schain},{bidder:row.bidder})));
   const overrides = input.overrides.map((row) => {
     fields(row,['bidder','scopeType','scopeKey','params','enabled'],'override');
     if (!names.has(row.bidder) || !['slot','device','adunit'].includes(row.scopeType) || typeof row.enabled !== 'boolean' || typeof row.scopeKey !== 'string') fail('Each override needs a configured bidder and a scope.');

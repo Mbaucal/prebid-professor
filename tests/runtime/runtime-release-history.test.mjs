@@ -49,3 +49,12 @@ test('recorded commit must exist and reproduce its declared source checksum',()=
   assert.throws(()=>verifyRuntimeReleaseProvenance([{...release,codeSha256:'e'.repeat(64)}],readSource),/does not match runtime/);
   assert.throws(()=>verifyRuntimeReleaseProvenance([release],()=>{throw Error('Unknown source commit');}),/Unknown source commit/);
 });
+
+
+test('TEST keeps its existing 3.22.0 record and order while 3.22.1 is prepended',()=>{
+  const current=history(), previous=current.filter(r=>r.version!=='3.22.1');
+  assert.doesNotThrow(()=>checkRuntimeReleaseHistory(current,previous));
+  const imported=previous.find(r=>r.version==='3.22.0');
+  assert.throws(()=>checkRuntimeReleaseHistory([imported,...current.filter(r=>r!==imported)],previous),/historical release order/);
+  assert.throws(()=>checkRuntimeReleaseHistory(current.map(r=>r===imported?{...r,title:r.title+' changed'}:r),previous),/unchanged/);
+});

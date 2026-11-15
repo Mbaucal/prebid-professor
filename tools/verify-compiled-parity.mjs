@@ -10,6 +10,7 @@ import {fixture,configure,takeOver,pin} from '../tests/runtime/artifact-fixture.
 import {buildArtifactCandidate} from '../worker/runtime/artifact-candidate.mjs';
 import {readPreviewSnapshot,runtimeDescriptor} from '../worker/runtime/builtin-preview-service.mjs';
 import {digest} from '../worker/runtime/preview-snapshot.mjs';
+import {applyBidderAccountD1Schema} from '../tests/support/bidder-account-schema.mjs';
 // ZIP DOS timestamps use local getters; workerd is UTC. Match that explicit environment.
 process.env.TZ='UTC';
 const root=resolve(import.meta.dirname,'..');
@@ -24,6 +25,7 @@ try {
  // Real local SQL storage, using the repository schema. No remote bindings.
  const schema=await readFile(resolve(root,'migrations/0001_initial.sql'),'utf8');
  for(const statement of schema.split(';').map(s=>s.trim()).filter(Boolean))await db.prepare(statement).run();
+ await applyBidderAccountD1Schema(db);
  const source=configure(fixture(),c=>{c.enablePrebid=false;});
  for(const [table,rows] of Object.entries({publishers:[source.site],publisher_configs:[{id:'config',publisher_id:'test-site',...source.config}],ad_units:source.units,bidders:source.bidders,bidder_overrides:source.overrides,size_maps:source.maps,unit_rules:source.rules})){
   for(const [i,row] of rows.entries()){
