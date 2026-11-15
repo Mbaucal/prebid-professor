@@ -35,6 +35,8 @@ PUBLIC='The test name, the TestId and both version names are published inside /a
 UPLOAD='Download the ZIP and upload all of its files, unchanged, as one Pages deployment.'
 KEPT='(no longer in Saved versions; this test keeps its own copy)'
 COMPATIBLE='Compatible. These versions can be compared.'
+STOP="To stop a test, upload version A's own saved ZIP from Saved versions to the same Pages project again, or roll back that Pages deployment. Then use Mark stopped."
+LIVE_DELETE='This test is marked live. Deleting it does not stop it on your site.'
 LIST_HELP='For lists, each side shows only what it has and the other version does not.'
 sha=lambda data:hashlib.sha256(data).hexdigest()
 
@@ -128,8 +130,8 @@ try:
   check('No idle status in the panel after loading',panel.get_by_role('status').count()==0)
   text=page.locator('main').inner_text()
   check('No production-menu wording',all(s not in text for s in ['Config →','Releases →']))
-  check('The no-production note, the public-names note and the upload note are shown',
-   all(panel.get_by_text(s,exact=True).is_visible() for s in [NO_PRODUCTION,PUBLIC,UPLOAD]))
+  check('The no-production note, the public-names note, the upload note and how to stop a test are shown',
+   all(panel.get_by_text(s,exact=True).is_visible() for s in [NO_PRODUCTION,PUBLIC,UPLOAD,STOP]))
   check('Option text never equals a bare version name',panel.locator('option').filter(has_text='Version A').first.inner_text()!='Version A')
   check('Save is disabled before a check',button('Save A/B test').is_disabled())
   shots('opened',full=True)
@@ -255,6 +257,11 @@ try:
   status('Bid cache: marked live.').wait_for()
   bid.locator('.ab-tests-events li').filter(has_text='Marked live').wait_for()
   check('After Mark live, only Mark stopped is enabled',button('Mark live',bid).is_disabled() and button('Mark stopped',bid).is_enabled())
+  # Deleting a test marked live asks first and says that Delete does not stop it; dismissed, it changes nothing.
+  dismiss.append('Delete A/B test "Bid cache"?')
+  button('Delete test',bid).click();page.wait_for_timeout(200);dismiss.clear()
+  check('Delete on a test marked live says it does not stop the test',dialogs[-1].startswith('Delete A/B test "Bid cache"?') and LIVE_DELETE in dialogs[-1]
+   and not listing()['deleted'])
   button('Mark stopped',bid).click()
   status('Bid cache: marked stopped.').wait_for()
   bid.locator('.ab-tests-events li').filter(has_text='Marked stopped').wait_for()
@@ -262,6 +269,8 @@ try:
   check('Both events are stored in order',[e['type'] for e in detail['events']]==['marked-live','marked-stopped'])
   check('Each mark asks first and says it changes no file',any('Mark "Bid cache" live?' in m and 'does not publish' in m for m in dialogs)
    and any('Mark "Bid cache" stopped?' in m for m in dialogs))
+  check('Mark live asks for the GAM setup checklist first',any('Mark "Bid cache" live?' in m and 'GAM setup checklist' in m for m in dialogs))
+  check('Mark stopped says how to stop the test',any('Mark "Bid cache" stopped?' in m and STOP in m for m in dialogs))
   shots('marked')
 
   # 10. Delete (a dismissed confirmation changes nothing), then Restore.
@@ -269,6 +278,7 @@ try:
   button('Delete test',article('A/A check')).click()
   page.wait_for_timeout(200)
   check('A dismissed delete changes nothing',not listing()['deleted'] and article('A/A check').count()==1)
+  check('Delete on a test never marked live does not mention live',LIVE_DELETE not in dialogs[-1])
   dismiss.clear()
   button('Delete test',article('A/A check')).click()
   status('A/A check: moved to Deleted A/B tests.').wait_for()

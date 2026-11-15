@@ -126,7 +126,7 @@ These steps are for the owner after merge. Nothing in this PR deploys.
 3. Open the TEST page with the network panel. The first GAM request (`securepubads.g.doubleclick.net/gampad/ads`) carries `Variant=A` or `Variant=B` and `TestId=<testId>` in its `cust_params`. Reload a few times to see both groups.
 4. For QA, add `?tessera_ab=A` or `?tessera_ab=B` to the page URL. The loader then loads that version and sets no `Variant` or `TestId`, so QA pageviews are not counted. `AdVariant.inspect()` in the console shows the variant, the status (`forced`) and the loaded script.
 5. In GAM, add the key `Variant` with the values `A` and `B` and the key `TestId` with the test's value, and turn on reporting for both. The panel's **GAM setup checklist** lists the same steps. GAM does not report traffic from before this setup.
-6. Use **Mark live** when the page starts to load the loader, and **Mark stopped** when it stops.
+6. Use **Mark live** when the page starts to load the loader, and **Mark stopped** when it stops. To stop a test, upload version A's own saved ZIP from Saved versions to the same Pages project again, or roll back that Pages deployment, then use **Mark stopped**. **Delete test** does not stop a test on the site; the panel says so when the test is marked live.
 
 ## Not in this PR
 

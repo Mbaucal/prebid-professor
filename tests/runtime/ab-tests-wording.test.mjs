@@ -54,6 +54,10 @@ test('the A/B tests panel states what is published, what TEST lacks and how GAM 
  'Use 1 to 24 lowercase letters, digits or _ in the TestId to save.',
  'Use a whole number from 0 to 100 for traffic to save.',
  'For lists, each side shows only what it has and the other version does not.',
+ // How to stop a test delivered by hand, and that Delete does not stop one.
+ "To stop a test, upload version A's own saved ZIP from Saved versions to the same Pages project again, or roll back that Pages deployment. Then use Mark stopped.",
+ ' This test is marked live. Deleting it does not stop it on your site.',
+ 'Finish the GAM setup checklist first.',
  ])assert(panel.includes(sentence),sentence);
  for(const text of ['You can save this A/B test','what the other version lacks'])assert(!panel.includes(text),text);
  assert.match(panel,/<li>Key <code>Variant<\/code> with the values <code>A<\/code> and <code>B<\/code>\.<\/li>/);

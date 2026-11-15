@@ -21,6 +21,8 @@ type Detail = {record:{name:string;testId:string;arms:{A:Arm;B:Arm};bundle:{file
 type Props = {publisherId:string;endpoint:string;testOnly?:boolean;refreshKey?:number};
 
 const TEST_ID = /^[a-z0-9_]{1,24}$/;
+// TEST delivers by hand (ZIP to Pages), so stopping is by hand too. MAIN (P4a) words its own delivery.
+const STOP_TEST = "To stop a test, upload version A's own saved ZIP from Saved versions to the same Pages project again, or roll back that Pages deployment. Then use Mark stopped.";
 const FIELD_LABELS: Record<string,string> = {
   runtimeVersion:'Script version',capabilities:'Script capabilities','bidCache.enabled':'Bid caching','bidCache.maxAgeSeconds':'Maximum bid age (seconds)',
   'bidCache.positions':'Bid cache positions','refresh.default':'Refresh','refresh.rules':'Refresh by position','refresh.stickySeconds':'Sticky refresh (seconds)',
@@ -149,8 +151,8 @@ export default function AbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Prop
   }
   async function mark(test:Summary,type:AbEvent['type']){
     const question=type==='marked-live'
-      ?`Mark "${test.name}" live? This records that the test started on your site now. It does not publish or change any file.`
-      :`Mark "${test.name}" stopped? This records that the test stopped on your site now. It does not change any file.`;
+      ?`Mark "${test.name}" live? This records that the test started on your site now. It does not publish or change any file. Finish the GAM setup checklist first.`
+      :`Mark "${test.name}" stopped? This records that the test stopped on your site now. It does not change any file.${testOnly?' '+STOP_TEST:''}`;
     if(!window.confirm(question))return;
     const response=await request(`/${test.id}/events`,{method:'POST',body:{type}});
     if(!response.ok){const problem=await failure(response,'Could not record this change.');await load();throw problem;}
@@ -158,7 +160,10 @@ export default function AbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Prop
     return `${test.name}: marked ${type==='marked-live'?'live':'stopped'}.`;
   }
   async function trash(test:Summary,remove:boolean){
-    if(remove&&!window.confirm(`Delete A/B test "${test.name}"? It moves to Deleted A/B tests. Its files and TestId ${test.testId} are kept, so you can restore it.`))return;
+    // Delete only hides the test here; a test marked live keeps running on the site until it is stopped there.
+    const detail=details[test.id],live=detail&&'events' in detail&&detail.events.at(-1)?.type==='marked-live';
+    if(remove&&!window.confirm(`Delete A/B test "${test.name}"? It moves to Deleted A/B tests. Its files and TestId ${test.testId} are kept, so you can restore it.`
+      +(live?' This test is marked live. Deleting it does not stop it on your site.':'')))return;
     const response=await request('/'+test.id,{method:remove?'DELETE':'PUT',body:{confirmId:test.id,sha256:test.zipSha256}});
     if(!response.ok)throw await failure(response,remove?'Could not delete the A/B test.':'Could not restore the A/B test.');
     await load();
@@ -224,7 +229,8 @@ export default function AbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Prop
     </form>
 
     <h3>Saved A/B tests</h3>
-    {testOnly?<p className="ab-tests-help">Download the ZIP and upload all of its files, unchanged, as one Pages deployment.</p>:null}
+    {testOnly?<><p className="ab-tests-help">Download the ZIP and upload all of its files, unchanged, as one Pages deployment.</p>
+      <p className="ab-tests-help">{STOP_TEST}</p></>:null}
     {noticeAt('list')}
     {!data.tests.length?<p>No A/B tests saved yet.</p>:data.tests.map(test=>{
       const detail=details[test.id],loaded=detail&&'record' in detail?detail:null,last=loaded?.events.at(-1);
