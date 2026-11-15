@@ -1,8 +1,9 @@
+import {normalizeBidderAccount} from '../../shared/bidder-accounts/settings.mjs';
 import { runtimeCatalog, descriptorForPin, previewInput, prepareSiteRuntimeSelection, readPinnedSiteRuntime } from './runtime-catalog.mjs';
 /** Authenticated TEST configuration service. No live endpoints or ad execution. */
 import { readPreviewSnapshot } from '../runtime/builtin-preview-service.mjs';
 import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
-import { prebidRequirements } from '../runtime-demand-v1/requirements.mjs';
+import { prebidRequirements } from './prebid-requirements.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
 import { WorkspaceError, TEST_SITE } from './boundary.mjs';
 import { assertWorkspaceSiteScope } from './site-draft.mjs';
@@ -20,7 +21,7 @@ export async function prebidSnapshot(env) {
 }
 function editorDraft(snapshot, config) {
   return {enablePrebid:config.enablePrebid,buildId:snapshot.prebidBuilds[0]?.id ?? null,
-    bidders:snapshot.bidders.map((b)=>({bidder:b.bidder,params:JSON.parse(b.params_json),enabled:b.enabled===1})),
+    bidders:snapshot.bidders.map((b)=>({bidder:b.bidder,params:JSON.parse(b.params_json),enabled:b.enabled===1,...(b.account_json&&b.account_json!=='{}'?normalizeBidderAccount(JSON.parse(b.account_json),{bidder:b.bidder}):{})})),
     overrides:snapshot.overrides.map((o)=>({bidder:o.bidder,scopeType:o.scope_type,scopeKey:o.scope_key,params:JSON.parse(o.params_json),enabled:o.enabled===1}))};
 }
 export async function getPrebidSettings(env) {
@@ -34,7 +35,7 @@ export async function getPrebidSettings(env) {
   try{requiredModules=prebidRequirements(previewInput(snapshot,descriptorForPin(config.builtinRuntimeSelection.runtime),'20000101_000000'),config).modules;}
   catch(error){validationIssue??=error.message;}
   return {site:{id:TEST_SITE,name:snapshot.site.name},revision:await digest(snapshot),draft:editorDraft(snapshot,config),
-    files:await listPrebidFiles(prebidStore(env)),supportedBidders:SUPPORTED_BIDDERS,
+    files:await listPrebidFiles(prebidStore(env)),supportedBaseAdapters:[...new Set([...SUPPORTED_BIDDERS,...editorDraft(snapshot,config).bidders.map(row=>row.baseAdapter||row.bidder),...(config.testPrebidPlan?.draft?.bidders??[]).map(row=>row.baseAdapter||row.bidder)])],supportedBidders:[...new Set([...SUPPORTED_BIDDERS,...snapshot.bidders.map(row=>row.bidder),...(config.testPrebidPlan?.draft?.bidders??[]).map(row=>row.bidder)])],
     units:snapshot.units.map((u)=>({code:u.code,enabled:u.enabled===1})),requiredModules,
     plan:config.testPrebidPlan??null,options:planOptions(config),userIds:USER_IDS.map(({name,label})=>({name,label})),
     version:snapshot.prebidBuilds[0]?.version??'11.11.0',
@@ -76,7 +77,7 @@ export async function preparePrebidSettings(env, body) {
   else if(draft.buildId)selected=await readPrebidFile(prebidStore(env),draft.buildId);
   else if(before.prebidBuilds.length)throw new WorkspaceError(422,'Keep the stored file selected when turning Prebid off. Uploaded files are retained.');
   if(draft.enablePrebid&&buildPlan&&selected.row.version!==buildPlan.version)throw new WorkspaceError(422,`Build version mismatch: the plan requires ${buildPlan.version}; the selected file is ${selected.row.version}. Return the file for the planned version or explicitly change the plan version.`);
-  after.bidders=draft.bidders.map((b)=>({bidder:b.bidder,params_json:JSON.stringify(b.params),enabled:b.enabled?1:0}));
+  after.bidders=draft.bidders.map((b)=>({bidder:b.bidder,params_json:JSON.stringify(b.params),account_json:Object.hasOwn(b,'baseAdapter')?JSON.stringify(normalizeBidderAccount({baseAdapter:b.baseAdapter,displayName:b.displayName,schain:b.schain},{bidder:b.bidder})):(before.bidders.find(row=>row.bidder===b.bidder)?.account_json??'{}'),enabled:b.enabled?1:0}));
   after.overrides=draft.overrides.map((o)=>({bidder:o.bidder,scope_type:o.scopeType,scope_key:o.scopeKey,params_json:JSON.stringify(o.params),enabled:o.enabled?1:0}));
   after.prebidBuilds=selected?[{...selected.row,status:'current'}]:[];
   const next={...(buildPlan?buildPlan.config:config),enablePrebid:draft.enablePrebid,testPrebidDraft:{schemaVersion:1,candidateOnly:true}};
@@ -106,9 +107,9 @@ export async function commitPrebidSettings(store, plan, actor) {
     }
     writes.push(db.prepare('UPDATE publisher_configs SET config_json=?,config_hash=NULL,updated_at=? WHERE publisher_id=?').bind(value.config.config_json,stamp,TEST_SITE));
     if(!plan.planOnly){
-    writes.push(db.prepare(`INSERT INTO bidders(id,publisher_id,bidder,params_json,enabled)
-      SELECT json_extract(value,'$.id'),?,json_extract(value,'$.bidder'),json_extract(value,'$.params_json'),json_extract(value,'$.enabled') FROM json_each(?) WHERE 1
-      ON CONFLICT(publisher_id,bidder) DO UPDATE SET params_json=excluded.params_json,enabled=excluded.enabled,updated_at=?`).bind(TEST_SITE,bidders,stamp));
+    writes.push(db.prepare(`INSERT INTO bidders(id,publisher_id,bidder,params_json,account_json,enabled)
+      SELECT json_extract(value,'$.id'),?,json_extract(value,'$.bidder'),json_extract(value,'$.params_json'),COALESCE(json_extract(value,'$.account_json'),'{}'),json_extract(value,'$.enabled') FROM json_each(?) WHERE 1
+      ON CONFLICT(publisher_id,bidder) DO UPDATE SET params_json=excluded.params_json,account_json=excluded.account_json,enabled=excluded.enabled,updated_at=?`).bind(TEST_SITE,bidders,stamp));
     writes.push(db.prepare(`INSERT INTO bidder_overrides(id,publisher_id,bidder,scope_type,scope_key,params_json,enabled)
       SELECT json_extract(value,'$.id'),?,json_extract(value,'$.bidder'),json_extract(value,'$.scope_type'),json_extract(value,'$.scope_key'),json_extract(value,'$.params_json'),json_extract(value,'$.enabled') FROM json_each(?) WHERE 1
       ON CONFLICT(publisher_id,bidder,scope_type,scope_key) DO UPDATE SET params_json=excluded.params_json,enabled=excluded.enabled,updated_at=?`).bind(TEST_SITE,overrides,stamp));

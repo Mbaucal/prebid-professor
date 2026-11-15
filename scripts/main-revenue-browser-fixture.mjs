@@ -1,3 +1,4 @@
+import {applyBidderAccountSchema} from '../tests/support/bidder-account-schema.mjs';
 // Local-only MAIN Worker + SQLite + in-memory R2. No hosted credentials or traffic.
 import assert from 'node:assert/strict';
 import {createInterface} from 'node:readline';
@@ -12,6 +13,7 @@ if(setupScenario)assert(['new','legacy','readiness','preview','current'].include
 const stable=process.argv.includes('--stable')||Boolean(setupScenario);
 const f=workspaceStore();
 f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
+  applyBidderAccountSchema(f.sqlite);
 f.sqlite.exec(readFileSync('migrations/0003_external_deployments.sql','utf8'));
 f.sqlite.prepare('INSERT INTO publishers(id,name,domain,gam_path) VALUES(?,?,?,?)').run(siteId,'Synthetic MAIN site','main.example.invalid','/123/main/');
 f.sqlite.prepare('INSERT INTO publisher_configs(id,publisher_id,config_json) VALUES(?,?,?)').run('config',siteId,JSON.stringify({enablePrebid:true,runtimeControls:{sticky:{bottomAdUnitId:''},floors:{enabled:false},output:{cleanComments:true}}}));

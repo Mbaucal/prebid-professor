@@ -1,3 +1,4 @@
+import {applyBidderAccountSchema} from '../support/bidder-account-schema.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -15,6 +16,7 @@ function fixture({channel='staging',publicBase=null,audit=false,branch='staging'
   const f = workspaceStore();
   f.env.DEPLOY_CALLBACK_SECRET = 'LOCAL-CALLBACK-FIXTURE';
   f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8'));
+  applyBidderAccountSchema(f.sqlite);
   f.sqlite.exec(readFileSync('migrations/0003_external_deployments.sql','utf8'));
   f.sqlite.exec(`INSERT INTO publishers(id,name,domain,gam_path) VALUES ('site','Fixture','example.invalid','/123/example');
     INSERT INTO releases(id,publisher_id,version,status) VALUES ('release','site','fixture-v1','production');`);

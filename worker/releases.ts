@@ -293,7 +293,7 @@ async function loadSnapshot(env: ReleaseEnv, siteId: string): Promise<Validation
     env.DB.prepare(`SELECT id, code, type, media_type, size_map_key, enabled, sort_order, notes
                     FROM ad_units WHERE publisher_id = ? ORDER BY sort_order, code COLLATE NOCASE`)
       .bind(siteId).all<AdUnitRow>(),
-    env.DB.prepare('SELECT id, bidder, params_json, enabled FROM bidders WHERE publisher_id = ? ORDER BY bidder COLLATE NOCASE')
+    env.DB.prepare('SELECT id, bidder, params_json, account_json, enabled FROM bidders WHERE publisher_id = ? ORDER BY bidder COLLATE NOCASE')
       .bind(siteId).all<BidderRow>(),
     env.DB.prepare(`SELECT id, bidder, scope_type, scope_key, params_json, enabled
                     FROM bidder_overrides WHERE publisher_id = ? ORDER BY bidder, scope_type, scope_key`)

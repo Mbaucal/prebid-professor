@@ -47,7 +47,13 @@ GRANT = r'''
 }
 '''
 STATE = '''() => ({defined: window.__defined, enableServices: window.__enable,
- requests: __testAds.observations.requests.map(request => request.id), bids: __testAds.observations.bids.length})'''
+ requests: __testAds.observations.requests.map(request => request.id), bids: __testAds.observations.bids.length,
+ accounts: window.__AD_BIDDER_ACCOUNTS?.snapshot().accounts ?? []})'''
+ACCOUNT_MOCK = '''() => {
+ pbjs.version='11.34.0'; pbjs.aliasRegistry={};
+ pbjs.aliasBidder=(base,alias)=>{pbjs.aliasRegistry[alias]=base;};
+ pbjs.setBidderConfig=config=>{__testAds.observations.configs.push(config);};
+}'''
 EMPTY = {'defined': [], 'enableServices': 0, 'requests': [], 'bids': 0}
 
 
@@ -71,6 +77,11 @@ def check(entry, errors, initial, final, slots):
         problems.append('no initial ad request for ' + (','.join(eager) or 'any slot'))
     if entry['demand'] == 'prebid' and not final['bids']:
         problems.append('no pbjs.requestBids')
+    if entry.get('accountCase'):
+        accounts={row['bidder']:row for row in final.get('accounts',[])}
+        for code,mode in [('adf_smn','inherit'),('adf_ag','none'),('adf_other','custom'),('pubmatic','inherit')]:
+            if accounts.get(code,{}).get('mode')!=mode or accounts.get(code,{}).get('status')!='configured':
+                problems.append('account did not configure: '+code)
     if entry['takeover'] != 'none' and TAKEOVER_SLOT not in initial['requests']:
         problems.append('TakeOver not requested on the first view')
     if entry['takeover'] == 'none' and TAKEOVER_SLOT in final['requests']:
@@ -125,6 +136,7 @@ with sync_playwright() as pw:
                 page.goto(origin)
                 page.add_script_tag(content=mock)
                 page.evaluate(GRANT)
+                if entry.get('accountCase'): page.evaluate(ACCOUNT_MOCK)
                 attempt('script', lambda: page.add_script_tag(content=(directory / name).read_text()))
                 advance(6)
                 initial = attempt('state', lambda: page.evaluate(STATE), EMPTY)

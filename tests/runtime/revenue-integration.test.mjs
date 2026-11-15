@@ -1,3 +1,4 @@
+import {applyBidderAccountSchema} from '../support/bidder-account-schema.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -13,7 +14,7 @@ const stamp='20261011_140000';
 test('explicit selection preserves the old default and refuses discarded active settings',()=>{
   assert.equal(runtimeCatalog[0].id,'tessera-positions-preview-1');
   const snapshot=dealsRuntimeFixture();
-  for(const old of runtimeCatalog.filter(r=>!['tessera-revenue-preview-1','tessera-revenue-preview-2','tessera-revenue-preview-3','tessera-3.16.0','tessera-3.16.1','tessera-3.16.2','tessera-3.17.0','tessera-3.18.0','tessera-3.19.0','tessera-3.20.0','tessera-3.19.1','tessera-3.20.1','tessera-3.21.0','tessera-3.22.0','tessera-3.21.1','tessera-3.21.2'].includes(r.id)))assert.throws(()=>previewInput(snapshot,old,stamp),/Active Deals or Outstream/);
+  for(const old of runtimeCatalog.filter(r=>!['tessera-revenue-preview-1','tessera-revenue-preview-2','tessera-revenue-preview-3','tessera-3.16.0','tessera-3.16.1','tessera-3.16.2','tessera-3.17.0','tessera-3.18.0','tessera-3.19.0','tessera-3.19.1','tessera-3.20.0','tessera-3.20.1','tessera-3.21.0','tessera-3.21.1','tessera-3.21.2','tessera-3.22.0','tessera-3.22.1'].includes(r.id)))assert.throws(()=>previewInput(snapshot,old,stamp),/Active Deals or Outstream/);
   assert.equal(previewInput(snapshot,runtimeCatalog.find(r=>r.id==='tessera-3.21.1'),stamp).deals.entries[0].dealId,'0000199');
   const next=previewInput(snapshot,descriptor,stamp);
   assert.equal(next.deals.entries[0].dealId,'0000199');
@@ -50,6 +51,7 @@ const {default:app}=await import('data:text/javascript;base64,'+Buffer.from(comp
 async function store(){
   const f=workspaceStore();
   f.sqlite.exec((await readFile('migrations/0001_initial.sql','utf8')).split('INSERT OR IGNORE INTO publishers')[0]);
+  applyBidderAccountSchema(f.sqlite);
   f.sqlite.prepare("INSERT INTO publishers(id,name,domain,gam_path) VALUES('first','First','first.invalid','/123/first/')").run();
   f.sqlite.prepare("INSERT INTO publisher_configs(id,publisher_id,config_json) VALUES('cfg','first',?)").run(JSON.stringify({enablePrebid:true,runtimeControls:{sticky:{bottomAdUnitId:''}}}));
   f.sqlite.prepare("INSERT INTO ad_units(id,publisher_id,code,type,size_map_key) VALUES('unit','first','Billboard','ATF','display')").run();

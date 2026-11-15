@@ -26,7 +26,7 @@ export type PreviewSnapshot = {
   site: { id: string; name: string; domain: string; gam_path: string };
   config: { config_json: string };
   units: Array<{ code: string; type: string; media_type: string; size_map_key: string | null; enabled: number; sort_order: number }>;
-  bidders: Array<{ bidder: string; params_json: string; enabled: number }>;
+  bidders: Array<{ bidder: string; params_json: string; account_json?: string; enabled: number }>;
   overrides: Array<{ bidder: string; scope_type: string; scope_key: string; params_json: string; enabled: number }>;
   maps: Array<{ name: string; map_json: string }>;
   rules: Array<{ rule_key: string; rule_json: string }>;

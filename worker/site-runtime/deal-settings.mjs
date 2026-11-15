@@ -1,9 +1,12 @@
+import {savedBidderAccounts} from '../../shared/bidder-accounts/snapshot.mjs';
+import {normalizeDeals as accountNormalizeDeals, assertManagedDealParams as accountAssertManagedDealParams, accountDealPlan} from '../../shared/bidder-accounts/deals.mjs';
 /** Authenticated, site-scoped configuration; caller owns auth and Origin checks. */
 import {readPreviewSnapshot} from '../runtime/builtin-preview-service.mjs';
 import {digest} from '../runtime/preview-snapshot.mjs';
 import {commitSiteConfiguration} from './service.mjs';
-import {normalizeDeals,assertManagedDealParams,DEAL_NOTICE} from '../../shared/deals/contract.mjs';
+import {normalizeDeals as legacyNormalizeDeals,assertManagedDealParams as legacyAssertManagedDealParams,DEAL_NOTICE} from '../../shared/deals/contract.mjs';
 import {dealPlan} from '../../shared/deals/gam-plan.mjs';
+function dealContract(config) { return config.builtinRuntimeSelection?.runtime?.capabilities?.includes('bidder-accounts') ? {normalizeDeals:accountNormalizeDeals,assertManagedDealParams:accountAssertManagedDealParams,plan:accountDealPlan} : {normalizeDeals:legacyNormalizeDeals,assertManagedDealParams:legacyAssertManagedDealParams,plan:dealPlan}; }
 const fail=(message,status=422)=>{throw Object.assign(Error(message),{status});};
 async function snapshot(env,siteId){
  if(!/^[a-z0-9][a-z0-9-]{0,97}$/.test(siteId))fail('Invalid site.',400);
@@ -13,20 +16,21 @@ async function snapshot(env,siteId){
 }
 export async function getDealSettings(env,siteId){
  const saved=await snapshot(env,siteId),config=JSON.parse(saved.config.config_json);
+ const {normalizeDeals,assertManagedDealParams,plan}=dealContract(config);
  const settings=config.runtimeControls?.deals??{schemaVersion:1,entries:[]};let validationIssue=null;
  try{normalizeDeals(settings,{bidders:saved.bidders,units:saved.units});assertManagedDealParams(settings,saved);}catch(error){validationIssue=error.message;}
- return {revision:await digest(saved),settings,bidders:saved.bidders.map(b=>({bidder:b.bidder,enabled:b.enabled===1})),units:saved.units.map(u=>({code:u.code,enabled:u.enabled===1})),plan:dealPlan(saved,settings),notice:DEAL_NOTICE,
-  validationIssue,servingAvailable:['tessera-3.21.2','tessera-3.21.1','tessera-3.22.0','tessera-3.21.0','tessera-3.20.1','tessera-3.20.0','tessera-3.19.1','tessera-3.19.0','tessera-3.18.0','tessera-3.17.0','tessera-3.16.2','tessera-3.16.1','tessera-3.16.0','tessera-revenue-preview-1','tessera-revenue-preview-2','tessera-revenue-preview-3'].includes(config.builtinRuntimeSelection?.runtime?.runtimeId),publishable:false};
+ return {revision:await digest(saved),settings,bidders:savedBidderAccounts(saved).map(b=>({bidder:b.bidder,baseAdapter:b.baseAdapter,enabled:saved.bidders.find(row=>row.bidder===b.bidder)?.enabled===1})),units:saved.units.map(u=>({code:u.code,enabled:u.enabled===1})),plan:plan(saved,settings),notice:DEAL_NOTICE,
+  validationIssue,servingAvailable:['tessera-3.22.1','tessera-3.22.0','tessera-3.21.2','tessera-3.21.1','tessera-3.21.0','tessera-3.20.1','tessera-3.20.0','tessera-3.19.1','tessera-3.19.0','tessera-3.18.0','tessera-3.17.0','tessera-3.16.2','tessera-3.16.1','tessera-3.16.0','tessera-revenue-preview-1','tessera-revenue-preview-2','tessera-revenue-preview-3'].includes(config.builtinRuntimeSelection?.runtime?.runtimeId),publishable:false};
 }
 export async function saveDealSettings(env,siteId,actor,body){
  if(!body||Object.keys(body).sort().join(',')!=='revision,settings')fail('Use the displayed deal settings.');
  const saved=await snapshot(env,siteId);if(body.revision!==await digest(saved))fail('Site settings changed. Reload before saving deals.',409);
- const config=JSON.parse(saved.config.config_json),settings=normalizeDeals(body.settings,{bidders:saved.bidders,units:saved.units});
+ const config=JSON.parse(saved.config.config_json),{normalizeDeals,assertManagedDealParams,plan}=dealContract(config),settings=normalizeDeals(body.settings,{bidders:saved.bidders,units:saved.units});
  // One source of outgoing PubMatic filtering. Do not silently erase manual values.
  assertManagedDealParams(settings,saved);
  config.runtimeControls={...config.runtimeControls,deals:settings};
  const result=await commitSiteConfiguration(env,saved,JSON.stringify(config),actor,{audit:{action:'deals.saved',entityType:'publisher',entityId:siteId,details:{count:settings.entries.length}}});
- return {...result,revision:await digest({...saved,config:{...saved.config,config_json:JSON.stringify(config)}}),settings,plan:dealPlan(saved,settings)};
+ return {...result,revision:await digest({...saved,config:{...saved.config,config_json:JSON.stringify(config)}}),settings,plan:plan(saved,settings)};
 }
 export async function dealSettingsResponse(request,env,siteId,actor){
  const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json','cache-control':'private, no-store','x-content-type-options':'nosniff'}});
