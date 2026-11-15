@@ -77,9 +77,14 @@ async function compatibilityChecks(site,A,B){
   if(!pa!==!pb)refuse('prebid-differs',`Version ${pa?'A':'B'} loads Prebid.js and version ${pa?'B':'A'} is GAM only. Choose two versions with the same Prebid setting.`,'prebid');
   if(pa&&await sha256(pa)!==await sha256(pb))refuse('prebid-differs','Versions A and B use different Prebid.js files. Generate both versions with the same Prebid build, then create the test again.','prebid');
   checks.push({check:'prebid',result:pa?'same':'gam-only'});
+  // A script version can write a layout file differently from the same settings (3.20.0 changed
+  // min-height.css), so across script versions aligning the settings alone may not help.
+  const va=A.runtime.runtimeVersion,vb=B.runtime.runtimeVersion;
   for(const [name,code,what] of LAYOUT){
     const fa=A.files[name],fb=B.files[name];
-    if(!fa!==!fb||(fa&&await sha256(fa)!==await sha256(fb)))refuse(code,`Versions A and B differ in ${what} (${name}). Both versions must lay out the page the same way: generate them from the same ad positions, size maps and sticky settings, or choose other versions.`,name);
+    if(!fa!==!fb||(fa&&await sha256(fa)!==await sha256(fb)))refuse(code,va===vb
+      ?`Versions A and B differ in ${what} (${name}). Both versions must lay out the page the same way: generate them from the same ad positions, size maps and sticky settings, or choose other versions.`
+      :`Versions A and B differ in ${what} (${name}), and they were generated with different script versions (${va} and ${vb}), which can write this file differently even from the same settings. The page keeps one layout for both groups: choose two versions whose ${name} files match, for example both generated with script ${vb} from the same ad positions, size maps and sticky settings.`,name);
     checks.push({check:name,result:fa?'same':'absent'});
   }
   const ga=A.config.core?.gamPath??null,gb=B.config.core?.gamPath??null;

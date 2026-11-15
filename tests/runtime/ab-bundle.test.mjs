@@ -95,6 +95,7 @@ test.before(async () => {
   }})});
   P.country = await generate({countryTarget: 'main'});
   P.r3210 = await generate({runtime: 'tessera-3.21.0', snapshot: site(), note: 'Script 3.21.0'});
+  P.r3191 = await generate({runtime: 'tessera-3.19.1', snapshot: site(), note: 'Script 3.19.1'});
   const takeOver = minutes => site({takeOver: true, mutate: (s, c) => { c.runtimeControls.adPositions.Overlay.frequencyMinutes = minutes; }});
   P.takeOver0 = await generate({runtime: 'tessera-3.21.2', snapshot: takeOver(0), note: 'TakeOver every page'});
   P.takeOver5 = await generate({runtime: 'tessera-3.21.2', snapshot: takeOver(5), note: 'TakeOver every 5 minutes'});
@@ -291,10 +292,20 @@ test('different Prebid.js files, or Prebid against GAM only, are refused; two GA
 });
 
 test('different ad positions, reserved space or sticky styling are refused', async () => {
-  await refused(compose(P.A, P.inventory), 'inventory-differs', 'div-export.csv', /^Versions A and B differ in ad positions \(div-export\.csv\)\. Both versions must lay out the page the same way/);
-  await refused(compose(P.A, P.css), 'css-differs', 'min-height.css', /reserved ad space \(min-height\.css\)/);
+  const sameScript = /\. Both versions must lay out the page the same way: generate them from the same ad positions, size maps and sticky settings, or choose other versions\.$/;
+  await refused(compose(P.B, P.inventory), 'inventory-differs', 'div-export.csv', /^Versions A and B differ in ad positions \(div-export\.csv\)\. Both versions must lay out the page the same way/);
+  await refused(compose(P.B, P.css), 'css-differs', 'min-height.css', new RegExp(/^Versions A and B differ in reserved ad space \(min-height\.css\)/.source + sameScript.source));
   assert.deepEqual(P.css.files['div-export.csv'], P.B.files['div-export.csv'], 'only the CSS differs');
-  await refused(compose(P.A, P.sticky), 'css-differs', 'sticky.css', /sticky position styling \(sticky\.css\)/);
+  await refused(compose(P.B, P.sticky), 'css-differs', 'sticky.css', new RegExp(/sticky position styling \(sticky\.css\)/.source + sameScript.source));
+});
+
+test('a layout file that differs between script versions is refused with the script versions named', async () => {
+  // Same saved settings: 3.19.1 writes min-height.css differently from 3.20.0 and later, so aligning settings cannot help.
+  await refused(compose(P.r3191, P.A), 'css-differs', 'min-height.css', /^Versions A and B differ in reserved ad space \(min-height\.css\), and they were generated with different script versions \(3\.19\.1 and 3\.21\.2\), which can write this file differently even from the same settings\. The page keeps one layout for both groups: choose two versions whose min-height\.css files match, for example both generated with script 3\.21\.2 from the same ad positions, size maps and sticky settings\.$/);
+  assert.deepEqual(JSON.parse(text(P.r3191.files['config.json'])).core.sizeMapsRaw, JSON.parse(text(P.A.files['config.json'])).core.sizeMapsRaw);
+  await refused(compose(P.A, P.css), 'css-differs', 'min-height.css', /different script versions \(3\.21\.2 and 3\.23\.0\).*both generated with script 3\.23\.0 from the same ad positions/);
+  const dry = await checkAbCompatibility({site: 'test-site', a: P.r3191, b: P.A});
+  assert.equal(dry.refusal.check, 'min-height.css'); assert.match(dry.refusal.message, /\(3\.19\.1 and 3\.21\.2\)/);
 });
 
 test('a different GAM ad unit path is refused', async () => {
