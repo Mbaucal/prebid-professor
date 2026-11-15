@@ -1,3 +1,4 @@
+import {applyBidderAccountSchema} from './bidder-account-schema.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import worker from '../../worker/app-builtin-runtime-preview.ts';
@@ -10,6 +11,7 @@ export const otherId = 'builtin-release-' + 'b'.repeat(64);
 export async function releaseDeletionFixture({releaseId = id, status = 'draft', deployments = true} = {}) {
   const f = workspaceStore();
   f.sqlite.exec(readFileSync('migrations/0001_initial.sql', 'utf8').split('INSERT OR IGNORE INTO publishers')[0]);
+  applyBidderAccountSchema(f.sqlite);
   if (deployments) f.sqlite.exec(readFileSync('migrations/0003_external_deployments.sql', 'utf8'));
   for (const site of ['first', 'second']) {
     f.sqlite.prepare('INSERT INTO publishers(id,name,domain,gam_path) VALUES(?,?,?,?)').run(site, site, site + '.invalid', '/123/' + site + '/');

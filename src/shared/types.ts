@@ -263,7 +263,15 @@ export type BidderOverride = {
   updatedAt: string;
 };
 
-export type Bidder = {
+export type BidderSchain = import('../../shared/bidder-accounts/settings.mjs').BidderAccountSchain;
+
+export type BidderAccountFields = {
+  baseAdapter?: string;
+  displayName?: string;
+  schain?: BidderSchain;
+};
+
+export type Bidder = BidderAccountFields & {
   id: string;
   publisherId: string;
   bidder: string;
@@ -274,15 +282,15 @@ export type Bidder = {
   updatedAt: string;
 };
 
-export type CreateBidderInput = {
+export type CreateBidderInput = BidderAccountFields & {
   bidder: string;
   params?: JsonObject;
   enabled?: boolean;
 };
 
-export type UpdateBidderInput = Partial<CreateBidderInput>;
+export type UpdateBidderInput = Partial<CreateBidderInput> & { expectedUpdatedAt?: string };
 
-export type DuplicateBidderInput = {
+export type DuplicateBidderInput = BidderAccountFields & {
   bidder: string;
   enabled?: boolean;
   copyOverrides?: boolean;

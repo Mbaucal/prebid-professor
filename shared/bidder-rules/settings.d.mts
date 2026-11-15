@@ -1,0 +1,10 @@
+export type DeviceLayout='mobile'|'tablet'|'desktop';
+export type BidderRule={id:string;name:string;enabled:boolean;bidder:string;positions:string[];countries:{mode:'all'|'include'|'exclude';values:string[];unknown:'allow'|'skip'};devices:DeviceLayout[]};
+export type BidderRules={schemaVersion:1;enabled:boolean;rules:BidderRule[]};
+export type BidderRuleContext={bidder:string;code:string;country:string|null;width:number|null};
+export type BidderRuleDecision={allowed:boolean;reason:string;ruleId:string|null;ruleName:string|null;device:DeviceLayout|'unknown';country:string|null};
+export function defaultBidderRules():BidderRules;
+export function normalizeBidderRules(value?:unknown):BidderRules;
+export function evaluateBidderRule(settings:BidderRules,context:BidderRuleContext):BidderRuleDecision;
+export function requireBidderRulesRuntime(config:unknown,descriptor:unknown):void;
+export function bidderRulesInput(snapshot:{config:{config_json:string}}):BidderRules;

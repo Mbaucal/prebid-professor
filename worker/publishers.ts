@@ -363,9 +363,9 @@ async function duplicateSiteRecord(
     env.DB
       .prepare(
         `INSERT INTO bidders (
-          id, publisher_id, bidder, params_json, enabled, created_at, updated_at
+          id, publisher_id, bidder, params_json, account_json, enabled, created_at, updated_at
         )
-        SELECT lower(hex(randomblob(16))), ?, bidder, params_json, enabled, ?, ?
+        SELECT lower(hex(randomblob(16))), ?, bidder, params_json, account_json, enabled, ?, ?
         FROM bidders WHERE publisher_id = ?`,
       )
       .bind(id, now, now, sourceId),

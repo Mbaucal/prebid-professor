@@ -125,14 +125,15 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
         }}>
           {!selection ? <option value="">Unavailable</option> : null}
           {versionOptions.map(item => <option key={pinKey(item.pin)} value={pinKey(item.pin)} disabled={item === savedOption && !savedRuntime}>
-            {runtimeLabel(item.version)}{samePin(item.pin, current?.pin ?? null) ? ' · Current version' : item === savedOption ? savedRuntime ? ' · Saved earlier build' : ' · Saved version unavailable' : samePin(item.pin, state.selected) ? ' · Saved version' : ''}
+            {runtimeLabel(item.version)}{item.channel === 'preview' ? ' · Preview' : ''}{samePin(item.pin, current?.pin ?? null) ? ' · Current version' : item === savedOption ? savedRuntime ? ' · Saved earlier build' : ' · Saved version unavailable' : samePin(item.pin, state.selected) ? ' · Saved version' : ''}
           </option>)}
         </select>
       </label>
       <div className="script-version-summary">
-        <span>Script version <strong>{selection ? runtimeLabel(selected?.version ?? selection.runtimeVersion) : 'Unavailable'}</strong>{!selection ? '' : !state.selected && isCurrent ? ' · Current version for new scripts' : changedVersion ? ' · Unsaved version change' : isCurrent ? ' · Current version' : earlierBuild ? ' · Saved earlier build' : ' · Saved version'}</span>
+        <span>Script version <strong>{selection ? runtimeLabel(selected?.version ?? selection.runtimeVersion) : 'Unavailable'}</strong>{selected?.channel === 'preview' ? ' · Preview' : ''}{!selection ? '' : !state.selected && isCurrent ? ' · Current version for new scripts' : changedVersion ? ' · Unsaved version change' : isCurrent ? ' · Current version' : earlierBuild ? ' · Saved earlier build' : ' · Saved version'}</span>
         {current && !isCurrent ? <button type="button" disabled={busy || stale} onClick={() => { setSelection(current.pin); setMessage(''); }}>Use current version</button> : null}
       </div>
+      {selected?.channel === 'preview' ? <p className="script-prebid-note" role="note">Preview version selected. Save explicitly and verify a generated package on TEST before using it on a live site.</p> : null}
       <p className="script-prebid-note">Changing the script version keeps your ad units, size maps, bidders and other site settings. Save the setup, then generate a new package to apply it.</p>
       {selected?.pin.capabilities?.includes('consent-readiness') ? <p className="script-prebid-note">
         Waits for your CMP decision before requesting ads. If Prebid fails to load, Google ads are requested only after consent is resolved.

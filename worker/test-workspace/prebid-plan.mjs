@@ -1,10 +1,11 @@
+import {normalizeBidderAccount} from '../../shared/bidder-accounts/settings.mjs';
 import { defaultUserIdSettings } from '../user-id-config.ts';
 import { descriptorForPin, previewInput } from './runtime-catalog.mjs';
 /** Data-only Prebid Download plan. Uses the same normalized input as activation. */
 import { fields, params, normalizePrebidDraft } from './prebid-draft.mjs';
 import { WorkspaceError } from './boundary.mjs';
 import { digest } from '../runtime/preview-snapshot.mjs';
-import { prebidRequirements, moduleReason } from '../runtime/prebid-artifact-check.mjs';
+import { prebidRequirements, moduleReason } from '../runtime/prebid-artifact-check-v2.mjs';
 
 export const USER_IDS = Object.freeze([
   {name:'sharedId',label:'SharedID',module:'sharedIdSystem',settings:{storage:{type:'cookie',name:'_sharedid',expires:365}}},
@@ -61,7 +62,7 @@ function normalizeOptions(input) {
 }
 export function applyPrebidDraft(snapshot, config, draft, options) {
   const after=structuredClone(snapshot),next=structuredClone(config);
-  after.bidders=draft.bidders.map(b=>({bidder:b.bidder,params_json:JSON.stringify(b.params),enabled:b.enabled?1:0}));
+  after.bidders=draft.bidders.map(b=>({bidder:b.bidder,params_json:JSON.stringify(b.params),account_json:Object.hasOwn(b,'baseAdapter')?JSON.stringify(normalizeBidderAccount({baseAdapter:b.baseAdapter,displayName:b.displayName,schain:b.schain},{bidder:b.bidder})):(snapshot.bidders.find(row=>row.bidder===b.bidder)?.account_json??'{}'),enabled:b.enabled?1:0}));
   after.overrides=draft.overrides.map(o=>({bidder:o.bidder,scope_type:o.scopeType,scope_key:o.scopeKey,params_json:JSON.stringify(o.params),enabled:o.enabled?1:0}));
   next.enablePrebid=draft.enablePrebid;
   if(options){

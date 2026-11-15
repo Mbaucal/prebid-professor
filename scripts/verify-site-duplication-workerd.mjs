@@ -1,3 +1,4 @@
+import {applyBidderAccountD1Schema} from '../tests/support/bidder-account-schema.mjs';
 /** Actual compiled production Worker, ephemeral D1/R2 and synthetic identity. */
 import assert from 'node:assert/strict';
 import {readFile,mkdtemp,rm,mkdir,writeFile} from 'node:fs/promises';
@@ -17,6 +18,7 @@ try{
  for(const [file,stop] of [['0001_initial.sql','INSERT OR IGNORE INTO publishers'],['0002_publisher_accounts.sql','-- Politika.rs']]){
   for(const statement of (await readFile('migrations/'+file,'utf8')).split(stop)[0].split(';').map(s=>s.trim()).filter(Boolean))await db.prepare(statement).run();
  }
+ await applyBidderAccountD1Schema(db);
  const login=await mf.dispatchFetch(origin+'/api/auth/login',{method:'POST',redirect:'manual',headers:{origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email,password})});
  assert.equal(login.status,303);const cookie=login.headers.get('set-cookie').split(';')[0];
  const call=(path,body,method=body?'POST':'GET',extra={})=>mf.dispatchFetch(origin+path,{method,headers:{cookie,origin,'content-type':'application/json',...extra},...(body?{body:JSON.stringify(body)}:{})});

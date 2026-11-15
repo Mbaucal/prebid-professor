@@ -38,10 +38,10 @@ test('A later manual filter conflict is visible on GET and does not discard save
  const after=await getDealSettings(f.env,'test-site');assert.match(after.validationIssue,/Move existing/);assert.equal(after.settings.entries[0].dealId,'0000199');
 });
 
-test('3.21.0 preserves deal serving eligibility without changing stored deal settings',async()=>{
+for(const version of ['3.21.0','3.22.0'])test(version+' preserves deal serving eligibility without changing stored deal settings',async()=>{
  const f=await setup();
  const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json);
- config.builtinRuntimeSelection={runtime:{runtimeId:'tessera-3.21.0',runtimeVersion:'3.21.0',capabilities:['prebid-deals','contextual-signals']}};
+ config.builtinRuntimeSelection={runtime:{runtimeId:'tessera-'+version,runtimeVersion:version,capabilities:['prebid-deals','contextual-signals']}};
  config.runtimeControls={...config.runtimeControls,deals:{schemaVersion:1,entries:[entry]}};
  const serialized=JSON.stringify(config);f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(serialized);
  const state=await getDealSettings(f.env,'test-site');

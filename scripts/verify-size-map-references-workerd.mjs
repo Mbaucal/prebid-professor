@@ -1,3 +1,4 @@
+import {applyBidderAccountD1Schema} from '../tests/support/bidder-account-schema.mjs';
 /** Size-map rename cascade, delete confirmation, the ADM-5 rule gate and the F3 ad-unit gate on the actual
  * compiled production Worker with local Miniflare D1 (not node:sqlite). Synthetic site,
  * no hosted API, bindings or outbound traffic. Run after `isolated-toolchain.mjs build`.
@@ -25,6 +26,7 @@ try{
  for(const [file,stop] of [['0001_initial.sql','INSERT OR IGNORE INTO publishers'],['0002_publisher_accounts.sql','-- Politika.rs']]){
   for(const statement of (await readFile('migrations/'+file,'utf8')).split(stop)[0].split(';').map(s=>s.trim()).filter(Boolean))await db.prepare(statement).run();
  }
+ await applyBidderAccountD1Schema(db);
  const login=await mf.dispatchFetch(origin+'/api/auth/login',{method:'POST',redirect:'manual',headers:{origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email,password})});
  assert.equal(login.status,303);const cookie=login.headers.get('set-cookie').split(';')[0];
  const call=(path,body,method=body?'POST':'GET')=>mf.dispatchFetch(origin+path,{method,headers:{cookie,origin,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
