@@ -210,6 +210,10 @@ test('Tanjug gets the same cache fields; only the named-script library sentence 
   const example = await read(f), tanjug = await read(f, TANJUG.id);
   assert.equal(example.namedScriptLibrary, false);
   assert.equal(tanjug.namedScriptLibrary, true);
+  // The position dialog says "use it too" only for positions named scripts include (the reviewed Tanjug inventory).
+  assert.deepEqual(example.namedScriptPositions, []);
+  assert.deepEqual(tanjug.namedScriptPositions, [...CACHE_POSITIONS]);
+  assert(tanjug.bidCachePositions.includes('Home_Top') && !tanjug.namedScriptPositions.includes('Home_Top'), 'an eligible Tanjug position outside the named-script inventory');
   // Bidder counts and Prebid builds differ between the two fixtures; every cache field is equal.
   const cacheFields = state => ({revision: state.revision, bidCacheAvailable: state.bidCacheAvailable, bidCachePositions: state.bidCachePositions,
     bidCacheRuntimeVersion: state.bidCacheRuntimeVersion, selectedRuntime: state.selectedRuntime, runtimeSupportsBidCache: state.runtimeSupportsBidCache, prebidMode: state.prebidMode});

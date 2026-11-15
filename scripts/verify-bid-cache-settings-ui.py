@@ -1,5 +1,8 @@
 """Bid cache settings on a site that is not Tanjug: real React panels and the compiled Worker
-with local D1, all external traffic blocked. Desktop and 390 px, save, 409/422 and recovery."""
+with local D1, all external traffic blocked. Desktop and 390 px, save, 409/422 and recovery.
+Then Releases → Generate on the MAIN fixture (scripts/main-revenue-browser-fixture.mjs
+--bid-cache-blocked, full D1 schema): 3.21.2 selected with bid caching saved blocks Generate with
+the reason and both ways out, and turning caching off or selecting 3.23.0 unblocks it."""
 import base64,json,os,subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -36,6 +39,12 @@ def release():forward(held.pop())
 def no_scroll(page):return page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
 def card(page,code):return page.locator('.ad-unit-card').filter(has=page.locator('code',has_text=code))
 SELECT_TEXT='Select script 3.23.0 in Script setup to apply bid caching. Your setting is saved.'
+# Saved settings would cache, but the form has unsaved changes: nothing claims it is saved.
+SELECT_DIRTY_TEXT='Select script 3.23.0 in Script setup to apply bid caching.'
+# Nothing saved would cache yet.
+NEEDS_TEXT='Bid caching needs script 3.23.0 or later.'
+GENERATOR_TEXT=('Bid caching needs script version 3.23.0. Select 3.23.0 in Script setup and save; your bid cache settings are kept. '
+ 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.')
 try:
  with sync_playwright() as p:
   browser=p.chromium.launch(headless=True);page=browser.new_page(viewport={'width':1280,'height':1000})
@@ -48,21 +57,25 @@ try:
   cache=page.get_by_role('checkbox',name='Reuse valid, unused bids',exact=True);cache.wait_for()
   fieldset=page.locator('fieldset.prebid-cache-settings')
   check('The cache checkbox is available on a site that is not Tanjug',cache.is_enabled() and not cache.is_checked())
-  check('3.21.2 is selected, so the panel asks for 3.23.0 and keeps the setting',fieldset.get_by_text(SELECT_TEXT,exact=True).is_visible())
+  check('3.21.2 is selected and nothing saved would cache: the panel names the version, not a saved setting',fieldset.get_by_text(NEEDS_TEXT,exact=True).is_visible())
   text=fieldset.inner_text()
   check('No Tanjug-only or generator-refusal sentence remains',all(s not in text for s in ['Tanjug','This generator does not apply','named script','Scripts and A/B tests']))
   cache.check();page.get_by_label('Maximum bid age (seconds)',exact=True).fill('45')
+  check('An unsaved change is never called saved',fieldset.get_by_text(NEEDS_TEXT,exact=True).is_visible() and 'Your setting is saved' not in fieldset.inner_text())
   hold['PUT']=True;page.get_by_role('button',name='Save Prebid settings',exact=True).click()
   page.get_by_role('button',name='Saving…',exact=True).wait_for()
   check('Saving disables the cache controls',cache.is_disabled() and page.get_by_label('Maximum bid age (seconds)',exact=True).is_disabled() and page.get_by_role('button',name='Saving…',exact=True).is_disabled())
   release();page.get_by_text('Prebid settings saved. Select script 3.23.0 in Script setup before you generate; earlier script versions do not apply bid caching.',exact=False).wait_for()
   status,saved=api('GET','/prebid-mode')
   check('The site default is saved in D1',status==200 and saved['prebidMode']['bidCache']=={'enabled':True,'maxBidAgeSeconds':45})
+  check('Saved, on 3.21.2: the panel asks for 3.23.0 and says the setting is saved',fieldset.get_by_text(SELECT_TEXT,exact=True).is_visible())
   page.screenshot(path=str(out/'demand-saved-desktop.png'),full_page=True)
   # 409: another tab saves first; this form must reload before saving.
   status,_=api('PUT','/prebid-mode',{'enabled':True,'revision':saved['revision'],'bidCache':{'enabled':True,'maxBidAgeSeconds':90}})
   assert status==200
-  page.get_by_label('Maximum bid age (seconds)',exact=True).fill('50');page.get_by_role('button',name='Save Prebid settings',exact=True).click()
+  page.get_by_label('Maximum bid age (seconds)',exact=True).fill('50')
+  check('A saved setting with unsaved changes asks for 3.23.0 without calling the form saved',fieldset.get_by_text(SELECT_DIRTY_TEXT,exact=True).is_visible())
+  page.get_by_role('button',name='Save Prebid settings',exact=True).click()
   page.get_by_text('Prebid settings changed. Reload before saving.',exact=True).wait_for()
   check('A stale form is refused with 409 and keeps the entered value',any(r['status']==409 for r in requests) and page.get_by_label('Maximum bid age (seconds)',exact=True).input_value()=='50')
   page.screenshot(path=str(out/'demand-409-desktop.png'),full_page=True)
@@ -155,5 +168,64 @@ try:
   browser.close()
 finally:
  process.stdin.close();process.wait(timeout=10)
+# Generate on a site with 3.21.2 selected and bid caching saved on. This needs the full D1 schema of the
+# MAIN fixture: Generate is blocked, the page says why and names both ways out, and each way out unblocks it.
+fixture=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/main-revenue-browser-fixture.mjs','--bid-cache-blocked'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+MAIN='/api/publishers/main-site'
+def send(path,method='GET',body=None):
+ fixture.stdin.write(json.dumps({'path':path,'method':method,'body':body})+'\n');fixture.stdin.flush()
+ result=json.loads(fixture.stdout.readline());assert 'error' not in result,result
+ return result
+def main_api(method,path,body=None):
+ result=send(MAIN+path,method,json.dumps(body) if body is not None else None)
+ return result['status'],json.loads(base64.b64decode(result['body']))
+def main_route(r):
+ url=urlsplit(r.request.url);assert url.netloc=='main-revenue.fixture.invalid'
+ result=send(url.path+('?'+url.query if url.query else ''),r.request.method,r.request.post_data)
+ requests.append({'method':r.request.method,'path':url.path,'status':result['status']})
+ r.fulfill(status=result['status'],headers=result['headers'],body=base64.b64decode(result['body']))
+def open_generate(browser,width,height):
+ page=browser.new_page(viewport={'width':width,'height':height});page.route('**/*',main_route);page.on('pageerror',lambda e:errors.append(str(e)))
+ page.goto('https://main-revenue.fixture.invalid/');page.get_by_role('button',name='Generate and releases',exact=True).click()
+ panel=page.locator('section[aria-label="Saved packages"]');panel.get_by_role('heading',name='2. Generate your script',exact=True).wait_for()
+ return page,panel
+try:
+ ready=json.loads(fixture.stdout.readline());assert ready['ready'] and ready['bidCacheBlocked'] and ready['runtimeVersion']=='3.21.2'
+ with sync_playwright() as p:
+  browser=p.chromium.launch(headless=True)
+  for width,height,name in [(1280,1000,'desktop'),(390,844,'390')]:
+   page,panel=open_generate(browser,width,height)
+   alert=panel.get_by_role('alert').filter(has_text='Bid caching needs script version 3.23.0.');alert.wait_for()
+   status,state=main_api('GET','/builtin-releases')
+   check(f'Generate blocked by bid caching shows the reason and both ways out ({name})',alert.inner_text()==GENERATOR_TEXT and status==200
+    and state['ready'] is False and state['nextStep']=='demand' and state['error']==GENERATOR_TEXT
+    and panel.get_by_role('button',name='Generate and save package',exact=True).is_disabled())
+   check(f'Script setup stays available next to the reason ({name})',panel.get_by_text('Script setup',exact=False).count()>0)
+   check(f'The blocked Generate page fits {name}',no_scroll(page))
+   page.screenshot(path=str(out/f'generate-blocked-{name}.png'),full_page=True);page.close()
+  # Way out 1: turn bid caching off in Demand → Prebid. The 3.21.2 selection is kept.
+  status,mode=main_api('GET','/prebid-mode');assert status==200
+  status,_=main_api('PUT','/prebid-mode',{'enabled':True,'revision':mode['revision'],'bidCache':{'enabled':False,'maxBidAgeSeconds':60}});assert status==200
+  page,panel=open_generate(browser,1280,1000)
+  status,state=main_api('GET','/builtin-releases')
+  check('With bid caching off, 3.21.2 generates again',status==200 and state['ready'] is True and state['runtime']['runtimeVersion']=='3.21.2'
+   and panel.get_by_text('Bid caching needs script version',exact=False).count()==0 and panel.get_by_role('button',name='Generate and save package',exact=True).is_enabled())
+  page.close()
+  # Way out 2: bid caching on again, and 3.23.0 selected in Script setup.
+  status,mode=main_api('GET','/prebid-mode')
+  status,_=main_api('PUT','/prebid-mode',{'enabled':True,'revision':mode['revision'],'bidCache':{'enabled':True,'maxBidAgeSeconds':60}});assert status==200
+  assert main_api('GET','/builtin-releases')[1]['nextStep']=='demand'
+  status,selection=main_api('GET','/builtin-site-settings')
+  pin=next(r['pin'] for r in selection['runtimes'] if r['version']=='3.23.0')
+  status,_=main_api('POST','/builtin-site-settings',{'action':'version','revision':selection['revision'],'runtime':pin,'allowPreview':False});assert status==200,_
+  page,panel=open_generate(browser,1280,1000)
+  status,state=main_api('GET','/builtin-releases')
+  check('With 3.23.0 selected, Generate shows no bid cache block',status==200 and state['ready'] is True and state['runtime']['runtimeVersion']=='3.23.0'
+   and panel.get_by_text('Bid caching needs script version',exact=False).count()==0 and panel.get_by_role('button',name='Generate and save package',exact=True).is_enabled())
+  page.screenshot(path=str(out/'generate-capable-desktop.png'),full_page=True);page.close()
+  check('No unhandled UI error on Generate',not errors)
+  browser.close()
+finally:
+ fixture.stdin.close();fixture.wait(timeout=10)
 (out/'report.json').write_text(json.dumps({'scope':'Compiled Worker, local D1, synthetic example.invalid site; 3.21.2 selected, then the registered 3.23.0 pin saved in D1','checks':checks,'passed':len(checks),'failed':0,'errors':errors,'requests':requests},indent=2))
 print(json.dumps({'passed':len(checks),'failed':0}))

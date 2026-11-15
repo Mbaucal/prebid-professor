@@ -6,6 +6,7 @@ import { digest } from './runtime/preview-snapshot.mjs';
 import { runtimeCatalog, prepareSiteRuntimeSelection } from './test-workspace/runtime-catalog.mjs';
 import { commitSiteConfiguration } from './site-runtime/service.mjs';
 import { bidCacheSettings, requireEligibleOverrides, supportsNamedScripts } from './site-runtime/prebid-cache-settings.mjs';
+import { CACHE_POSITIONS } from './experiments/position-cache-settings.mjs';
 import { BID_CACHE_RUNTIME_VERSION, bidCacheEligibleCodes, runtimeSupportsBidCache, type BidCacheUnitRow } from '../shared/bid-cache/eligibility.mjs';
 
 type JsonRecord = Record<string, unknown>;
@@ -110,9 +111,11 @@ async function buildPayload(db: D1Database, siteId: string, config: JsonRecord):
     bidCachePositions: bidCacheEligibleCodes(units, config),
     bidCacheRuntimeVersion: BID_CACHE_RUNTIME_VERSION,
     ...selectedRuntime(config),
-    // Only adds a sentence that new named scripts use these settings too. It never changes
-    // which settings can be saved or which positions are listed.
+    // Only adds a sentence about new named scripts. It never changes which settings can be
+    // saved or which positions are listed. Named scripts keep the reviewed inventory of
+    // CACHE_POSITIONS and refuse an override for any other position (settingsForScript).
     namedScriptLibrary: supportsNamedScripts(site),
+    namedScriptPositions: supportsNamedScripts(site) ? [...CACHE_POSITIONS] : [],
     ok: true,
     prebidMode: {
       enabled,

@@ -179,19 +179,26 @@ test('malformed compiled input fails closed', () => {
   assert.deepEqual(bidCacheEligibleInputCodes(widened), []);
 });
 
-test('requireSupportedCacheGenerator refuses saved cache settings unless the runtime has bid-cache', () => {
-  assert.equal(BID_CACHE_GENERATOR_MESSAGE, 'Bid caching needs script version 3.23.0. Select 3.23.0 in Script setup and save; your bid cache settings are kept.');
+test('the generator 409 names both ways out: select 3.23.0, or turn bid caching off for this site', () => {
+  assert.equal(BID_CACHE_GENERATOR_MESSAGE, 'Bid caching needs script version 3.23.0. Select 3.23.0 in Script setup and save; your bid cache settings are kept. '
+    + 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.');
+});
+
+test('requireSupportedCacheGenerator refuses saved cache settings that would cache unless the runtime has bid-cache', () => {
   const on = {enablePrebid: true, prebidBidCache: {enabled: true, maxBidAgeSeconds: 60}};
-  const overridesOnly = {enablePrebid: true, prebidBidCache: {enabled: false, maxBidAgeSeconds: 60, positionOverrides: {Billboard: false}}};
   const overrideOn = {enablePrebid: true, prebidBidCache: {enabled: false, maxBidAgeSeconds: 30, positionOverrides: {Sticky: true}}};
-  for (const config of [on, overridesOnly, overrideOn]) {
+  const staleOn = {enablePrebid: true, prebidBidCache: {enabled: false, maxBidAgeSeconds: 60, positionOverrides: {Gone: true, Billboard: false}}};
+  for (const config of [on, overrideOn, staleOn]) {
     for (const descriptor of [undefined, null, runtime3212, {capabilities: []}, {capabilities: 'bid-cache'}]) {
       assert.throws(() => requireSupportedCacheGenerator(config, descriptor), error => error.status === 409 && error.message === BID_CACHE_GENERATOR_MESSAGE);
     }
     assert.doesNotThrow(() => requireSupportedCacheGenerator(config, capable));
   }
-  // Nothing saved, or Prebid off: every generator may continue.
+  // Nothing saved, nothing that would cache (site default off and only Off overrides, current or stale), or
+  // Prebid off: every generator may continue. An Off override already means the current auction only.
   for (const config of [{enablePrebid: true}, {enablePrebid: true, prebidBidCache: {enabled: false, maxBidAgeSeconds: 60}},
+    {enablePrebid: true, prebidBidCache: {enabled: false, maxBidAgeSeconds: 60, positionOverrides: {Billboard: false}}},
+    {enablePrebid: true, prebidBidCache: {enabled: false, maxBidAgeSeconds: 60, positionOverrides: {Billboard: false, P1: false, Gone: false}}},
     {enablePrebid: false, prebidBidCache: {enabled: true, maxBidAgeSeconds: 60, positionOverrides: {Sticky: true}}}]) {
     assert.doesNotThrow(() => requireSupportedCacheGenerator(config));
     assert.doesNotThrow(() => requireSupportedCacheGenerator(config, runtime3212));

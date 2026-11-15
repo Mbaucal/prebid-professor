@@ -61,10 +61,13 @@ export function settingsForScript(config,refreshSeconds) {
     ...(bidCache.enabled||bidCache.positionOverrides?{maxBidAgeSeconds:bidCache.maxBidAgeSeconds}:{}),
     ...(bidCache.positionOverrides?{positionOverrides:bidCache.positionOverrides}:{})};
 }
-export const BID_CACHE_GENERATOR_MESSAGE = `Bid caching needs script version ${BID_CACHE_RUNTIME_VERSION}. Select ${BID_CACHE_RUNTIME_VERSION} in Script setup and save; your bid cache settings are kept.`;
-/** Saved cache settings are applied only by a runtime with the 'bid-cache' capability,
- * never silently ignored. Without a descriptor (older generators) it always refuses. */
+export const BID_CACHE_GENERATOR_MESSAGE = `Bid caching needs script version ${BID_CACHE_RUNTIME_VERSION}. Select ${BID_CACHE_RUNTIME_VERSION} in Script setup and save; your bid cache settings are kept. `
+  + 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.';
+/** Saved cache settings that would reuse bids (site default on, or a position override on) are
+ * applied only by a runtime with the 'bid-cache' capability, never silently ignored. Without a
+ * descriptor (older generators) such settings are always refused. An Off override alone needs no
+ * capability: without bid caching every position already uses its current auction only. */
 export function requireSupportedCacheGenerator(config, descriptor) {
   const prebid=savedPrebidSettings(config);
-  if(prebid.enabled && (hasBidCache(prebid.bidCache)||prebid.bidCache.positionOverrides) && !runtimeSupportsBidCache(descriptor))throw Object.assign(Error(BID_CACHE_GENERATOR_MESSAGE),{status:409});
+  if(prebid.enabled && hasBidCache(prebid.bidCache) && !runtimeSupportsBidCache(descriptor))throw Object.assign(Error(BID_CACHE_GENERATOR_MESSAGE),{status:409});
 }
