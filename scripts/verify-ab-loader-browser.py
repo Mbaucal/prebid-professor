@@ -521,7 +521,9 @@ def trusted_types_blocked(ev, record, case):
 
 SRI_ERROR, CORS_ERROR = "Failed to find a valid digest in the 'integrity' attribute", "has been blocked by CORS policy"
 CSP_ERROR = "violates the following Content Security Policy directive"
-TT_SCRIPT_URL, TT_POLICY = "requires 'TrustedScriptURL' assignment", "Creating a TrustedTypePolicy named 'tessera-ab-loader' violates"
+# Chromium words the refused policy differently by version: "Creating a TrustedTypePolicy named '...' violates"
+# (Chrome 153) and "Refused to create a TrustedTypePolicy named '...' because it violates" (Chromium 140, CI).
+TT_SCRIPT_URL, TT_POLICY = "requires 'TrustedScriptURL' assignment", "TrustedTypePolicy named 'tessera-ab-loader'"
 TT_CSP = "script-src 'nonce-ab-tt' 'strict-dynamic'; object-src 'none'; base-uri 'none'; require-trusted-types-for 'script'"
 CASES = [
     {'name': 'A', 'bundle': 'ab', 'draw': 0, 'head': tags('prebid', 'loader'), 'refresh': True, 'widths': [1280, 390], 'check': assigned('A')},
