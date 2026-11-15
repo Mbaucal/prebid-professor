@@ -32,7 +32,7 @@ import { takeOverForBuild } from './takeover-settings.mjs';
 import { tanjugPilotResponse } from './tanjug-pilot.mjs';
 import { deploymentResponse, runnerPath, runnerResponse } from './deployments.mjs';
 import { adsVersionsPreviewResponse } from './ads-versions-preview.mjs';
-import { siteWorkspaceResponse } from './site-workspace.mjs';
+import { siteWorkspaceResponse, siteWorkspaceMethodAllowed } from './site-workspace.mjs';
 import { isTestUnitRuleItemPath, unitRulesResponse } from './unit-rules.mjs';
 import {namedScriptMethodAllowed,namedScriptsResponse} from './named-scripts.mjs';
 
@@ -74,7 +74,7 @@ async function list(env) {
 }
 async function route(request,env) {
   const {origin,auth}=workspaceBoundary(request,env);
-  if (!['GET','POST'].includes(request.method)&&!namedScriptMethodAllowed(request)&&!(['PATCH','DELETE'].includes(request.method)&&isTestUnitRuleItemPath(new URL(request.url).pathname))) throw new WorkspaceError(405,'Method not allowed.');
+  if (!['GET','POST'].includes(request.method)&&!namedScriptMethodAllowed(request)&&!siteWorkspaceMethodAllowed(request)&&!(['PATCH','DELETE'].includes(request.method)&&isTestUnitRuleItemPath(new URL(request.url).pathname))) throw new WorkspaceError(405,'Method not allowed.');
   if (runnerPath(new URL(request.url).pathname)) return runnerResponse(request,env,headers);
   sameOrigin(request,origin);
   const url=new URL(request.url), path=url.pathname;
