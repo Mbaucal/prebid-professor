@@ -142,15 +142,41 @@ test('bundles over the delivery limits are refused before any put', async () => 
   assert.deepEqual(r2.log.puts, []);
 });
 
-test('worst-case name pair is refused with names-too-long before any put, with no claim', async () => {
-  const r2 = memoryR2();
-  // Control characters are allowed in version names and escape to six bytes each in the summary JSON.
+test('the worst-case API names fit the summary; names-too-long still refuses before any put, with no claim', async () => {
+  // Control characters are allowed in version names and escape to six bytes each in the summary JSON. The API allows
+  // 60 characters of test name without control characters and the sign-in email is at most 254 characters.
   const a = await syntheticDraft({note: '\u0001'.repeat(160)});
   const b = await syntheticDraft({runtimeVersion: '9.0.1', script: 'window.arm = "B";\n', note: '😀'.repeat(80)});
-  const error = await rejects(createAbTest(r2.bucket, input({a, b, name: '中'.repeat(60), actor: {email: 'a'.repeat(242) + '@example.org'}})), 422, 'names-too-long');
-  assert.equal(error.message, 'The test name or the version names are too long to store. Shorten the test name and try again.');
+  {
+    const r2 = memoryR2();
+    const result = await createAbTest(r2.bucket, input({a, b, name: '中'.repeat(60), testId: 'a'.repeat(24), actor: {email: 'a'.repeat(242) + '@example.org'}}));
+    assert.equal(result.created, true);
+    assert.ok(utf8(r2.objects.get(`${P}records/${result.record.id}.json`).customMetadata.summary) <= 1800);
+  }
+  // Only inputs the API never passes (a control-character test name and a 600-character actor) reach the guard.
+  const r2 = memoryR2();
+  const error = await rejects(createAbTest(r2.bucket, input({a, b, name: '\u0001'.repeat(60), actor: {email: 'a'.repeat(600) + '@example.org'}})), 422, 'names-too-long');
+  assert.equal(error.message, 'The test name is too long to store. Shorten the test name and try again.');
   assert.deepEqual(r2.log.puts, []);
   assert.deepEqual(keysOf(r2), []);
+});
+
+test('version names cannot overflow the summary: they are cut by their JSON-escaped size', async () => {
+  // A control character is one byte raw and six escaped (\u0001). The test name is one character, so only the
+  // version names could be too long, and the operator cannot shorten them after saving.
+  const r2 = memoryR2();
+  const a = await syntheticDraft({note: '\u0002'.repeat(160)});
+  const b = await syntheticDraft({runtimeVersion: '9.0.1', script: 'window.arm = "B";\n', note: '\u0001'.repeat(160)});
+  const result = await createAbTest(r2.bucket, input({a, b, name: 'x', actor: {email: 'a'.repeat(242) + '@example.org'}}));
+  assert.equal(result.created, true);
+  const summary = r2.objects.get(`${P}records/${result.record.id}.json`).customMetadata.summary;
+  assert.ok(utf8(summary) <= 1800, `summary is ${utf8(summary)} bytes`);
+  for (const side of ['A', 'B']) {
+    const cut = JSON.parse(summary).arms[side].name;
+    assert.equal(result.record.arms[side].name.length, 160, 'the record keeps the full name');
+    assert.ok(cut.endsWith('…') && result.record.arms[side].name.startsWith(cut.slice(0, -1)));
+    assert.ok(utf8(JSON.stringify(cut.slice(0, -1))) - 2 <= 150, `${side}: escaped ${utf8(JSON.stringify(cut.slice(0, -1))) - 2} bytes`);
+  }
 });
 
 test('the largest valid names give a summary of at most 1800 bytes, arm names cut on a code-point boundary', async () => {
@@ -171,7 +197,8 @@ test('the largest valid names give a summary of at most 1800 bytes, arm names cu
       const cut = JSON.parse(summary).arms[side].name;
       assert.ok(cut.endsWith('…'));
       const kept = cut.slice(0, -1);
-      assert.ok(full.startsWith(kept) && utf8(kept) <= 150 && utf8(kept) > 146, `${side}: kept ${utf8(kept)} bytes`);
+      const escaped = utf8(JSON.stringify(kept)) - 2;
+      assert.ok(full.startsWith(kept) && escaped <= 150 && escaped > 146, `${side}: kept ${escaped} escaped bytes`);
       assert.doesNotMatch(kept, /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/, 'no lone surrogate');
       assert.equal(Buffer.from(kept).toString(), kept);
     }

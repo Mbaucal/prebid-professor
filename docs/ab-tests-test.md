@@ -38,7 +38,7 @@ Error codes in plain words:
 - 422 with `code` and `check`: the two versions cannot be compared (site, Prebid, layout files, GAM path, consent).
 - 422 `package-missing`: "Version A is no longer in Saved versions. Choose another saved version. Saved A/B tests keep their own copies." On `/check` this is a 200 refusal. Another read error is 503 "Version A could not be read. Nothing was saved. Retry."
 - 422 `bundle-too-large`: a file over 8 MB, all files over 12 MB, or the ZIP over 13 MB (the same limits as TEST delivery).
-- 422 `names-too-long`: the list summary would be over 1800 bytes.
+- 422 `names-too-long`: the list summary would be over 1800 bytes. Version names are cut to fit, so this names the test name: "The test name is too long to store. Shorten the test name and try again." No name the API accepts reaches it today.
 - 409 `testid-taken`: the TestId belongs to another test on this site.
 - 409 `limit`: the lifetime cap (below).
 - 409 `record-unverified` or "ZIP differs from its record.": stored bytes do not match. Nothing is changed.
@@ -70,7 +70,7 @@ The abx id is `abx-` + sha256 of the test identity: schema, layout, site, name, 
 
 A record is accepted on read only when the schema and site match, the key id equals `record.id`, the id is the hash of its identity, the bytes match `customMetadata.sha256`, and the summary equals the one computed from the record. Otherwise the answer is 409 `record-unverified`.
 
-The **summary** in `customMetadata.summary` is what the list shows. It has exactly: `id`, `name`, `testId`, `trafficBPercent`, `createdAt`, `createdBy`, `zipSha256`, `prebidVersion`, `fileCount`, and `arms:{A,B}` with `release`, `runtimeVersion` and `name`. Each arm name is cut to at most 150 UTF-8 bytes on a code-point boundary, with "…" when cut. The full names stay in the record. The summary must fit in 1800 bytes (R2 allows 2 KB of metadata), or the create is refused with `names-too-long` before anything is stored.
+The **summary** in `customMetadata.summary` is what the list shows. It has exactly: `id`, `name`, `testId`, `trafficBPercent`, `createdAt`, `createdBy`, `zipSha256`, `prebidVersion`, `fileCount`, and `arms:{A,B}` with `release`, `runtimeVersion` and `name`. Each arm name is cut to at most 150 bytes of JSON-escaped UTF-8 (a control character counts six bytes) on a code-point boundary, with "…" when cut. The full names stay in the record. The summary must fit in 1800 bytes (R2 allows 2 KB of metadata), or the create is refused with `names-too-long` before anything is stored.
 
 ## Lifetime cap of 100
 

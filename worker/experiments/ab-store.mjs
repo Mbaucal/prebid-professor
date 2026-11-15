@@ -43,11 +43,13 @@ const keys={
 };
 const checkId=id=>{if(typeof id!=='string'||!AB_TEST_ID.test(id))fail(404,'A/B test not found.');};
 
-/** Cuts a name to at most AB_LIMITS.armName UTF-8 bytes on a code-point boundary, adding … when cut. */
+/** Cuts a name to at most AB_LIMITS.armName bytes of JSON-escaped UTF-8 (a control character counts six) on a
+ * code-point boundary, adding … when cut, so version names alone can never overflow the summary. */
+const escapedSize=text=>encode.encode(JSON.stringify(text)).length-2;
 function cutName(name){
-  if(encode.encode(name).length<=AB_LIMITS.armName)return name;
+  if(escapedSize(name)<=AB_LIMITS.armName)return name;
   let out='',size=0;
-  for(const ch of name){const n=encode.encode(ch).length;if(size+n>AB_LIMITS.armName)break;out+=ch;size+=n;}
+  for(const ch of name){const n=escapedSize(ch);if(size+n>AB_LIMITS.armName)break;out+=ch;size+=n;}
   return out+'…';
 }
 const arm=a=>({release:a.release,runtimeVersion:a.runtimeVersion,name:cutName(a.name)});
@@ -141,8 +143,9 @@ export async function createAbTest(bucket,{site,actor,a,b,name,testId,trafficBPe
   const id=bundle.id,record={...bundle.record,createdBy:actor.email,createdAt:now.toISOString()};
   const recordBytes=encode.encode(JSON.stringify(record,null,2)+'\n');
   checkSizes(bundle,recordBytes);
+  // Version names are cut to fit, so only the test name (and the actor) can make the summary too long.
   const summary=JSON.stringify(abSummary(record));
-  if(encode.encode(summary).length>AB_LIMITS.summary)fail(422,'The test name or the version names are too long to store. Shorten the test name and try again.','names-too-long');
+  if(encode.encode(summary).length>AB_LIMITS.summary)fail(422,'The test name is too long to store. Shorten the test name and try again.','names-too-long');
   // The same inputs give the same id: a saved test is returned as it is, with no write.
   const existing=await readRecord(bucket,site,id);
   if(existing)return {created:false,record:existing.record,recordSha256:existing.recordSha256,deletedAt:await deletedAtOf(bucket,site,id)};
