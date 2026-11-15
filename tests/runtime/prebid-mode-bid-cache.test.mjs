@@ -180,7 +180,7 @@ test('the payload says whether the selected script version applies bid caching',
   assert.equal(state.selectedRuntime, null);
   assert.equal(state.runtimeSupportsBidCache, false);
 
-  // A catalog runtime with the bid-cache capability (a stand-in until 3.23.0 is registered).
+  // Any catalog runtime with the bid-cache capability, not only 3.23.0, applies the settings.
   const fake = validateRuntimeDescriptor({id: 'fixture-bid-cache', version: '0.0.1-fixture.1', codeSha256: 'b'.repeat(64), configSchemaVersion: 1, channel: 'preview', capabilities: ['bid-cache', 'config-preview']});
   runtimeCatalog.push(fake);
   try {
@@ -195,12 +195,13 @@ test('the payload says whether the selected script version applies bid caching',
   } finally {
     runtimeCatalog.splice(runtimeCatalog.indexOf(fake), 1);
   }
-  // Once the real 3.23.0 runtime is registered, it must report the capability too.
-  const registered = runtimeCatalog.find(runtime => runtime.version === BID_CACHE_RUNTIME_VERSION);
-  if (registered) {
-    f = setup({builtinRuntimeSelection: selection(registered)});
-    assert.equal((await read(f)).runtimeSupportsBidCache, true);
-  }
+  // The registered 3.23.0 runtime reports the capability.
+  const registered = runtimeCatalog.find(runtime => runtime.id === 'tessera-3.23.0' && runtime.version === BID_CACHE_RUNTIME_VERSION);
+  assert(registered, '3.23.0 is in the runtime catalog');
+  f = setup({builtinRuntimeSelection: selection(registered)});
+  state = await read(f);
+  assert.deepEqual(state.selectedRuntime, {id: 'tessera-3.23.0', version: '3.23.0'});
+  assert.equal(state.runtimeSupportsBidCache, true);
 });
 
 test('Tanjug gets the same cache fields; only the named-script library sentence differs', async () => {

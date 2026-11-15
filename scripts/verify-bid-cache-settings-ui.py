@@ -9,7 +9,7 @@ out=Path(os.environ.get('BID_CACHE_UI_OUT') or root/'.generated/bid-cache-settin
 process=subprocess.Popen(['node','scripts/script-library-browser-fixture.mjs'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,env={**os.environ,'FIXTURE_SITE':'example'})
 assert json.loads(process.stdout.readline())['ready']
 SITE='/api/publishers/example'
-errors=[];requests=[];checks=[];held=[];hold={'GET':False,'PUT':False};mock={'capable':False}
+errors=[];requests=[];checks=[];held=[];hold={'GET':False,'PUT':False}
 def check(name,ok):
  assert ok,name
  checks.append(name)
@@ -26,9 +26,6 @@ def forward(r):
  url=urlsplit(r.request.url);assert url.netloc=='tessera.fixture.invalid'
  payload={'path':url.path+('?'+url.query if url.query else ''),'method':r.request.method,'body':r.request.post_data}
  result=call(payload);body=base64.b64decode(result['body'])
- if mock['capable'] and url.path==SITE+'/prebid-mode' and result['status']==200:
-  # Stand-in until 3.23.0 is registered: the saved selection reports the bid-cache capability.
-  data=json.loads(body);data['runtimeSupportsBidCache']=True;data['selectedRuntime']={'id':'tessera-3.23.0','version':'3.23.0'};body=json.dumps(data).encode()
  requests.append({'method':payload['method'],'path':url.path,'status':result['status']})
  r.fulfill(status=result['status'],headers=result['headers'],body=body)
 def route(r):
@@ -134,8 +131,14 @@ try:
   check('AdX-only hides the cache controls',cache.count()==0 and page.get_by_text('Bid caching is inactive while Prebid is off. Its saved settings are kept.',exact=True).is_visible())
   page.get_by_role('radio').first.check()
   check('Switching back restores the unsaved form',cache.is_checked())
-  # With a runtime that has the bid-cache capability (response stand-in until 3.23.0 is registered).
-  mock['capable']=True
+  # The saved selection becomes the registered 3.23.0, the first runtime with the bid-cache capability. This
+  # fixture's inventory is not a Script setup review state, so the pin is written to D1 from the registry record;
+  # the Worker still has to match it against its runtime catalog.
+  release=next(r for r in json.loads((root/'worker/runtime/runtime-releases.json').read_text()) if r['id']=='tessera-3.23.0')
+  pin={'schemaVersion':1,'runtimeId':release['id'],'runtimeVersion':release['version'],'runtimeSha256':release['codeSha256'],'configSchemaVersion':release['configSchemaVersion'],'capabilities':sorted(release['capabilities'])}
+  sql("UPDATE publisher_configs SET config_json=json_set(config_json,'$.builtinRuntimeSelection.runtime',json(?)) WHERE publisher_id='example'",json.dumps(pin))
+  status,mode=api('GET','/prebid-mode')
+  check('With 3.23.0 saved, the API reports that it applies bid caching','bid-cache' in pin['capabilities'] and status==200 and mode['runtimeSupportsBidCache'] is True and mode['selectedRuntime']=={'id':'tessera-3.23.0','version':'3.23.0'})
   page.get_by_role('button',name='Ad positions',exact=True).click();page.get_by_role('button',name='Demand → Prebid',exact=True).click()
   page.get_by_text('Applies to new packages generated with script 3.23.0 or later.',exact=True).wait_for()
   check('A capable runtime shows the apply line, not the select line',page.get_by_text(SELECT_TEXT,exact=True).count()==0)
@@ -152,5 +155,5 @@ try:
   browser.close()
 finally:
  process.stdin.close();process.wait(timeout=10)
-(out/'report.json').write_text(json.dumps({'scope':'Compiled Worker, local D1, synthetic example.invalid site; 3.23.0 capability is a response stand-in','checks':checks,'passed':len(checks),'failed':0,'errors':errors,'requests':requests},indent=2))
+(out/'report.json').write_text(json.dumps({'scope':'Compiled Worker, local D1, synthetic example.invalid site; 3.21.2 selected, then the registered 3.23.0 pin saved in D1','checks':checks,'passed':len(checks),'failed':0,'errors':errors,'requests':requests},indent=2))
 print(json.dumps({'passed':len(checks),'failed':0}))

@@ -20,7 +20,7 @@ The API (`PUT /api/publishers/:id/prebid-mode`) checks, in this order:
 2. the form revision, so a stale form never overwrites another change (409);
 3. that every new or changed override names one of the site's eligible positions (422, for example "Choose bid caching on or off for a supported ad position. Sticky is not an enabled ATF or BTF banner position on this site.").
 
-An override saved earlier for a unit that later became ineligible (renamed, deleted, disabled, moved to Draft, made Outstream or TakeOver) is kept when it is sent back unchanged, so it never blocks an unrelated save. It is not applied. Demand → Prebid lists it as "Not applied" with a **Remove unused overrides** action; removing an override is always allowed.
+An override saved earlier for a unit that later became ineligible (renamed, deleted, disabled, moved to Draft, made Outstream or TakeOver) is kept when it is sent back unchanged, so it never blocks an unrelated save. It is not applied: Generate with 3.23.0 lists it as a warning and the package README names it under "Saved settings not applied in this package". Demand → Prebid lists it as "Not applied" with a **Remove unused overrides** action; removing an override is always allowed.
 
 ## Which scripts apply it
 
@@ -41,10 +41,10 @@ Releases → Scripts and A/B tests is unchanged and remains available only for t
 
 `prebidBidCache = {enabled, maxBidAgeSeconds, positionOverrides?}` in the site configuration is unchanged. Overrides are stored in code-unit order. `GET /prebid-mode` returns `bidCachePositions` (the eligible codes), `bidCacheRuntimeVersion`, `selectedRuntime` (only when the runtime catalog still verifies the saved pin), `runtimeSupportsBidCache` and `namedScriptLibrary`. The last one only adds the named-script sentence; it never changes what can be saved.
 
-- `tests/runtime/prebid-mode-bid-cache.test.mjs`: a synthetic `example.invalid` site saves cache and its own overrides; Tanjug codes, ineligible positions and malformed overrides are refused without writes; stale revisions get 409; kept overrides never block unrelated saves; the payload for 3.21.2, a changed pin and a stand-in capable descriptor; Tanjug gets the same cache fields.
+- `tests/runtime/prebid-mode-bid-cache.test.mjs`: a synthetic `example.invalid` site saves cache and its own overrides; Tanjug codes, ineligible positions and malformed overrides are refused without writes; stale revisions get 409; kept overrides never block unrelated saves; the payload for 3.21.2, a changed pin, any catalog descriptor with the capability and the registered 3.23.0; Tanjug gets the same cache fields.
 - `tests/runtime/script-library.test.mjs`: named scripts refuse an override outside the 19 positions.
 - `scripts/verify-script-library-workerd.mjs`: the compiled Worker with local D1/R2 runs the same checks for the synthetic site next to the Tanjug library checks.
-- `scripts/verify-bid-cache-settings-ui.py`: real React panels and the compiled Worker on the synthetic site at 1280 and 390 px: loading, saving, a 409 stale form and reload, a 422 position that stopped being eligible and reload, removing an unused override, Prebid off, and the capable-runtime copy (that state uses a response stand-in until 3.23.0 is registered).
+- `scripts/verify-bid-cache-settings-ui.py`: real React panels and the compiled Worker on the synthetic site at 1280 and 390 px: loading, saving, a 409 stale form and reload, a 422 position that stopped being eligible and reload, removing an unused override, Prebid off, and the copy once the saved selection is the registered 3.23.0.
 
 No external live auctions are used by these tests.
 
