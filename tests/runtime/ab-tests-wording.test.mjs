@@ -48,7 +48,14 @@ test('the A/B tests panel states what is published, what TEST lacks and how GAM 
   'No differences in the compared settings.',
   'Turn on reporting for both keys.',
   'GAM does not report traffic from before this setup.',
+ // A passing check says the versions can be compared and, while Save is disabled, which field blocks it.
+ 'Compatible. These versions can be compared.',
+ 'Enter a test name to save.',
+ 'Use 1 to 24 lowercase letters, digits or _ in the TestId to save.',
+ 'Use a whole number from 0 to 100 for traffic to save.',
+ 'For lists, each side shows only what it has and the other version does not.',
  ])assert(panel.includes(sentence),sentence);
+ for(const text of ['You can save this A/B test','what the other version lacks'])assert(!panel.includes(text),text);
  assert.match(panel,/<li>Key <code>Variant<\/code> with the values <code>A<\/code> and <code>B<\/code>\.<\/li>/);
  assert.match(panel,/<li>Key <code>TestId<\/code> with the value <code>\{test\.testId\}<\/code>\.<\/li>/);
  // No production menus, no preview-publish link in this PR, and no second "Download saved ZIP" button in the view.

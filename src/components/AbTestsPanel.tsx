@@ -26,11 +26,13 @@ const FIELD_LABELS: Record<string,string> = {
   'bidCache.positions':'Bid cache positions','refresh.default':'Refresh','refresh.rules':'Refresh by position','refresh.stickySeconds':'Sticky refresh (seconds)',
   floors:'Floors',bidders:'Bidders',bidderParams:'Bidder settings',timeouts:'Timeouts','timeouts.rules':'Timeouts by position',otherSettings:'Other settings',
 };
+// List fields hold only what one side has and the other lacks (ab-bundle.mjs configDiff), so an empty side is not "None".
 const LIST_FIELDS = new Set(['capabilities','bidCache.positions','bidders']);
 const when = (iso:string) => new Date(iso).toLocaleString();
 const short = (id:string) => id.slice(-8);
 const shown = (value:unknown) => value===null||value===undefined?'Not set':Array.isArray(value)&&!value.length?'None':typeof value==='boolean'?(value?'On':'Off')
   :typeof value==='string'||typeof value==='number'?String(value):JSON.stringify(value,null,2);
+const cell = (field:string,value:unknown) => LIST_FIELDS.has(field)&&Array.isArray(value)&&!value.length?'Nothing extra':shown(value);
 async function sha256(bytes:ArrayBuffer){
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
 }
@@ -208,13 +210,15 @@ export default function AbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Prop
       {noticeAt('form')}
       {checked?<div className="ab-tests-result">
         <p className={checked.compatible?'ab-tests-status':'ab-tests-status ab-tests-refused'} role="status">
-          {checked.compatible?'Compatible. You can save this A/B test.':`Not compatible: ${checked.refusal?.message??'These versions cannot be compared.'}`}</p>
+          {checked.compatible?'Compatible. These versions can be compared.':`Not compatible: ${checked.refusal?.message??'These versions cannot be compared.'}`}</p>
+        {checked.compatible&&!canSave?<p className="ab-tests-help">{!name.trim()?'Enter a test name to save.'
+          :!TEST_ID.test(testId)?'Use 1 to 24 lowercase letters, digits or _ in the TestId to save.':'Use a whole number from 0 to 100 for traffic to save.'}</p>:null}
         {checked.warnings.length?<ul className="ab-tests-warnings">{checked.warnings.map(w=><li key={w.code}>{w.message}</li>)}</ul>:null}
         {checked.configDiff?<><h4>Summary of differences</h4>{checked.configDiff.length?<>
           <div className="ab-tests-diff"><table><thead><tr><th scope="col">Setting</th><th scope="col">A</th><th scope="col">B</th></tr></thead>
             <tbody>{checked.configDiff.map(row=><tr key={row.field}><th scope="row">{FIELD_LABELS[row.field]??row.field}<code>{row.field}</code></th>
-              <td data-label="A"><code>{shown(row.a)}</code></td><td data-label="B"><code>{shown(row.b)}</code></td></tr>)}</tbody></table></div>
-          {checked.configDiff.some(row=>LIST_FIELDS.has(row.field))?<p className="ab-tests-help">For lists, each side shows only what the other version lacks.</p>:null}
+              <td data-label="A"><code>{cell(row.field,row.a)}</code></td><td data-label="B"><code>{cell(row.field,row.b)}</code></td></tr>)}</tbody></table></div>
+          {checked.configDiff.some(row=>LIST_FIELDS.has(row.field))?<p className="ab-tests-help">For lists, each side shows only what it has and the other version does not.</p>:null}
         </>:<p>No differences in the compared settings.</p>}</>:null}
       </div>:null}
     </form>

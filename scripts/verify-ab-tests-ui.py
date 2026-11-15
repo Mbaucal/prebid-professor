@@ -34,6 +34,8 @@ NO_PRODUCTION='This site has no production version on TEST. Choose A yourself: u
 PUBLIC='The test name, the TestId and both version names are published inside /ads.js. Do not use private notes.'
 UPLOAD='Download the ZIP and upload all of its files, unchanged, as one Pages deployment.'
 KEPT='(no longer in Saved versions; this test keeps its own copy)'
+COMPATIBLE='Compatible. These versions can be compared.'
+LIST_HELP='For lists, each side shows only what it has and the other version does not.'
 sha=lambda data:hashlib.sha256(data).hexdigest()
 
 def check(name,ok):
@@ -147,12 +149,29 @@ try:
   # 4. A vs B is compatible, with bidCache.enabled in the summary of differences.
   field('Version A').select_option(ids['Version A']);field('Version B').select_option(ids['Version B'])
   check('Changing a version clears the earlier result',status('Not compatible:').count()==0 and button('Save A/B test').is_disabled())
+  # A passing check never promises a save: it says the versions can be compared and names the field that blocks Save.
+  field('Test name').fill('')
   button('Check compatibility').click()
-  status('Compatible. You can save this A/B test.').wait_for()
+  status(COMPATIBLE).wait_for()
+  check('A passing check does not promise a save',status('You can save').count()==0)
+  blocked=panel.locator('.ab-tests-result .ab-tests-help').filter(has_text=' to save.')
+  check('With no test name, the check names the missing name and Save is disabled',
+   blocked.inner_text()=='Enter a test name to save.' and button('Save A/B test').is_disabled())
+  field('Test name').fill('Bid cache');field('TestId').fill('Test_site_1')
+  check('With an invalid TestId, the check names the TestId rule',blocked.inner_text()=='Use 1 to 24 lowercase letters, digits or _ in the TestId to save.')
+  field('TestId').fill('test_site_1');field('Traffic to B (%)').fill('50.5')
+  check('With a fractional traffic share, the check names the traffic rule',blocked.inner_text()=='Use a whole number from 0 to 100 for traffic to save.')
+  field('Traffic to B (%)').fill('50')
+  check('With every field valid, no blocking line is shown',blocked.count()==0)
   table=panel.locator('.ab-tests-diff table')
   check('The summary of differences lists bidCache.enabled',table.get_by_text('bidCache.enabled',exact=True).is_visible())
   row=table.locator('tr').filter(has_text='bidCache.enabled')
   check('Bid caching is Off in A and On in B',row.locator('td').nth(0).inner_text()=='Off' and row.locator('td').nth(1).inner_text()=='On')
+  # List fields show only what each side has and the other lacks: an empty side is "Nothing extra", never "None".
+  positions=table.locator('tr').filter(has_text='bidCache.positions')
+  check('An empty list difference reads Nothing extra',positions.locator('td').nth(0).inner_text()=='Nothing extra'
+   and 'Billboard' in positions.locator('td').nth(1).inner_text() and 'None' not in table.inner_text())
+  check('The list help says what each side shows',panel.get_by_text(LIST_HELP,exact=True).is_visible())
   check('Save is enabled after a passing check',button('Save A/B test').is_enabled())
   shots('compatible')
 
@@ -172,7 +191,7 @@ try:
   check('After saving, the name, the check and the TestId start over',field('Test name').input_value()=='' and field('TestId').input_value()=='test_site_2'
    and status('Compatible.').count()==0 and button('Save A/B test').is_disabled())
   field('Test name').fill('Bid cache');field('TestId').fill('test_site_1')
-  button('Check compatibility').click();status('Compatible. You can save this A/B test.').wait_for()
+  button('Check compatibility').click();status(COMPATIBLE).wait_for()
   button('Save A/B test').click()
   status('This A/B test is already saved. Nothing new was stored.').wait_for()
   data=listing()
@@ -198,7 +217,7 @@ try:
   field('Test name').fill('A/A check');field('TestId').fill('test_site_2');field('Traffic to B (%)').fill('30')
   check('The traffic line follows the entered share',panel.get_by_text('A: 70% · B: 30%',exact=True).is_visible())
   button('Check compatibility').click()
-  status('Compatible. You can save this A/B test.').wait_for()
+  status(COMPATIBLE).wait_for()
   check('A/A has no differences',panel.get_by_text('No differences in the compared settings.',exact=True).is_visible())
   button('Save A/B test').click()
   status('A/B test "A/A check" saved.').wait_for()
