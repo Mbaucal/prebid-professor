@@ -42,6 +42,8 @@ jobs:
       - run: python scripts/verify-prebid-config.py
       - name: Independent account editor and migration UI review at desktop and narrow widths
         run: python scripts/review-mba413-editor.py --runtime=3.22.1 && python scripts/review-mba413-migration-ui.py
+      - name: Independent isolated TEST account editor review
+        run: python scripts/review-mba413-test-editor.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -51,6 +53,7 @@ jobs:
             .generated/prebid-config-evidence/
             .generated/review-mba413-ui/
             .generated/review-mba413-migration-ui/
+            .generated/review-mba413-test-editor/
           if-no-files-found: ignore
           retention-days: 14
 

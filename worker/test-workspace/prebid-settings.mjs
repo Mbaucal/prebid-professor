@@ -35,7 +35,7 @@ export async function getPrebidSettings(env) {
   try{requiredModules=prebidRequirements(previewInput(snapshot,descriptorForPin(config.builtinRuntimeSelection.runtime),'20000101_000000'),config).modules;}
   catch(error){validationIssue??=error.message;}
   return {site:{id:TEST_SITE,name:snapshot.site.name},revision:await digest(snapshot),draft:editorDraft(snapshot,config),
-    files:await listPrebidFiles(prebidStore(env)),supportedBidders:[...new Set([...SUPPORTED_BIDDERS,...snapshot.bidders.map(row=>row.bidder),...(config.testPrebidPlan?.draft?.bidders??[]).map(row=>row.bidder)])],
+    files:await listPrebidFiles(prebidStore(env)),supportedBaseAdapters:[...new Set([...SUPPORTED_BIDDERS,...editorDraft(snapshot,config).bidders.map(row=>row.baseAdapter||row.bidder),...(config.testPrebidPlan?.draft?.bidders??[]).map(row=>row.baseAdapter||row.bidder)])],supportedBidders:[...new Set([...SUPPORTED_BIDDERS,...snapshot.bidders.map(row=>row.bidder),...(config.testPrebidPlan?.draft?.bidders??[]).map(row=>row.bidder)])],
     units:snapshot.units.map((u)=>({code:u.code,enabled:u.enabled===1})),requiredModules,
     plan:config.testPrebidPlan??null,options:planOptions(config),userIds:USER_IDS.map(({name,label})=>({name,label})),
     version:snapshot.prebidBuilds[0]?.version??'11.11.0',
