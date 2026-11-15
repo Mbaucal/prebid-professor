@@ -129,7 +129,33 @@ const DIFF=[
   ['timeouts',v=>({default:v.config.core?.defaultTimeout??null,atf:v.config.core?.atfTimeout??null,btf:v.config.core?.btfTimeout??null,sticky:v.config.core?.stickyTimeout??null})],
   ['timeouts.rules',v=>ruleField(v.config,'timeout')],
 ];
-/** The summary of differences: [{field, a, b}] in DIFF order, only for fields that differ. */
+// config.json paths left out of otherSettings: build stamps and the script pin differ on every
+// build, the prebid check compares the Prebid.js file itself, and DIFF above reports the rest.
+const NOT_OTHER=new Set(['runtime','prebidBuild','bidCache','core.buildVersion','core.generatorProfileId','options.buildTimestamp',
+  'core.globalRefresh','options.floors','core.bidders','core.bidderSlotParams','core.bidderDeviceParams','core.bidderAdUnitParams',
+  'core.defaultTimeout','core.atfTimeout','core.btfTimeout','core.stickyTimeout']);
+// Values DIFF reports only in part: compare what is left.
+const PARTLY={'core.adUnitRules':rules=>Object.fromEntries(Object.entries(rules??{}).map(([key,rule])=>{const {refresh,timeout,...rest}=rule??{};return [key,rest];})),
+  'options.sticky':sticky=>{const {refreshSeconds,...rest}=sticky??{};return rest;}};
+/** Every other setting that differs, as {path: value} on each side, so two versions whose settings
+ * differ never show an empty summary. Paths are top-level keys and, for objects, their children.
+ * A top-level key only one script version writes is a schema change between versions, which the
+ * runtime and capability entries already report; a child missing on one side compares as null. */
+function otherSettings(ca,cb){
+  const a={},b={};
+  const compare=(path,va,vb)=>{
+    if(NOT_OTHER.has(path))return;
+    const read=PARTLY[path]??(v=>v??null),x=read(va),y=read(vb);
+    if(!same(x,y)){a[path]=x;b[path]=y;}
+  };
+  for(const key of sorted([...Object.keys(ca),...Object.keys(cb)])){
+    if(!Object.hasOwn(ca,key)||!Object.hasOwn(cb,key)||NOT_OTHER.has(key))continue;
+    if(record(ca[key])&&record(cb[key]))for(const child of sorted([...Object.keys(ca[key]),...Object.keys(cb[key])]))compare(`${key}.${child}`,ca[key][child],cb[key][child]);
+    else compare(key,ca[key],cb[key]);
+  }
+  return Object.keys(a).length?{field:'otherSettings',a,b}:null;
+}
+/** The summary of differences: [{field, a, b}] in DIFF order, only for fields that differ, then otherSettings. */
 function configDiff(A,B){
   const list=[];
   for(const [field,read,isList] of DIFF){
@@ -141,6 +167,8 @@ function configDiff(A,B){
       if(changed.length)list.push({field:'bidderParams',a:Object.fromEntries(changed.map(c=>[c,bidderSettings(A.config,c)])),b:Object.fromEntries(changed.map(c=>[c,bidderSettings(B.config,c)]))});
     }
   }
+  const other=otherSettings(A.config,B.config);
+  if(other)list.push(other);
   return list;
 }
 

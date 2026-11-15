@@ -104,6 +104,15 @@ test.before(async () => {
     const rule = JSON.parse(s.rules[0].rule_json);
     s.rules[0].rule_json = JSON.stringify({...rule, timeout: 1000, refresh: {...rule.refresh, minSeconds: 45}});
   }}), note: 'Tuned demand'});
+  // Settings outside the named summary fields that still change the auction or the page.
+  P.lazy = await generate({snapshot: site({cache: CACHE_ON, mutate: s => {
+    s.rules[0].rule_json = JSON.stringify({...JSON.parse(s.rules[0].rule_json), lazy: {enabled: true, fetchMarginPx: 200, renderMarginPx: 100}});
+  }}), note: 'Lazy loading on'});
+  P.settings = await generate({snapshot: site({cache: CACHE_ON, mutate: (s, c) => {
+    s.maps[0].map_json = JSON.stringify([{viewport: [0, 0], sizes: [[300, 250]]}, {viewport: [1024, 0], sizes: [[300, 250], [728, 90]]}]);
+    c.runtimeControls.schain = {enabled: true, nodes: [{asi: 'example.invalid', sid: '1', hp: 1}]};
+    c.runtimeControls.currencyConversion = {enabled: true};
+  }}), note: 'Sizes, schain and currency'});
 });
 
 const compose = (a, b, over = {}) => composeAbBundle({site: 'test-site', a, b, trafficBPercent: 50, testId: 'test_site_1', name: 'Bid cache 3.23.0', ...over});
@@ -230,6 +239,28 @@ test('configDiff reports bid cache age and positions, refresh, floors, bidders a
   assert.equal(record.compatibility.warnings.length, 0);
 });
 
+test('configDiff lists every other setting that differs, so different settings never read as an A/A', async () => {
+  const config = pkg => JSON.parse(text(pkg.files['config.json']));
+  const B = config(P.B), L = config(P.lazy), S = config(P.settings), A = config(P.A), T = config(P.takeOver0);
+  const other = (a, b) => [{field: 'otherSettings', a, b}];
+  // Lazy loading alone: the 3.23.0 scripts differ, and the summary says why.
+  assert.deepEqual((await compose(P.B, P.lazy)).record.configDiff, other({'lazyRules.__ATF__': B.lazyRules.__ATF__}, {'lazyRules.__ATF__': L.lazyRules.__ATF__}));
+  assert.equal(L.lazyRules.__ATF__.enabled, true);
+  // Ad sizes, schain and currency conversion; a setting one side never saved compares as null.
+  assert.deepEqual((await compose(P.B, P.settings)).record.configDiff, other(
+    {'core.explicitUnits': B.core.explicitUnits, 'core.sizeMapsRaw': B.core.sizeMapsRaw, 'options.currencyConversion': B.options.currencyConversion, 'options.schain': null},
+    {'core.explicitUnits': S.core.explicitUnits, 'core.sizeMapsRaw': S.core.sizeMapsRaw, 'options.currencyConversion': S.options.currencyConversion, 'options.schain': S.options.schain}));
+  assert.equal(S.options.currencyConversion.enabled, true);
+  // A whole extra TakeOver position passes every layout check (div-export.csv and min-height.css leave it out).
+  const {record} = await compose(P.A, P.takeOver0);
+  assert.deepEqual(record.configDiff, other({adPosition: null, 'core.explicitUnits': A.core.explicitUnits, 'core.sizeMapsRaw': A.core.sizeMapsRaw, 'options.takeOver': A.options.takeOver},
+    {adPosition: T.adPosition, 'core.explicitUnits': T.core.explicitUnits, 'core.sizeMapsRaw': T.core.sizeMapsRaw, 'options.takeOver': T.options.takeOver}));
+  assert.deepEqual(record.configDiff[0].b['core.explicitUnits'].map(unit => unit.id), ['Billboard', 'P1', 'Overlay']);
+  assert.deepEqual((await checkAbCompatibility({site: 'test-site', a: P.A, b: P.takeOver0})).configDiff, record.configDiff);
+  // Build stamps, profile ids and keys only a newer script writes are not settings: 3.21.2 against 3.23.0 adds nothing here.
+  assert.equal((await compose(P.A, P.B)).record.configDiff.find(entry => entry.field === 'otherSettings'), undefined);
+});
+
 test('different storage use is a warning, not a refusal', async () => {
   // 3.21.0 still names localStorage (its debug switch); 3.21.1 removed it.
   const older = await compose(P.r3210, P.A);
@@ -240,7 +271,8 @@ test('different storage use is a warning, not a refusal', async () => {
   const {record} = await compose(P.takeOver0, P.takeOver5);
   assert.deepEqual(record.compatibility.warnings, [{code: 'storage-differs', a: {apis: ['sessionStorage'], takeOverIntervalMinutes: 0}, b: {apis: ['sessionStorage'], takeOverIntervalMinutes: 5},
     message: 'Versions A and B use browser storage differently. Each version keeps its own consent handling; check that this is expected.'}]);
-  assert.deepEqual(record.configDiff, [], 'the summary of differences does not list the TakeOver interval');
+  assert.deepEqual(record.configDiff, [{field: 'otherSettings', a: {'adPosition.frequencyMinutes': 0}, b: {'adPosition.frequencyMinutes': 5}}],
+    'the summary of differences lists the TakeOver interval too');
 });
 
 test('a version of another site is refused', async () => {
