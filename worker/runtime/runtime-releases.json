@@ -35,7 +35,7 @@
     "date": "2026-11-15",
     "title": "Tessera 3.22.1 — audited bidder rules and separate bidder accounts",
     "sourceManifest": "scripts/prepare-runtime3221.mjs",
-    "sourceCommit": "dc0c511a84d7b6061feb572d262831c73ec1e71b",
+    "sourceCommit": "f0712dab0a94b7fb0aae70a5cc27cafe573c51ea",
     "changes": [
       "Combines bidder eligibility from 3.22.0 with the audited 3.21.1 contextual, storage and size-map fixes and 3.21.2 TakeOver boot timing. Existing runtime sources, saved pins and packages are unchanged.",
       "Adds explicit bidder accounts and aliases with inherited, custom or omitted upstream SChain. Account and supply-chain choices apply to the exact bidder code without changing other bidders.",
