@@ -224,7 +224,9 @@ export async function updatePrebidMode(
     }
   }
   config.enablePrebid = enabled;
-  if (enabled) Object.assign(config, initializeMissingUserSync(config));
+  // Only turning Prebid on fills in a missing user sync setting, as Script setup does.
+  // Saving bid caching or re-saving the same mode leaves user sync as it is.
+  if (enabled && !previousEnabled) Object.assign(config, initializeMissingUserSync(config));
   if (Object.hasOwn(body,'bidCache')) config.prebidBidCache = bidCache;
 
   const actor = getActor(request);

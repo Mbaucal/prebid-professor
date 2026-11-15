@@ -248,3 +248,22 @@ test('override shape: any valid ad unit code, booleans only, code-unit order', (
   assert.throws(() => requireEligibleOverrides({positionOverrides: {Old: true}}, 'not saved', []), error => error.status === 422);
   assert.doesNotThrow(() => requireEligibleOverrides({}, undefined, []));
 });
+
+test('saving bid caching leaves the saved user sync setting as it is', async () => {
+  // Prebid is already on and the site has no saved userSync, which compiles to user sync off.
+  const f = setup();
+  assert.equal(f.readConfig().enablePrebid, true);
+  assert.equal(Object.hasOwn(f.readConfig(), 'userSync'), false);
+  const state = await read(f);
+  const response = await put({enabled: true, revision: state.revision, bidCache: {enabled: true, maxBidAgeSeconds: 45}}, f);
+  assert.equal(response.status, 200, await response.clone().text());
+  const saved = f.readConfig();
+  assert.deepEqual(saved.prebidBidCache, {enabled: true, maxBidAgeSeconds: 45});
+  assert.equal(Object.hasOwn(saved, 'userSync'), false, 'a bid cache save must not turn on user sync');
+  assert.equal(Object.hasOwn(saved, 'userIdConfig'), false);
+  // An explicitly saved setting is kept too.
+  const g = setup({userSync: {syncEnabled: false, userIds: []}});
+  const again = await put({enabled: true, revision: (await read(g)).revision, bidCache: {enabled: false, maxBidAgeSeconds: 60}}, g);
+  assert.equal(again.status, 200, await again.clone().text());
+  assert.deepEqual(g.readConfig().userSync, {syncEnabled: false, userIds: []});
+});
