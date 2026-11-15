@@ -62,8 +62,12 @@ test('new routes preserve authentication, Origin, schema, method and fixed-site 
   const f=await fixture();await prepare(f);const mode=(await f.call(base+'/prebid-mode')).data;
   const body={enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:60}};
   // test-site has its own bid caching route (it reads the site first), which never turns Prebid on: that stays with the TEST Prebid editor.
-  const site=snapshot(f),siteToggle=await f.call('/api/publishers/test-site/prebid-mode','PUT',body);
+  const site=snapshot(f),siteMode=(await f.call('/api/publishers/test-site/prebid-mode')).data;
+  const siteToggle=await f.call('/api/publishers/test-site/prebid-mode','PUT',{...body,revision:siteMode.revision});
   assert.equal(siteToggle.status,409);assert.match(siteToggle.data.error,/Turn Prebid on or off in Prebid and bidders/);assert.equal(snapshot(f),site);
+  // A revision that is not the TEST site's own (here the named-script copy's) is a stale form: reload, no write.
+  const foreignRevision=await f.call('/api/publishers/test-site/prebid-mode','PUT',body);
+  assert.equal(foreignRevision.status,409);assert.equal(foreignRevision.data.error,'Prebid settings changed. Reload before saving.');assert.equal(snapshot(f),site);
   const before=f.log.batches;
   assert.equal((await f.call(base+'/prebid-mode','PUT',body,{cookie:''})).status,401);
   assert.equal((await f.call(base+'/prebid-mode','PUT',body,{origin:'https://other.invalid'})).status,403);

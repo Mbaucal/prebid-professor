@@ -15,11 +15,11 @@ import {cleanupResponse,cleanupState} from './package-cleanup.mjs';
 import {getPrebidMode,updatePrebidMode} from '../prebid-mode.ts';
 import {withAuthenticatedActor} from '../http.ts';
 import {BID_CACHE_GENERATOR_MESSAGE} from '../site-runtime/prebid-cache-settings.mjs';
+import {digest} from '../runtime/preview-snapshot.mjs';
+import {testBidCacheMessage} from './bid-cache-messages.mjs';
 
 // The shared generator refusal names the production Config menus; this workspace has a Bid caching view instead.
-export const TEST_BID_CACHE_GENERATOR_MESSAGE=BID_CACHE_GENERATOR_MESSAGE.slice(0,BID_CACHE_GENERATOR_MESSAGE.indexOf('To keep'))
- +'To keep this script version instead, open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position.';
-const testBidCacheMessage=message=>message===BID_CACHE_GENERATOR_MESSAGE?TEST_BID_CACHE_GENERATOR_MESSAGE:message;
+export {TEST_BID_CACHE_GENERATOR_MESSAGE} from './bid-cache-messages.mjs';
 // The shared Demand → Prebid API for the TEST site, at the path the production panels use.
 const PREBID_MODE='/api/publishers/'+TEST_SITE+'/prebid-mode';
 export const siteWorkspaceMethodAllowed=request=>new URL(request.url).pathname===PREBID_MODE&&request.method==='PUT';
@@ -39,7 +39,11 @@ export async function siteWorkspaceResponse(request,env,actor,headers){
   const body=await jsonBody(request,['enabled','revision','bidCache'],65536);
   // The TEST Prebid editor owns Prebid on/off, its build and its draft marker; this route saves bid caching only.
   // A form without a true/false mode is left to the shared validation (422).
-  if(typeof body.enabled==='boolean'&&body.enabled!==saved.enablePrebid)return new Response(JSON.stringify({error:'Turn Prebid on or off in Prebid and bidders. Here you can change bid caching only.'}),{status:409,headers:{...headers,'content-type':'application/json'}});
+  // A form loaded before Prebid changed elsewhere is stale: ask for a reload (the shared message), not for a Prebid change.
+  if(typeof body.enabled==='boolean'&&body.enabled!==saved.enablePrebid){
+   const error=body.revision!==await digest(saved)?'Prebid settings changed. Reload before saving.':'Turn Prebid on or off in Prebid and bidders. Here you can change bid caching only.';
+   return new Response(JSON.stringify({error}),{status:409,headers:{...headers,'content-type':'application/json'}});
+  }
   return updatePrebidMode(withAuthenticatedActor(new Request(request.url,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),actor.email),store,TEST_SITE);
  }
  if(!['/site-workspace','/site-workspace.js','/test-api/site-runtime','/test-api/site-packages','/test-api/package-cleanup','/test-api/deals','/test-api/outstream-settings','/test-api/contextual-signals','/test-api/contextual-signals/build-kit','/test-api/bidder-rules'].includes(url.pathname))return null;
@@ -47,7 +51,7 @@ export async function siteWorkspaceResponse(request,env,actor,headers){
  if(['/test-api/site-runtime','/test-api/site-packages','/test-api/package-cleanup','/test-api/deals','/test-api/outstream-settings','/test-api/contextual-signals','/test-api/contextual-signals/build-kit','/test-api/bidder-rules'].includes(url.pathname)){
   if(!(await inspectTestSchema(env.DB)).ready)return new Response(JSON.stringify({error:'Prepare TEST data first.'}),{status:409,headers:{...headers,'content-type':'application/json'}});
   if(url.pathname==='/test-api/package-cleanup')return cleanupResponse(request,env,actor.email,headers);
-  assertWorkspaceSiteScope(await readPreviewSnapshot(env.DB.withSession('first-primary'),'test-site',{includePrebid:true}));
+  const siteConfig=assertWorkspaceSiteScope(await readPreviewSnapshot(env.DB.withSession('first-primary'),'test-site',{includePrebid:true}));
   if(url.pathname==='/test-api/bidder-rules')return bidderRuleSettingsResponse(request,env,TEST_SITE,actor.email);
   if(url.pathname==='/test-api/contextual-signals')return contextualSignalSettingsResponse(request,env,TEST_SITE,actor.email);
   if(url.pathname==='/test-api/contextual-signals/build-kit')return contextualBuildKitResponse(request,env,TEST_SITE);
@@ -57,11 +61,11 @@ export async function siteWorkspaceResponse(request,env,actor,headers){
    const response=await packageResponse(request,env,TEST_SITE,actor.email,{testOnly:true});
    if(request.method==='GET'&&response.ok){
     const state=await response.json();
-    return new Response(JSON.stringify({...state,error:testBidCacheMessage(state.error),cleanup:await cleanupState(env)}),{status:response.status,headers:response.headers});
+    return new Response(JSON.stringify({...state,error:testBidCacheMessage(state.error,siteConfig),cleanup:await cleanupState(env)}),{status:response.status,headers:response.headers});
    }
    if(response.status===409&&response.headers.get('content-type')?.includes('application/json')){
     const body=await response.clone().json();
-    if(body.error===BID_CACHE_GENERATOR_MESSAGE)return new Response(JSON.stringify({...body,error:TEST_BID_CACHE_GENERATOR_MESSAGE}),{status:409,headers:response.headers});
+    if(body.error===BID_CACHE_GENERATOR_MESSAGE)return new Response(JSON.stringify({...body,error:testBidCacheMessage(body.error,siteConfig)}),{status:409,headers:response.headers});
    }
    return response;
   }

@@ -14,6 +14,7 @@ import {descriptor as rules322} from '../../.generated/runtime-322-manifest.mjs'
 import {buildArtifactCandidate as rules322Candidate} from '../runtime-322/artifact-candidate.mjs';
 import {previewInput as rules322Input} from '../runtime-322/snapshot.mjs';
 import {requireBidderRulesRuntime} from '../../shared/bidder-rules/settings.mjs';
+import {requireBidderRulesBesideBidCache} from './bid-cache-messages.mjs';
 import {descriptor as contextual321} from '../../.generated/runtime-321-manifest.mjs';
 import {buildArtifactCandidate as contextual321Candidate} from '../runtime-321/artifact-candidate.mjs';
 import {previewInput as contextual321Input} from '../runtime-321/snapshot.mjs';
@@ -95,6 +96,8 @@ export function previewInput(snapshot,descriptor,time,takeOver){
 
   (descriptor.id===cache323.id?requireCache323RevenueRuntime:descriptor.id===patch3212.id?requirePatch3212RevenueRuntime:descriptor.id===patch3211.id?requireAuditRevenueRuntime:requireRevenueRuntime)(config,descriptor);
   requireContextualRuntime(config,descriptor);
+  // 3.23.0 has bid caching but no bidder rules: say that no script has both, before the shared 'or later' wording.
+  requireBidderRulesBesideBidCache(config,descriptor);
   requireBidderRulesRuntime(config,descriptor);
   requireCountryRules(snapshot,descriptor);
   if(!descriptor.capabilities.includes('conditional-size-maps')){

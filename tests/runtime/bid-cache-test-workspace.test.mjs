@@ -7,7 +7,9 @@ import worker from '../../worker/test-workspace/index.mjs';
 import {workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD} from '../support/test-workspace-store.mjs';
 import {enableTestPrebid,selectTestRuntime} from '../support/test-bid-cache-site.mjs';
 import {BID_CACHE_GENERATOR_MESSAGE} from '../../worker/site-runtime/prebid-cache-settings.mjs';
-import {TEST_BID_CACHE_GENERATOR_MESSAGE} from '../../worker/test-workspace/site-workspace.mjs';
+import {TEST_BID_CACHE_GENERATOR_MESSAGE,TEST_BID_CACHE_BIDDER_RULES_MESSAGE,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE} from '../../worker/test-workspace/bid-cache-messages.mjs';
+import {TEST_BID_CACHE_GENERATOR_MESSAGE as SITE_WORKSPACE_MESSAGE} from '../../worker/test-workspace/site-workspace.mjs';
+import {getPrebidSettings,savePrebidSettings} from '../../worker/test-workspace/prebid-settings.mjs';
 const MODE='/api/publishers/test-site/prebid-mode';
 const fixtures=[];
 test.before(()=>{globalThis.fetch=()=>assert.fail('No external request in the TEST bid cache flow');});
@@ -85,11 +87,84 @@ test('the TEST site generates 3.23.0 with its saved bid caching; 3.21.2 is block
  const blocked=(await f.req('/test-api/site-packages')).data;
  assert.equal(blocked.ready,false);assert.equal(blocked.nextStep,'demand');assert.equal(blocked.error,TEST_BID_CACHE_GENERATOR_MESSAGE);
  // Same reason as the shared message, with this workspace's own menus instead of Config.
- assert.ok(TEST_BID_CACHE_GENERATOR_MESSAGE.startsWith(BID_CACHE_GENERATOR_MESSAGE.slice(0,BID_CACHE_GENERATOR_MESSAGE.indexOf('To keep'))));assert.doesNotMatch(TEST_BID_CACHE_GENERATOR_MESSAGE,/Config/);
+ assert.equal(SITE_WORKSPACE_MESSAGE,TEST_BID_CACHE_GENERATOR_MESSAGE);assert.ok(TEST_BID_CACHE_GENERATOR_MESSAGE.startsWith(BID_CACHE_GENERATOR_MESSAGE.slice(0,BID_CACHE_GENERATOR_MESSAGE.indexOf('To keep'))));assert.doesNotMatch(TEST_BID_CACHE_GENERATOR_MESSAGE,/Config/);
  const refused=await f.req('/test-api/site-packages',{action:'generate',revision:blocked.revision,notes:'Refused'});
  assert.equal(refused.status,409);assert.equal(refused.data.error,TEST_BID_CACHE_GENERATOR_MESSAGE);
  const off=(await f.req(MODE)).data;
  assert.equal((await f.req(MODE,{enabled:true,revision:off.revision,bidCache:{enabled:false,maxBidAgeSeconds:45}},'PUT')).status,200);
  const unblocked=(await f.req('/test-api/site-packages')).data;
  assert.equal(unblocked.ready,true,unblocked.error);assert.equal(unblocked.runtime.runtimeVersion,'3.21.2');
+});
+
+test('the older TEST Generate (/test-api/generate) refuses saved bid caching on 3.21.2 with the TEST reason, not a storage error',async()=>{
+ const f=await fixture();await enablePrebid(f);
+ const mode=(await f.req(MODE)).data;
+ assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
+ await select(f,'3.21.2',true);
+ const before=config(f);
+ // The home page reads the reason up front.
+ const status=(await f.req('/test-api/status')).data;
+ assert.equal(status.runtime.version,'3.21.2');assert.equal(status.validationIssue,TEST_BID_CACHE_GENERATOR_MESSAGE);
+ const generated=await f.req('/test-api/generate',{acknowledge:true});
+ assert.equal(generated.status,409,JSON.stringify(generated.data));assert.equal(generated.data.error,TEST_BID_CACHE_GENERATOR_MESSAGE);
+ assert.deepEqual(config(f),before);assert.deepEqual((await f.req('/test-api/releases')).data.releases,[]);
+ // With 3.23.0 selected the same Generate works and carries the saved settings.
+ await select(f,'3.23.0',true);
+ assert.equal((await f.req('/test-api/status')).data.validationIssue,null);
+ const ok=await f.req('/test-api/generate',{acknowledge:true});
+ assert.equal(ok.status,200,JSON.stringify(ok.data));assert.equal(ok.data.descriptor.runtime.runtimeVersion,'3.23.0');assert.match(ok.data.adsJs,/createTesseraBidCache/);
+});
+
+test('a stale TEST Bid caching form is told to reload, not to change Prebid on/off',async()=>{
+ const f=await fixture();await enablePrebid(f);
+ const stale=(await f.req(MODE)).data;assert.equal(stale.prebidMode.enabled,true);
+ // Another tab turns Prebid off in the TEST Prebid editor.
+ const settings=await getPrebidSettings(f.env);
+ await savePrebidSettings(f.env,TEST_EMAIL,{expectedRevision:settings.revision,draft:{...settings.draft,enablePrebid:false},acknowledge:true});
+ const before=config(f);assert.equal(before.enablePrebid,false);
+ const refused=await f.req(MODE,{enabled:true,revision:stale.revision,bidCache:{enabled:true,maxBidAgeSeconds:30}},'PUT');
+ assert.equal(refused.status,409);assert.equal(refused.data.error,'Prebid settings changed. Reload before saving.');
+ assert.deepEqual(config(f),before);
+ // With the current revision, a form that would change Prebid on/off is still sent to the TEST Prebid editor.
+ const current=(await f.req(MODE)).data;
+ const toggle=await f.req(MODE,{enabled:true,revision:current.revision,bidCache:{enabled:true,maxBidAgeSeconds:30}},'PUT');
+ assert.equal(toggle.status,409);assert.equal(toggle.data.error,'Turn Prebid on or off in Prebid and bidders. Here you can change bid caching only.');
+ assert.deepEqual(config(f),before);
+});
+
+test('bidder rules and bid caching: every refusal says no script version has both, and none points at the other',async()=>{
+ const f=await fixture();await enablePrebid(f);
+ const mode=(await f.req(MODE)).data;
+ assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
+ const rules=(await f.req('/test-api/bidder-rules')).data;
+ const savedRules=await f.req('/test-api/bidder-rules',{revision:rules.revision,settings:{schemaVersion:1,enabled:true,rules:[]}});
+ assert.equal(savedRules.status,200,JSON.stringify(savedRules.data));
+ await select(f,'3.22.0',true);
+ // 3.22.0: bid caching is refused, and the reason names bidder rules.
+ const packages=(await f.req('/test-api/site-packages')).data;
+ assert.equal(packages.ready,false);assert.equal(packages.nextStep,'demand');assert.equal(packages.error,TEST_BID_CACHE_BIDDER_RULES_MESSAGE);
+ const generated=await f.req('/test-api/generate',{acknowledge:true});
+ assert.equal(generated.status,409);assert.equal(generated.data.error,TEST_BID_CACHE_BIDDER_RULES_MESSAGE);
+ // Script setup with 3.23.0 (the request the Script setup panel sends): refused with the combined reason, not 'require script 3.22.0 or later'.
+ const before=config(f),setup=(await f.req('/test-api/site-runtime')).data;
+ const r323=setup.runtimes.find(r=>r.version==='3.23.0');
+ const refused=await f.req('/test-api/site-runtime',{action:'setup',revision:setup.revision,runtime:r323.pin,allowPreview:false,enablePrebid:true});
+ assert.equal(refused.status,422);assert.equal(refused.data.error,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE);
+ assert.deepEqual(config(f),before);
+ for(const message of [TEST_BID_CACHE_BIDDER_RULES_MESSAGE,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE]){
+  assert.match(message,/No script version has both yet\./);assert.match(message,/turn off bidder rules/);assert.doesNotMatch(message,/or later|Config/);
+ }
+ // Bid caching off: 3.23.0 is still refused for the bidder rules, with the same reason.
+ const off=(await f.req(MODE)).data;
+ assert.equal((await f.req(MODE,{enabled:true,revision:off.revision,bidCache:{enabled:false,maxBidAgeSeconds:45}},'PUT')).status,200);
+ assert.equal((await f.req('/test-api/site-packages')).data.ready,true);
+ const again=(await f.req('/test-api/site-runtime')).data;
+ const refusedOff=await f.req('/test-api/site-runtime',{action:'setup',revision:again.revision,runtime:r323.pin,allowPreview:false,enablePrebid:true});
+ assert.equal(refusedOff.status,422);assert.equal(refusedOff.data.error,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE);
+ // Without bidder rules, the bid cache reason is the plain TEST one.
+ const rulesNow=(await f.req('/test-api/bidder-rules')).data;
+ assert.equal((await f.req('/test-api/bidder-rules',{revision:rulesNow.revision,settings:{schemaVersion:1,enabled:false,rules:[]}})).status,200);
+ const on=(await f.req(MODE)).data;
+ assert.equal((await f.req(MODE,{enabled:true,revision:on.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
+ assert.equal((await f.req('/test-api/site-packages')).data.error,TEST_BID_CACHE_GENERATOR_MESSAGE);
 });
