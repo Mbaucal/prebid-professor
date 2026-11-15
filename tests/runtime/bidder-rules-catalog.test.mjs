@@ -10,7 +10,7 @@ const policy=()=>({schemaVersion:1,enabled:true,rules:[{id:'rs',name:'RS only',b
 test('every older bundled runtime rejects enabled rules with an actionable version choice',()=>{
   assert(current?.capabilities.includes('bidder-rules'));
   const snapshot=configure(fixture(),c=>{c.runtimeControls.bidderRules=policy();});
-  for(const descriptor of runtimeCatalog.filter(row=>row!==current))assert.throws(()=>previewInput(snapshot,descriptor,TS),/Bidder rules require script 3.22.0/);
+  for(const descriptor of runtimeCatalog.filter(row=>!row.capabilities.includes('bidder-rules')))assert.throws(()=>previewInput(snapshot,descriptor,TS),/Bidder rules require script 3.22.0/);
   assert.deepEqual(previewInput(snapshot,current,TS).bidderRules,policy());
   assert.equal(descriptorForPin(pinRuntime(current)).version,'3.22.0');
 });

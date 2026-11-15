@@ -1,3 +1,5 @@
+import { adapterModuleForAccount } from '../shared/bidder-accounts/modules.mjs';
+import { normalizeBidderAccount } from '../shared/bidder-accounts/settings.mjs';
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
 import { readPreviewSnapshot } from './runtime/builtin-preview-service.mjs';
@@ -32,19 +34,6 @@ type ParsedBuild = {
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const HEADER_SCAN_BYTES = 500_000;
 
-const BIDDER_MODULE_ALIASES: Record<string, string> = {
-  connectad: 'connectadBidAdapter',
-  criteo: 'criteoBidAdapter',
-  eskimi: 'eskimiBidAdapter',
-  ix: 'ixBidAdapter',
-  magnite: 'magniteBidAdapter',
-  ogury: 'oguryBidAdapter',
-  openx: 'openxBidAdapter',
-  pubmatic: 'pubmaticBidAdapter',
-  richaudience: 'richaudienceBidAdapter',
-  rtbhouse: 'rtbhouseBidAdapter',
-  teads: 'teadsBidAdapter',
-};
 
 function databaseMissing(): Response {
   return apiError('D1 database binding is not configured yet.', 503);
@@ -60,10 +49,6 @@ function uniqueSorted(values: string[]): string[] {
   );
 }
 
-function adapterModuleForBidder(bidder: string): string {
-  const normalized = bidder.trim().toLowerCase();
-  return BIDDER_MODULE_ALIASES[normalized] ?? `${normalized}BidAdapter`;
-}
 
 function parseModules(value: string): string[] {
   try {
@@ -137,15 +122,15 @@ async function siteExists(db: D1Database, siteId: string): Promise<boolean> {
 async function requiredAdapters(db: D1Database, siteId: string): Promise<string[]> {
   const result = await db
     .prepare(
-      `SELECT bidder
+      `SELECT bidder, account_json
        FROM bidders
        WHERE publisher_id = ? AND enabled = 1
        ORDER BY bidder COLLATE NOCASE`,
     )
     .bind(siteId)
-    .all<{ bidder: string }>();
+    .all<{ bidder: string; account_json: string }>();
 
-  return uniqueSorted((result.results ?? []).map((row) => adapterModuleForBidder(row.bidder)));
+  return uniqueSorted((result.results ?? []).map((row) => adapterModuleForAccount(normalizeBidderAccount(JSON.parse(row.account_json ?? '{}'), {bidder: row.bidder}))));
 }
 
 async function fetchBuildRow(

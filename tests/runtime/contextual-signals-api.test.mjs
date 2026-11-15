@@ -15,7 +15,7 @@ test('default is off; metadata is site scoped and does not require future page c
   const f=fixture();const data=await getContextualSignalSettings(f.env,'audit-site');
   assert.equal(data.settings.enabled,false);assert.equal(data.settings.gam.enabled,false);assert.deepEqual(data.settings.bidders,[]);
   assert.equal(data.settings.sourceKey,'category');assert.equal(data.runtimeEligible,false);assert.equal(data.prebidVersion,'11.34.0');
-  assert.deepEqual(data.bidders,[{bidder:'pubmatic',enabled:true,configured:true}]);
+  assert.deepEqual(data.bidders,[{bidder:'pubmatic',baseAdapter:'pubmatic',enabled:true,configured:true}]);
   assert.deepEqual(data.taxonomies.map(row=>[row.id,row.segtax]),[['iab-content-2.2',6],['iab-content-3.0',7]]);
   assert.equal(data.published,false);assert.equal(f.sqlite.prepare('SELECT COUNT(*) count FROM audit_log').get().count,0);
   assert.equal(data.prebidIntegration.status,'modules-missing');
@@ -68,7 +68,7 @@ test('removed bidder routes remain visible for editing rather than silently disa
   const value=settings();value.bidders.push({bidder:'removed',taxonomy:'iab-content-3.0'});
   const f=fixture({config:{runtimeControls:{contextualSignals:value}}});
   const data=await getContextualSignalSettings(f.env,'audit-site');
-  assert.deepEqual(data.bidders.find(row=>row.bidder==='removed'),{bidder:'removed',configured:false,enabled:false});
+  assert.deepEqual(data.bidders.find(row=>row.bidder==='removed'),{bidder:'removed',baseAdapter:'removed',configured:false,enabled:false});
   assert.deepEqual(data.settings,value);
 });
 

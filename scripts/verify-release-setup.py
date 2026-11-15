@@ -38,7 +38,21 @@ try:
     assert version.count()==1
     options=version.locator('option').evaluate_all('(items)=>items.map(item=>({label:item.textContent.trim(),value:item.value}))')
     assert options and all(re.fullmatch(r'\d+\.\d+\.\d+',item['label'].split(' · ')[0]) for item in options),options
-    assert not any('preview' in item['label'].lower() for item in options),options
+    by_label={item['label']:item['value'] for item in options}
+    stable='3.21.2 · Current version'
+    preview='3.22.1 · Preview'
+    assert stable in by_label and preview in by_label,options
+    assert version.input_value()==by_label[stable]
+    preview_notice=page.get_by_role('note').filter(has_text='Preview version selected.')
+    assert not preview_notice.is_visible()
+    version.select_option(by_label[preview])
+    preview_notice.wait_for()
+    assert preview_notice.text_content()=='Preview version selected. Save explicitly and verify a generated package on TEST before using it on a live site.'
+    assert page.get_by_text('Unsaved version change',exact=False).is_visible()
+    assert all(r['method']=='GET' for r in requests)
+    page.get_by_role('button',name='Use current version',exact=True).click()
+    assert version.input_value()==by_label[stable]
+    assert not preview_notice.is_visible()
     chosen='3.14.0'
     version.select_option(next(item['value'] for item in options if item['label'].split(' · ')[0]==chosen))
     assert page.get_by_text('Frozen engine',exact=True).count()==0

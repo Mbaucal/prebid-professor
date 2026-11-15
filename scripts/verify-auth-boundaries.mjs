@@ -1,3 +1,4 @@
+import {applyBidderAccountD1Schema} from '../tests/support/bidder-account-schema.mjs';
 /** Actual compiled Worker, local workerd/D1 only. Never contacts a hosted service. */
 import assert from 'node:assert/strict';
 import { readFile,mkdtemp,rm } from 'node:fs/promises';
@@ -19,6 +20,7 @@ try{
  const initial=(await readFile('migrations/0001_initial.sql','utf8')).split('INSERT OR IGNORE INTO publishers')[0];
  const hierarchy=(await readFile('migrations/0002_publisher_accounts.sql','utf8')).split('INSERT OR IGNORE INTO publisher_accounts')[0];
  for(const source of [initial,hierarchy])for(const sql of source.replace(/^\s*--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean))await db.prepare(sql).run();
+ await applyBidderAccountD1Schema(db);
  const anonymous=await call('/api/publisher-accounts',{method:'POST',headers:{...spoof,origin,'content-type':'application/json'},body:JSON.stringify({id:'forged',name:'Forbidden'})});assert.equal(anonymous.status,401);
  const signedIn=await login();assert.equal(signedIn.status,303);assert.equal(signedIn.headers.get('location'),'/config?site=auth-site#units');
  const cookie=signedIn.headers.get('set-cookie').split(';')[0];

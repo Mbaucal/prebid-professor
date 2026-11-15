@@ -1,3 +1,4 @@
+import {applyBidderAccountSchema} from '../support/bidder-account-schema.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -70,6 +71,7 @@ test('3.20.1 and 3.21.0 keep width-only video, partner and display validation',(
 function store(version,code='Billboard') {
   const f=workspaceStore(),saved=snapshot(version,code);
   f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
+  applyBidderAccountSchema(f.sqlite);
   f.sqlite.prepare("INSERT INTO publishers(id,name,domain,gam_path) VALUES('first','First','first.invalid','/123/first/')").run();
   f.sqlite.prepare("INSERT INTO publisher_configs(id,publisher_id,config_json) VALUES('cfg','first',?)").run(saved.config.config_json);
   f.sqlite.prepare("INSERT INTO ad_units(id,publisher_id,code,type,size_map_key,enabled,sort_order) VALUES('unit','first',?,'BTF','display',1,0)").run(code);

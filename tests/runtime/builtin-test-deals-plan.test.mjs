@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {zipSync,Zip,ZipPassThrough} from 'fflate';
+import {applyBidderAccountSchema} from '../support/bidder-account-schema.mjs';
 import {workspaceStore} from '../support/test-workspace-store.mjs';
 import {TARGET,TRANSFER_SECRET} from '../support/deployment-store.mjs';
 import {siteRuntimeSettings,changeSiteRuntime} from '../../worker/site-runtime/service.mjs';
@@ -28,6 +29,7 @@ test.afterEach(async()=>{while(fixtures.length)await fixtures.pop()();});
 async function candidate(prebid){
  const f=workspaceStore(),site='test-site';fixtures.push(()=>f.close());
  f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
+ applyBidderAccountSchema(f.sqlite);
  f.sqlite.prepare("INSERT INTO publishers(id,name,domain,gam_path) VALUES(?,'Test','test.invalid','/123/test/')").run(site);
  f.sqlite.prepare("INSERT INTO publisher_configs(id,publisher_id,config_json) VALUES('cfg',?,?)").run(site,JSON.stringify({enablePrebid:false,runtimeControls:{sticky:{bottomAdUnitId:''},floors:{enabled:false},output:{cleanComments:true}}}));
  f.sqlite.prepare("INSERT INTO ad_units(id,publisher_id,code,type,size_map_key,sort_order) VALUES('unit',?,'Billboard','ATF','display',0)").run(site);

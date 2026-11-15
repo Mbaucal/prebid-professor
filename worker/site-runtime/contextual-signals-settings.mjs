@@ -1,3 +1,4 @@
+import {savedBidderAccounts} from '../../shared/bidder-accounts/snapshot.mjs';
 /** Site-scoped PPS settings. The route owns authentication and Origin checks. */
 import {readPreviewSnapshot} from '../runtime/builtin-preview-service.mjs';
 import {digest} from '../runtime/preview-snapshot.mjs';
@@ -17,8 +18,9 @@ async function read(env,siteId){
 }
 function payload(saved,config,revision){
   const settings=config.runtimeControls?.contextualSignals??defaultContextualSignals();
-  const bidders=saved.bidders.map(b=>({bidder:b.bidder,enabled:b.enabled===1,configured:true}));
-  for(const route of settings.bidders){if(!bidders.some(b=>b.bidder===route.bidder))bidders.push({bidder:route.bidder,enabled:false,configured:false});}
+  const accounts=new Map(savedBidderAccounts(saved).map(account=>[account.bidder,account]));
+  const bidders=saved.bidders.map(b=>({bidder:b.bidder,baseAdapter:accounts.get(b.bidder).baseAdapter,enabled:b.enabled===1,configured:true}));
+  for(const route of settings.bidders){if(!bidders.some(b=>b.bidder===route.bidder))bidders.push({bidder:route.bidder,baseAdapter:route.bidder,enabled:false,configured:false});}
   const prebidVersion=saved.prebidBuilds?.length===1?saved.prebidBuilds[0].version:null;
   return {
     revision,
@@ -28,7 +30,7 @@ function payload(saved,config,revision){
     prebidVersion,
     prebidIntegration:contextualPrebidStatus(saved.prebidBuilds,config.builtinRuntimeSelection?.prebid?.id??null),
     runtimeEligible:config.builtinRuntimeSelection?.runtime?.capabilities?.includes('contextual-signals')===true,
-    compatibility:bidders.map(row=>contextualCompatibility(row.bidder,prebidVersion)),
+    compatibility:bidders.map(row=>({...contextualCompatibility(row.baseAdapter,prebidVersion),bidder:row.bidder,baseAdapter:row.baseAdapter})),
     taxonomies:CONTEXTUAL_TAXONOMIES,
     published:false,
   };
