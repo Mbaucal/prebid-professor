@@ -1,4 +1,4 @@
-"""Generic A/B loader 1.0.0 (MBA-416 P1) in Chromium with a real Prebid.js, real SRI and real CORS.
+"""Generic A/B loader (MBA-416 P1) in Chromium with a real Prebid.js, real SRI and real CORS.
 
 python scripts/verify-ab-loader-browser.py <fixtures>
 Run scripts/prepare-ab-loader-browser.mjs <fixtures> first. A is a 3.21.2 package and B a
@@ -18,7 +18,9 @@ GPT is tests/runtime/mock-ad-libraries.js with its pageTargeting option, loaded 
 loader or, to prove the queued labels are kept, only after the arm has run. The CMP is a
 local TCF stub that grants, denies or stays pending; the pubmatic and openx adapters are
 synthetic. The page clock is virtual, so 30-second refreshes and bid cache reuse in B take
-no real time. The loaders' one random draw is fixed per case.
+no real time. The loaders' one random draw is fixed per case. Two pages send a CSP that requires
+Trusted Types (one allows the loader's policy, one allows none), and an old direct ads.js tag
+after the loader runs with either script arriving first, delayed on purpose.
 
 Every case checks that localStorage, sessionStorage, IndexedDB and cookies stay empty, that
 no ad server or bidder is contacted and that GPT ran every queued command. The latency
@@ -90,16 +92,17 @@ LOADS = 30
 
 
 class Origin:
-    """One real loopback HTTP origin on an ephemeral port; every response waits `delay` seconds."""
+    """One real loopback HTTP origin on an ephemeral port; every response waits `delay` seconds,
+    and a path in `slow` that many seconds more, which fixes the order of two racing scripts."""
 
     def __init__(self):
-        self.files, self.headers, self.delay, self.log = {}, [], 0.0, []
+        self.files, self.headers, self.delay, self.slow, self.log = {}, [], 0.0, {}, []
         origin = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 path = urllib.parse.urlsplit(self.path).path
-                time.sleep(origin.delay)
+                time.sleep(origin.delay + origin.slow.get(path, 0))
                 body = origin.files.get(path)
                 origin.log.append({'path': path, 'status': 404 if body is None else 200})
                 self.send_response(404 if body is None else 200)
@@ -203,6 +206,10 @@ COLLECT = '''async () => {
       indexedDB: typeof indexedDB.databases === 'function' ? (await indexedDB.databases()).map(db => db.name) : []},
   };
 }'''
+# The synthetic GPT renders its test creative through iframe srcdoc, so a page that requires Trusted
+# Types needs a policy for that HTML. This default policy has no createScriptURL: a string script
+# URL is still refused, and the loader must bring its own policy for the arm.
+TT_HTML_ONLY = "trustedTypes.createPolicy('default', {createHTML: html => html});\n"
 SETTLED = '''() => {
   const s = window.__tesseraAbLoader && window.__tesseraAbLoader.snapshot(), p = window.__adVariantDelivery && window.__adVariantDelivery.snapshot();
   return (!s || s.armStatus !== 'loading') && (!p || ['loaded', 'error'].includes(p.status));
@@ -222,7 +229,7 @@ def html(head):
             + ''.join(head) + '</head><body style="margin:0">' + SLOTS + '</body></html>').encode()
 
 
-def serve(bundle, acao=True, missing=(), tamper=()):
+def serve(bundle, acao=True, missing=(), tamper=(), slow=None):
     files = {'/' + path: data for path, data in BUNDLES[bundle][1].items() if path != '_headers'}
     files.update(EXTRA)
     for path in missing:
@@ -232,7 +239,7 @@ def serve(bundle, acao=True, missing=(), tamper=()):
         data = bytearray(files[path])
         data[-1] = 0x20 if data[-1] != 0x20 else 0x0a
         files[path] = bytes(data)
-    cdn.files = files
+    cdn.files, cdn.slow = files, dict(slow or {})
     cdn.headers = [rule for rule in PAGES_RULES if acao or rule[0].lower() != 'access-control-allow-origin']
     cdn.log = []
 
@@ -289,7 +296,7 @@ def open_page(browser, width, head, page_headers):
 
 
 def run(browser, case, width):
-    serve(case['bundle'], acao=case.get('acao', True), missing=case.get('missing', ()), tamper=case.get('tamper', ()))
+    serve(case['bundle'], acao=case.get('acao', True), missing=case.get('missing', ()), tamper=case.get('tamper', ()), slow=case.get('slow'))
     site.delay = cdn.delay = 0
     context, page, path, errors, outbound, answered = open_page(browser, width, case['head'], case.get('pageHeaders', []))
     try:
@@ -298,7 +305,7 @@ def run(browser, case, width):
                 .replace('%SCRIPT%', json.dumps(BIDS)))
         page.clock.install(time=NOW)
         page.clock.pause_at(NOW + timedelta(seconds=1))
-        page.add_init_script(init + ('\n' + GPT if case.get('gpt', 'early') == 'early' else ''))
+        page.add_init_script((TT_HTML_ONLY if case.get('trustedHtml') else '') + init + ('\n' + GPT if case.get('gpt', 'early') == 'early' else ''))
         page.goto(site.url + path + case.get('query', ''))
         wait_until(page, SETTLED)
         if case.get('gpt') == 'late':
@@ -380,7 +387,7 @@ def assigned(variant, side=None, version=None, gpt='early'):
         loader(ev, status='assigned', variant=variant, armStatus='loaded', fallback=False, scriptRelease=record['arms'][side]['release'],
                testId=record['testId'], release=record['id'], deliveryMode='ab', blockedDuplicateLoaders=0, keyConflict=False, runtimeStarted=True)
         assert ev['state']['adVariant'] == ev['state']['loader'], 'AdVariant shows the loader snapshot'
-        assert ev['state']['owner'] == 'tessera-ab-loader-1.0.0' and ev['state']['draws'] == 1, (ev['state']['owner'], ev['state']['draws'])
+        assert ev['state']['owner'] == 'tessera-ab-loader-' + record['loader']['version'] and ev['state']['draws'] == 1, (ev['state']['owner'], ev['state']['draws'])
         assert arm_log(ev) == [('/' + record['arms'][side]['path'], 200)], arm_log(ev)
         arm_element(ev, record, side)
         labelled(ev, variant, record['testId'])
@@ -415,6 +422,24 @@ def conflict_existing(ev, record, case):
     assert arm_log(ev) == [] and ev['state']['draws'] == 0, (arm_log(ev), ev['state']['draws'])
     unlabelled(ev)
     ran(ev, '3.21.2', False)
+
+
+def conflict_late(ev, record, case):
+    """An old direct tag after the loader started its runtime before the arm arrived: the page
+    leaves the test, so no GAM request carries the labels and Debug shows the conflict."""
+    state = ev['state']
+    loader(ev, status='existing-runtime-conflict', variant=None, scriptRelease=record['arms']['B']['release'], fallback=False, runtimeStarted=True)
+    assert state['adVariant'] == state['loader'] and state['owner'] == 'tessera-ab-loader-' + record['loader']['version'], (state['adVariant'], state['owner'])
+    assert state['draws'] == 1 and arm_log(ev) == [(ARM['B'], 200)], ('the arm is requested once and never retried', arm_log(ev))
+    unlabelled(ev)
+    assert 'Variant' not in state['gpt']['page'] and 'TestId' not in state['gpt']['page'], ('labels removed from the page', state['gpt']['page'])
+    ran(ev, '3.21.2', False)
+
+
+def direct_late(ev, record, case):
+    """The same tags, but the arm runs first: the old tag's start guard returns and the test is unaffected."""
+    assigned('B')(ev, record, case)
+    assert ('/direct/ads.js', 200) in [(entry['path'], entry['status']) for entry in ev['cdn']], 'the old tag was loaded too'
 
 
 def duplicate(ev, record, case):
@@ -483,8 +508,22 @@ def nonce(ev, record, case):
     assert not ev['state']['unnonced'], 'the policy is enforced: a script without the nonce did not run'
 
 
+def trusted_types(ev, record, case):
+    assigned('A')(ev, record, case)
+    assert ev['state']['arms'][0]['nonce'] == 'ab-tt', ev['state']['arms']
+
+
+def trusted_types_blocked(ev, record, case):
+    loader(ev, status='fallback-control', variant='A', armStatus='trusted-types-blocked', fallback=True, runtimeStarted=False)
+    assert arm_log(ev) == [] and ev['state']['arms'] == [], ('no arm can be inserted', arm_log(ev), ev['state']['arms'])
+    assert not ev['state']['started'] and not requests(ev), 'no runtime, no GPT request'
+    assert ev['state']['gpt']['page'] == {'Variant': ['A'], 'TestId': [record['testId']]}, ev['state']['gpt']['page']
+
+
 SRI_ERROR, CORS_ERROR = "Failed to find a valid digest in the 'integrity' attribute", "has been blocked by CORS policy"
 CSP_ERROR = "violates the following Content Security Policy directive"
+TT_SCRIPT_URL, TT_POLICY = "requires 'TrustedScriptURL' assignment", "Creating a TrustedTypePolicy named 'tessera-ab-loader' violates"
+TT_CSP = "script-src 'nonce-ab-tt' 'strict-dynamic'; object-src 'none'; base-uri 'none'; require-trusted-types-for 'script'"
 CASES = [
     {'name': 'A', 'bundle': 'ab', 'draw': 0, 'head': tags('prebid', 'loader'), 'refresh': True, 'widths': [1280, 390], 'check': assigned('A')},
     {'name': 'B', 'bundle': 'ab', 'draw': 4294967295, 'gpt': 'late', 'head': tags('prebid', 'loader'), 'refresh': True, 'widths': [1280, 390], 'check': assigned('B', gpt='late')},
@@ -493,6 +532,10 @@ CASES = [
     {'name': 'b=100', 'bundle': 'b100', 'draw': 0, 'gpt': 'late', 'head': tags('prebid', 'loader'), 'refresh': True, 'check': assigned('B', gpt='late')},
     {'name': 'duplicate loader tag', 'bundle': 'ab', 'head': tags('prebid', 'loader', 'loader'), 'check': duplicate},
     {'name': 'existing runtime on the page', 'bundle': 'ab', 'head': tags('prebid', 'direct', 'loader'), 'check': conflict_existing},
+    # The old tag after the loader: a slow arm makes the old runtime start first, a slow old tag the arm.
+    {'name': 'old direct tag after the loader', 'bundle': 'ab', 'draw': 4294967295, 'slow': {ARM['B']: 0.5}, 'head': tags('prebid', 'loader', 'direct'), 'check': conflict_late},
+    {'name': 'old direct tag after the loader, GPT late', 'bundle': 'ab', 'draw': 4294967295, 'gpt': 'late', 'slow': {ARM['B']: 0.5}, 'head': tags('prebid', 'loader', 'direct'), 'check': conflict_late},
+    {'name': 'old direct tag after the loader, arm first', 'bundle': 'ab', 'draw': 4294967295, 'slow': {'/direct/ads.js': 0.5}, 'head': tags('prebid', 'loader', 'direct'), 'check': direct_late},
     {'name': 'pilot loader first', 'bundle': 'ab', 'head': tags('prebid', 'pilot', 'loader'), 'check': pilot_first},
     {'name': 'pilot loader second', 'bundle': 'ab', 'head': tags('prebid', 'loader', 'pilot'), 'check': pilot_second},
     {'name': 'adsKeywords.Variant conflict', 'bundle': 'ab', 'head': ["<script>window.adsKeywords={Variant:'X',section:'news'};</script>"] + tags('prebid', 'loader'), 'check': key_conflict},
@@ -507,6 +550,10 @@ CASES = [
     {'name': 'CSP nonce', 'bundle': 'ab', 'head': ['<script>window.__unnoncedRan=true</script>'] + tags('prebid', 'loader', nonce='ab-nonce-1'), 'check': nonce,
      'allow': [CSP_ERROR], 'require': [CSP_ERROR],
      'pageHeaders': [('Content-Security-Policy', "script-src 'nonce-ab-nonce-1'; object-src 'none'; base-uri 'none'")]},
+    {'name': 'Trusted Types required', 'bundle': 'ab', 'head': tags('prebid', 'loader', nonce='ab-tt'), 'check': trusted_types, 'trustedHtml': True,
+     'pageHeaders': [('Content-Security-Policy', TT_CSP)]},
+    {'name': 'Trusted Types with no policy allowed', 'bundle': 'ab', 'head': tags('prebid', 'loader', nonce='ab-tt'), 'check': trusted_types_blocked,
+     'allow': [TT_SCRIPT_URL, TT_POLICY], 'require': [TT_SCRIPT_URL, TT_POLICY], 'pageHeaders': [('Content-Security-Policy', TT_CSP + "; trusted-types 'none'")]},
 ]
 
 
@@ -595,8 +642,9 @@ with sync_playwright() as pw:
         browser.close()
         site.server.shutdown()
         cdn.server.shutdown()
-report = {'scope': 'Generic A/B loader 1.0.0 in Chromium: bundles from composeAbBundle, A 3.21.2 and B 3.23.0 with bid cache, Prebid.js %s; '
-                   'two loopback origins with real SRI and CORS; synthetic GPT, TCF and bidders; every other request aborted; virtual clock' % manifest['prebid']['version'],
+report = {'scope': 'Generic A/B loader %s in Chromium: bundles from composeAbBundle, A 3.21.2 and B 3.23.0 with bid cache, Prebid.js %s; '
+                   'two loopback origins with real SRI and CORS; synthetic GPT, TCF and bidders; every other request aborted; virtual clock'
+                   % (BUNDLES['ab'][0]['loader']['version'], manifest['prebid']['version']),
           'site': manifest['site'], 'versions': manifest['versions'], 'tests': {name: BUNDLES[name][0]['id'] for name in BUNDLES},
           'results': results, 'latency': timing, 'passed': sum(r['passed'] for r in results), 'failed': sum(not r['passed'] for r in results)}
 (fixtures / 'browser-report.json').write_text(json.dumps(report, indent=2) + '\n')

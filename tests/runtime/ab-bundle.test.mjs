@@ -17,7 +17,7 @@ import {saveDraftRelease, readDraftRelease} from '../../worker/runtime/draft-rel
 import {readPackage, generatePackage} from '../../worker/site-runtime/releases.mjs';
 import {siteRuntimeSettings, changeSiteRuntime} from '../../worker/site-runtime/service.mjs';
 import {PAGES_HEADERS} from '../../scripts/pages-release-verification.mjs';
-import {AB_LOADER_CONFIG_SCHEMA, AB_LOADER_VERSION, renderAbLoader} from '../../worker/experiments/ab-loader-1.0.0.mjs';
+import {AB_LOADER_CONFIG_SCHEMA, AB_LOADER_VERSION, renderAbLoader} from '../../worker/experiments/ab-loader-1.0.1.mjs';
 import {AB_BUNDLE_LAYOUT, AB_TEST_SCHEMA, abTestIdentity, checkAbCompatibility, composeAbBundle} from '../../worker/experiments/ab-bundle.mjs';
 
 const STAMP = '20261115_120000', ACTOR = 'tester@example.invalid';
