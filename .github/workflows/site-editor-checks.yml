@@ -43,7 +43,7 @@ jobs:
       - name: 3.23.0 bid caching, package QA and the policy in the whole generated ads.min.js (node:vm, synthetic bids)
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime323-package-qa.test.mjs tests/runtime/bid-cache323.test.mjs tests/runtime/bid-cache-eligibility.test.mjs
       - name: Bid cache settings for every site through the shared Demand → Prebid API, and the TEST site's own route
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/prebid-mode-bid-cache.test.mjs tests/runtime/bid-cache-test-workspace.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/prebid-mode-bid-cache.test.mjs tests/runtime/bid-cache-test-workspace.test.mjs tests/runtime/bid-cache-test-wording.test.mjs
       - name: Verify security boundaries in the compiled production Worker
         run: node scripts/verify-artifact-boundary.mjs && node scripts/verify-auth-boundaries.mjs
       - run: node scripts/verify-site-duplication-workerd.mjs

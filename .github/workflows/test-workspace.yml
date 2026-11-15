@@ -68,8 +68,8 @@ jobs:
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ads-versions-preview.test.mjs
       - name: Named-script TEST setup and isolated method boundaries
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/named-script-test.test.mjs
-      - name: TEST site bid caching through the shared Demand → Prebid API, 3.23.0 Generate and route boundaries
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/bid-cache-test-workspace.test.mjs
+      - name: TEST site bid caching through the shared Demand → Prebid API, 3.23.0 Generate, bidder rules, route boundaries and wording
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/bid-cache-test-workspace.test.mjs tests/runtime/bid-cache-test-wording.test.mjs
       - name: Verify current-auction reporting and GAM-only omission
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/gam-reporting.test.mjs tests/runtime/demand-signals.test.mjs tests/runtime/identity-inspect.test.mjs tests/runtime/site-runtime-service.test.mjs tests/runtime/test-prebid-plan.test.mjs
       - name: Compile disabled and explicit active TEST configurations without deploying

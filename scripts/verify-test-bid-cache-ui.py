@@ -1,7 +1,8 @@
 """TEST site workspace → Bid caching with the real TEST Worker and SQLite, all external traffic blocked.
-Prebid is on through the TEST Prebid editor and 3.21.2 is selected. Save bid caching and a position
-override, see Generate blocked with the reason above Script setup, select 3.23.0 and download the
-generated package with the saved settings. Desktop and 390 px."""
+Prebid is on through the TEST Prebid editor and 3.21.2 is selected. Check the named-script and bidder
+rules wording, open Bid caching from the TEST home page, save bid caching and a position override, see
+Generate blocked with the reason above Script setup and on the home page Generate, select 3.23.0 and
+download the generated package with the saved settings. Desktop and 390 px."""
 import base64,json,os,subprocess,zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -42,7 +43,19 @@ try:
  with sync_playwright() as p:
   browser=p.chromium.launch(headless=True);page=browser.new_page(viewport={'width':1280,'height':900})
   page.route('**/*',route);page.on('pageerror',lambda e:errors.append(str(e)))
-  page.goto(origin+'/site-workspace#bid-cache')
+  # The named-script page does not present the Tanjug copy as the place for bid caching.
+  page.goto(origin+'/named-scripts')
+  page.get_by_text('A separate Tanjug test copy for named scripts. Bid caching for your TEST site is in Site workspace → Bid caching. Your existing TEST site stays unchanged. No ads run here.',exact=True).wait_for()
+  check('Named script test does not tie bid caching to the Tanjug copy','bid-cache settings' not in page.locator('body').inner_text())
+  # Bidder rules name 3.22.0 only: 3.23.0 is later but has no bidder rules.
+  page.goto(origin+'/site-workspace#bidder-rules')
+  note=page.get_by_text('You can save rules now. Select and save script version 3.22.0 before generating a package that uses them.',exact=True);note.wait_for()
+  check('Bidder rules name script 3.22.0, not 3.22.0 or later','or later' not in page.locator('main').inner_text())
+  # The TEST home page opens the TEST site's own Bid caching view.
+  page.goto(origin+'/')
+  link=page.get_by_role('link',name='Bid caching',exact=True);link.wait_for()
+  check('The TEST home page links Bid caching next to Prebid and bidders',link.get_attribute('href')=='/site-workspace#bid-cache')
+  link.click()
   cache=page.get_by_role('checkbox',name='Reuse valid, unused bids',exact=True);cache.wait_for()
   page.get_by_role('button',name='Billboard · Bid cache: Off',exact=True).wait_for()
   check('Prebid on/off is read-only here and the page says where to change it',page.get_by_text(LOCK,exact=True).is_visible()
@@ -83,6 +96,17 @@ try:
    and (page.get_by_role('button',name='Generate and save package',exact=True).count()==0 or page.get_by_role('button',name='Generate and save package',exact=True).is_disabled())
    and alert.bounding_box()['y']<setup.bounding_box()['y'])
   shots(page,'generate-blocked')
+  # The older Generate on the TEST home page shows the same reason up front and is disabled; its API refuses
+  # with that reason (409), not with a storage error.
+  page.goto(origin+'/')
+  page.locator('#message.error').filter(has_text=BLOCKED).wait_for()
+  status,refused=api('/test-api/generate',{'acknowledge':True})
+  check('The TEST home page Generate gives the bid cache reason, not a storage error',page.locator('#message').inner_text()==BLOCKED
+   and page.get_by_role('button',name='Generate test package',exact=True).is_disabled() and page.locator('#review').is_hidden()
+   and status==409 and refused=={'error':BLOCKED})
+  shots(page,'home-generate-blocked')
+  page.goto(origin+'/site-workspace#packages')
+  page.get_by_role('alert').filter(has_text='Bid caching needs script version 3.23.0.').wait_for()
   # Select 3.23.0 the way Script setup saves it, then generate and download.
   status,state=api('/test-api/runtime-selection')
   pin=next(r['pin'] for r in state['runtimes'] if r['version']=='3.23.0')

@@ -53,7 +53,7 @@ export default function BidderRulesPanel({publisherId,onChanged,endpoint}:Props)
     try{
       const value=await request({revision:data.revision,settings:validated(draft)});
       if(!alive.current||id!==operation.current)return;
-      setData(value);setDraft(draftFor(value.settings));setMessage('Saved. Generate a new script with version 3.22.0 or later to apply these rules. Existing scripts are unchanged.');
+      setData(value);setDraft(draftFor(value.settings));setMessage('Saved. Generate a new script with version 3.22.0 to apply these rules. Existing scripts are unchanged.');
       try{await onChanged?.();}catch{/* A parent refresh does not undo the successful save. */}
     }catch(e){if(alive.current&&id===operation.current)setError((e as Error).message);}
     finally{if(id===operation.current){savingRef.current=false;if(alive.current)setSaving(false);}}
@@ -83,7 +83,7 @@ export default function BidderRulesPanel({publisherId,onChanged,endpoint}:Props)
         <legend>1. Enable rules</legend>
         <label className="check-row"><input type="checkbox" checked={draft.enabled} onChange={event=>change({enabled:event.target.checked})}/><span>Enable bidder rules for this site</span></label>
         <p className="bidder-rules-help">A bidder with no matching rule keeps its normal behavior. A rule for selected positions overrides that bidder’s All positions rule. Country and viewport layout must both match.</p>
-        {!data.runtimeEligible?<p className="bidder-rules-note">You can save rules now. Select and save script version 3.22.0 or later before generating a package that uses them.</p>:null}
+        {!data.runtimeEligible?<p className="bidder-rules-note">You can save rules now. Select and save script version 3.22.0 before generating a package that uses them.</p>:null}
         {!data.enablePrebid?<p className="bidder-rules-note">Prebid is off. Rules remain saved and are not applied in a GAM-only package.</p>:null}
       </fieldset>
       <fieldset className="bidder-rules-card" disabled={saving}>
