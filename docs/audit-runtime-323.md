@@ -1,7 +1,8 @@
 # Bid caching in 3.23.0
 
 3.23.0 is 3.21.2 plus Prebid bid caching, for every site. It is built on
-3.21.2, not on 3.22.0: it has no bidder rules, and 3.22.0 stays selectable. Until now bid caching
+3.21.2, not on 3.22.0: it has no bidder rules, and 3.22.0 stays selectable. On TEST, a site with
+bidder rules on cannot select 3.23.0, and Script setup and Generate say that no script has both. Until now bid caching
 existed only in the Tanjug named scripts. 3.21.2, every older runtime, their
 registry records and saved packages are unchanged. A site uses 3.23.0 only
 after someone selects it in Script setup and saves; no site switches on its
@@ -304,7 +305,13 @@ strings.
   1280 and 390 px).
 - The sealed TEST Worker on local workerd
   (`scripts/verify-workerd-generation-parity.mjs`) generates every catalog
-  runtime, 3.23.0 included, byte-identical to the direct compile.
+  runtime, 3.23.0 included, byte-identical to the direct compile. For each
+  Prebid configuration (no TakeOver, TakeOver intervals 0 and 5) it also
+  generates 3.23.0 with bid caching saved through the TEST site route (on, on
+  with a position Off, off with a position On), as a bundle and as a saved
+  package, byte-identical to the direct compile, with `config.json` bidCache
+  equal to the saved settings and without the TakeOver position.
+  `scripts/verify-generation-parity-browser.py` runs those programs too.
 
 ## Known limits
 
