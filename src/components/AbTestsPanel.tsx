@@ -55,6 +55,7 @@ export default function AbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Prop
   // A notice shows where its action was taken: 'form', 'list' or a test id.
   const [busy,setBusy]=useState(false),[notice,setNotice]=useState<{at:string;text:string;error:boolean}|null>(null);
   const lock=useRef(false),loads=useRef(0),section=useRef<HTMLElement>(null),scrolled=useRef(false),stopFollow=useRef<()=>void>(()=>{});
+  const focusAt=useRef<string|null>(null);
 
   async function request(path:string,init?:{method:string;body?:unknown}){
     return fetch(endpoint+path,{method:init?.method??'GET',credentials:'same-origin',cache:'no-store',
@@ -66,7 +67,7 @@ export default function AbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Prop
     try{
       const response=await request('/'+id);
       value=response.ok?await response.json() as Detail:{error:(await failure(response,'Could not read this A/B test.')).message};
-    }catch{value={error:'Could not read this A/B test. Reload A/B tests.'};}
+    }catch{value={error:'Could not read this A/B test. Retry.'};}
     setDetails(old=>({...old,[id]:value}));
   }
   async function load(){
@@ -107,10 +108,19 @@ export default function AbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Prop
     if(lock.current)return;lock.current=true;setBusy(true);setNotice(null);
     try{const done=await fn();if(done)setNotice(typeof done==='string'?{at,text:done,error:false}:{...done,error:false});}
     catch(e){setNotice({at,text:e instanceof Error?e.message:'The A/B test action failed. Retry.',error:true});}
-    finally{lock.current=false;setBusy(false);}
+    finally{lock.current=false;focusAt.current=at;setBusy(false);}
   }
-  const noticeAt=(at:string)=>notice?.at!==at?null:notice.error?<p role="alert" className="runtime-error">{notice.text}</p>
-    :<p className="ab-tests-status" role="status">{notice.text}</p>;
+  // A busy action disables the button that started it, so the browser drops focus to <body>. When it has, move focus to
+  // the outcome where the action was taken: its notice, or the check result.
+  useEffect(()=>{
+    const at=focusAt.current;
+    if(busy||at===null)return;
+    focusAt.current=null;
+    if(document.activeElement&&document.activeElement!==document.body)return;
+    section.current?.querySelector<HTMLElement>(`[data-focus-at="${CSS.escape(at)}"]`)?.focus();
+  },[busy]);
+  const noticeAt=(at:string)=>notice?.at!==at?null:notice.error?<p role="alert" className="runtime-error" tabIndex={-1} data-focus-at={at}>{notice.text}</p>
+    :<p className="ab-tests-status" role="status" tabIndex={-1} data-focus-at={at}>{notice.text}</p>;
   const pair=`${a}|${b}`,trafficValue=/^\d{1,3}$/.test(traffic)&&Number(traffic)<=100?Number(traffic):null;
   const checked=result?.pair===pair?result.check:null;
   const canSave=Boolean(checked?.compatible&&name.trim()&&TEST_ID.test(testId)&&trafficValue!==null);
@@ -214,7 +224,7 @@ export default function AbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Prop
       </div>
       {noticeAt('form')}
       {checked?<div className="ab-tests-result">
-        <p className={checked.compatible?'ab-tests-status':'ab-tests-status ab-tests-refused'} role="status">
+        <p className={checked.compatible?'ab-tests-status':'ab-tests-status ab-tests-refused'} role="status" tabIndex={-1} data-focus-at="form">
           {checked.compatible?'Compatible. These versions can be compared.':`Not compatible: ${checked.refusal?.message??'These versions cannot be compared.'}`}</p>
         {checked.compatible&&!canSave?<p className="ab-tests-help">{!name.trim()?'Enter a test name to save.'
           :!TEST_ID.test(testId)?'Use 1 to 24 lowercase letters, digits or _ in the TestId to save.':'Use a whole number from 0 to 100 for traffic to save.'}</p>:null}
@@ -238,8 +248,8 @@ export default function AbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Prop
         <h4 className="ab-tests-name">{test.name}</h4>
         <p>TestId <code>{test.testId}</code> · B {test.trafficBPercent}% · saved {when(test.createdAt)} by <span className="ab-tests-name">{test.createdBy}</span></p>
         <dl className="ab-tests-arms">{armLine('A',test.arms.A)}{armLine('B',test.arms.B)}</dl>
-        {detail&&'error' in detail?<p role="alert" className="runtime-error">{detail.error}</p>:null}
-        <p>{!loaded?'Reading live and stopped marks…':!last?'Not marked live yet.':last.type==='marked-live'?`Marked live ${when(last.at)}.`:`Marked stopped ${when(last.at)}.`}</p>
+        {detail&&'error' in detail?<p role="alert" className="runtime-error">{detail.error} <button disabled={busy} onClick={()=>void loadDetail(test.id)}>Retry</button></p>:null}
+        {detail&&'error' in detail?null:<p>{!loaded?'Reading live and stopped marks…':!last?'Not marked live yet.':last.type==='marked-live'?`Marked live ${when(last.at)}.`:`Marked stopped ${when(last.at)}.`}</p>}
         <div className="runtime-actions">
           <button disabled={busy} onClick={()=>void run(test.id,()=>download(test))}>Download A/B ZIP</button>
           <button disabled={busy} onClick={()=>void run(test.id,()=>downloadRecord(test))}>Download test record</button>

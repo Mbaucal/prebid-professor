@@ -58,8 +58,11 @@ test('the A/B tests panel states what is published, what TEST lacks and how GAM 
  "To stop a test, upload version A's own saved ZIP from Saved versions to the same Pages project again, or roll back that Pages deployment. Then use Mark stopped.",
  ' This test is marked live. Deleting it does not stop it on your site.',
  'Finish the GAM setup checklist first.',
+ // A failed read of one test offers its own Retry; no message points to a button that is not there.
+ 'Could not read this A/B test. Retry.',
+ '<button disabled={busy} onClick={()=>void loadDetail(test.id)}>Retry</button>',
  ])assert(panel.includes(sentence),sentence);
- for(const text of ['You can save this A/B test','what the other version lacks'])assert(!panel.includes(text),text);
+ for(const text of ['You can save this A/B test','what the other version lacks','this A/B test. Reload A/B tests.'])assert(!panel.includes(text),text);
  assert.match(panel,/<li>Key <code>Variant<\/code> with the values <code>A<\/code> and <code>B<\/code>\.<\/li>/);
  assert.match(panel,/<li>Key <code>TestId<\/code> with the value <code>\{test\.testId\}<\/code>\.<\/li>/);
  // No production menus, no preview-publish link in this PR, and no second "Download saved ZIP" button in the view.

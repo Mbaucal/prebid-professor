@@ -7,7 +7,10 @@ Flow: the #ab-tests link opens Generate and releases with the panel in view; the
 TestId; GAM only vs A refused; A vs B compatible with bidCache.enabled in the summary; save, save again (already saved),
 the same TestId with another name (409, entered values kept); an A/A test with one r/ file; ZIP and record downloads
 checked against their sha256; Mark live and Mark stopped; Delete and Restore; Delete all generated packages, after which
-the tests stay listed and downloadable. After every state the page has no horizontal scroll at either width.
+the tests stay listed and downloadable. Also: a failed save reloads the list; a passing check names the field that blocks
+Save; list differences read "Nothing extra", never "None"; focus moves to the outcome after Check and Save by keyboard; a
+failed read of one test offers Retry; the panel and the Mark stopped and Delete confirms say how to stop a test. After
+every state the page has no horizontal scroll at either width.
 
 --fixture is the fixture command (a node script printing {"ready":true,"origin":...} and answering one JSON request per
 line), --page the workspace path with #ab-tests, and --endpoint the A/B tests API path. The defaults are the TEST line."""
@@ -29,7 +32,7 @@ fixture=json.loads(process.stdout.readline());assert fixture['ready']
 origin=fixture['origin'];assert urlsplit(origin).hostname=='127.0.0.1'
 errors=[];requests=[];external=[];dialogs=[];checks=[];shots_taken=[]
 # hold: the next list request waits in pending, so the loading line and a failed load can be checked.
-mode={'hold':False,'fail':None};pending=[]
+mode={'hold':False,'fail':None,'message':''};pending=[]
 NO_PRODUCTION='This site has no production version on TEST. Choose A yourself: use the version your test page runs now.'
 PUBLIC='The test name, the TestId and both version names are published inside /ads.js. Do not use private notes.'
 UPLOAD='Download the ZIP and upload all of its files, unchanged, as one Pages deployment.'
@@ -59,7 +62,7 @@ def route(r):
  # fail: the next request with this method and path gets a synthetic 503 and never reaches the fixture.
  if mode['fail'] and mode['fail']==(r.request.method,url.path):
   mode['fail']=None;requests.append({'path':url.path,'method':r.request.method,'status':503})
-  r.fulfill(status=503,content_type='application/json',body=json.dumps({'error':'Synthetic save failure. Retry with the same values.'}));return
+  r.fulfill(status=503,content_type='application/json',body=json.dumps({'error':mode['message']}));return
  result=send({'path':url.path+('?'+url.query if url.query else ''),'method':r.request.method,'body':r.request.post_data})
  requests.append({'path':url.path,'method':r.request.method,'status':result['status']})
  r.fulfill(status=result['status'],headers=result['headers'],body=base64.b64decode(result['body']))
@@ -153,8 +156,9 @@ try:
   check('Changing a version clears the earlier result',status('Not compatible:').count()==0 and button('Save A/B test').is_disabled())
   # A passing check never promises a save: it says the versions can be compared and names the field that blocks Save.
   field('Test name').fill('')
-  button('Check compatibility').click()
-  status(COMPATIBLE).wait_for()
+  button('Check compatibility').focus();page.keyboard.press('Enter')
+  status(COMPATIBLE).wait_for();page.wait_for_timeout(100)
+  check('After Check by keyboard, focus moves to the result',page.evaluate('document.activeElement.textContent')==COMPATIBLE)
   check('A passing check does not promise a save',status('You can save').count()==0)
   blocked=panel.locator('.ab-tests-result .ab-tests-help').filter(has_text=' to save.')
   check('With no test name, the check names the missing name and Save is disabled',
@@ -178,7 +182,7 @@ try:
   shots('compatible')
 
   # 5. A failed save reloads the list, so the proposed TestId is current, and keeps every entered value.
-  mode['fail']=('POST',args.endpoint);before=len(requests)
+  mode['fail']=('POST',args.endpoint);mode['message']='Synthetic save failure. Retry with the same values.';before=len(requests)
   button('Save A/B test').click()
   panel.get_by_role('alert').filter(has_text='Synthetic save failure. Retry with the same values.').wait_for()
   page.wait_for_timeout(200)
@@ -187,8 +191,10 @@ try:
   check('A failed save keeps the entered values',field('Test name').input_value()=='Bid cache' and field('TestId').input_value()=='test_site_1'
    and button('Save A/B test').is_enabled())
   # Save; saving the same test again stores nothing new.
-  button('Save A/B test').click()
-  status('A/B test "Bid cache" saved.').wait_for()
+  button('Save A/B test').focus();page.keyboard.press('Enter')
+  status('A/B test "Bid cache" saved.').wait_for();page.wait_for_timeout(100)
+  check('After Save by keyboard, focus moves to the saved notice',
+   page.evaluate('document.activeElement.textContent')=='A/B test "Bid cache" saved. Download its ZIP below.')
   article('Bid cache').wait_for()
   check('After saving, the name, the check and the TestId start over',field('Test name').input_value()=='' and field('TestId').input_value()=='test_site_2'
    and status('Compatible.').count()==0 and button('Save A/B test').is_disabled())
@@ -251,7 +257,19 @@ try:
   status('Bid cache: test record downloaded and checked.').wait_for()
   shots('downloaded')
 
-  # 9. Mark live, then Mark stopped.
+  # 9. A failed read of one test offers Retry in that test; Mark live waits for it. Then Mark live, then Mark stopped.
+  mode['fail']=('GET',f"{args.endpoint}/{first['id']}");mode['message']='Synthetic read failure.'
+  page.reload()
+  bid.get_by_role('alert').filter(has_text='Synthetic read failure.').wait_for()
+  check('A failed detail read offers Retry in that test and keeps Mark live disabled',
+   button('Retry',bid).is_visible() and button('Mark live',bid).is_disabled() and article('A/A check').get_by_role('alert').count()==0
+   and bid.get_by_text('Reading live and stopped marks…').count()==0)
+  shots('detail-error')
+  button('Retry',bid).click()
+  expect(button('Mark live',bid)).to_be_enabled()
+  check('Retry reads the test again and clears its error',bid.get_by_role('alert').count()==0 and button('Retry',bid).count()==0)
+  # The reload emptied the form; the cleanup step below checks A and B against removed versions.
+  field('Version A').select_option(ids['Version A']);field('Version B').select_option(ids['Version B'])
   check('Mark stopped is disabled before Mark live',button('Mark stopped',bid).is_disabled())
   button('Mark live',bid).click()
   status('Bid cache: marked live.').wait_for()
