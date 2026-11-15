@@ -200,6 +200,25 @@ test('bid caching on with every eligible position overridden off keeps the fresh
   assert.equal(activeBidCache(input323(snapshot, V323, stamp)), null);
 });
 
+test('the README and warnings say where each setting lives and what a saved override alone does', async () => {
+  // Site default off with only a stale override on (no such unit): nothing caches, and nothing is "on in Demand → Prebid".
+  const stale = await build(site({cache: {enabled: false, maxBidAgeSeconds: 60, positionOverrides: {Gone: true}}}), V323);
+  const warnings = stale.manifest.warnings, readme = text(stale.files['README.txt']);
+  assert(warnings.includes('A saved position override asks for bid caching, but no position in this package can reuse bids; every position uses fresh bids.'), warnings.join('\n'));
+  assert(!warnings.some(warning => /on in Demand → Prebid/.test(warning)));
+  assert.match(readme, /This package: A saved position override asks for bid caching, but no position in this package can reuse bids, so every auction uses fresh bids only\.\n/);
+  assert.doesNotMatch(readme, /Bid caching is on for this site/);
+  assert.match(readme, /Set in Config → Demand → Prebid \(site setting and maximum bid age from 1 to 300 seconds\) and Config → Ad units → Bid cache \(optional on or off per position\)\.\n/);
+  // Draft positions are named with the other exclusions.
+  assert.match(readme, /TakeOver, its Interstitial fallback, Outstream, Draft, disabled and removed positions use fresh bids only/);
+  assert.equal(warnings.filter(warning => warning.startsWith('Gone: saved bid cache setting not applied.') && /Outstream, Draft, disabled and removed positions/.test(warning)).length, 1);
+  // Consent: only what Prebid really sends is compared (TCF; US privacy only with its module; GPP is off in Prebid).
+  assert.match(readme, /the same TCF decision and the same consent data that Prebid sent to bidders\. A TCF change drops every earlier bid\. Tessera turns Prebid's GPP module off, and US privacy reaches Prebid only when the site's Prebid\.js includes the US privacy module, so a GPP change, or a US privacy change without that module, does not stop reuse\./);
+  assert.doesNotMatch(readme, /TCF, US privacy and GPP data|A CMP change drops/);
+  // Deals: a fresh deal keeps its place.
+  assert.match(readme, /A bidder with a fresh deal bid keeps that deal: none of its earlier bids competes in that auction\./);
+});
+
 test('invalid saved bid cache settings stop Generate with the saved-settings message', () => {
   for (const value of [{enabled: 'yes', maxBidAgeSeconds: 60}, {enabled: true, maxBidAgeSeconds: 0}, {enabled: true, maxBidAgeSeconds: 301},
     {enabled: true, maxBidAgeSeconds: 60, extra: 1}, {enabled: true, maxBidAgeSeconds: 60, positionOverrides: {P1: 'on'}}, {enabled: true, maxBidAgeSeconds: 60, positionOverrides: []}, null]) {

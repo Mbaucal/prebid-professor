@@ -5,9 +5,9 @@ export {idempotentStickyStyles} from '../runtime-3212/compiler.mjs';
 
 /** Generate-time warnings for saved bid cache settings this package does not apply. */
 export function bidCacheWarnings(input) {
-  const warnings = input.bidCacheExclusions.map(({code}) => `${code}: saved bid cache setting not applied. Bid reuse applies only to enabled ATF/BTF Banner positions of this package; TakeOver, its Interstitial fallback, Outstream and disabled or removed positions use fresh bids only. The setting stays saved.`);
+  const warnings = input.bidCacheExclusions.map(({code}) => `${code}: saved bid cache setting not applied. Bid reuse applies only to enabled ATF/BTF Banner positions of this package; TakeOver, its Interstitial fallback, Outstream, Draft, disabled and removed positions use fresh bids only. The setting stays saved.`);
   if (input.bidCache !== null && !activeBidCache(input))
-    warnings.push('Bid caching is on in Demand → Prebid, but no position in this package can reuse bids; every position uses fresh bids.');
+    warnings.push(`${input.bidCache.defaultEnabled ? 'Bid caching is on in Demand → Prebid' : 'A saved position override asks for bid caching'}, but no position in this package can reuse bids; every position uses fresh bids.`);
   return warnings;
 }
 
@@ -18,9 +18,9 @@ export function compileRuntime323(input) {
   const source = applyBidCache(previous.adsJs, input);
   parse(source, {ecmaVersion: 2015});
   const patches = active ? [
-    `3.23.0: Prebid bid caching for ${active.positions.filter(([, enabled]) => enabled).length} position(s), maximum bid age ${active.maxAgeSeconds} s; useBidCache with a Tessera bidCacheFilterFunction, presetGPTTargeting off`,
-    '3.23.0: a cached bid competes only for its own Banner position, from an auction completed in the current consent epoch with the same Prebid consent data, never sent to GAM before, of a size the position requests now, and younger than the saved age and the bidder TTL minus 1 s',
-    '3.23.0: every refresh still runs a new auction; a consent change drops all cached bids; missing Prebid features fall back to fresh bids only',
+    `3.23.0: Prebid bid caching for ${active.positions.filter(([, enabled]) => enabled).length} position(s), maximum bid age ${active.maxAgeSeconds} s; useBidCache with a Tessera bidCacheFilterFunction`,
+    '3.23.0: a cached bid competes only for its own Banner position, from an auction completed in the current consent epoch with the same Prebid consent data, never sent to GAM before, of a size the position requests now, younger than the saved age and the bidder TTL minus 1 s, and never in place of a fresh deal of the same bidder',
+    '3.23.0: every refresh still runs a new auction; a TCF consent change drops all cached bids; missing Prebid features fall back to fresh bids only',
   ] : [];
   return {...previous, adsJs: source, adsMinJs: source,
     warnings: [...previous.warnings, ...bidCacheWarnings(input)], patches: [...previous.patches, ...patches]};
