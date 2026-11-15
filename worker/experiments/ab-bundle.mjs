@@ -1,7 +1,7 @@
 import {zipSync} from 'fflate';
 import {sha256} from '../runtime/prebid-artifact-check.mjs';
 import {describeCandidate} from '../runtime/draft-release-store.mjs';
-import {PAGES_HEADERS} from '../../scripts/pages-release-verification.mjs';
+import {PAGES_HEADERS} from '../../shared/pages/headers.mjs';
 import {AB_LOADER_CONFIG_SCHEMA,AB_LOADER_VERSION,renderAbLoader} from './ab-loader-1.0.1.mjs';
 import registry from './ab-loader-registry.json' with {type:'json'};
 
