@@ -18,7 +18,10 @@ const CURSOR=/^[A-Za-z0-9_=+/.-]{1,1024}$/;
 const CONTROL=/[\u0000-\u001f\u007f-\u009f]/;
 const MAX_BODY=4096;
 const CREATE_FIELDS=['a','b','name','testId','trafficBPercent'];
-const UNEXPECTED='The A/B test could not be verified. Nothing was changed. Retry.';
+// A storage fault can come after a write (the TestId claim, an event), so these never say that nothing was changed.
+const UNEXPECTED='The A/B test could not be read or saved. Retry.';
+// A failed create is completed by the same values: they give the same test id, which reuses its TestId claim.
+const NOT_SAVED='The A/B test could not be saved. Retry with the same values.';
 const fail=(status,message,extra={})=>{throw Object.assign(new Error(message),{status},extra);};
 
 /** A bounded JSON body with the semantics of the TEST workspace reader: 415, 413, 400 and 422 for an unknown field. */
@@ -129,6 +132,6 @@ export async function abTestsResponse(request,{bucket,site,actor,base,headers,te
   }catch(error){
     if([400,404,409,413,415,422,503].includes(error?.status)&&typeof error.message==='string')
       return respond({error:error.message,...(error.code?{code:error.code}:{}),...(error.check?{check:error.check}:{})},error.status);
-    return respond({error:UNEXPECTED},503);
+    return respond({error:route.name==='list'&&request.method==='POST'?NOT_SAVED:UNEXPECTED},503);
   }
 }

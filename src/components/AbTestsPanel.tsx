@@ -117,7 +117,8 @@ export default function AbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Prop
   }
   async function create(){
     const response=await request('',{method:'POST',body:{name:name.trim(),testId,a,b,trafficBPercent:trafficValue}});
-    if(!response.ok)throw await failure(response,'Could not save the A/B test.');
+    // A failed save may still reserve its TestId: reload, so a TestId the operator did not edit moves to the next free one.
+    if(!response.ok){const problem=await failure(response,'Could not save the A/B test.');await load().catch(()=>{});throw problem;}
     const saved=await response.json() as {created:boolean;deletedAt?:string|null;record:{name:string}};
     // A new test starts from an empty name, the next proposed TestId and a new check.
     if(saved.created){setName('');setTestIdEdited(false);setResult(null);}

@@ -159,7 +159,12 @@ export async function createAbTest(bucket,{site,actor,a,b,name,testId,trafficBPe
   if(!claim?.bytes)storageFault('The TestId claim was not stored.');
   const owner=JSON.parse(decode.decode(claim.bytes));
   if(owner.schemaVersion!==1||owner.site!==site||owner.testId!==testId||!AB_TEST_ID.test(owner.id))storageFault('The TestId claim is invalid.');
-  if(owner.id!==id)fail(409,`TestId ${testId} is already used by another A/B test on this site. Each TestId is used once. Choose another TestId.`,'testid-taken');
+  if(owner.id!==id){
+    // A claim without its record is a save that failed or is still running: the TestId is reserved for those exact values.
+    if(!await bucket.get(keys.record(site,owner.id)))
+      fail(409,`TestId ${testId} is reserved by an A/B test whose save has not finished. Each TestId is used once. Choose another TestId.`,'testid-taken');
+    fail(409,`TestId ${testId} is already used by another A/B test on this site. Each TestId is used once. Choose another TestId.`,'testid-taken');
+  }
   for(const path of Object.keys(bundle.files))await immutablePut(bucket,keys.file(site,id,path),bundle.files[path],{kind:'ab-bundle-file',max:AB_LIMITS.file});
   await immutablePut(bucket,keys.zip(site,id),bundle.zip,{kind:'ab-bundle-zip',max:AB_LIMITS.zip,metadata:{zipByteSize:String(bundle.zip.length)}});
   const recordSha256=await sha256(recordBytes);

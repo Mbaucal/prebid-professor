@@ -115,7 +115,8 @@ test('a TestId race between two different tests gives one create and one 409', a
   assert.equal(refused.length, 1);
   assert.equal(refused[0].status, 409);
   assert.equal(refused[0].code, 'testid-taken');
-  assert.match(refused[0].message, /^TestId test_site_1 is already used by another A\/B test on this site\./);
+  // The loser sees the winner's claim before or after the winner's record is written.
+  assert.match(refused[0].message, /^TestId test_site_1 is (?:already used by another A\/B test on this site|reserved by an A\/B test whose save has not finished)\./);
   assert.equal(keysOf(r2).filter(k => k.startsWith(P + 'records/')).length, 1);
   // A claim is never released: a later test with the same TestId is refused too.
   await rejects(createAbTest(r2.bucket, input({name: 'Third'})), 409, 'testid-taken');

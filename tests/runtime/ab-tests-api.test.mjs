@@ -14,7 +14,8 @@ import {abPrefix} from '../../worker/experiments/ab-store.mjs';
 const BASE = '/test-api/ab-tests', ORIGIN = 'https://workspace.example.invalid', SITE = 'test-site', P = abPrefix(SITE);
 const HEADERS = {'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff'};
 const ACTOR = {email: 'tester@example.invalid'};
-const UNEXPECTED = 'The A/B test could not be verified. Nothing was changed. Retry.';
+const UNEXPECTED = 'The A/B test could not be read or saved. Retry.';
+const NOT_SAVED = 'The A/B test could not be saved. Retry with the same values.';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const D = {};
 test.before(async () => {
@@ -241,5 +242,24 @@ test('an unexpected failure is a 503 with a plain message and no detail', async 
   refusal(await call('GET', BASE), 503, UNEXPECTED);
   r2.faults.list = null;
   r2.faults.beforePut = () => { throw new Error('R2 put failed: internal detail'); };
-  refusal(await call('POST', BASE, create()), 503, UNEXPECTED);
+  refusal(await call('POST', BASE, create()), 503, NOT_SAVED);
+});
+
+test('a save that fails after the TestId claim says so: retry with the same values, and the TestId is reserved, not used', async () => {
+  const {call, r2} = api();
+  // The claim is stored, then the first bundle file put fails: something was changed, so the answer never says otherwise.
+  let n = 0;
+  r2.faults.beforePut = key => { if (key.includes('/files/') && n++ === 0) throw new Error('R2 down'); };
+  const failed = refusal(await call('POST', BASE, create()), 503, NOT_SAVED);
+  assert.doesNotMatch(failed.error, /Nothing was changed/);
+  assert.deepEqual([...r2.objects.keys()].map(k => k.slice(P.length)), ['test-ids/test_site_1.json']);
+  r2.faults.beforePut = null;
+  const listing = await call('GET', BASE);
+  assert.deepEqual([listing.json.tests.length, listing.json.proposedTestId], [0, 'test_site_2']);
+  // Another test with that TestId: no saved test has it, so it is reserved, not "used by another A/B test".
+  refusal(await call('POST', BASE, create({name: 'Bid cache on'})), 409,
+    'TestId test_site_1 is reserved by an A/B test whose save has not finished. Each TestId is used once. Choose another TestId.', 'testid-taken');
+  // The same values save the test.
+  assert.equal((await call('POST', BASE, create())).status, 201);
+  refusal(await call('POST', BASE, create({name: 'Bid cache on'})), 409, /^TestId test_site_1 is already used by another A\/B test on this site\./, 'testid-taken');
 });

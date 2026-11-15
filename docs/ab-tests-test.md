@@ -30,7 +30,7 @@ The routes do not check that the TEST site settings are in a consistent state. S
 | `PUT /<abx>` | `{confirmId, sha256}` | 200 `{ok, id, deleted:false}`: restores it |
 | `POST /<abx>/events` | `{type}`, `marked-live` or `marked-stopped` | 201 `{event}` |
 
-`a` and `b` are saved draft ids (`builtin-draft-<64 hex>`). The same id twice is an A/A check. Bodies are JSON of at most 4 KB: 415 without JSON, 413 when larger, 400 for invalid JSON and 422 for an unknown field. `confirmId` is the abx id and `sha256` is the ZIP sha256. Every error body is `{error, code?, check?}`. An unexpected failure is 503 "The A/B test could not be verified. Nothing was changed. Retry.".
+`a` and `b` are saved draft ids (`builtin-draft-<64 hex>`). The same id twice is an A/A check. Bodies are JSON of at most 4 KB: 415 without JSON, 413 when larger, 400 for invalid JSON and 422 for an unknown field. `confirmId` is the abx id and `sha256` is the ZIP sha256. Every error body is `{error, code?, check?}`. An unexpected failure is 503 with no detail: "The A/B test could not be saved. Retry with the same values." on a create, and "The A/B test could not be read or saved. Retry." on any other route. Neither says that nothing was changed, because the fault can come after a write (a TestId claim or an event).
 
 Error codes in plain words:
 
@@ -39,7 +39,7 @@ Error codes in plain words:
 - 422 `package-missing`: "Version A is no longer in Saved versions. Choose another saved version. Saved A/B tests keep their own copies." On `/check` this is a 200 refusal. Another read error is 503 "Version A could not be read. Nothing was saved. Retry."
 - 422 `bundle-too-large`: a file over 8 MB, all files over 12 MB, or the ZIP over 13 MB (the same limits as TEST delivery).
 - 422 `names-too-long`: the list summary would be over 1800 bytes. Version names are cut to fit, so this names the test name: "The test name is too long to store. Shorten the test name and try again." No name the API accepts reaches it today.
-- 409 `testid-taken`: the TestId belongs to another test on this site.
+- 409 `testid-taken`: the TestId belongs to another test on this site ("is already used by another A/B test"), or to a create that failed or is still running after its claim ("is reserved by an A/B test whose save has not finished").
 - 409 `limit`: the lifetime cap (below).
 - 409 `record-unverified` or "ZIP differs from its record.": stored bytes do not match. Nothing is changed.
 
@@ -87,7 +87,7 @@ Everything that can refuse runs before the first write, and the record is writte
 5. Claim the TestId: write `test-ids/<testId>.json` create-only and read it back. If it names another abx, refuse with `testid-taken`.
 6. Write each bundle file, then the ZIP, then the record. The record is the commit point.
 
-A TestId is unique per site and is never released, not even by Delete. GAM reports therefore never mix two tests. The panel proposes the next free `test_site_<n>` (`test_site_1` first). After step 5, only an R2 failure can stop a create (503). A retry with the same body reuses the claim and the stored bytes.
+A TestId is unique per site and is never released, not even by Delete. GAM reports therefore never mix two tests. The panel proposes the next free `test_site_<n>` (`test_site_1` first). After step 5, only an R2 failure can stop a create (503). A retry with the same body reuses the claim and the stored bytes. After any failed save the panel reloads the list, so a TestId the operator did not edit moves to the next free one.
 
 ## Events: Mark live and Mark stopped
 

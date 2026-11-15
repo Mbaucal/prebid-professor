@@ -29,7 +29,7 @@ fixture=json.loads(process.stdout.readline());assert fixture['ready']
 origin=fixture['origin'];assert urlsplit(origin).hostname=='127.0.0.1'
 errors=[];requests=[];external=[];dialogs=[];checks=[];shots_taken=[]
 # hold: the next list request waits in pending, so the loading line and a failed load can be checked.
-mode={'hold':False};pending=[]
+mode={'hold':False,'fail':None};pending=[]
 NO_PRODUCTION='This site has no production version on TEST. Choose A yourself: use the version your test page runs now.'
 PUBLIC='The test name, the TestId and both version names are published inside /ads.js. Do not use private notes.'
 UPLOAD='Download the ZIP and upload all of its files, unchanged, as one Pages deployment.'
@@ -52,6 +52,10 @@ def route(r):
   external.append(r.request.url);r.abort();return
  if mode['hold'] and url.path==args.endpoint and r.request.method=='GET':
   mode['hold']=False;pending.append(r);return
+ # fail: the next request with this method and path gets a synthetic 503 and never reaches the fixture.
+ if mode['fail'] and mode['fail']==(r.request.method,url.path):
+  mode['fail']=None;requests.append({'path':url.path,'method':r.request.method,'status':503})
+  r.fulfill(status=503,content_type='application/json',body=json.dumps({'error':'Synthetic save failure. Retry with the same values.'}));return
  result=send({'path':url.path+('?'+url.query if url.query else ''),'method':r.request.method,'body':r.request.post_data})
  requests.append({'path':url.path,'method':r.request.method,'status':result['status']})
  r.fulfill(status=result['status'],headers=result['headers'],body=base64.b64decode(result['body']))
@@ -152,7 +156,16 @@ try:
   check('Save is enabled after a passing check',button('Save A/B test').is_enabled())
   shots('compatible')
 
-  # 5. Save; saving the same test again stores nothing new.
+  # 5. A failed save reloads the list, so the proposed TestId is current, and keeps every entered value.
+  mode['fail']=('POST',args.endpoint);before=len(requests)
+  button('Save A/B test').click()
+  panel.get_by_role('alert').filter(has_text='Synthetic save failure. Retry with the same values.').wait_for()
+  page.wait_for_timeout(200)
+  after=[(r['method'],r['path']) for r in requests[before:]]
+  check('A failed save reloads the A/B tests list',after[:2]==[('POST',args.endpoint),('GET',args.endpoint)])
+  check('A failed save keeps the entered values',field('Test name').input_value()=='Bid cache' and field('TestId').input_value()=='test_site_1'
+   and button('Save A/B test').is_enabled())
+  # Save; saving the same test again stores nothing new.
   button('Save A/B test').click()
   status('A/B test "Bid cache" saved.').wait_for()
   article('Bid cache').wait_for()
