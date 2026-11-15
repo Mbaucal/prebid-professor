@@ -8,10 +8,16 @@ import { workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD } from '../tests/support
 const revenueMode=process.argv.includes('--revenue');
 // --bid-cache: Prebid is on through the TEST Prebid editor, so bid caching can be saved and generated.
 const bidCacheMode=process.argv.includes('--bid-cache');
-const f=workspaceStore({prebidFiles:revenueMode||bidCacheMode});
+// --ab-tests: the A/B test store is open, and three saved versions on 3.23.0 are seeded: GAM only (a 160-character
+// version name with no spaces), Version A (Prebid, bid cache off) and Version B (bid cache on).
+const abTestsMode=process.argv.includes('--ab-tests');
+const f=workspaceStore({prebidFiles:revenueMode||bidCacheMode||abTestsMode,abTests:abTestsMode});
 if(process.argv.includes('--cleanup')){
- f.env.BUILDS.delete=async keys=>{for(const key of keys)f.objects.delete(key);};
- f.env.BUILDS.head=async key=>f.objects.has(key)?{key}:null;
+ // Package cleanup removes saved package files only; every other delete keeps the store's own checks.
+ const RELEASES='publishers/test-site/releases/',storeDelete=f.env.BUILDS.delete;
+ const packageKeys=keys=>Array.isArray(keys)&&keys.every(key=>typeof key==='string'&&key.startsWith(RELEASES));
+ f.env.BUILDS.delete=async keys=>{if(!packageKeys(keys))return storeDelete(keys);for(const key of keys)f.objects.delete(key);};
+ f.env.BUILDS.head=async key=>{if(!packageKeys([key]))throw Error('Only saved package files are checked after cleanup.');return f.objects.has(key)?{key}:null;};
 }
 globalThis.fetch=()=>{throw Error('External network is forbidden in this fixture');};
 let cookie;
@@ -20,10 +26,24 @@ else {
 const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);
 cookie=login.headers.get('set-cookie').split(';')[0];
 await worker.fetch(new Request(ORIGIN+'/test-api/setup',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({confirm:'prepare-empty-test-database'})}),f.env);
+const req=async(path,body,method=body===undefined?'GET':'POST')=>{const response=await worker.fetch(new Request(ORIGIN+path,{method,headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}),f.env);return {status:response.status,data:await response.json()};};
 if(bidCacheMode){
- const req=async(path,body)=>{const response=await worker.fetch(new Request(ORIGIN+path,{method:body===undefined?'GET':'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}),f.env);return {status:response.status,data:await response.json()};};
  const {enableTestPrebid,selectTestRuntime}=await import('../tests/support/test-bid-cache-site.mjs');
  await enableTestPrebid(f.env,req);await selectTestRuntime(req,'3.21.2',true);
+}
+if(abTestsMode){
+ const {enableTestPrebid,selectTestRuntime}=await import('../tests/support/test-bid-cache-site.mjs');
+ const generate=async notes=>{
+  const state=(await req('/test-api/site-packages')).data;
+  const created=await req('/test-api/site-packages',{action:'generate',revision:state.revision,notes});
+  if(created.status!==201)throw Error(JSON.stringify(created.data));
+ };
+ await selectTestRuntime(req,'3.23.0',false);await generate('GAM_only_'+'x'.repeat(151));
+ await enableTestPrebid(f.env,req);await selectTestRuntime(req,'3.23.0',true);await generate('Version A');
+ const MODE='/api/publishers/test-site/prebid-mode',mode=(await req(MODE)).data;
+ const cache=await req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT');
+ if(cache.status!==200)throw Error(JSON.stringify(cache.data));
+ await generate('Version B');
 }
 }
 // Exercise the main Releases wrapper with the same real site services in an
