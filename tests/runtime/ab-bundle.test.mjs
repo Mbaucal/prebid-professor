@@ -13,7 +13,7 @@ import {bidCacheSite} from './bid-cache323-site.mjs';
 import {runtimeCatalog, buildArtifactCandidate, previewInput} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {prebidRequirements, inspectPrebidArtifact} from '../../worker/runtime/prebid-artifact-check.mjs';
-import {saveDraftRelease, readDraftRelease} from '../../worker/runtime/draft-release-store.mjs';
+import {saveDraftRelease, readDraftRelease, describeCandidate} from '../../worker/runtime/draft-release-store.mjs';
 import {readPackage, generatePackage} from '../../worker/site-runtime/releases.mjs';
 import {siteRuntimeSettings, changeSiteRuntime} from '../../worker/site-runtime/service.mjs';
 import {PAGES_HEADERS} from '../../scripts/pages-release-verification.mjs';
@@ -375,4 +375,35 @@ test('a complete MAIN release, as readPackage returns it with its row and manife
     const files = {...p.files, 'README.txt': bytesOf(text(p.files['README.txt']) + 'x')};
     await refused(composeAbBundle({site: 'first', a: p, b: {...p, files}, trafficBPercent: 0, testId: 'first_1', name: 'MAIN A/A'}), 'package-unverified', 'packages', /^Version B does not match/);
   } finally { f.sqlite.close(); }
+});
+
+/** A tiny TEST draft from fixed bytes that describeCandidate accepts. No generator is involved, so
+ * the golden values below change only with the composer, the loader, PAGES_HEADERS, the draft id or the ZIP layout. */
+async function syntheticDraft(siteId, runtimeVersion, script) {
+  const files = Object.fromEntries(Object.entries({'README.txt': 'Golden package\n', 'ads.js': script, 'ads.min.js': script,
+    'div-export.csv': 'code\nP1\n', 'implementation.html': '<script src="./prebid.js"></script>\n', 'min-height.css': '#P1{min-height:250px}\n',
+    'sticky.css': '/* no sticky position */\n', 'prebid.js': '/* Prebid.js v11.34.0, golden stand-in */\n'}).map(([name, value]) => [name, bytesOf(value)]));
+  const runtime = {schemaVersion: 1, configSchemaVersion: 1, runtimeId: 'golden-' + runtimeVersion, runtimeVersion, runtimeSha256: hash(files['ads.min.js']), capabilities: []};
+  const prebidBuild = {id: 'golden-build', version: '11.34.0', sha256: hash(files['prebid.js']), byteSize: files['prebid.js'].length, modules: []};
+  files['config.json'] = bytesOf(JSON.stringify({schemaVersion: 1, siteId, runtime, options: {enablePrebid: true}, prebidBuild}));
+  const manifest = {schemaVersion: 1, kind: 'builtin-runtime-candidate', completeRelease: false, siteId, configHash: hash(files['config.json']), runtime, prebidBuild,
+    files: Object.fromEntries(Object.keys(files).sort().map(name => [name, {byteSize: files[name].length, sha256: hash(files[name])}]))};
+  files['manifest.json'] = bytesOf(JSON.stringify(manifest));
+  const {descriptor} = await describeCandidate(siteId, {files});
+  return {files, release: {id: descriptor.releaseId, siteId, note: 'Golden ' + runtimeVersion}};
+}
+
+test('golden values: fixed inputs keep their test id and ZIP bytes', async () => {
+  const a = await syntheticDraft('golden-site', '9.0.0', 'window.goldenArm = "A";\n');
+  const b = await syntheticDraft('golden-site', '9.0.1', 'window.goldenArm = "B";\n');
+  const bundle = await composeAbBundle({site: 'golden-site', a, b, trafficBPercent: 10, testId: 'golden_1', name: 'Golden test'});
+  // The store keeps create-only records and checks id === 'abx-' + sha256(abTestIdentity(record)), so a saved test
+  // must keep its id. Update these values only for a deliberate change to the identity, the bundle files, the loader
+  // version or the ZIP layout, and say so in the commit.
+  assert.equal(bundle.id, 'abx-e2f0f68eb39b7fba297851075a13cd4f6aa5e8175cf33b8a3ab9994b4b8837ae');
+  assert.equal(hash(abTestIdentity(bundle.record)), 'e2f0f68eb39b7fba297851075a13cd4f6aa5e8175cf33b8a3ab9994b4b8837ae');
+  assert.deepEqual(Object.keys(JSON.parse(abTestIdentity(bundle.record))), ['arms', 'files', 'layout', 'loader', 'name', 'prebid', 'schema', 'site', 'testId', 'trafficBPercent']);
+  assert.equal(bundle.zipSha256, 'e6e2634b465a154e34571e7ec04c3b40f43bfff8c8141342d341746aa0ab12e3');
+  assert.equal(hash(bundle.files['ads.js']), '0bf407ed25832570e3d22ef2d1c62663db1935a2d475915d3d61daf1c7f76aea');
+  assert.deepEqual(bundle.record.loader, {version: '1.0.1', sha256: registry['1.0.1'].sha256});
 });
