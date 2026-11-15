@@ -1,6 +1,7 @@
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 
 export type BidCachePayload={revision:string;bidCacheAvailable:boolean;bidCachePositions:string[];
+  bidCacheRuntimeVersion:string;runtimeSupportsBidCache:boolean;namedScriptLibrary:boolean;
   prebidMode:{enabled:boolean;bidCache:{enabled:boolean;maxBidAgeSeconds:number;positionOverrides?:Record<string,boolean>}}};
 export async function fetchBidCacheSettings(site:string,body?:unknown):Promise<BidCachePayload>{
   const response=await fetch(`/api/publishers/${encodeURIComponent(site)}/prebid-mode`,{
@@ -23,7 +24,7 @@ export default function PositionBidCachePanel({publisherId,code,onClose,onSaved}
     const bidCache={...data.prebidMode.bidCache,positionOverrides:{...data.prebidMode.bidCache.positionOverrides}};
     if(choice==='inherit')delete bidCache.positionOverrides[code];else bidCache.positionOverrides[code]=choice==='on';
     const next=await fetchBidCacheSettings(publisherId,{revision:data.revision,enabled:data.prebidMode.enabled,bidCache});
-    accept(next);onSaved(next);setMessage('Saved. Generate a new named script to apply this setting.');
+    accept(next);onSaved(next);setMessage(next.runtimeSupportsBidCache?'Saved. Generate a new package to apply this setting.':`Saved. Select script ${next.bidCacheRuntimeVersion} in Script setup to apply it.`);
   }catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   const inherited=data?.prebidMode.bidCache.enabled??false;
   const effective=choice==='inherit'?inherited:choice==='on';
@@ -51,9 +52,9 @@ export default function PositionBidCachePanel({publisherId,code,onClose,onSaved}
       <p><strong>Effective: {!data.prebidMode.enabled?'Inactive — Prebid is off':effective?'On':'Off'}</strong></p>
       <p>{data.prebidMode.enabled?'Every refresh still starts a new auction.':'When Prebid is enabled, every refresh starts a new auction.'} {effective?'Valid, unused bids from earlier auctions for this position may also compete.':'This position uses only bids from its current auction.'}</p>
       {effective?<p>Maximum cached bid age: {data.prebidMode.bidCache.maxBidAgeSeconds} seconds, or less if its original TTL expires.</p>:null}
-      <p>Applies to the next named script in Releases → Scripts and A/B tests.</p>
+      <p>Applies to the next package generated with script {data.bidCacheRuntimeVersion} or later.{data.runtimeSupportsBidCache?'':` Select ${data.bidCacheRuntimeVersion} in Script setup to use it.`}{data.namedScriptLibrary?' New named scripts in Releases → Scripts and A/B tests use it too.':''}</p>
       <button className="button primary" disabled={busy||!dirty||!data.prebidMode.enabled} onClick={()=>void save()}>{busy?'Saving…':'Save position setting'}</button>
-    </>:data?<p>Position cache settings are not supported by this site's current generator.</p>:null}
+    </>:data?<p>{code} cannot reuse bids. Only enabled ATF and BTF banner positions can; TakeOver and Outstream positions always use the current auction.</p>:null}
     {error?<button className="button secondary" disabled={busy} onClick={()=>void reload()}>Reload bid cache settings</button>:null}
     </div>
   </section></div>;
