@@ -1,0 +1,57 @@
+# Bid cache per ad position
+
+Every site can save bid caching. The site default is under Config → Demand → Prebid ("Reuse valid, unused bids" and a maximum bid age of 1–300 seconds). Each eligible position has three choices under Config → Ad units → Bid cache:
+
+- **Use site setting**: inherit the current default in Config → Demand → Prebid.
+- **On**: let valid, unused bids from earlier auctions for this position compete with fresh bids.
+- **Off**: use only bids from the current auction for this position.
+
+Each refresh still starts a fresh auction. A higher fresh CPM can win on any refresh, including the third. Turning cache off does not prevent the GAM request when the fresh auction returns no bids.
+
+Saving changes the configuration for the next package only. It does not modify saved packages, existing ZIPs or an active publisher deployment. Removing an override restores inheritance; changing the site default preserves explicit overrides. Disabling Prebid keeps the choices saved but inactive.
+
+## Which positions can reuse bids
+
+A position is eligible when its ad unit is enabled, in the ATF or BTF group, and Banner. The rule is `bidCacheEligibleCodes` in `shared/bid-cache/eligibility.mjs`, shared by the admin API and the runtime. These positions always use the current auction and are never dropped: Draft and disabled units, video and native units, the TakeOver ad position and its Interstitial fallback (or the legacy TakeOver code), and Outstream positions. Ad units shows a Bid cache button only for eligible positions, and re-reads the list after a unit, its Formats or its display changes.
+
+The API (`PUT /api/publishers/:id/prebid-mode`) checks, in this order:
+
+1. the shape: a boolean, an age of 1–300 seconds, and at most 500 overrides, each a valid GAM ad unit code with a boolean (422);
+2. the form revision, so a stale form never overwrites another change (409);
+3. that every new or changed override names one of the site's eligible positions (422, for example "Choose bid caching on or off for a supported ad position. Sticky is not an enabled ATF or BTF banner position on this site. Reload to see the current positions.").
+
+An override saved earlier for a unit that later became ineligible (renamed, deleted, disabled, moved to Draft, made Outstream or TakeOver) is kept when it is sent back unchanged, so it never blocks an unrelated save. It is not applied: a package generated with 3.23.0 records it as a warning in its manifest and README (under "Saved settings not applied in this package"). Demand → Prebid lists it as "Not applied" with a **Remove unused overrides** action; removing an override is always allowed.
+
+## Which scripts apply it
+
+Built-in packages apply bid caching only when the site's saved script version has the `bid-cache` capability. 3.23.0 is the first such version, and a site uses it only after it is explicitly selected in Script setup. Demand → Prebid and the position dialog say which case applies:
+
+- capable version selected: "Applies to new packages generated with script 3.23.0 or later.";
+- earlier version, or no built-in version, with saved settings that would reuse bids (the site default on, or a position override on): "Select script 3.23.0 in Script setup to apply bid caching. Your setting is saved." While the form has unsaved changes, the last sentence is left out;
+- earlier version and nothing saved that would reuse bids: "Bid caching needs script 3.23.0 or later."
+
+With an earlier version, Prebid on and saved settings that would reuse bids, Generate stops with 409 "Bid caching needs script version 3.23.0. Select 3.23.0 in Script setup and save; your bid cache settings are kept. To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache." Releases → Generate shows that message above Script setup. Saved settings that would reuse bids are never silently ignored. Overrides that are all Off need no capable version: without bid caching every position already uses only its current auction. With Prebid off, Generate continues GAM-only and the settings stay saved. The older legacy generator and preview bundle routes keep refusing saved cache settings that would reuse bids.
+
+The browser behavior of the capable runtime (consent, size, age, TTL and submitted-bid rules) is documented with that runtime release.
+
+## TEST site workspace
+
+The TEST workspace (`/site-workspace`) applies the same rules to the TEST site through the same shared service. **Bid caching** opens the production Demand → Prebid panel for the TEST site, with **Bid cache by position** below it: one button for each eligible position, opening the production position dialog. The TEST Worker routes `GET` and `PUT /api/publishers/test-site/prebid-mode` (and no other site) to the shared `getPrebidMode` and `updatePrebidMode` after the TEST host, authentication, same-origin and schema checks; a query is 400, other methods 405 and a field other than `enabled`, `revision` and `bidCache` 422. Prebid on/off, its build and the TEST draft marker stay with **Prebid and bidders**: the mode choice is read-only on this page, and a save that would change it is refused with 409 "Turn Prebid on or off in Prebid and bidders. Here you can change bid caching only." without a write.
+
+The runtime catalog checks every descriptor before it builds: `buildArtifactCandidate` calls `requireSupportedCacheGenerator(config, descriptor)` for every engine and route, so saved settings that would reuse bids need the `bid-cache` capability on any path. The site package state reports the same check, and **Generate and releases** shows it above Script setup. Its text names this workspace's pages instead of Config: "… To keep this script version instead, open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position." The rest of the sentence and the 409 status are the shared ones.
+
+## Named scripts (TEST copy)
+
+The TEST named-script copy (`/named-scripts`, site `test-named-script`) reuses the Scripts and A/B tests library with the reviewed Tanjug inventory. Its named scripts use the same saved settings for their 19 reviewed positions with the existing cache lifecycle and pinned Prebid 11.34.0. An override for any other position stops a new named script with 409 instead of dropping it. Existing named scripts and A/B ZIPs keep their exact bytes and settings. Named scripts do not use the runtime selected in Script setup. On TEST pages the copy names "Scripts and A/B tests" without the production "Releases →" prefix.
+
+## Implementation and verification
+
+`prebidBidCache = {enabled, maxBidAgeSeconds, positionOverrides?}` in the site configuration is unchanged. Overrides are stored in code-unit order. `GET /prebid-mode` returns `bidCachePositions` (the eligible codes), `bidCacheRuntimeVersion`, `selectedRuntime` (only when the runtime catalog still verifies the saved pin), `runtimeSupportsBidCache`, `namedScriptLibrary` and `namedScriptPositions` (the 19 reviewed named-script positions on Tanjug, else empty). The last two only choose the named-script sentence: the position dialog says new named scripts use the override only for those positions, and otherwise that an override there stops new named scripts until it is set to Use site setting. They never change what can be saved.
+
+- `tests/runtime/prebid-mode-bid-cache.test.mjs`: a synthetic `example.invalid` site saves cache and its own overrides; Tanjug codes, ineligible positions and malformed overrides are refused without writes; stale revisions get 409; kept overrides never block unrelated saves; the payload for 3.21.2, a changed pin, any catalog descriptor with the capability and the registered 3.23.0; Tanjug gets the same cache fields and its named-script positions.
+- `tests/runtime/bid-cache-test-workspace.test.mjs`: the TEST site through the TEST Worker. Prebid off in an empty copy, a refused Prebid toggle without a write, a save with the actor recorded after Prebid is turned on in the TEST editor, a foreign code (422), a stale revision (409), the route boundaries (401, 403, 400, 405, 422), a generated 3.23.0 package whose `config.json` carries the saved settings, and with 3.21.2 the blocked state and 409 with the TEST reason until bid caching is turned off.
+- `tests/runtime/named-script-test.test.mjs`: the TEST named-script copy keeps its own route, and the TEST site route refuses a Prebid toggle.
+- `scripts/verify-bid-cache-settings-ui.py`: real React panels and the compiled production Worker on the synthetic site (TEST fixture: `scripts/bid-cache-settings-browser-fixture.mjs`) at 1280 and 390 px: loading, saving, a 409 stale form and reload, a 422 position that stopped being eligible and reload, removing an unused override, Prebid off, and the copy once the saved selection is the registered 3.23.0. It also opens Releases → Generate on a site with 3.21.2 selected and bid caching saved: the 409 reason with both ways out is shown above Script setup at both widths, and turning caching off or selecting 3.23.0 unblocks Generate.
+- `scripts/verify-test-bid-cache-ui.py`: the TEST site workspace at 1280 and 390 px. Bid caching with the mode read-only, a saved default and position override, Generate blocked with the TEST reason above Script setup, then 3.23.0 selected and a downloaded package with the saved settings.
+
+No external live auctions are used by these tests.
