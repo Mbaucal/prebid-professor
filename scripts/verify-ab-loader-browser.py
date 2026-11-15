@@ -14,7 +14,7 @@ cross-origin <script integrity crossorigin=anonymous>, so Chromium checks SRI an
 real; route interception would bypass CORS, so it never touches either origin. Every other
 request goes through a route: synthetic bids and Prebid currency rates are answered, all the
 rest is aborted. The page loads the bundle's prebid.js and ads.js as the publisher would.
-GPT is tests/runtime/mock-ad-libraries.js with its pageTargeting option, loaded before the
+GPT is tests/runtime/mock-gpt-page-targeting.js (the synthetic GPT with page targeting), loaded before the
 loader or, to prove the queued labels are kept, only after the arm has run. The CMP is a
 local TCF stub that grants, denies or stays pending; the pubmatic and openx adapters are
 synthetic. The page clock is virtual, so 30-second refreshes and bid cache reuse in B take
@@ -124,7 +124,7 @@ class Origin:
 
 site, cdn = Origin(), Origin()
 assert site.url != cdn.url
-mock = (root / 'tests/runtime/mock-ad-libraries.js').read_text()
+mock = (root / 'tests/runtime/mock-gpt-page-targeting.js').read_text()
 # Keep synthetic GPT only: Prebid is the real file and the CMP is the stub below.
 start, end = mock.index('  window.pbjs = {'), mock.index('  window.__testAds =')
 GPT = mock[:start] + mock[end:]
@@ -135,7 +135,6 @@ SLOTS = ('<div id="Billboard" class="wrapperAd" style="min-height:250px"></div><
          '<main style="height:2000px"></main>')
 INIT = r'''
 (() => {
-  window.__testOptions = {pageTargeting: true};
   // Bid requests still in flight; the virtual clock only moves when there are none.
   window.__inflight = 0;
   const fetch = window.fetch.bind(window);

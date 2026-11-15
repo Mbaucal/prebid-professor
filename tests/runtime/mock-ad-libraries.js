@@ -3,12 +3,6 @@
   const listeners = new Map();
   const observations = { requests: [], bids: [], configs: [], privacy: [], displays: [], destroys: [] };
   const options = window.__testOptions || {};
-  // Opt-in (options.pageTargeting === true): GPT page-level targeting through pubads() and
-  // googletag.setConfig, a command queue filled before GPT loaded, and the page and slot
-  // targeting of every ad request. Without it the mock behaves exactly as before.
-  const page = options.pageTargeting === true ? new Map() : null;
-  const strings = (value) => (Array.isArray(value) ? value : [value]).map(String);
-  const targetingOf = (keys, read) => Object.fromEntries(keys.map((key) => [key, strings(read(key))]).filter(([, value]) => value.length));
   const emit = (type, event) => { for (const cb of [...(listeners.get(type) || [])]) cb(event); };
   const service = {
     addEventListener(type, cb) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(cb); return this; },
@@ -19,8 +13,7 @@
     setPrivacySettings(value) { observations.privacy.push(value); }, setPublisherProvidedId() {},
     refresh(list) {
       for (const slot of list || []) {
-        observations.requests.push({ id: slot.id, path: slot.path, sizes: slot.sizes, at: Date.now(),
-          ...(page && { page: targetingOf([...page.keys()], (key) => page.get(key)), slot: targetingOf(slot.getTargetingKeys(), (key) => slot.getTargeting(key)) }) });
+        observations.requests.push({ id: slot.id, path: slot.path, sizes: slot.sizes, at: Date.now() });
         emit('slotRequested', { slot });
         const takeover = slot.id === 'adsx-takeover-slot';
         if (takeover && options.takeoverResult === 'timeout') continue;
@@ -65,7 +58,6 @@
     };
     slots.push(slot); return slot;
   }
-  const queued = page && Array.isArray(window.googletag?.cmd) ? [...window.googletag.cmd] : [];
   // GPT fills the existing command-queue object; wrappers may retain its reference.
   window.googletag = Object.assign(window.googletag || {}, {
     cmd: { push(callback) { callback(); } }, enums: { OutOfPageFormat: { INTERSTITIAL: 1 } },
@@ -76,18 +68,6 @@
     display(slot) { observations.displays.push(typeof slot === 'string' ? slot : slot.id); },
     destroySlots(list) { for (const slot of list) { const i = slots.indexOf(slot); if (i >= 0) slots.splice(i, 1); observations.destroys.push(slot.id); } return true; },
   });
-  if (page) {
-    Object.assign(service, {
-      setTargeting(key, value) { page.set(key, strings(value)); return this; },
-      getTargeting(key) { return [...(page.get(key) || [])]; },
-      getTargetingKeys() { return [...page.keys()]; },
-      clearTargeting(key) { if (key === undefined) page.clear(); else page.delete(key); return this; },
-    });
-    // As in GPT, a null value in setConfig targeting removes the page-level key.
-    window.googletag.setConfig = (config) => {
-      for (const [key, value] of Object.entries(config?.targeting || {})) if (value == null) page.delete(key); else page.set(key, strings(value));
-    };
-  }
   window.pbjs = {
     version: 'LOCAL-MOCK', installedModules: [], que: { push(callback) { callback(); } }, bidderSettings: {},
     onEvent() {}, getEvents() { return []; }, removeAdUnit() {}, getUserIdsAsync() { return Promise.resolve({}); },
@@ -101,9 +81,4 @@
     } else callback(true);
   };
   window.__testAds = { observations, emit, service, slots };
-  // Once loaded, GPT runs the commands queued before it, in order; one failing command does not stop the rest.
-  if (page) {
-    observations.queuedCommands = queued.length; observations.commandErrors = [];
-    for (const callback of queued) try { callback(); } catch (error) { observations.commandErrors.push(String(error)); }
-  }
 })();
