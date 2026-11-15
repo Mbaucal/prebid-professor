@@ -3,6 +3,9 @@ export type BidCacheSettings = { enabled: boolean; maxBidAgeSeconds: number; pos
 export { hasBidCache } from '../experiments/position-cache-settings.mjs';
 export const DEFAULT_BID_CACHE: Readonly<BidCacheSettings>;
 export const BID_CACHE_GENERATOR_MESSAGE: string;
+export const MAX_POSITION_OVERRIDES: number;
+export function bidCacheOverrides(value: unknown): Record<string, boolean>;
+export function requireEligibleOverrides(next: BidCacheSettings, saved: unknown, eligibleCodes: readonly string[]): void;
 export function bidCacheSettings(value?: unknown): BidCacheSettings;
 export function supportsNamedScripts(row: unknown): boolean;
 export function savedPrebidSettings(config: Record<string, unknown>): { enabled: boolean; bidCache: BidCacheSettings };

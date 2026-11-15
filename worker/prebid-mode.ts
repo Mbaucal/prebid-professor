@@ -5,8 +5,8 @@ import { readPreviewSnapshot } from './runtime/builtin-preview-service.mjs';
 import { digest } from './runtime/preview-snapshot.mjs';
 import { runtimeCatalog, prepareSiteRuntimeSelection } from './test-workspace/runtime-catalog.mjs';
 import { commitSiteConfiguration } from './site-runtime/service.mjs';
-import { bidCacheSettings, supportsNamedScripts, hasBidCache } from './site-runtime/prebid-cache-settings.mjs';
-import { CACHE_POSITIONS } from './experiments/position-cache-settings.mjs';
+import { bidCacheSettings, requireEligibleOverrides, supportsNamedScripts } from './site-runtime/prebid-cache-settings.mjs';
+import { BID_CACHE_RUNTIME_VERSION, bidCacheEligibleCodes, runtimeSupportsBidCache, type BidCacheUnitRow } from '../shared/bid-cache/eligibility.mjs';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -51,6 +51,31 @@ async function readConfig(db: D1Database, siteId: string): Promise<ConfigRow | n
     .first<ConfigRow>();
 }
 
+/** The saved columns that decide which positions may reuse bids (bidCacheEligibleCodes). */
+async function readCacheUnits(db: D1Database, siteId: string): Promise<BidCacheUnitRow[]> {
+  const rows = await db
+    .prepare('SELECT code, type, media_type, enabled FROM ad_units WHERE publisher_id = ?')
+    .bind(siteId)
+    .all<BidCacheUnitRow>();
+  return rows.results ?? [];
+}
+
+/** The saved script version, only when the runtime catalog still has exactly that engine (the
+ * same match as assertPinnedRuntime), and whether it applies bid caching. Without a verified
+ * built-in version nothing applies the cache. */
+function selectedRuntime(config: JsonRecord): { selectedRuntime: { id: string; version: string } | null; runtimeSupportsBidCache: boolean } {
+  const selection = isRecord(config.builtinRuntimeSelection) ? config.builtinRuntimeSelection : null;
+  const pin = selection && isRecord(selection.runtime) ? selection.runtime : null;
+  const descriptor = pin?.schemaVersion === 1 && Array.isArray(pin.capabilities)
+    ? runtimeCatalog.find(runtime => runtime.id === pin.runtimeId && runtime.version === pin.runtimeVersion
+      && runtime.codeSha256 === pin.runtimeSha256 && runtime.configSchemaVersion === pin.configSchemaVersion
+      && JSON.stringify(runtime.capabilities) === JSON.stringify(pin.capabilities))
+    : undefined;
+  return descriptor
+    ? { selectedRuntime: { id: descriptor.id, version: descriptor.version }, runtimeSupportsBidCache: runtimeSupportsBidCache(descriptor) }
+    : { selectedRuntime: null, runtimeSupportsBidCache: false };
+}
+
 async function buildPayload(db: D1Database, siteId: string, config: JsonRecord): Promise<JsonRecord> {
   const [bidderCounts, overrideCount, currentBuild] = await Promise.all([
     db
@@ -74,11 +99,20 @@ async function buildPayload(db: D1Database, siteId: string, config: JsonRecord):
   ]);
 
   const enabled = enabledFromConfig(config);
-  const site = await db.prepare('SELECT domain, gam_path FROM publishers WHERE id = ?').bind(siteId).first();
+  const [site, units] = await Promise.all([
+    db.prepare('SELECT domain, gam_path FROM publishers WHERE id = ?').bind(siteId).first(),
+    readCacheUnits(db, siteId),
+  ]);
   return {
     revision: await digest(config),
-    bidCacheAvailable: supportsNamedScripts(site),
-    bidCachePositions: supportsNamedScripts(site) ? CACHE_POSITIONS : [],
+    // Every site can save bid cache settings; prebidMode.enabled says whether they are active.
+    bidCacheAvailable: true,
+    bidCachePositions: bidCacheEligibleCodes(units, config),
+    bidCacheRuntimeVersion: BID_CACHE_RUNTIME_VERSION,
+    ...selectedRuntime(config),
+    // Only adds a sentence that new named scripts use these settings too. It never changes
+    // which settings can be saved or which positions are listed.
+    namedScriptLibrary: supportsNamedScripts(site),
     ok: true,
     prebidMode: {
       enabled,
@@ -152,9 +186,11 @@ export async function updatePrebidMode(
   if (Object.hasOwn(body,'bidCache') && body.revision !== await digest(config)) {
     return apiError('Prebid settings changed. Reload before saving.', 409);
   }
-  if (body.enabled && (hasBidCache(bidCache) || bidCache.positionOverrides)) {
-    const site = await env.DB.prepare('SELECT domain, gam_path FROM publishers WHERE id = ?').bind(siteId).first();
-    if (!supportsNamedScripts(site)) return apiError('Bid caching is currently available for the reviewed Tanjug script generator.', 422);
+  if (Object.hasOwn(body,'bidCache')) {
+    // New or changed position overrides must name this site's own eligible positions.
+    const eligible = bidCacheEligibleCodes(await readCacheUnits(env.DB, siteId), config);
+    try { requireEligibleOverrides(bidCache, config.prebidBidCache, eligible); }
+    catch (error) { return apiError((error as Error).message, 422); }
   }
   const previousEnabled = enabledFromConfig(config);
   const enabled = body.enabled;

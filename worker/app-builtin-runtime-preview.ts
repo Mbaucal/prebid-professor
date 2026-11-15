@@ -83,7 +83,9 @@ export default {
     if(oldGenerate){
       if(!await getAuthenticatedUser(request,env))return new Response('Authentication required.',{status:401});
       const row=await env.DB?.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=?').bind(oldGenerate[1]).first<{config_json:string}>();
-      if(row){try{requireSupportedCacheGenerator(JSON.parse(row.config_json));requireRevenueRuntime(JSON.parse(row.config_json),null);requireContextualRuntime(JSON.parse(row.config_json),null);}catch(e){return new Response(JSON.stringify({error:(e as Error).message}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});}}
+      // A site with a saved built-in script version is told to use Generate and releases, not
+      // to select a version it may already have; this older route never applies bid caching.
+      if(row){try{if(!JSON.parse(row.config_json).builtinRuntimeSelection)requireSupportedCacheGenerator(JSON.parse(row.config_json));requireRevenueRuntime(JSON.parse(row.config_json),null);requireContextualRuntime(JSON.parse(row.config_json),null);}catch(e){return new Response(JSON.stringify({error:(e as Error).message}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});}}
       if(row&&JSON.parse(row.config_json).builtinRuntimeSelection)return new Response(JSON.stringify({error:'Use Generate and releases with the saved built-in script version.'}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});
     }
     const revenueMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/(deals|outstream-settings|contextual-signals)(\/build-kit)?$/);
