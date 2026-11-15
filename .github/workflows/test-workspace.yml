@@ -117,6 +117,8 @@ jobs:
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-loader.test.mjs tests/runtime/ab-bundle.test.mjs
           node scripts/prepare-ab-loader-browser.mjs "$RUNNER_TEMP/ab-loader-browser"
           python scripts/verify-ab-loader-browser.py "$RUNNER_TEMP/ab-loader-browser"
+      - name: A/B test store, the shared A/B tests API and its TEST routes on the real TEST Worker (local SQLite and memory R2)
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-store.test.mjs tests/runtime/ab-tests-api.test.mjs tests/runtime/ab-tests-test-workspace.test.mjs
       - name: New TEST deployment setup and version history (synthetic jobs only)
         run: python scripts/verify-deployment-ui.py
       - name: Keep only synthetic report and screenshots, never sessions or databases
@@ -170,6 +172,8 @@ jobs:
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/canonical-browser-text.test.mjs
       - name: Every selectable runtime from the sealed Worker on LOCAL workerd equals the direct compile
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/verify-workerd-generation-parity.mjs
+      - name: A/B tests from the sealed Worker on LOCAL workerd equal a direct compose, including restart (no network)
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/verify-ab-tests-workerd.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0
@@ -184,6 +188,7 @@ jobs:
           path: |
             .generated/generation-parity/manifest.json
             .generated/generation-parity/browser-results.json
+            .generated/ab-tests-workerd/report.json
           if-no-files-found: ignore
           retention-days: 14
   adapter-wire:

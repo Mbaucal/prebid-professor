@@ -2,7 +2,7 @@ name: TEST site editor checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [shared/bid-cache/**, shared/bidder-rules/**, shared/contextual-signals/**, shared/size-maps/**, shared/outstream/**, worker/**, src/**, tests/**, scripts/**, tools/**, ops/runtime-test/**, package.json, package-lock.json, .github/workflows/site-editor-checks.yml]
+    paths: [shared/bid-cache/**, shared/bidder-rules/**, shared/contextual-signals/**, shared/size-maps/**, shared/outstream/**, shared/pages/**, worker/**, src/**, tests/**, scripts/**, tools/**, ops/runtime-test/**, package.json, package-lock.json, .github/workflows/site-editor-checks.yml]
   push:
     branches: [main, feature/isolated-runtime-workspace-v1]
 permissions:
