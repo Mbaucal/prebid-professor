@@ -1,5 +1,6 @@
 /** Site-owned choices for future packages. Saved releases always keep their own snapshot. */
 import {positionCacheOverrides,hasBidCache} from '../experiments/position-cache-settings.mjs';
+import {BID_CACHE_RUNTIME_VERSION,runtimeSupportsBidCache} from '../../shared/bid-cache/eligibility.mjs';
 export {hasBidCache};
 export const DEFAULT_BID_CACHE = Object.freeze({enabled:false,maxBidAgeSeconds:60});
 export function bidCacheSettings(value = DEFAULT_BID_CACHE) {
@@ -25,8 +26,10 @@ export function settingsForScript(config,refreshSeconds) {
     ...(bidCache.enabled||bidCache.positionOverrides?{maxBidAgeSeconds:bidCache.maxBidAgeSeconds}:{}),
     ...(bidCache.positionOverrides?{positionOverrides:bidCache.positionOverrides}:{})};
 }
-export const BID_CACHE_GENERATOR_MESSAGE = 'Bid caching settings are saved in Demand → Prebid or Ad units. Create a named version in Scripts and A/B tests below; this older generator does not support bid caching.';
-export function requireSupportedCacheGenerator(config) {
+export const BID_CACHE_GENERATOR_MESSAGE = `Bid caching needs script version ${BID_CACHE_RUNTIME_VERSION}. Select ${BID_CACHE_RUNTIME_VERSION} in Script setup and save; your bid cache settings are kept.`;
+/** Saved cache settings are applied only by a runtime with the 'bid-cache' capability,
+ * never silently ignored. Without a descriptor (older generators) it always refuses. */
+export function requireSupportedCacheGenerator(config, descriptor) {
   const prebid=savedPrebidSettings(config);
-  if(prebid.enabled && (hasBidCache(prebid.bidCache)||prebid.bidCache.positionOverrides))throw Object.assign(Error(BID_CACHE_GENERATOR_MESSAGE),{status:409});
+  if(prebid.enabled && (hasBidCache(prebid.bidCache)||prebid.bidCache.positionOverrides) && !runtimeSupportsBidCache(descriptor))throw Object.assign(Error(BID_CACHE_GENERATOR_MESSAGE),{status:409});
 }
