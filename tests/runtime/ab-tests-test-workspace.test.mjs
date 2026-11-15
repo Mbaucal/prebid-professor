@@ -154,6 +154,16 @@ async function read(f,id){
  return readPackage(f.env,'test-site',id,{testOnly:true});
 }
 
+test('the A/B panel offers only fully stored versions, never an interrupted upload',async()=>{
+ const f=await seeded();
+ // An upload that never reached 'stored' (interrupted, or left behind by cleanup) is still a builtin_draft_uploads row.
+ f.sqlite.prepare("UPDATE builtin_draft_uploads SET state='uploading' WHERE release_id=?").run(f.ids.gam);
+ assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM builtin_draft_uploads WHERE release_id=?').get(f.ids.gam).n,1);
+ const listed=await f.req(AB);
+ assert.equal(listed.status,200);
+ assert.deepEqual(listed.data.versions.map(v=>v.id).sort(),[f.ids.A,f.ids.B].sort());
+});
+
 test('after Delete all generated packages the saved test still downloads, and a new check says the version is missing',async()=>{
  const f=await seeded();
  const created=await f.req(AB,request(f));assert.equal(created.status,201);
