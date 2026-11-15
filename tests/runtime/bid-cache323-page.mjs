@@ -8,11 +8,17 @@
  *    position's latest auction are always kept;
  *  - a bid is usable while responseTimestamp + 1000 * (ttl - 1) > now and its
  *    status is not 'rendered';
- *  - targeting takes each bidder's highest bid per position (oldest on ties),
- *    the overall winner gets hb_*, send-all-bids adds hb_*_<bidder>, and deal
- *    bids carry hb_deal / hb_deal_<bidder>; keys are cut to 20 characters;
+ *  - targeting keeps one bid per bidder per position, as getHighestDesirability:
+ *    the highest CPM, then the lower timeToRespond, then the earlier bid in the
+ *    pool; then, as getAllTargeting, only bids with a CPM above 0 or, with
+ *    targetingControls.alwaysIncludeDeals, deal bids at any CPM. The overall
+ *    winner gets hb_*, send-all-bids adds hb_*_<bidder>, and deal bids carry
+ *    hb_deal / hb_deal_<bidder>; keys are cut to 20 characters;
  *  - presetGPTTargeting (unless false) clears the slots' Prebid keys at auctionInit;
- *  - bidRequested carries the consent data the CMP gave (gdprConsent, uspConsent, gppConsent).
+ *  - bidRequested carries the consent data the CMP gave, as Prebid collects it:
+ *    gdprConsent with consentManagementTcf; uspConsent only with
+ *    consentManagementUsp installed; gppConsent only with consentManagementGpp
+ *    installed and consentManagement.gpp not disabled (Tessera disables it).
  * No network, storage or real ad library is used.
  */
 import vm from 'node:vm';
@@ -54,8 +60,9 @@ const cut = key => key.slice(0, 20);
  * [{code, bidder, cpm, width, height, ttl = 300, dealId, mediaType = 'banner'}].
  * options.mode: 'full' (default), 'no-filter' (accepts the setting, ignores the
  * function), 'no-cache' (drops both settings), 'no-getconfig' (no getConfig API).
+ * options.modules: Prebid modules installed besides consentManagementTcf and the two adapters.
  */
-export function fakePrebid(clock, {respond = () => [], latencyMs = 50, mode = 'full', version = 'v11.34.0', consent = () => ({})} = {}) {
+export function fakePrebid(clock, {respond = () => [], latencyMs = 50, mode = 'full', version = 'v11.34.0', consent = () => ({}), modules = []} = {}) {
   const handlers = new Map(), bids = [], auctions = [], latest = Object.create(null), log = [];
   let config = {useBidCache: false, targetingControls: {}}, sequence = 0;
   const emit = (name, event) => { for (const fn of [...(handlers.get(name) || [])]) fn(event); };
@@ -68,18 +75,21 @@ export function fakePrebid(clock, {respond = () => [], latencyMs = 50, mode = 'f
       return (useCache || isLatest) && allowed && usable(bid);
     });
   }
+  // Prebid's reducers keep the current bid unless the next one is strictly better.
+  const better = (next, current) => next.cpm > current.cpm || (next.cpm === current.cpm && next.timeToRespond < current.timeToRespond);
   function bestPerBidder(list) {
     const best = new Map();
     for (const bid of list) {
       const current = best.get(bid.bidderCode);
-      if (!current || bid.cpm > current.cpm || (bid.cpm === current.cpm && bid.responseTimestamp < current.responseTimestamp)) best.set(bid.bidderCode, bid);
+      if (!current || better(bid, current)) best.set(bid.bidderCode, bid);
     }
     return [...best.values()];
   }
+  const targetable = bid => bid.cpm > 0 || ((config.targetingControls || {}).alwaysIncludeDeals === true && !!bid.dealId);
   function targetingFor(code, pool = received()) {
-    const top = bestPerBidder(pool.filter(bid => bid.adUnitCode === code));
+    const top = bestPerBidder(pool.filter(bid => bid.adUnitCode === code)).filter(targetable);
     if (!top.length) return {};
-    const winner = top.reduce((a, b) => (b.cpm > a.cpm || (b.cpm === a.cpm && b.responseTimestamp < a.responseTimestamp) ? b : a));
+    const winner = top.reduce((a, b) => (better(b, a) ? b : a));
     const out = {};
     const keys = bid => ({hb_bidder: bid.bidderCode, hb_adid: bid.adId, hb_pb: bid.cpm.toFixed(2), hb_size: `${bid.width}x${bid.height}`,
       hb_format: bid.mediaType, hb_source: 'client', ...(bid.dealId ? {hb_deal: bid.dealId} : {})});
@@ -90,12 +100,13 @@ export function fakePrebid(clock, {respond = () => [], latencyMs = 50, mode = 'f
   function consentFields() {
     const data = consent() || {}, fields = {};
     if (data.gdpr) fields.gdprConsent = {...data.gdpr, vendorData: {large: 'object'}, apiVersion: 2};
-    if (data.usp !== undefined) fields.uspConsent = data.usp;
-    if (data.gpp) fields.gppConsent = {...data.gpp, parsedSections: {}};
+    if (data.usp !== undefined && pb.installedModules.includes('consentManagementUsp')) fields.uspConsent = data.usp;
+    const gpp = (config.consentManagement || {}).gpp;
+    if (data.gpp && pb.installedModules.includes('consentManagementGpp') && !(gpp && gpp.enabled === false)) fields.gppConsent = {...data.gpp, parsedSections: {}};
     return fields;
   }
   const pb = {
-    version, que: {push: fn => fn()}, installedModules: ['consentManagementTcf', 'pubmaticBidAdapter', 'openxBidAdapter'], bidderSettings: {}, adUnits: [],
+    version, que: {push: fn => fn()}, installedModules: ['consentManagementTcf', 'pubmaticBidAdapter', 'openxBidAdapter', ...modules], bidderSettings: {}, adUnits: [],
     setConfig(value) {
       log.push(value);
       for (const [key, item] of Object.entries(value || {})) {
@@ -123,7 +134,7 @@ export function fakePrebid(clock, {respond = () => [], latencyMs = 50, mode = 'f
         const fresh = (respond(auction) || []).filter(bid => codes.includes(bid.code)).map(bid => ({
           adUnitCode: bid.code, bidderCode: bid.bidder, bidder: bid.bidder, cpm: bid.cpm, width: bid.width ?? 300, height: bid.height ?? 250,
           ttl: bid.ttl ?? 300, mediaType: bid.mediaType ?? 'banner', dealId: bid.dealId, auctionId: id, adId: `ad-${auction.index}-${bid.code}-${bid.bidder}-${bid.cpm}`,
-          responseTimestamp: clock.now(), requestTimestamp: auction.at, netRevenue: true, currency: 'EUR', status: undefined, adserverTargeting: {}}));
+          responseTimestamp: clock.now(), requestTimestamp: auction.at, timeToRespond: bid.timeToRespond ?? clock.now() - auction.at, netRevenue: true, currency: 'EUR', status: undefined, adserverTargeting: {}}));
         for (const bid of fresh) { bids.push(bid); emit('bidResponse', bid); }
         emit('auctionEnd', {auctionId: id, adUnitCodes: codes});
         const grouped = {};
@@ -200,7 +211,7 @@ class FakeElement {
  * cmp: TCF answers come only from page.consent(...). Every GAM request is recorded with the
  * Prebid keys of each slot at that moment in page.requests.
  */
-export function bidCachePage(source, {containers = ['Billboard', 'P1'], width = 1280, height = 900, respond, mode, latencyMs, prebid = true, keywords = {category: 'Sports'}} = {}) {
+export function bidCachePage(source, {containers = ['Billboard', 'P1'], width = 1280, height = 900, respond, mode, latencyMs, modules, prebid = true, keywords = {category: 'Sports'}} = {}) {
   const clock = fakeClock(), requests = [], errors = [], fetches = [], gptSlots = [];
   const doc = {readyState: 'complete', visibilityState: 'visible', hidden: false, referrer: '', cookie: '', listeners: new Map(),
     addEventListener(name, fn) { if (!this.listeners.has(name)) this.listeners.set(name, []); this.listeners.get(name).push(fn); },
@@ -272,7 +283,7 @@ export function bidCachePage(source, {containers = ['Billboard', 'P1'], width = 
     else if (typeof callback === 'function') callback(null, false);
   };
   let privacy = {usp: undefined, gpp: undefined};
-  const pbState = prebid ? fakePrebid(clock, {respond, mode, latencyMs, consent: () => ({
+  const pbState = prebid ? fakePrebid(clock, {respond, mode, latencyMs, modules, consent: () => ({
     gdpr: tcData && tcData.eventStatus !== 'cmpuishown' ? {gdprApplies: tcData.gdprApplies, consentString: tcData.tcString, addtlConsent: tcData.addtlConsent} : null,
     usp: privacy.usp, gpp: privacy.gpp})}) : null;
 

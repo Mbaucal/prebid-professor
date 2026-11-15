@@ -88,9 +88,12 @@ test('a higher unsent earlier bid wins the refresh and is the targeting GAM rece
   const snapshot = page.snapshot();
   assert.equal(snapshot.status, 'active'); assert.equal(snapshot.counters.cachedWins, 1);
   assert.equal(snapshot.lastSelection.code, 'P1');
-  assert.equal(page.prebid.config().useBidCache, true); assert.equal(page.prebid.config().targetingControls.presetGPTTargeting, false);
+  assert.equal(page.prebid.config().useBidCache, true); assert.equal(page.prebid.config().targetingControls.presetGPTTargeting, undefined);
   assert.equal(page.prebid.config().targetingControls.alwaysIncludeDeals, true); assert.equal(page.prebid.config().enableSendAllBids, true);
-  assert(page.prebid.auctions.every(auction => !auction.preset), 'no targeting is pre-set at auctionInit while caching is on');
+  // Prebid's own presetGPTTargeting only clears hb_* keys at auctionInit (it never writes pool bids): kept as in 3.21.2.
+  assert(page.prebid.auctions.every(auction => auction.preset), 'presetGPTTargeting stays as in 3.21.2 while caching is on');
+  // Prebid asks the filter again on every targeting read; each bid counts once per refusal reason.
+  for (const [why, count] of Object.entries(snapshot.counters.filterRejections)) assert(count <= page.prebid.bids.length, `${why}: ${count} refusals for ${page.prebid.bids.length} bids`);
   // Every GAM request had its own new auction, also when an earlier bid won.
   assert.equal(page.prebid.auctions.filter(auction => auction.codes.includes('Billboard')).length, page.requestsFor('Billboard').length);
   const text = JSON.stringify(snapshot);
@@ -126,18 +129,26 @@ test('the site default off with a position override on reuses only on that posit
   assert.deepEqual(sent(page, 'P1'), [9, 2, null]);
 });
 
-test('a CMP change drops every earlier bid; a GPP or US privacy change prevents reuse across it', async () => {
+test('a TCF change drops every earlier bid; GPP and US privacy changes prevent reuse only when Prebid sends that data', async () => {
   const source = (await adsFor({cache: {enabled: true, maxBidAgeSeconds: 60}})).min;
   const tcf = await run(source, {between: async (page, i) => { if (i === 0) { page.consent(decided('synthetic-tc-b')); assert.equal(page.snapshot().trackedBids, 0); } }});
   assert.deepEqual(sent(tcf, 'Billboard'), [10, 1, 12]);
-  const gpp = await run(source, {between: async (page, i) => { if (i === 0) page.privacy({gpp: {gppString: 'DBABMA~synthetic', applicableSections: [7]}}); }});
-  assert.deepEqual(sent(gpp, 'Billboard'), [10, 1, 12]);
-  assert(gpp.snapshot().counters.filterRejections.consent >= 1);
-  const usp = await run(source, {between: async (page, i) => { if (i === 0) page.privacy({usp: '1YNN'}); }});
+  // Tessera turns Prebid's GPP module off (as 3.21.2), so bidders get no GPP data and a GPP change does not stop reuse.
+  const gppString = {gpp: {gppString: 'DBABMA~synthetic', applicableSections: [7]}};
+  const gpp = await run(source, {modules: ['consentManagementGpp'], between: async (page, i) => { if (i === 0) page.privacy(gppString); }});
+  assert.equal(gpp.prebid.config().consentManagement.gpp.enabled, false);
+  assert(gpp.prebid.auctions.every(auction => auction.consent.gppConsent === undefined), 'no GPP data reaches bidders');
+  assert.deepEqual(sent(gpp, 'Billboard'), [10, 4, 12]);
+  // Without consentManagementUsp in the site's Prebid.js (the vendored build has none), US privacy never reaches bidders either.
+  const plain = await run(source, {between: async (page, i) => { if (i === 0) page.privacy({usp: '1YNN'}); }});
+  assert(plain.prebid.auctions.every(auction => auction.consent.uspConsent === undefined), 'no US privacy data reaches bidders');
+  assert.deepEqual(sent(plain, 'Billboard'), [10, 4, 12]);
+  // With consentManagementUsp, Prebid sends US privacy data, and a change prevents reuse across it.
+  const usp = await run(source, {modules: ['consentManagementUsp'], between: async (page, i) => { if (i === 0) page.privacy({usp: '1YNN'}); }});
   assert.deepEqual(sent(usp, 'Billboard'), [10, 1, 12]);
   assert(usp.snapshot().counters.filterRejections.consent >= 1);
   // Unchanged consent data between the first two auctions keeps reuse there; a later change affects only later auctions.
-  const same = await run(source, {between: async (page, i) => { if (i === 1) page.privacy({usp: '1YNN'}); }});
+  const same = await run(source, {modules: ['consentManagementUsp'], between: async (page, i) => { if (i === 1) page.privacy({usp: '1YNN'}); }});
   assert.deepEqual(sent(same, 'Billboard'), [10, 4, 12]);
 });
 
@@ -175,6 +186,24 @@ test('a bid sent to GAM once is never sent again: winner, other bidders and deal
   // P1: the openx deal won the first request, so its deal is not offered again.
   assert.deepEqual(page.requestsFor('P1')[0].keys.hb_deal, ['D-8']);
   assert(!page.requestsFor('P1').slice(1).some(request => (request.keys.hb_deal_openx || []).includes('D-8')));
+});
+
+test('a fresh deal bid keeps the same bidder\'s earlier bids out of that auction: hb_deal_<bidder> as in 3.21.2', async () => {
+  // First auction: openx 6 goes out as hb_adid_openx and openx 5 stays unsent. The refresh brings a fresh
+  // openx deal at 3. Prebid keeps one bid per bidder per position before it sets hb_*_<bidder> and
+  // hb_deal_<bidder>, so the cached openx 5 must not take the deal's place.
+  const rounds = {Billboard: [[pub(10), ox(6), ox(5)], [pub(1), ox(3, {dealId: 'D-9'})], [pub(2)]]};
+  const old = await run((await adsFor({}, V3212)).min, {rounds});
+  const page = await run((await adsFor({cache: {enabled: true, maxBidAgeSeconds: 300}})).min, {rounds});
+  const second = target => target.requestsFor('Billboard')[1].keys;
+  assert.deepEqual(second(page).hb_deal_openx, ['D-9'], 'the fresh deal reaches GAM');
+  assert.deepEqual(second(page).hb_adid_openx, [adOf(page, 'Billboard', 3, 'openx')], 'the fresh deal is the openx bid');
+  assert.deepEqual(second(page), second(old), 'the refresh sends what 3.21.2 sends');
+  // Without a fresh openx deal in the next auction, the unsent openx 5 competes again and wins.
+  assert.deepEqual(page.requestsFor('Billboard')[2].keys.hb_adid, [adOf(page, 'Billboard', 5, 'openx')]);
+  assert.deepEqual(sent(page, 'Billboard'), [10, 3, 5]);
+  assert.equal(page.snapshot().status, 'active');
+  assert.equal(page.snapshot().counters.filterRejections.deal, 1, JSON.stringify(page.snapshot().counters));
 });
 
 test('an earlier bid whose size the position cannot request at the current viewport is not reused', async () => {
@@ -282,8 +311,8 @@ test('policy boundaries: maximum age, TTL minus one second, and the latest aucti
   const p = policy({version: '3.23.0', defaultEnabled: true, maxAgeSeconds: 60, positions: [['Billboard', true]]});
   const old = bid('a1', 4, {responseTimestamp: p.clock.now()});
   p.auction('a1', 'Billboard', [old]);
-  // The latest Prebid auction for the position must be one Tessera completed.
-  assert.equal(p.config.bidCacheFilterFunction(old), true, 'a1 is the latest auction: its own bid is fresh');
+  // Prebid never asks about bids of its own latest auction; a1 is Tessera's latest, so a1 bids are not cached bids.
+  assert.equal(p.config.bidCacheFilterFunction(old), false, 'a bid of the latest completed auction is not a cached bid');
   p.auction('a2', 'Billboard', []);
   assert.equal(p.config.bidCacheFilterFunction(old), true);
   assert.equal(p.config.bidCacheFilterFunction({...old, width: 728, height: 90}), true, 'the recorded size counts, not a changed bid object');
@@ -294,4 +323,43 @@ test('policy boundaries: maximum age, TTL minus one second, and the latest aucti
   assert.equal(p.config.bidCacheFilterFunction(old), false, 'a new consent epoch drops it');
   assert.equal(p.cache.snapshot().trackedBids, 0);
   assert.equal(p.win.__tesseraBidCache.snapshot().version, '3.23.0');
+});
+
+test('an auction Prebid starts without auctionInit (no bid requests) never offers the earlier auction\'s bids again', () => {
+  // Prebid moves its latest auction for a position before it knows whether any bidder is asked; with
+  // no bid requests it emits no auctionInit, so Tessera's own record still names a1.
+  const p = policy({version: '3.23.0', defaultEnabled: true, maxAgeSeconds: 60, positions: [['Billboard', true]]});
+  const sentBid = bid('a1', 4, {responseTimestamp: p.clock.now()}), unsent = bid('a1', 3, {responseTimestamp: p.clock.now()});
+  p.auction('a1', 'Billboard', [sentBid, unsent]);
+  p.cache.applied('Billboard', {hb_adid: sentBid.adId});
+  const filter = p.config.bidCacheFilterFunction;
+  assert.equal(filter(sentBid), false, 'a bid sent to GAM is never offered again');
+  assert.equal(filter(unsent), false, 'no completed later auction: nothing competes');
+  assert.equal(p.cache.snapshot().counters.filterRejections.context, 2);
+});
+
+test('diagnostics count each refused bid once per reason, however often Prebid asks', () => {
+  const p = policy({version: '3.23.0', defaultEnabled: true, maxAgeSeconds: 1, positions: [['Billboard', true]]});
+  const old = bid('a1', 4, {responseTimestamp: p.clock.now()}), other = bid('a1', 5, {responseTimestamp: p.clock.now()});
+  p.auction('a1', 'Billboard', [old, other]);
+  p.auction('a2', 'Billboard', []);
+  const filter = p.config.bidCacheFilterFunction;
+  for (let i = 0; i < 10; i++) { assert.equal(filter(old), true); assert.equal(filter(other), true); }
+  p.cache.applied('Billboard', {hb_adid: other.adId});
+  p.clock.value += 5000;
+  for (let i = 0; i < 25; i++) { assert.equal(filter(old), false); assert.equal(filter(other), false); }
+  assert.deepEqual(JSON.parse(JSON.stringify(p.cache.snapshot().counters.filterRejections)), {expired: 1, used: 1});
+});
+
+test('policy: a fresh deal at any CPM, even 0 (alwaysIncludeDeals), keeps only that bidder\'s earlier bids out', () => {
+  const p = policy({version: '3.23.0', defaultEnabled: true, maxAgeSeconds: 60, positions: [['Billboard', true]]});
+  const openx = bid('a1', 5, {bidderCode: 'openx', responseTimestamp: p.clock.now()}), pubmatic = bid('a1', 4, {bidderCode: 'pubmatic', responseTimestamp: p.clock.now()});
+  p.auction('a1', 'Billboard', [openx, pubmatic]);
+  const filter = p.config.bidCacheFilterFunction;
+  p.auction('a2', 'Billboard', [bid('a2', 0, {bidderCode: 'openx', dealId: 'D-0', responseTimestamp: p.clock.now()})]);
+  assert.equal(filter(openx), false, 'openx has a fresh deal at 0');
+  assert.equal(filter(pubmatic), true, 'another bidder\'s deal does not keep pubmatic out');
+  p.auction('a3', 'Billboard', [bid('a3', 1, {bidderCode: 'openx', dealId: '', responseTimestamp: p.clock.now()})]);
+  assert.equal(filter(openx), true, 'an empty dealId is no deal');
+  assert.deepEqual(JSON.parse(JSON.stringify(p.cache.snapshot().counters.filterRejections)), {deal: 1});
 });

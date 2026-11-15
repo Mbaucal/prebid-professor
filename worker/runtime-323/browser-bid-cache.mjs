@@ -16,8 +16,10 @@
  * the same position, from an auction Tessera completed in the current consent
  * epoch with the same Prebid consent data, never sent to GAM before, of a size
  * the position may request now, and younger than the saved age and the bidder
- * TTL (minus one second). Every refresh still runs a new auction; a cached bid
- * only competes with its fresh bids. Nothing is stored outside page memory.
+ * TTL (minus one second). A bidder with a fresh deal bid in the current auction
+ * keeps that deal: none of its earlier bids competes there. Every refresh still
+ * runs a new auction; a cached bid only competes with its fresh bids. Nothing
+ * is stored outside page memory.
  * Missing Prebid features or a filter Prebid does not honor switch the page to
  * fresh bids only (status 'fresh-only'); no position is ever dropped.
  */
@@ -29,12 +31,12 @@ export function createTesseraBidCache(win, settings, options) {
     rows.push([row[0], row[1] === true]);
   });
   var maxAgeMs = settings.maxAgeSeconds * 1000;
-  var pb = null, active = false, configured = false, restore = null;
+  var pb = null, active = false, configured = false;
   var status = 'waiting-prebid', reason = null, prebidVersion = null;
   var consentReady = false, consentEpoch = 0;
   var known = Object.create(null), auctions = [], latest = Object.create(null);
   var started = Object.create(null), requested = Object.create(null), requestOrder = [];
-  var decisions = Object.create(null), decisionCount = 0;
+  var decisions = Object.create(null), reasons = Object.create(null), decisionCount = 0;
   var counters = {auctions:0, cachedWins:0, freshWins:0, noBid:0, filterRejections:Object.create(null)};
   var lastSelection = null;
 
@@ -64,18 +66,14 @@ export function createTesseraBidCache(win, settings, options) {
   function drop() {
     known = Object.create(null); auctions = []; latest = Object.create(null);
     requested = Object.create(null); requestOrder = [];
-    decisions = Object.create(null); decisionCount = 0;
+    decisions = Object.create(null); reasons = Object.create(null); decisionCount = 0;
   }
   function fresh(why) {
     active = false; status = 'fresh-only'; reason = why;
     drop();
     if (configured && pb) {
       configured = false;
-      try {
-        var off = {useBidCache:false};
-        if (restore) off.targetingControls = restore;
-        pb.setConfig(off);
-      } catch (_) {}
+      try { pb.setConfig({useBidCache:false}); } catch (_) {}
     }
   }
   function onInit(event) {
@@ -96,9 +94,13 @@ export function createTesseraBidCache(win, settings, options) {
     var row = bid && bid.adId !== undefined && bid.adId !== null ? known[String(bid.adId)] : null;
     if (row) row.won = true;
   }
-  function remember(id, value) {
-    if (!(id in decisions) && ++decisionCount > MAX_DECISIONS) { decisions = Object.create(null); decisionCount = 1; }
-    decisions[id] = value;
+  function refused(why) { counters.filterRejections[why] = (counters.filterRejections[why] || 0) + 1; }
+  /** Prebid asks again on every targeting read: a refused bid counts once per reason. */
+  function remember(id, why) {
+    if (!(id in decisions) && ++decisionCount > MAX_DECISIONS) { decisions = Object.create(null); reasons = Object.create(null); decisionCount = 1; }
+    decisions[id] = why === null;
+    if (why !== null && reasons[id] !== why) refused(why);
+    reasons[id] = why;
   }
   function sizeAllowed(code, width, height) {
     var sizes = options.sizes(code) || [];
@@ -123,6 +125,10 @@ export function createTesseraBidCache(win, settings, options) {
     if (row.mediaType !== 'banner' || !(row.cpm > 0) || !Number.isFinite(row.cpm) ||
       !(row.width >= 1) || !(row.height >= 1) || Math.floor(row.width) !== row.width || Math.floor(row.height) !== row.height) return 'format';
     if (row.submitted || row.won || bid.status === 'rendered' || bid.status === 'targetingSet') return 'used';
+    // Prebid keeps one bid per bidder and position before it sets hb_*_<bidder> and
+    // hb_deal_<bidder>: a fresh deal of this bidder keeps that place, as in 3.21.2.
+    var deals = current.deals[code];
+    if (deals && (deals[row.bidder] === true || deals[String(bid.bidderCode)] === true)) return 'deal';
     if (!sizeAllowed(code, row.width, row.height)) return 'size';
     var now = Date.now();
     if (now < row.received || now >= row.expires) return 'expired';
@@ -132,10 +138,9 @@ export function createTesseraBidCache(win, settings, options) {
   function filter(bid) {
     try {
       if (!bid || typeof bid !== 'object') return false;
-      if (bid.auctionId !== undefined && bid.auctionId !== null && started[bid.adUnitCode] === String(bid.auctionId)) return true;
       var why = rejection(bid);
-      if (bid.adId !== undefined && bid.adId !== null) remember(String(bid.adId), why === null);
-      if (why !== null) counters.filterRejections[why] = (counters.filterRejections[why] || 0) + 1;
+      if (bid.adId !== undefined && bid.adId !== null) remember(String(bid.adId), why);
+      else if (why !== null) refused(why);
       return why === null;
     } catch (_) { return false; }
   }
@@ -148,19 +153,15 @@ export function createTesseraBidCache(win, settings, options) {
       prebidVersion = typeof instance.version === 'string' ? instance.version.slice(0, 40) : null;
       var existing = instance.getConfig('bidCacheFilterFunction');
       if (existing !== undefined && existing !== null) { fresh('publisher-filter-present'); return; }
-      var controls = instance.getConfig('targetingControls');
-      restore = controls && typeof controls === 'object' ? Object.assign({}, controls) : null;
       instance.onEvent('auctionInit', onInit);
       instance.onEvent('bidRequested', onRequested);
       instance.onEvent('bidWon', onWon);
       configured = true;
-      // Cached targeting is applied only by Tessera after the filter and its
-      // own checks, never pre-set on GPT slots at auctionInit.
-      instance.setConfig({useBidCache:true, bidCacheFilterFunction:filter,
-        targetingControls:Object.assign({}, restore || {}, {presetGPTTargeting:false})});
-      var now = instance.getConfig('targetingControls');
-      if (instance.getConfig('useBidCache') !== true || instance.getConfig('bidCacheFilterFunction') !== filter ||
-        !now || typeof now !== 'object' || now.presetGPTTargeting !== false) { fresh('bid-cache-unsupported'); return; }
+      // Targeting controls stay as 3.21.2 set them. The read-back is a sanity check
+      // only (Prebid stores any setting it is given); whether Prebid honors the
+      // filter is checked for every cached bid in extend() ('filter-not-honored').
+      instance.setConfig({useBidCache:true, bidCacheFilterFunction:filter});
+      if (instance.getConfig('useBidCache') !== true || instance.getConfig('bidCacheFilterFunction') !== filter) { fresh('bid-cache-unsupported'); return; }
       active = true; status = 'active'; reason = null;
     } catch (_) { fresh('install-error'); }
   }
@@ -168,18 +169,20 @@ export function createTesseraBidCache(win, settings, options) {
   function auction(codes, bids, auctionId, epoch) {
     if (!active) return;
     var id = String(auctionId);
-    var entry = {id:id, epoch:epoch, consent:typeof requested[id] === 'string' ? requested[id] : null};
+    var entry = {id:id, epoch:epoch, consent:typeof requested[id] === 'string' ? requested[id] : null, deals:Object.create(null)};
     counters.auctions++;
     (codes || []).forEach(function(code) {
       latest[code] = entry;
       if (positions[code] !== true) return;
-      var row = bids && bids[code];
+      var row = bids && bids[code], deals = entry.deals[code] = Object.create(null);
       (row && Array.isArray(row.bids) ? row.bids : []).forEach(function(bid) {
-        if (!bid || typeof bid !== 'object' || bid.auctionId !== auctionId || bid.adUnitCode !== code ||
-          bid.adId === undefined || bid.adId === null || bid.adId === '') return;
+        if (!bid || typeof bid !== 'object' || bid.auctionId !== auctionId || bid.adUnitCode !== code) return;
+        // Bidders with a fresh deal bid here, at any CPM (alwaysIncludeDeals keeps 0 CPM deals).
+        if (bid.dealId !== undefined && bid.dealId !== null && bid.dealId !== '') deals[String(bid.bidderCode)] = true;
+        if (bid.adId === undefined || bid.adId === null || bid.adId === '') return;
         var ttl = Number(bid.ttl), received = Number(bid.responseTimestamp);
         if (!Number.isFinite(ttl) || ttl <= 0 || !Number.isFinite(received) || received <= 0) return;
-        known[String(bid.adId)] = {code:code, entry:entry, auctionId:id, bid:bid,
+        known[String(bid.adId)] = {code:code, entry:entry, auctionId:id, bid:bid, bidder:String(bid.bidderCode),
           mediaType:bid.mediaType, cpm:Number(bid.cpm), width:Number(bid.width), height:Number(bid.height),
           received:received, expires:received + Math.min(maxAgeMs, Math.max(0, ttl - 1) * 1000),
           submitted:false, won:false};
