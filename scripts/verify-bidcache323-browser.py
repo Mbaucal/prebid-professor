@@ -1,10 +1,14 @@
-"""3.23.0 bid caching in Chromium with the real Prebid.js 11.34.0; synthetic GPT, TCF and bidders, no paid traffic.
+"""3.23.0 bid caching in Chromium with a real Prebid.js; synthetic GPT, TCF and bidders, no paid traffic.
 
-Run scripts/prepare-bidcache323-browser.mjs first. Each scenario is a 3.23.0 package
-generated through the TEST workspace Generate path for a synthetic, non-Tanjug site
-(tests/runtime/bid-cache323-site.mjs), with the vendored Prebid.js 11.34.0 file as
-the site's build. The page loads the package's own prebid.js and ads.min.js (and, for
-the on scenario, also ads.js). GPT is
+python scripts/verify-bidcache323-browser.py [output]
+Run scripts/prepare-bidcache323-browser.mjs first (same output folder; default
+.generated/bidcache323-browser). Each scenario is a 3.23.0 package generated through
+the TEST workspace Generate path for a synthetic, non-Tanjug site
+(tests/runtime/bid-cache323-site.mjs), with the Prebid.js file given to the prepare
+step as the site's build: by default the vendored Prebid.js 11.34.0, in CI also a
+pinned upstream 11.11.0 build (scripts/build-bidcache-prebid.mjs). The expected
+Prebid version comes from the prepared manifest. The page loads the package's own
+prebid.js and ads.min.js (and, for the on scenario, also ads.js). GPT is
 tests/runtime/mock-ad-libraries.js, the CMP is a local TCF stub that grants every
 purpose and vendor, and the pubmatic and openx adapters are replaced with synthetic
 adapters whose requests are answered by a route. Every other request is aborted.
@@ -18,7 +22,11 @@ the moment of each request.
   fresh 1, then fresh 2 against the unsent earlier 1, then fresh 12.
 - off (saved off): fresh bids only, 10, 1, 2, 12, and no bid cache settings in Prebid.
 - override (site default on, Billboard off): Billboard fresh only; P1 as in on.
-Desktop (1280 px) and mobile (390 px) run every scenario.
+- deal (the on package): pubmatic 10, then 1, 2, 12; openx 6 and 5, then a deal
+  D-9 at 3, then 0.5 twice. The refresh sends the fresh openx deal with
+  hb_deal_openx, as 3.21.2 does; the unsent openx 5 never takes its place.
+Desktop (1280 px) and mobile (390 px) run every scenario. In every scenario Prebid's
+targetingControls stay as 3.21.2 sets them (presetGPTTargeting untouched).
 """
 import hashlib
 import json
@@ -66,8 +74,8 @@ HOOK = r'''
     } else if (command === 'ping') callback({cmpLoaded: true, gdprApplies: true}, true);
     else callback(true);
   };
-  // pubmatic: 10 and 4, then 1, then 2, then 12. openx: 0.5 in every auction.
-  const script = {pubmatic: [[10, 4], [1], [2], [12]], openx: [[0.5], [0.5], [0.5], [0.5]]};
+  // Bids per bidder and auction: a number is a CPM, an object adds fields such as dealId.
+  const script = %SCRIPT%;
   const rounds = new Map();
   window.pbjs = {que: [() => {
     for (const name of ['pubmatic', 'openx']) window.pbjs.registerBidAdapter(null, name, {
@@ -77,7 +85,7 @@ HOOK = r'''
           const round = (rounds.get(name + ':' + bid.adUnitCode) || 0) + 1;
           rounds.set(name + ':' + bid.adUnitCode, round);
           const size = bid.mediaTypes.banner.sizes.find(item => Array.isArray(item) && item[0] > 1);
-          return (script[name][round - 1] || []).map(cpm => ({requestId: bid.bidId, cpm, ttl: 120, width: size[0], height: size[1], round}));
+          return (script[name][round - 1] || []).map(row => Object.assign({requestId: bid.bidId, ttl: 120, width: size[0], height: size[1], round}, typeof row === 'number' ? {cpm: row} : row));
         }))}};
       },
       interpretResponse: response => response.body.bids,
@@ -85,6 +93,10 @@ HOOK = r'''
   }]};
 })();
 '''.replace('%TC%', TC_STRING).replace('%BID%', BID)
+# pubmatic: 10 and 4, then 1, then 2, then 12. openx: 0.5 in every auction.
+STANDARD = {'pubmatic': [[10, 4], [1], [2], [12]], 'openx': [[0.5], [0.5], [0.5], [0.5]]}
+# openx leaves 5 unsent in the first auction and bids a fresh deal in the refresh.
+DEAL = {'pubmatic': [[10], [1], [2], [12]], 'openx': [[6, 5], [{'cpm': 3, 'dealId': 'D-9'}], [0.5], [0.5]]}
 RECORD = r'''
 (() => {
   // Each GAM request with the Prebid targeting its slot carries at that moment.
@@ -96,7 +108,7 @@ RECORD = r'''
       const keys = Object.fromEntries(slot.getTargetingKeys().filter(key => key.startsWith('hb_')).map(key => [key, slot.getTargeting(key)]));
       const all = events(), bid = id => {
         const found = all.find(event => event.eventType === 'bidResponse' && event.args.adId === id);
-        return found ? {cpm: found.args.cpm, auctionId: found.args.auctionId, code: found.args.adUnitCode, bidder: found.args.bidderCode} : null;
+        return found ? {cpm: found.args.cpm, auctionId: found.args.auctionId, code: found.args.adUnitCode, bidder: found.args.bidderCode, deal: found.args.dealId || null} : null;
       };
       const latest = [...all].reverse().find(event => event.eventType === 'auctionInit' && event.args.adUnitCodes.includes(slot.id));
       window.__gam.push({code: slot.id, at: Date.now(), keys, winner: keys.hb_adid ? bid(keys.hb_adid[0]) : null,
@@ -107,11 +119,20 @@ RECORD = r'''
   };
 })();
 '''
-EXPECTED = {
-    'on': {'Billboard': [10, 4, 2, 12], 'P1': [10, 4, 2, 12]},
-    'off': {'Billboard': [10, 1, 2, 12], 'P1': [10, 1, 2, 12]},
-    'override': {'Billboard': [10, 1, 2, 12], 'P1': [10, 4, 2, 12]},
+# package: the prepared package; bids: the synthetic bidders; sent: the winning CPM of the
+# four GAM requests per position; reused: positions whose second request reuses the unsent 4;
+# openx: the hb_adid_openx CPM per request (always a fresh bid); deal: hb_deal_openx per request.
+SCENARIOS = {
+    'on': {'package': 'on', 'bids': STANDARD, 'sent': {'Billboard': [10, 4, 2, 12], 'P1': [10, 4, 2, 12]}, 'reused': ['Billboard', 'P1'],
+           'enabled': {'Billboard': True, 'P1': True}, 'openx': [0.5] * 4, 'deal': [None] * 4},
+    'off': {'package': 'off', 'bids': STANDARD, 'sent': {'Billboard': [10, 1, 2, 12], 'P1': [10, 1, 2, 12]}, 'reused': [],
+            'enabled': None, 'openx': [0.5] * 4, 'deal': [None] * 4},
+    'override': {'package': 'override', 'bids': STANDARD, 'sent': {'Billboard': [10, 1, 2, 12], 'P1': [10, 4, 2, 12]}, 'reused': ['P1'],
+                 'enabled': {'Billboard': False, 'P1': True}, 'openx': [0.5] * 4, 'deal': [None] * 4},
+    'deal': {'package': 'on', 'bids': DEAL, 'sent': {'Billboard': [10, 3, 2, 12], 'P1': [10, 3, 2, 12]}, 'reused': [],
+             'enabled': {'Billboard': True, 'P1': True}, 'openx': [6, 3, 0.5, 0.5], 'deal': [None, 'D-9', None, None]},
 }
+PREBID_VERSION = 'v' + manifest['prebid']['version']
 
 
 def settle(page):
@@ -129,7 +150,7 @@ def advance(page, ms, step=100):
 
 
 def run(browser, scenario, width, program):
-    folder = output / scenario
+    folder = output / SCENARIOS[scenario]['package']
     context = browser.new_context(viewport={'width': width, 'height': 900 if width > 600 else 844}, service_workers='block')
     page = context.new_page()
     errors, outbound, answered = [], [], []
@@ -160,13 +181,14 @@ def run(browser, scenario, width, program):
     context.route('**/*', route)
     page.clock.install(time=now)
     page.clock.pause_at(now + timedelta(seconds=1))
-    page.add_init_script(mock + '\n' + HOOK + '\n' + RECORD)
+    page.add_init_script(mock + '\n' + HOOK.replace('%SCRIPT%', json.dumps(SCENARIOS[scenario]['bids'])) + '\n' + RECORD)
     page.goto(PAGE)
     advance(page, 2000)
     for _ in range(3):
         advance(page, 36000)
     state = page.evaluate('''() => ({gam: window.__gam, version: pbjs.version, useBidCache: pbjs.getConfig('useBidCache'),
       filter: typeof pbjs.getConfig('bidCacheFilterFunction'), preset: pbjs.getConfig('targetingControls.presetGPTTargeting'),
+      alwaysIncludeDeals: pbjs.getConfig('targetingControls.alwaysIncludeDeals'),
       sendAllBids: pbjs.getConfig('enableSendAllBids'),
       consent: pbjs.getEvents().filter(event => event.eventType === 'bidRequested').map(event => event.args.gdprConsent && event.args.gdprConsent.consentString),
       snapshot: window.__tesseraBidCache ? window.__tesseraBidCache.snapshot() : null,
@@ -176,13 +198,14 @@ def run(browser, scenario, width, program):
 
 
 def check(scenario, width, program, state, errors, outbound, answered):
-    expected = EXPECTED[scenario]
+    spec = SCENARIOS[scenario]
+    expected = spec['sent']
     assert not errors, errors
     assert not [host for host in outbound if host and host.endswith(('doubleclick.net', 'googlesyndication.com', 'pubmatic.com', 'openx.net'))], ('no ad server or bidder request', outbound)
-    assert state['version'] == 'v11.34.0', state['version']
-    assert state['sendAllBids'] is True, 'send-all-bids stays on'
+    assert state['version'] == PREBID_VERSION, (state['version'], PREBID_VERSION)
+    assert state['sendAllBids'] is True and state['alwaysIncludeDeals'] is True, 'send-all-bids and deal keys stay on'
+    assert state['preset'] is None, ('targetingControls.presetGPTTargeting stays as in 3.21.2', state['preset'])
     assert state['consent'] and all(value == TC_STRING for value in state['consent']), ('bidders get the CMP string', state['consent'])
-    cached_positions = [code for code, cpms in expected.items() if cpms[1] == 4]
     for code, cpms in expected.items():
         requests = [request for request in state['gam'] if request['code'] == code]
         assert len(requests) >= 4, (code, 'four GAM requests', requests)
@@ -196,21 +219,27 @@ def check(scenario, width, program, state, errors, outbound, answered):
             for key, bid in request['bids'].items():
                 assert bid and bid['code'] == code, ('targeting stays with its own position', code, key, bid)
             reused = request['winner']['auctionId'] != request['latestAuction']
-            assert reused == (index == 1 and code in cached_positions), ('only the unsent earlier 4 is reused', code, index, request)
+            assert reused == (index == 1 and code in spec['reused']), ('only the unsent earlier 4 is reused', code, index, request)
             openx = request['bids'].get('hb_adid_openx')
-            assert openx and openx['cpm'] == 0.5 and openx['auctionId'] == request['latestAuction'], ('send-all-bids: fresh openx only; a sent bid is never sent again', code, index, openx)
+            assert openx and openx['cpm'] == spec['openx'][index] and openx['auctionId'] == request['latestAuction'], ('send-all-bids: fresh openx only; a sent bid is never sent again', code, index, openx)
+            deal = spec['deal'][index]
+            assert request['keys'].get('hb_deal_openx') == ([deal] if deal else None) and openx['deal'] == deal, ('a fresh deal reaches GAM as in 3.21.2', code, index, request['keys'].get('hb_deal_openx'), openx)
         # hb_adid and hb_adid_<bidder> of one request name the same winner; across requests no ID repeats.
         sent_ids = [id for request in requests for id in {value[0] for key, value in request['keys'].items() if key.startswith('hb_adid')}]
         assert len(sent_ids) == len(set(sent_ids)), ('no bid is sent to GAM twice', code, sent_ids)
-    if scenario == 'off':
+    if spec['enabled'] is None:
         assert state['useBidCache'] is False and state['filter'] == 'undefined' and state['snapshot'] is None, state
-        assert state['preset'] is None, 'presetGPTTargeting as in 3.21.2'
     else:
         snapshot = state['snapshot']
-        assert state['useBidCache'] is True and state['filter'] == 'function' and state['preset'] is False, state
+        assert state['useBidCache'] is True and state['filter'] == 'function', state
         assert snapshot['status'] == 'active' and snapshot['reason'] is None, snapshot
-        assert snapshot['counters']['cachedWins'] == len(cached_positions), snapshot['counters']
-        assert snapshot['positions'] == [{'code': code, 'enabled': cpms[1] == 4} for code, cpms in sorted(expected.items())], snapshot['positions']
+        assert snapshot['counters']['cachedWins'] == len(spec['reused']), snapshot['counters']
+        assert snapshot['positions'] == [{'code': code, 'enabled': spec['enabled'][code]} for code in sorted(expected)], snapshot['positions']
+        # Each refused bid counts once per reason, however often Prebid reads targeting.
+        bids = sum(len(rows) for rows in spec['bids'].values()) * len(expected)
+        assert all(count <= bids for count in snapshot['counters']['filterRejections'].values()), (bids, snapshot['counters'])
+        if scenario == 'deal':
+            assert snapshot['counters']['filterRejections'].get('deal') == len(expected), snapshot['counters']
         text = json.dumps(snapshot)
         leaked = [value for value in [TC_STRING] + [value[0] for request in state['gam'] for key, value in request['keys'].items() if key.startswith('hb_adid')] if value in text]
         assert not leaked, ('diagnostics hold no consent string or ad ID', leaked)
@@ -223,7 +252,7 @@ results = []
 with sync_playwright() as pw:
     browser = pw.chromium.launch(headless=True, executable_path=os.environ.get('CHROMIUM_PATH'), args=['--no-sandbox'])
     try:
-        runs = [(scenario, width, 'ads.min.js') for scenario in ['on', 'off', 'override'] for width in [1280, 390]] + [('on', 1280, 'ads.js'), ('on', 390, 'ads.js')]
+        runs = [(scenario, width, 'ads.min.js') for scenario in SCENARIOS for width in [1280, 390]] + [('on', 1280, 'ads.js'), ('on', 390, 'ads.js')]
         for scenario, width, program in runs:
             try:
                 evidence = check(scenario, width, program, *run(browser, scenario, width, program))
@@ -234,8 +263,8 @@ with sync_playwright() as pw:
                 print('FAIL %s %dpx %s %s' % (scenario, width, program, repr(error)[:4000]), flush=True)
     finally:
         browser.close()
-report = {'scope': '3.23.0 packages with the vendored Prebid.js 11.34.0 in Chromium; synthetic GPT, TCF and bidders; every other request aborted; virtual clock',
-          'runtime': manifest['runtime'], 'results': results, 'passed': sum(r['passed'] for r in results), 'failed': sum(not r['passed'] for r in results)}
+report = {'scope': '3.23.0 packages with Prebid.js %s in Chromium; synthetic GPT, TCF and bidders; every other request aborted; virtual clock' % manifest['prebid']['version'],
+          'runtime': manifest['runtime'], 'prebid': manifest['prebid'], 'results': results, 'passed': sum(r['passed'] for r in results), 'failed': sum(not r['passed'] for r in results)}
 (output / 'browser-report.json').write_text(json.dumps(report, indent=2) + '\n')
 print(json.dumps({'passed': report['passed'], 'failed': report['failed']}), flush=True)
 sys.exit(1 if report['failed'] else 0)
