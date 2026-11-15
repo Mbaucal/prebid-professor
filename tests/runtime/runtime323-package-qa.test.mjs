@@ -314,3 +314,14 @@ test('the current recommendation is the newest stable runtime, 3.23.0, and carri
   assert.doesNotMatch(min, /localStorage\.(?:getItem|setItem|removeItem)\(["']ADOPS_DEBUG/);
   assert(!topFunctions(min).has('createTesseraBidCache'), 'bid caching is never on unless saved');
 });
+
+test('the 3.23.0 version notes describe what 3.23.0 does', () => {
+  // Shown in Script setup → Version history and frozen with the record, so they must match the shipped behaviour.
+  const notes = runtimeReleaseHistory.find(release => release.id === 'tessera-3.23.0').changes.join('\n');
+  assert.match(notes, /Config → Demand → Prebid, and an optional on or off per position in Config → Ad units → Bid cache/);
+  assert.match(notes, /a bidder with a fresh deal bid keeps that deal, and none of its earlier bids competes in that auction/);
+  assert.match(notes, /the same TCF decision and the same consent data that Prebid sent to bidders\. A TCF change drops every earlier bid\. Prebid's GPP module is off, and US privacy reaches Prebid only with its module, so a GPP or US privacy change alone does not stop reuse\./);
+  assert.match(notes, /recorded as warnings in the package manifest and README and listed as Not applied in Config → Demand → Prebid/);
+  assert.match(notes, /Older versions refuse saved bid cache settings that would reuse bids, and Generate says how to continue: select 3\.23\.0, or turn those settings off\./);
+  assert.doesNotMatch(notes, /Generate warnings|TCF, US privacy and GPP data|A CMP change drops|presetGPTTargeting/);
+});

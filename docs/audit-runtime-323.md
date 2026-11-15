@@ -34,22 +34,31 @@ The 3.23.0 input gets two fields:
   eligible position with its resolved choice: its override, else the site
   default.
 - `bidCacheExclusions` lists saved overrides that name a position that is not
-  eligible in this package. Each one becomes a Generate warning and is never
-  applied. The setting stays saved.
+  eligible in this package. Each one is recorded as a warning in the package
+  manifest and README and is never applied; Config → Demand → Prebid lists it
+  as Not applied. The setting stays saved.
 
 Eligible positions come from the shared contract
 `shared/bid-cache/eligibility.mjs` (`bidCacheEligibleCodes`): enabled ATF and
 BTF banner units. The TakeOver position, its Interstitial fallback, Outstream
-positions, disabled units and removed units are never eligible. If bid caching
-is on but no position in the package can use it, Generate warns and the
-package is the 3.21.2 program.
+positions, Draft units, disabled units and removed units are never eligible.
+If bid caching is on, or only a saved position override asks for it, but no
+position in the package can use it, the package warns ("Bid caching is on in
+Demand → Prebid, but..." or "A saved position override asks for bid caching,
+but...") and is the 3.21.2 program.
 
-Older generators refuse saved bid cache settings with "Bid caching needs script
+Older generators refuse saved bid cache settings that would reuse bids (the
+site default on, or a position override on) with "Bid caching needs script
 version 3.23.0. Select 3.23.0 in Script setup and save; your bid cache settings
-are kept." `requireSupportedCacheGenerator` now receives the catalog
-descriptor in `worker/test-workspace/runtime-catalog.mjs` and
+are kept. To keep this script version instead, turn bid caching off in Config
+→ Demand → Prebid, remove unused overrides there, and set positions that are On
+to Use site setting under Config → Ad units → Bid cache." Overrides that are
+all Off need no capability: without bid caching every position already uses
+its current auction only. `requireSupportedCacheGenerator` now receives the
+catalog descriptor in `worker/test-workspace/runtime-catalog.mjs` and
 `worker/site-runtime/releases.mjs`, so only a runtime with the `bid-cache`
-capability lets them through.
+capability lets them through. Generate shows that message above Script setup,
+so the reason and both ways out are visible where Generate is blocked.
 
 The package records the decision in `config.json` (`bidCache`,
 `bidCacheExclusions`), describes it in a "Bid caching in 3.23.0" README section,
@@ -91,12 +100,15 @@ check.
 `alwaysIncludeDeals`, `useBidCache:false`), the policy checks for `setConfig`,
 `getConfig`, `onEvent` and `getAdserverTargetingForAdUnitCode`. It refuses to
 replace a `bidCacheFilterFunction` that another script already set. It then
-sets `useBidCache:true`, its `bidCacheFilterFunction`, and `targetingControls`
-with `presetGPTTargeting:false` (all other targeting controls kept), and reads
-them back with `getConfig`. If anything is missing or not applied, the page
-uses fresh bids only: the policy sets `useBidCache:false` and the original
-targeting controls again, and nothing else changes. The Prebid version is not
-pinned; any version with these settings works, and 11.34.0 is verified.
+sets `useBidCache:true` and its `bidCacheFilterFunction`; Prebid's targeting
+controls stay exactly as 3.21.2 sets them. The `getConfig` read-back that
+follows is a sanity check only: Prebid's `setConfig` stores any setting it is
+given, so it cannot show whether this Prebid honors the filter. The real
+detection is the targeting check below (`filter-not-honored`). If an API is
+missing or the read-back differs, the page uses fresh bids only: the policy
+sets `useBidCache:false` and nothing else changes. The Prebid version is not
+pinned; 11.34.0 (vendored) and an upstream 11.11.0 build with the same modules
+are verified in Chromium.
 
 **Which earlier bid may compete.** Prebid calls the filter only for bids of
 earlier auctions; bids of a position's latest auction are always used. An
@@ -116,6 +128,11 @@ earlier bid is accepted only when all of these hold, checked in this order
   native bids are refused here;
 - never sent to GAM before, never won, not rendered, and not marked
   `targetingSet` by Prebid (`used`);
+- the same bidder has no fresh deal bid (non-empty `dealId`, any CPM) in the
+  position's current auction (`deal`). Prebid keeps one bid per bidder and
+  position before it builds `hb_adid_<bidder>` and `hb_deal_<bidder>`, so an
+  earlier open-market bid with a higher CPM would otherwise push the bidder's
+  fresh deal out of the deal keys; 3.23.0 keeps the deal, as 3.21.2 does;
 - its size is one the position requests at the current screen size (`size`);
 - younger than both the maximum bid age and the bidder TTL minus one second
   (`expired`).
@@ -126,11 +143,21 @@ data in Prebid's `bidRequested` events: `gdprConsent` (`gdprApplies`,
 `applicableSections`). If the bidder requests of one auction disagree, none of
 its bids is reused. A bid is reused only when its auction's fingerprint equals
 the current auction's. This compares exactly what Prebid sent to bidders for
-each auction, needs no extra CMP calls and covers TCF, US privacy and GPP the
-same way. It replaces the Tanjug rule that called `__gpp` and `__uspapi`
-directly. Fingerprints stay inside the policy closure and are never shown. A
-readiness consent change (new CMP decision) drops every earlier bid, and no
-auction runs before consent is ready.
+each auction and needs no extra CMP calls, so it covers only the consent data
+Prebid actually collects. With the configuration Tessera generates that is:
+
+- TCF: always. The readiness consent epoch is TCF too; a readiness consent
+  change (new TCF decision) drops every earlier bid, and no auction runs before
+  consent is ready.
+- US privacy: only when the site's Prebid.js includes `consentManagementUsp`.
+  The vendored Tanjug 11.34.0 build does not, so `uspConsent` is never sent and
+  a US privacy change does not stop reuse there.
+- GPP: never. Tessera sets `consentManagement.gpp.enabled:false`, so
+  `gppConsent` is never sent and a GPP change does not stop reuse.
+
+The Tanjug named scripts (`worker/runtime-cache/consent-epoch.mjs`) reuse no
+bids at all while a `__gpp` or `__uspapi` function is on the page; 3.23.0 does
+not carry that rule over (see Known limits). Fingerprints stay inside the policy closure and are never shown.
 
 **Readiness allow-list.** 3.21.2 readiness sends a position's Prebid targeting
 only if every `hb_adid` and `hb_adid_<bidder>` in it is a bid of the current
@@ -142,7 +169,9 @@ selected.
 
 **Filter honored.** If Prebid's targeting holds a cached bid that the filter
 refused or never saw, Prebid did not apply the filter: the page switches to
-fresh bids only (`filter-not-honored`) and reads the targeting again. If the
+fresh bids only (`filter-not-honored`) and reads the targeting again. This,
+not the install read-back, is how a Prebid without working bid cache support
+is detected. If the
 targeting still changes after three reads, the reason is `filter-unstable`;
 an exception gives `cache-error`. In every case ads keep serving with fresh
 bids.
@@ -151,16 +180,24 @@ bids.
 request, every `hb_adid` and `hb_adid_<bidder>` in it is marked as sent and is
 never reused. Prebid `bidWon` also marks a bid. Send-all-bids and deal keys
 work as before: Prebid builds them from the bid pool with each bidder's best
-bid, so a cached bid can appear as a bidder or deal key and is then used too.
-A bidder's lower bids that were never targeted stay unsent and can compete in
-a later auction.
+bid, so a cached bid can appear as a bidder or deal key and is then used too,
+but never in place of a fresh deal of the same bidder (`deal` above). A
+bidder's lower bids that were never targeted stay unsent and can compete in a
+later auction.
 
 **Every refresh is a new auction.** The policy never skips or replaces an
 auction; a cached bid only competes with the fresh bids of that position's new
-auction. `presetGPTTargeting` is off while caching is on so that Prebid never
-sets pool targeting on a slot at `auctionInit` before these checks. Tessera's
-delivery already clears every Prebid key on the slot before it sets the new
-targeting.
+auction. Prebid's `targetingControls` are not changed: in 11.34
+`presetGPTTargeting` only clears `hb_` keys on the slot at `auctionInit` (it
+never sets pool targeting), older versions such as 11.11.0 do not have it, and
+Tessera's delivery clears every Prebid key on the slot before it sets the new
+targeting anyway.
+
+**Latest auction without `auctionInit`.** Prebid emits no `auctionInit` for an
+auction with no bid requests, but that auction still becomes the position's
+latest. The filter therefore applies every check to every bid Prebid asks
+about, including bids of the auction Tessera started last; such a bid is
+refused (`context`) and the position uses its fresh bids, as in 3.21.2.
 
 **Memory, no storage.** The policy keeps at most 64 auctions with their bids,
 128 auction consent fingerprints and 4096 filter decisions, in page memory
@@ -170,8 +207,9 @@ only. Nothing is written to cookies or storage.
 free) returns the version, status (`active`, `fresh-only` or
 `waiting-prebid`), the fallback reason, the Prebid version, the settings and
 positions, whether consent is ready, how many auctions and bids are tracked,
-counters (auctions, cached and fresh wins, requests without bids, rejections
-by reason) and the last selection (position, cached or fresh winner, number
+counters (auctions, cached and fresh wins, requests without bids, and
+rejections by reason: Prebid asks the filter again on every targeting read, so
+each bid is counted once per reason, not once per call) and the last selection (position, cached or fresh winner, number
 of cached bids, winner age). It holds no bid contents, ad IDs or consent
 strings.
 
@@ -192,37 +230,55 @@ strings.
 
 - `tests/runtime/runtime323-package-qa.test.mjs`: identity with 3.21.2 when the
   cache is off, the exact emitted policy, every anchor (missing and repeated),
-  settings, warnings and exclusions, the capability gate, stored drafts, the
-  Outstream context and the TEST workspace flow.
+  settings, warnings and exclusions (including the README and warning text
+  when only a saved override asks for caching), the capability gate, stored
+  drafts, the Outstream context and the TEST workspace flow.
 - `tests/runtime/bid-cache323.test.mjs` with `bid-cache323-page.mjs` and
   `bid-cache323-site.mjs`: the whole generated ads.min.js of a synthetic,
   non-Tanjug site in `node:vm`, with a GPT recorder, a TCF CMP and a Prebid fake
-  that follows Prebid 11.34 bid cache rules. Covers: fresh-only identical to
-  3.21.2; a higher unsent earlier bid wins a refresh and a higher fresh bid
-  wins later; maximum age 1 and 300 seconds and TTL expiry; override off with
-  the default on, and default off with an override on; TCF, GPP and US
-  privacy changes; no auction before consent; a sent bid (also as
-  `hb_adid_<bidder>` or deal key) is never sent again; a size change; the
-  TakeOver, Interstitial and Outstream GAM requests equal 3.21.2's for the same
-  bids and the filter refuses earlier bids of those positions; three kinds of
-  missing Prebid support and a filter set by another script fall back without
-  errors; policy boundaries with a manual clock.
+  that follows Prebid 11.34 bid cache rules: one bid per bidder by CPM, then
+  the faster response (`timeToRespond`); only CPM above 0, or deals with
+  `alwaysIncludeDeals`, in the targeting; consent data collected only by the
+  consent modules the build has. Covers: fresh-only identical to 3.21.2; a
+  higher unsent earlier bid wins a refresh and a higher fresh bid wins later;
+  maximum age 1 and 300 seconds and TTL expiry; override off with the default
+  on, and default off with an override on; a TCF change drops every earlier
+  bid, while GPP and US privacy changes stop reuse only when Prebid sends that
+  data; no auction before consent; a sent bid (also as `hb_adid_<bidder>` or
+  deal key) is never sent again; a fresh deal keeps `hb_deal_<bidder>` against
+  the same bidder's higher earlier bid; a size change; the TakeOver,
+  Interstitial and Outstream GAM requests equal 3.21.2's for the same bids and
+  the filter refuses earlier bids of those positions; three kinds of missing
+  Prebid support and a filter set by another script fall back without errors;
+  `targetingControls` untouched; policy boundaries with a manual clock,
+  including an auction without `auctionInit`, a zero-CPM deal and diagnostics
+  that count each refused bid once per reason.
 - `tests/runtime/bid-cache-eligibility.test.mjs`, `runtime-lineage.test.mjs`
   and `runtime-allow-list-parity.test.mjs`: only 3.23.0 has the capability;
   3.23.0 contains the 3.21.2 closure and capabilities plus `bid-cache`; admin
   allow-lists agree.
 - Chromium (`scripts/prepare-bidcache323-browser.mjs`,
   `scripts/verify-bidcache323-browser.py`, in `site-editor-checks.yml`): three
-  3.23.0 packages generated through the TEST workspace Generate path with the
-  vendored Prebid.js 11.34.0 file, run with that real Prebid, synthetic
+  3.23.0 packages generated through the TEST workspace Generate path with one
+  Prebid.js file as the site's build, run with that real Prebid, synthetic
   pubmatic and openx adapters, a TCF stub and the GPT mock, at 1280 and 390 px.
   Every other request is aborted, including the country lookup. Four auctions
   per position: site default on sends 10, the unsent earlier 4 against fresh 1,
   fresh 2, then fresh 12; saved off sends 10, 1, 2, 12 with no cache settings in
   Prebid; with Billboard overridden off, Billboard sends 10, 1, 2, 12 and P1
-  10, 4, 2, 12. Each request has its own new auction, openx's fresh 0.5 is sent
-  as `hb_adid_openx` every time, bidders receive the CMP string, no ad ID is
-  sent twice and the diagnostics contain no ad ID or consent string.
+  10, 4, 2, 12; with an openx deal D-9 at 3 against openx's unsent earlier 5,
+  the refresh sends the deal with `hb_deal_openx`, as 3.21.2 does. Each request
+  has its own new auction, openx's fresh 0.5 is sent as `hb_adid_openx` every
+  time, bidders receive the CMP string, `targetingControls` stay as 3.21.2 sets
+  them, no ad ID is sent twice, rejection counts never exceed the number of
+  bids, and the diagnostics contain no ad ID or consent string. The default
+  run uses the vendored Prebid.js 11.34.0. The `bid-cache-prebid` job builds
+  pinned upstream Prebid.js 11.11.0 with the vendored module list
+  (`scripts/build-bidcache-prebid.mjs`) and runs the same check on it.
+- `scripts/verify-bid-cache-settings-ui.py` (real React panels, compiled Worker,
+  local D1): the Demand → Prebid and per-position settings, and Generate on a
+  site with 3.21.2 selected and bid caching saved, which shows the reason and
+  both ways out at 1280 and 390 px and unblocks after either one.
 
 ## Known limits
 
@@ -234,8 +290,18 @@ strings.
 - The `untracked` rejection count includes bids of auctions that Tessera did
   not complete (timed out or interrupted by a consent change); those bids are
   never reused.
-- Copy in `src/components/ContextualSignalsPanel.tsx` and
-  `src/components/UnitRulesPanel.tsx` still names only 3.21.x versions.
+- GPP and US privacy: 3.23.0 compares only the consent data Prebid sent (see
+  Consent). With GPP off in Prebid, and US privacy only in builds with
+  `consentManagementUsp`, a GPP or US privacy change on the page does not stop
+  reuse. The Tanjug rule (no reuse while `__gpp` or `__uspapi` is present) is
+  not carried over; whether to add it, or to read those APIs into the
+  fingerprint, is an owner decision, and either needs a new runtime version
+  once 3.23.0 is registered.
+- A zero-CPM deal in Prebid's targeting makes 3.21.2 readiness drop all Prebid
+  targeting for that request, because its allow-list accepts only bids with a
+  CPM above 0. 3.23.0 inherits this unchanged from the frozen 3.21.2 readiness
+  layer; the bid cache policy only keeps such a deal's bidder from reusing
+  earlier bids.
 
 ## Not verified offline
 
