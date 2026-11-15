@@ -39,7 +39,7 @@ try:
     options=version.locator('option').evaluate_all('(items)=>items.map(item=>({label:item.textContent.trim(),value:item.value}))')
     assert options and all(re.fullmatch(r'\d+\.\d+\.\d+',item['label'].split(' · ')[0]) for item in options),options
     by_label={item['label']:item['value'] for item in options}
-    stable='3.21.2 · Current version'
+    stable='3.23.0 · Current version'
     preview='3.22.1 · Preview'
     assert stable in by_label and preview in by_label,options
     assert version.input_value()==by_label[stable]
