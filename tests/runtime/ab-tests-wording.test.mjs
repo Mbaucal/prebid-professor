@@ -22,6 +22,13 @@ test('Generate asks for a version name, on the workspace panel and the TEST home
  assert.match(await source('worker/test-workspace/index.mjs'),/keep the version name within 160 characters\./);
 });
 
+test('the Generate shortcut that wraps the shared panel names the field "Version name"',async()=>{
+ // ReleaseActionFocus wraps SitePackagesPanel in ReleasesPanel, so it names the same field.
+ const focus=await source('src/components/ReleaseActionFocus.tsx');
+ assert(focus.includes("'Review your settings and version name, then generate a saved package.'"));
+ assert.doesNotMatch(focus,/release note/);
+});
+
 test('the TEST home page links the A/B tests panel right after Bid caching',()=>{
  const page=workspacePage('tester@example.invalid');
  assert.match(page,/<a class="button" href="\/site-workspace#bid-cache">Bid caching<\/a><a class="button" href="\/site-workspace#ab-tests">A\/B tests<\/a>/);

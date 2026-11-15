@@ -18,7 +18,7 @@ export default function ReleaseActionFocus({request,siteId,children}:{request:Re
    if(node.querySelector('[data-release-busy]')){focus(node,'A release action is in progress. Your next step will be shown when it finishes.');return;}
    const enabled=(name:string)=>node.querySelector<HTMLElement>(`[data-release-target="${name}"]:not(:disabled)`);
    const generate=enabled('generate'),setup=enabled('setup'),blocked=enabled('blocked'),preview=enabled('preview'),testOnly=!!node.querySelector('[data-release-test-only]');
-   if(request.action==='generate')focus(blocked||setup||generate||node,blocked?'Resolve the release error below before generating a package.':setup?'Complete script setup before generating a package.':'Review your settings and release note, then generate a saved package.');
+   if(request.action==='generate')focus(blocked||setup||generate||node,blocked?'Resolve the release error below before generating a package.':setup?'Complete script setup before generating a package.':'Review your settings and version name, then generate a saved package.');
    else {
     const publish=enabled('publish'),stage=enabled('stage');
     focus(publish||stage||preview||blocked||setup||generate||node,publish?'Review the staged package, then publish when ready.':stage?'No package is staged. Stage a saved package before publishing.':preview?'Use TEST deployments to preview this saved package.':blocked?'Resolve the release error below before continuing.':setup?'Complete script setup, then generate a saved package.':testOnly?'Generate a saved package, then use TEST deployments for preview delivery.':'No package is ready to publish. Generate a saved package, then stage it.');
