@@ -11,7 +11,11 @@
  * 3.9.1 saved for GAM-only and Prebid; with and without the legacy TakeOver) and
  * one saved package per configuration are checked the same way, and so are the
  * other scripts the Worker serves from functions (/prebid-settings.js and
- * /geo/v1/client.js).
+ * /geo/v1/client.js). For every Prebid configuration, each runtime with bid caching
+ * (3.23.0) is also generated with bid caching saved through the TEST site's
+ * Demand → Prebid route: on, on with a position Off, and off with a position On.
+ * Each is checked as a site-runtime bundle and as a saved package, and its
+ * config.json bidCache must equal the saved settings without the TakeOver position.
  *
  * The bundle runs behind scripts/canonical-text-guard.mjs: any
  * Function.prototype.toString call on a non-native function during these
@@ -54,7 +58,7 @@ const TAKEOVERS = {none: null, 'interval-0': 0, 'interval-5': 5};
 const reference = runtimeCatalog[1].version;
 assert.match(reference, /^3\.9\.1/);
 
-let outbound = 0;
+let outbound = 0, bidCaching = 0;
 const entries = [], failures = [], served = [], guard = {};
 await rm(output, {recursive: true, force: true});
 await mkdir(output, {recursive: true});
@@ -117,6 +121,15 @@ async function addTakeOver(s, demand, frequencyMinutes) {
     overlay: {demand: demand === 'prebid' ? 'site' : 'gam', desktopMinWidth: 1024, desktopSeconds: 10, mobileSeconds: 5, countdown: true, frequencyMinutes}}});
 }
 const saved = s => readPreviewSnapshot(s.env.DB.withSession('first-primary'), 'test-site', {includePrebid: true});
+// Bid caching through the TEST site's Demand → Prebid route (PUT), as the Bid caching view saves it.
+const PREBID_MODE = '/api/publishers/test-site/prebid-mode';
+async function saveBidCache(s, bidCache) {
+  const mode = await s.json(PREBID_MODE);
+  const response = await s.mf.dispatchFetch(origin + PREBID_MODE, {method: 'PUT', redirect: 'manual',
+    headers: {cookie: s.cookie, origin, 'content-type': 'application/json'}, body: JSON.stringify({enabled: true, revision: mode.revision, bidCache})});
+  const data = await response.json();
+  if (response.status !== 200) throw Error(`${PREBID_MODE} ${response.status}: ${data.error ?? ''}`);
+}
 // Unbundled equivalent of siteRuntimeBundle and the saved-package route (worker/site-runtime/*).
 async function directSiteRuntime(s, buildTimestamp) {
   const snapshot = await saved(s);
@@ -167,6 +180,48 @@ async function record(entry, bundled, direct) {
   }
   entries.push(entry);
   console.log(`${entry.identical ? 'identical' : 'DIFFERS  '} ${entry.dir}${entry.identical ? '' : ' ' + differing.join(',')}`);
+}
+// The saved bid caching in the package: every eligible position with its effective setting, never the TakeOver.
+function checkBidCache(entry, bundled, expected) {
+  const decode = name => new TextDecoder().decode(bundled[name]);
+  const actual = JSON.parse(decode('config.json')).bidCache;
+  const problems = [];
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) problems.push(`config.json bidCache ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
+  if (entry.takeover !== 'none' && actual && Object.hasOwn(actual.positions ?? {}, 'Overlay')) problems.push('config.json bidCache lists the TakeOver position');
+  for (const name of ['ads.js', 'ads.min.js']) if (!decode(name).includes('createTesseraBidCache')) problems.push(`${name} has no bid cache helper`);
+  if (problems.length) failures.push(`${entry.dir}: ${problems.join('; ')}`);
+  entry.bidCache = {expected, matches: problems.length === 0};
+}
+async function bidCacheVariants(s, configName, takeover, runtime) {
+  const eligible = (await s.json(PREBID_MODE)).bidCachePositions;
+  if (takeover !== 'none' && eligible.includes('Overlay')) failures.push(`${configName}: the TakeOver position is offered for bid caching`);
+  const [first] = eligible.filter(code => code !== 'Overlay');
+  const variants = {'bidcache-on': {enabled: true, maxBidAgeSeconds: 45}, 'bidcache-position-off': {enabled: true, maxBidAgeSeconds: 30, positionOverrides: {[first]: false}},
+    'bidcache-position-on': {enabled: false, maxBidAgeSeconds: 120, positionOverrides: {[first]: true}}};
+  for (const [variant, bidCache] of Object.entries(variants)) {
+    const expected = {defaultEnabled: bidCache.enabled, maxAgeSeconds: bidCache.maxBidAgeSeconds,
+      positions: Object.fromEntries(eligible.map(code => [code, bidCache.positionOverrides?.[code] ?? bidCache.enabled]))};
+    const config = `${configName}-${variant}`;
+    for (const path of ['site-runtime', 'saved-package']) {
+      const entry = {config, demand: 'prebid', takeover, path, version: runtime.version};
+      try {
+        await saveBidCache(s, bidCache);
+        const state = await s.json('/test-api/site-runtime');
+        let response;
+        if (path === 'site-runtime') response = await s.call('/test-api/site-runtime', {action: 'bundle', revision: state.revision, acknowledge: true});
+        else {
+          const generated = await s.json('/test-api/site-packages', {action: 'generate', notes: 'Generation parity ' + config, revision: state.revision}, 201);
+          response = await s.call('/test-api/site-packages', {action: 'download', releaseId: generated.release.id});
+        }
+        if (response.status !== 200) throw Error(`Generate ${response.status}: ${(await response.json()).error}`);
+        const bundled = await zipFiles(response);
+        await record(entry, bundled, await directSiteRuntime(s, stampOf(bundled)));
+        checkBidCache(entry, bundled, expected);
+      } catch (error) { refused(entry, error); }
+    }
+  }
+  // Off again, so the older runtimes after this one in the catalog still generate.
+  await saveBidCache(s, {enabled: false, maxBidAgeSeconds: 60});
 }
 function refused(entry, error) {
   entry.error = String(error.message).slice(0, 300);
@@ -230,6 +285,11 @@ for (const demand of ['gam', 'prebid']) for (const [takeover, frequency] of Obje
         await record(entry, bundled, await directSiteRuntime(s, stampOf(bundled)));
         latest = runtime;
       } catch (error) { refused(entry, error); }
+      if (demand === 'prebid' && runtimeCatalog.find(r => r.version === runtime.version).capabilities.includes('bid-cache')) {
+        bidCaching++;
+        try { await bidCacheVariants(s, configName, takeover, runtime); }
+        catch (error) { refused({config: `${configName}-bidcache`, path: 'site-runtime', version: runtime.version}, error); }
+      }
     }
     if (frequency !== null) assert(positioned, `${configName}: no runtime accepted the TakeOver position`);
     // A saved package (site-packages generate and download) of the last catalog runtime that generated.
@@ -258,7 +318,9 @@ for (const demand of ['gam', 'prebid']) for (const [takeover, frequency] of Obje
 const report = {scope: 'LOCAL Miniflare/workerd with local D1/R2; sealed TEST Worker bundle vs unbundled Node compile; NOT hosted',
   compiledSha256: sha(script), outbound, runtimes: runtimeCatalog.map(r => r.version), served, guard, entries, failures, passed: failures.length === 0 && outbound === 0};
 await writeFile(join(output, 'manifest.json'), JSON.stringify(report, null, 2) + '\n');
-console.log(JSON.stringify({entries: entries.length, identical: entries.filter(e => e.identical).length, served: served.filter(e => e.identical).length,
+console.log(JSON.stringify({entries: entries.length, identical: entries.filter(e => e.identical).length, bidCache: entries.filter(e => e.bidCache?.matches).length, served: served.filter(e => e.identical).length,
   guardCalls: Object.values(guard).flat().length, failures: failures.length, outbound}));
 assert.equal(outbound, 0, 'The Worker attempted an outbound request');
+// Every Prebid configuration generated bid caching with each runtime that has it.
+assert.equal(bidCaching, Object.keys(TAKEOVERS).length * runtimeCatalog.filter(r => r.capabilities.includes('bid-cache')).length, 'No runtime with bid caching was generated with bid caching on');
 assert.deepEqual(failures, [], `${failures.length} checks failed: output differs from the direct compile, a function was serialized without canonical text, or generation failed`);
