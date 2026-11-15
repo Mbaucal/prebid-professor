@@ -36,12 +36,12 @@ export async function assertBuiltOnAuditCorrections(history) {
 test('every stable runtime registered after 3.21.1 is built on the 3.21.1 corrections', () => assertBuiltOnAuditCorrections(runtimeReleaseHistory));
 test('a newer stable record built on 3.21.0 is rejected', async () => {
   const forged = {...runtimeReleaseHistory.find(release => release.id === BASE), id: 'tessera-9.9.9', version: '9.9.9', sourceManifest: 'scripts/prepare-runtime321.mjs'};
-  await assert.rejects(assertBuiltOnAuditCorrections([forged, ...runtimeReleaseHistory]), /must include the tessera-3\.21\.\d source closure/);
+  await assert.rejects(assertBuiltOnAuditCorrections([forged, ...runtimeReleaseHistory]), /must include the tessera-3\.\d+\.\d+ source closure/);
 });
 test('a newer stable record that drops a 3.21.1 capability is rejected', async () => {
   const top = runtimeReleaseHistory[0];
   const forged = {...top, id: 'tessera-9.9.9', version: '9.9.9', capabilities: top.capabilities.filter(name => name !== 'consent-readiness')};
-  await assert.rejects(assertBuiltOnAuditCorrections([forged, ...runtimeReleaseHistory]), /must keep every tessera-3\.21\.\d capability/);
+  await assert.rejects(assertBuiltOnAuditCorrections([forged, ...runtimeReleaseHistory]), /must keep every tessera-3\.\d+\.\d+ capability/);
 });
 test('the newest stable record, the current recommendation, contains every 3.21.1 source file and capability', async () => {
   const current = runtimeReleaseHistory.find(release => release.channel === 'stable'), base = runtimeReleaseHistory.find(release => release.id === BASE);
@@ -49,4 +49,13 @@ test('the newest stable record, the current recommendation, contains every 3.21.
   assert.deepEqual([...audited].filter(path => !files.has(path)), [], `${current.version} must include the 3.21.1 source closure`);
   assert.deepEqual(base.capabilities.filter(name => !current.capabilities.includes(name)), []);
   for (const path of ['worker/runtime-3211/browser-storage.mjs', 'worker/runtime-3211/storage-compiler.mjs', 'worker/runtime-3211/compiler.mjs']) assert(files.has(path), path);
+});
+test('3.23.0 is 3.21.2 plus the bid cache: every 3.21.2 source file and capability, and one new capability', async () => {
+  const next = runtimeReleaseHistory.find(release => release.id === 'tessera-3.23.0'), base = runtimeReleaseHistory.find(release => release.id === 'tessera-3.21.2');
+  assert(next && base);
+  const files = await closure(next.sourceManifest), previous = await closure(base.sourceManifest);
+  assert.deepEqual([...previous].filter(path => !files.has(path)), []);
+  assert.deepEqual([...files].filter(path => !previous.has(path)).sort(), ['scripts/prepare-runtime323.mjs', 'shared/bid-cache/eligibility.mjs',
+    ...['artifact-candidate', 'bid-cache-compiler', 'browser-bid-cache', 'compiler', 'readme', 'settings-guard', 'snapshot'].map(name => `worker/runtime-323/${name}.mjs`)].sort());
+  assert.deepEqual(next.capabilities, [...base.capabilities, 'bid-cache']);
 });

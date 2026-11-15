@@ -11,6 +11,7 @@ import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {describeCandidate} from '../../worker/runtime/draft-release-store.mjs';
 import {runtimeCatalog,buildArtifactCandidate as catalogCandidate} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
+import {BID_CACHE_GENERATOR_MESSAGE,requireSupportedCacheGenerator} from '../../worker/site-runtime/prebid-cache-settings.mjs';
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const snapshot=()=>configure(fixture(),config=>config.enablePrebid=false);
 const buildTimestamp='20261024_120000';
@@ -19,14 +20,16 @@ test('TEST catalog refuses saved bid caching before 3.16.2 can generate an unsup
  for(const bidCache of [
   {enabled:true,maxBidAgeSeconds:60},
   {enabled:false,maxBidAgeSeconds:60,positionOverrides:{Sticky:true}},
-  {enabled:false,maxBidAgeSeconds:60,positionOverrides:{Billboard:false}},
  ]){
   const saved=configure(fixture(),config=>{config.enablePrebid=true;config.prebidBidCache=bidCache;});
   const before=structuredClone(saved);
   await assert.rejects(catalogCandidate({snapshot:saved,pin:pinRuntime(descriptor),buildTimestamp}),
-   error=>error.status===409&&/older generator does not support bid caching/.test(error.message));
+   error=>error.status===409&&error.message===BID_CACHE_GENERATOR_MESSAGE);
   assert.deepEqual(saved,before);
  }
+ // An Off override alone reuses no bid, so the bid cache guard lets 3.16.2 continue.
+ const offOnly=configure(fixture(),config=>{config.enablePrebid=true;config.prebidBidCache={enabled:false,maxBidAgeSeconds:60,positionOverrides:{Billboard:false}};});
+ assert.doesNotThrow(()=>requireSupportedCacheGenerator(JSON.parse(offOnly.config.config_json),descriptor));
 });
 
 test('3.16.1 retains the exact complete GAM-only fixture bytes after 3.16.2 is added',async()=>{
