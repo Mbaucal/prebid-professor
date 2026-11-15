@@ -102,26 +102,35 @@ export function createBidderAccounts(win, settings, siteSchain, hooks) {
   }
   function request(pb, input) {
     configurePrebid(pb);
-    var conflict = false;
-    var protectedConfig = guard && pb.setBidderConfig === guard.set && (!guard.merge || pb.mergeBidderConfig === guard.merge);
-    try { conflict = globalChain(pb).length > 0 || sourceChains(input.ortb2).length > 0; } catch (_) { conflict = true; }
-    var removed = [], next = Object.assign({}, input);
-    next.adUnits = (input.adUnits || []).map(function(unit) {
-      var result = Object.assign({}, unit);
-      result.bids = (unit.bids || []).filter(function(bid) {
-        var code = bid.bidder, account = accounts[code], current = state(code);
-        var reason = !account ? 'unconfigured-account' : current.status !== 'configured' ? current.reason || 'account-not-ready' : !protectedConfig ? 'configuration-guard-replaced' : conflict ? 'external-global-schain-conflict' : sourceChains(bid.ortb2).length > 0 ? 'external-bid-schain-conflict' : null;
-        if (reason) { removed.push({bidder: code, adUnit: unit.code, reason: reason}); return false; }
-        return true;
+    // Responsive Outstream rebuilds ad units inside hooks.request. Filter the
+    // rebuilt bids through a per-request proxy before native Prebid sees them.
+    var guarded = Object.create(pb);
+    guarded.requestBids = function(next) {
+      var conflict = false;
+      var protectedConfig = guard && pb.setBidderConfig === guard.set && (!guard.merge || pb.mergeBidderConfig === guard.merge);
+      try { conflict = globalChain(pb).length > 0 || sourceChains(next.ortb2).length > 0; } catch (_) { conflict = true; }
+      var units = Array.isArray(next.adUnits) ? next.adUnits : [];
+      var adUnits = [];
+      units.forEach(function(unit) {
+        var bids = (unit.bids || []).filter(function(bid) {
+          var code = bid.bidder, account = accounts[code], current = state(code);
+          var reason = !account ? 'unconfigured-account' : current.status !== 'configured' ? current.reason || 'account-not-ready' : !protectedConfig ? 'configuration-guard-replaced' : conflict ? 'external-global-schain-conflict' : sourceChains(bid.ortb2).length > 0 ? 'external-bid-schain-conflict' : null;
+          if (reason) note(reason, code, unit.code);
+          return !reason;
+        });
+        if (bids.length) adUnits.push(Object.assign({}, unit, {bids: bids}));
       });
-      return result;
-    }).filter(function(unit) { return unit.bids.length > 0; });
-    removed.forEach(function(item) { note(item.reason, item.bidder, item.adUnit); });
-    if (!next.adUnits.length) {
-      if (input.bidsBackHandler) input.bidsBackHandler({}, false, input.auctionId);
-      return;
-    }
-    return hooks.request(pb, next);
+      if (!adUnits.length) {
+        if (typeof next.bidsBackHandler === 'function') next.bidsBackHandler({}, false, next.auctionId);
+        return;
+      }
+      var outgoing = Object.assign({}, next, {adUnits: adUnits});
+      if (Array.isArray(next.adUnitCodes)) outgoing.adUnitCodes = next.adUnitCodes.filter(function(code) {
+        return adUnits.some(function(unit) { return unit.code === code; });
+      });
+      return pb.requestBids(outgoing);
+    };
+    return hooks.request(guarded, input);
   }
   function snapshot() {
     return {schemaVersion: 1, evidence: 'Configured upstream chains; SSP receipt and downstream nodes are not verified.',

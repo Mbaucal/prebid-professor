@@ -23,6 +23,10 @@ const bindings = { ...config.vars, TEST_WORKSPACE_ENABLED: 'true', TEST_PUBLIC_O
   TEST_ADMIN_EMAIL: 'tester@example.invalid', TEST_ADMIN_PASSWORD: password, TEST_SESSION_SECRET: randomBytes(48).toString('hex') };
 let mf, cookie = '', externalAttempts = 0;
 const checks = [];
+// Keep each isolated resource fixture below the unchanged 20-package quota.
+const fixtureBatchSize = 12;
+let fixtureBatches = 0, retainedZipChecks = 0;
+let retainedPackages = [];
 async function json(path, body) {
   const response = await mf.dispatchFetch(origin + path, { method: body === undefined ? 'GET' : 'POST', redirect: 'manual',
     headers: { cookie, ...(body === undefined ? {} : { origin, 'content-type': 'application/json' }) },
@@ -31,10 +35,11 @@ async function json(path, body) {
   assert.equal(response.status, 200, `${path}: ${value.error || response.status}`);
   return value;
 }
-try {
+async function startFixture() {
+  fixtureBatches++;
   mf = new Miniflare({ name: 'local-standalone-test', modules: true, script, compatibilityDate: config.compatibility_date,
     compatibilityFlags: config.compatibility_flags ?? [],
-    host: '127.0.0.1', port: 0, cf: false, bindings, resourcePersistencePath: directory,
+    host: '127.0.0.1', port: 0, cf: false, bindings, resourcePersistencePath: join(directory, 'batch-' + fixtureBatches),
     d1Databases: { DB: 'local-standalone-d1' }, r2Buckets: { BUILDS: 'local-standalone-r2' },
     outboundService: () => { externalAttempts++; return new Response('External requests disabled', { status: 503 }); } });
   await mf.ready;
@@ -49,8 +54,32 @@ try {
     await db.prepare('INSERT INTO ad_units(id,publisher_id,code,type,size_map_key,sort_order) VALUES (?,?,?,?,?,?)')
       .bind(id, 'test-site', code, type, 'display', order).run();
   }
+  return db;
+}
+async function download(id) {
+  const response = await mf.dispatchFetch(origin + '/test-api/releases/' + id + '/download', { headers: { cookie } });
+  assert.equal(response.status, 200);
+  return new Uint8Array(await response.arrayBuffer());
+}
+async function verifyRetainedPackages() {
+  // Later selections and saves must not rewrite any earlier ZIP in this fixture.
+  for (const stored of retainedPackages) {
+    assert.deepEqual(await download(stored.id), stored.bytes, 'Historical ZIP changed for ' + stored.version);
+    retainedZipChecks++;
+  }
+  retainedPackages = [];
+}
+try {
+  let db = await startFixture();
   const initial = await json('/test-api/runtime-selection');
-  for (const runtime of initial.runtimes) {
+  for (const [index, runtime] of initial.runtimes.entries()) {
+    if (index > 0 && index % fixtureBatchSize === 0) {
+      await verifyRetainedPackages();
+      await mf.dispose();
+      mf = null;
+      db = await startFixture();
+      assert.deepEqual((await json('/test-api/runtime-selection')).runtimes, initial.runtimes, 'A fresh resource fixture must expose the same exact catalog');
+    }
     const saved = await db.prepare("SELECT config_json FROM publisher_configs WHERE publisher_id='test-site'").first();
     const next = JSON.parse(saved.config_json);
     delete next.builtinRuntimeSelection;
@@ -69,21 +98,24 @@ try {
     assert.equal(generated.descriptor.runtime.runtimeSha256, runtime.pin.runtimeSha256);
     // Save then download both real outputs; do not trust only the response preview.
     const stored = await json('/test-api/save', { receipt: generated.receipt, acknowledge: true, note: 'Local standalone output verification' });
-    const response = await mf.dispatchFetch(origin + '/test-api/releases/' + stored.draft.id + '/download', { headers: { cookie } });
-    assert.equal(response.status, 200);
+    const bytes = await download(stored.draft.id);
+    retainedPackages.push({ id: stored.draft.id, version: runtime.version, bytes });
     const { unzipSync } = await import('fflate');
-    const files = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    const files = unzipSync(bytes);
     assertGeneratedBundleStandalone({ files });
     assert.equal(new TextDecoder().decode(files['ads.js']), generated.adsJs);
-    checks.push({ version: runtime.version, exactHash: runtime.pin.runtimeSha256, lazyAndOverlay: supportsPositions, passed: true });
+    checks.push({ version: runtime.version, exactHash: runtime.pin.runtimeSha256, lazyAndOverlay: supportsPositions, fixtureBatch: fixtureBatches, passed: true });
     if (runtime.version.startsWith('3.10.')) {
       await mkdir('.generated/test-workspace-evidence', { recursive: true });
       await writeFile('.generated/test-workspace-evidence/runtime-310-lazy-overlay.js', generated.adsJs);
     }
   }
+  await verifyRetainedPackages();
+  assert.equal(checks.length, initial.runtimes.length);
+  assert.equal(retainedZipChecks, initial.runtimes.length);
   assert.equal(externalAttempts, 0);
   const report = { scope: 'LOCAL compiled workerd, local D1/R2; not hosted or paid ad traffic',
-    compiledSha256: createHash('sha256').update(script).digest('hex'), checks, externalAttempts, passed: true };
+    compiledSha256: createHash('sha256').update(script).digest('hex'), checks, fixtureBatches, fixtureBatchSize, retainedZipChecks, externalAttempts, passed: true };
   await mkdir('.generated/test-workspace-evidence', { recursive: true });
   await writeFile('.generated/test-workspace-evidence/standalone-workerd.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));

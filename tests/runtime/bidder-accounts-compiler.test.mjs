@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parse} from 'acorn';
 import vm from 'node:vm';
+import {createBidderAccounts} from '../../shared/bidder-accounts/browser.mjs';
 import {applyBidderAccounts} from '../../shared/bidder-accounts/compiler.mjs';
+import {createBidderRules} from '../../worker/runtime-322/browser-bidder-rules.mjs';
 import {compileRuntime3212} from '../../worker/runtime-3212/compiler.mjs';
 import {previewInput} from '../../worker/runtime-3212/snapshot.mjs';
 import {descriptor} from '../../.generated/runtime-3212-manifest.mjs';
@@ -36,6 +38,80 @@ test('accounts opt-out preserves legacy bytes and missing canonical source fails
   assert.equal(applyBidderAccounts(before,{...value,bidderAccounts:[]}),before);
   assert.equal(applyBidderAccounts(before,{...value,bidderAccounts:[{bidder:'ix'}]}),before);
   assert.throws(()=>applyBidderAccounts(before,value),/canonical/);
+});
+test('responsive Outstream cannot restore a blocked account with bidder rules on or off', () => {
+  const value = input();
+  value.bidderAccounts = [
+    {bidder: 'pubmatic', baseAdapter: 'pubmatic', schain: {mode: 'inherit'}},
+    {bidder: 'pm_agency', baseAdapter: 'pubmatic', schain: {mode: 'none'}},
+    {bidder: 'openx', baseAdapter: 'openx', schain: {mode: 'none'}},
+  ];
+  const source = applyBidderAccounts(compileRuntime3212(value).adsJs, value, browser);
+  let responsiveRequest;
+  walk(parse(source, {ecmaVersion: 2015}), node => {
+    if (node.type === 'VariableDeclarator' && node.id?.name === '_adContext') {
+      responsiveRequest = node.init.arguments[2].properties.find(property => property.key.name === 'request').value;
+    }
+  });
+  const mediaTypes = {banner: {sizes: [[300, 250]]}, video: {context: 'outstream', playerSize: [[300, 250]]}};
+  const makeUnit = (code, bidders) => ({
+    code, mediaTypes, bids: bidders.map(bidder => ({bidder, params: {placement: code}})),
+  });
+  const rebuilt = {
+    P1: makeUnit('P1', ['pubmatic', 'pm_agency', 'openx']),
+    P2: makeUnit('P2', ['pm_agency']),
+  };
+  const request = vm.runInNewContext('(' + source.slice(responsiveRequest.start, responsiveRequest.end) + ')', {
+    TESSERA_OUTSTREAM: {units: {P1: {playerSizing: 'size-map'}, P2: {playerSizing: 'size-map'}}},
+    adUnitFromCode: code => rebuilt[code],
+    _gamReporting: {request: (pb, next) => pb.requestBids(next)},
+  });
+  for (const enabled of [false, true]) {
+    const sent = [];
+    const pb = {
+      version: '11.45.0',
+      aliasRegistry: {pm_agency: 'ix'},
+      aliasBidder() { assert.fail('The conflicting alias is already registered'); },
+      getConfig() {},
+      setBidderConfig() {},
+      requestBids(next) {
+        assert.equal(this, pb);
+        sent.push(next);
+        return 'native';
+      },
+    };
+    const rules = createBidderRules({innerWidth: 1200}, {enabled, rules: []}, {
+      evaluate: (_, bid) => ({allowed: bid.bidder !== 'openx', ruleId: bid.bidder === 'openx' ? 'skip-openx' : null}),
+      normalizeCountry: () => null,
+      request,
+    });
+    const accounts = createBidderAccounts({}, value.bidderAccounts, null, {request: rules.request});
+    const initialP2 = makeUnit('P2', ['pubmatic']);
+    assert.equal(accounts.request(pb, {
+      adUnits: [rebuilt.P1, initialP2],
+      adUnitCodes: ['P1', 'P2'],
+      auctionId: 'mixed',
+    }), 'native');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].auctionId, 'mixed');
+    assert.deepEqual(JSON.parse(JSON.stringify(sent[0].adUnits.map(unit => [unit.code, unit.bids.map(bid => bid.bidder)]))),
+      [['P1', enabled ? ['pubmatic'] : ['pubmatic', 'openx']]]);
+    assert.deepEqual(sent[0].adUnitCodes, ['P1']);
+    assert.equal(sent[0].adUnits[0].mediaTypes, mediaTypes);
+    assert.equal(sent[0].adUnits[0].bids[0], rebuilt.P1.bids[0]);
+    assert.equal(rebuilt.P1.bids[1].bidder, 'pm_agency');
+    const callbacks = [];
+    accounts.request(pb, {
+      adUnits: [initialP2],
+      auctionId: 'all-blocked',
+      bidsBackHandler(...args) { callbacks.push(args); },
+    });
+    assert.equal(sent.length, 1);
+    assert.equal(callbacks.length, 1);
+    assert.deepEqual(Object.keys(callbacks[0][0]), []);
+    assert.deepEqual(callbacks[0].slice(1), [false, 'all-blocked']);
+    assert(accounts.snapshot().events.some(event => event.kind === 'alias-base-conflict' && event.detail === 'P1'));
+  }
 });
 test('PubMatic deal parameter routing isolates exact alias and account metadata is safe in generated code',()=>{
   const value=input();value.bidderAccounts=[{bidder:'pm_a',baseAdapter:'pubmatic',displayName:'</script>$&\u2028',schain:{mode:'inherit'}},{bidder:'pm_b',baseAdapter:'pubmatic',schain:{mode:'none'}}];

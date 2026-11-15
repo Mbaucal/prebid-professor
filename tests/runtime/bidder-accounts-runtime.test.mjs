@@ -14,9 +14,10 @@ function merge(target, source) {
 function fixture(overrides={}) {
   const global={ortb2:{site:{content:{data:[{name:'foreign',segment:[{id:'keep'}]}]}}}}, bidder={adf_ag:{ortb2:{source:{ext:{preserve:true,schain:chain('old')}},site:{name:'private'}}}}, requests=[], aliases=[], writes=[];
   const pb={version:'v11.11.0',aliasRegistry:{},aliasBidder(base,alias,options){aliases.push({base,alias,options});this.aliasRegistry[alias]=base;},
-    getConfig(key){return global[key];},setBidderConfig(value){writes.push(value);for(const name of value.bidders) merge(bidder[name]||(bidder[name]={}),value.config);},...overrides};
+    getConfig(key){return global[key];},setBidderConfig(value){writes.push(value);for(const name of value.bidders) merge(bidder[name]||(bidder[name]={}),value.config);},
+    requestBids(input){assert.equal(this,pb);requests.push(input);return 'requested';},...overrides};
   const settings=[{bidder:'adf_smn',baseAdapter:'adf',displayName:'SMN',schain:{mode:'inherit'}},{bidder:'adf_ag',baseAdapter:'adf',displayName:'Agency',schain:{mode:'none'}},{bidder:'ix',baseAdapter:'ix',displayName:'IX',schain:{mode:'custom',config:chain('ix-own')}}];
-  const win={},api=createBidderAccounts(win,settings,chain('site'),{request(pb,input){requests.push(input);return 'requested';}});
+  const win={},api=createBidderAccounts(win,settings,chain('site'),{request(pb,input){return pb.requestBids(input);}});
   const input=()=>({auctionId:'a',adUnits:[{code:'P1',bids:[{bidder:'adf_smn',params:{mid:1}},{bidder:'adf_ag',params:{mid:2}},{bidder:'ix',params:{siteId:3}}]}]});
   return {api,win,pb,global,bidder,requests,aliases,writes,input};
 }
