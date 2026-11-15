@@ -18,6 +18,9 @@ import SiteLoadingSummaryPanel from '../components/SiteLoadingSummaryPanel';
 import PrebidModePanel from '../components/PrebidModePanel';
 import PositionBidCachePanel,{fetchBidCacheSettings,type BidCachePayload} from '../components/PositionBidCachePanel';
 import '../prebid-mode.css';
+import AbTestsPanel from '../components/AbTestsPanel';
+import '../components/ab-tests.css';
+import './test-workspace.css';
 /** The production Demand → Prebid bid cache settings and per-position choices, for the TEST site. */
 function BidCache() {
   const [data,setData]=useState<BidCachePayload|null>(null),[error,setError]=useState(''),[code,setCode]=useState<string|null>(null),[attempt,setAttempt]=useState(0),[panelKey,setPanelKey]=useState(0),[positionSaved,setPositionSaved]=useState(false);
@@ -60,10 +63,14 @@ type View = 'versions'|'positions'|'packages'|'test-page'|'loading'|'deals'|'for
 function currentView(): View {
   const hash = window.location.hash.slice(1);
   if (hash === 'workflow') return 'packages';
+  // The A/B tests panel is part of Generate and releases, below Saved versions.
+  if (hash === 'ab-tests') return 'packages';
   return ['positions', 'packages', 'test-page', 'loading', 'deals', 'formats', 'rules', 'contextual-signals', 'bidder-rules', 'bid-cache'].includes(hash) ? hash as View : 'versions';
 }
 function Workspace() {
   const [view,updateView]=useState<View>(currentView);
+  // Generate, cleanup and other package changes reload the versions the A/B tests panel offers.
+  const [packagesChanged,setPackagesChanged]=useState(0);
   useEffect(() => {
     const change = () => updateView(currentView());
     window.addEventListener('hashchange', change);
@@ -84,7 +91,7 @@ function Workspace() {
       <button aria-current={view==='bidder-rules'?'page':undefined} onClick={()=>setView('bidder-rules')}>Bidder rules</button>
       <button onClick={()=>setView('test-page')}>Test page</button>
     </nav>
-    {view==='bid-cache'?<BidCache/>:view==='bidder-rules'?<><BidderRulesPanel publisherId="test-site" endpoint="/test-api/bidder-rules"/><section className="site-runtime-panel"><h2>Bidder rule debug</h2><p>Copy this read-only command into the console on the page using your generated script. It shows recorded decisions without starting an auction or sending requests.</p><textarea aria-label="Bidder rules console command" readOnly value={bidderRulesInspectCommand} style={{width:'100%',minHeight:180,boxSizing:'border-box'}}/></section></>:view==='contextual-signals'?<><ContextualSignalsPanel publisherId="test-site" endpoint="/test-api/contextual-signals"/><section className="site-runtime-panel"><h2>Contextual signals / PPS debug</h2><p>Copy this read-only command into the console on the page using your generated script. It does not start an auction or confirm SSP acceptance.</p><textarea aria-label="Contextual signals console command" readOnly value={contextualSignalsInspectCommand()} style={{width:'100%',minHeight:180,boxSizing:'border-box'}}/></section></>:view==='rules'?<div className="test-unit-rules"><UnitRulesPanel publisherId="test-site"/></div>:view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='loading'?<SiteLoadingSummaryPanel endpoint="/test-api/site-runtime"/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
+    {view==='bid-cache'?<BidCache/>:view==='bidder-rules'?<><BidderRulesPanel publisherId="test-site" endpoint="/test-api/bidder-rules"/><section className="site-runtime-panel"><h2>Bidder rule debug</h2><p>Copy this read-only command into the console on the page using your generated script. It shows recorded decisions without starting an auction or sending requests.</p><textarea aria-label="Bidder rules console command" readOnly value={bidderRulesInspectCommand} style={{width:'100%',minHeight:180,boxSizing:'border-box'}}/></section></>:view==='contextual-signals'?<><ContextualSignalsPanel publisherId="test-site" endpoint="/test-api/contextual-signals"/><section className="site-runtime-panel"><h2>Contextual signals / PPS debug</h2><p>Copy this read-only command into the console on the page using your generated script. It does not start an auction or confirm SSP acceptance.</p><textarea aria-label="Contextual signals console command" readOnly value={contextualSignalsInspectCommand()} style={{width:'100%',minHeight:180,boxSizing:'border-box'}}/></section></>:view==='rules'?<div className="test-unit-rules"><UnitRulesPanel publisherId="test-site"/></div>:view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='loading'?<SiteLoadingSummaryPanel endpoint="/test-api/site-runtime"/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<><SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onChanged={()=>setPackagesChanged(value=>value+1)} onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/><AbTestsPanel publisherId="test-site" endpoint="/test-api/ab-tests" testOnly refreshKey={packagesChanged}/></>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Workspace/>);

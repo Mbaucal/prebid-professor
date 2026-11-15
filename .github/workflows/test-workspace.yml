@@ -14,6 +14,9 @@ on:
       - src/prebid-mode.css
       - src/components/ConfirmDeleteButton.tsx
       - src/components/ab-experiments.css
+      - src/components/AbTestsPanel.tsx
+      - src/components/ab-tests.css
+      - src/components/SitePackagesPanel.tsx
       - src/components/confirm-delete.css
       - worker/**
       - shared/**
@@ -117,8 +120,8 @@ jobs:
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-loader.test.mjs tests/runtime/ab-bundle.test.mjs
           node scripts/prepare-ab-loader-browser.mjs "$RUNNER_TEMP/ab-loader-browser"
           python scripts/verify-ab-loader-browser.py "$RUNNER_TEMP/ab-loader-browser"
-      - name: A/B test store, the shared A/B tests API and its TEST routes on the real TEST Worker (local SQLite and memory R2)
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-store.test.mjs tests/runtime/ab-tests-api.test.mjs tests/runtime/ab-tests-test-workspace.test.mjs
+      - name: A/B test store, the shared A/B tests API, its TEST routes on the real TEST Worker (local SQLite and memory R2) and the panel wording
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-store.test.mjs tests/runtime/ab-tests-api.test.mjs tests/runtime/ab-tests-test-workspace.test.mjs tests/runtime/ab-tests-wording.test.mjs
       - name: New TEST deployment setup and version history (synthetic jobs only)
         run: python scripts/verify-deployment-ui.py
       - name: Keep only synthetic report and screenshots, never sessions or databases
