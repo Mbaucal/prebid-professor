@@ -90,7 +90,8 @@ async function compatibilityChecks(site,A,B){
   const ga=A.config.core?.gamPath??null,gb=B.config.core?.gamPath??null;
   if(ga!==gb)refuse('gam-path-differs',`Versions A and B use different GAM ad unit paths (${ga} and ${gb}). Choose two versions with the same GAM path.`,'gamPath');
   checks.push({check:'gamPath',result:'same'});
-  for(const [what,read] of [['the CMP timeout (core.maxCmpTimeout)',c=>c.core?.maxCmpTimeout],['user sync (core.userSync)',c=>c.core?.userSync],['the country lookup (countrySignal)',c=>c.countrySignal]])
+  // Objects, not [what, read] pairs: an array holding a function reads as serialization to the canonical-text scan.
+  for(const {what,read} of [{what:'the CMP timeout (core.maxCmpTimeout)',read:c=>c.core?.maxCmpTimeout},{what:'user sync (core.userSync)',read:c=>c.core?.userSync},{what:'the country lookup (countrySignal)',read:c=>c.countrySignal}])
     if(!same(read(A.config),read(B.config)))refuse('consent-differs',`Versions A and B differ in ${what}. Consent, user sync and country lookup must be the same in both groups: generate both versions with the same setting, or choose other versions.`,'consent');
   checks.push({check:'consent',result:'same'});
   return checks;
@@ -119,20 +120,20 @@ const bidCache=c=>{const p=Object.entries(c.bidCache?.positions??{}).filter(([,o
 const bidderSettings=(c,code)=>({params:(c.core?.bidders??[]).filter(b=>b.bidder===code).map(b=>b.params??null),
   slot:c.core?.bidderSlotParams?.[code]??null,device:c.core?.bidderDeviceParams?.[code]??null,adUnit:c.core?.bidderAdUnitParams?.[code]??null});
 const ruleField=(c,field)=>Object.fromEntries(Object.keys(c.core?.adUnitRules??{}).sort().filter(k=>c.core.adUnitRules[k]?.[field]!==undefined).map(k=>[k,c.core.adUnitRules[k][field]]));
-// [field, read, list]: for a list field, a and b hold only the items the other side lacks.
+// {field, read, list}: for a list field, a and b hold only the items the other side lacks.
 const DIFF=[
-  ['runtimeVersion',v=>v.runtime.runtimeVersion??null],
-  ['capabilities',v=>sorted(v.runtime.capabilities??[]),true],
-  ['bidCache.enabled',v=>bidCache(v.config).on],
-  ['bidCache.maxAgeSeconds',v=>bidCache(v.config).maxAge],
-  ['bidCache.positions',v=>bidCache(v.config).positions,true],
-  ['refresh.default',v=>v.config.core?.globalRefresh??null],
-  ['refresh.rules',v=>ruleField(v.config,'refresh')],
-  ['refresh.stickySeconds',v=>v.config.options?.sticky?.refreshSeconds??null],
-  ['floors',v=>v.config.options?.floors??null],
-  ['bidders',v=>sorted((v.config.core?.bidders??[]).map(b=>b.bidder)),true],
-  ['timeouts',v=>({default:v.config.core?.defaultTimeout??null,atf:v.config.core?.atfTimeout??null,btf:v.config.core?.btfTimeout??null,sticky:v.config.core?.stickyTimeout??null})],
-  ['timeouts.rules',v=>ruleField(v.config,'timeout')],
+  {field:'runtimeVersion',read:v=>v.runtime.runtimeVersion??null},
+  {field:'capabilities',read:v=>sorted(v.runtime.capabilities??[]),list:true},
+  {field:'bidCache.enabled',read:v=>bidCache(v.config).on},
+  {field:'bidCache.maxAgeSeconds',read:v=>bidCache(v.config).maxAge},
+  {field:'bidCache.positions',read:v=>bidCache(v.config).positions,list:true},
+  {field:'refresh.default',read:v=>v.config.core?.globalRefresh??null},
+  {field:'refresh.rules',read:v=>ruleField(v.config,'refresh')},
+  {field:'refresh.stickySeconds',read:v=>v.config.options?.sticky?.refreshSeconds??null},
+  {field:'floors',read:v=>v.config.options?.floors??null},
+  {field:'bidders',read:v=>sorted((v.config.core?.bidders??[]).map(b=>b.bidder)),list:true},
+  {field:'timeouts',read:v=>({default:v.config.core?.defaultTimeout??null,atf:v.config.core?.atfTimeout??null,btf:v.config.core?.btfTimeout??null,sticky:v.config.core?.stickyTimeout??null})},
+  {field:'timeouts.rules',read:v=>ruleField(v.config,'timeout')},
 ];
 // config.json paths left out of otherSettings: build stamps and the script pin differ on every
 // build, the prebid check compares the Prebid.js file itself, and DIFF above reports the rest.
@@ -163,7 +164,7 @@ function otherSettings(ca,cb){
 /** The summary of differences: [{field, a, b}] in DIFF order, only for fields that differ, then otherSettings. */
 function configDiff(A,B){
   const list=[];
-  for(const [field,read,isList] of DIFF){
+  for(const {field,read,list:isList} of DIFF){
     const a=read(A),b=read(B);
     if(!same(a,b))list.push(isList?{field,a:only(a,b),b:only(b,a)}:{field,a,b});
     // Bidder settings follow the bidder list: only bidders on both sides, only where they differ.
