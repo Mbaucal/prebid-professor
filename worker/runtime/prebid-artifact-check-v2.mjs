@@ -2,8 +2,23 @@
  * Permit valid digit-leading Prebid modules while retaining byte and TCF checks.
  * Header declarations are not proof of live auction behavior.
  */
-import { prebidRequirements, moduleReason, sha256 } from './prebid-artifact-check.mjs';
-export { prebidRequirements, moduleReason, sha256 };
+import { prebidRequirements as legacyPrebidRequirements, moduleReason, sha256 } from './prebid-artifact-check.mjs';
+import {normalizeBidderAccounts} from '../../shared/bidder-accounts/settings.mjs';
+import {adapterModuleForAccount} from '../../shared/bidder-accounts/modules.mjs';
+export { moduleReason, sha256 };
+export function prebidRequirements(input, savedConfig = {}) {
+  if (!input?.bidderAccounts) return legacyPrebidRequirements(input, savedConfig);
+  const accounts = new Map(normalizeBidderAccounts(input.bidderAccounts).map(account => [account.bidder, account]));
+  const result = legacyPrebidRequirements({...input, core:{...input.core, bidders:[]}}, savedConfig);
+  if (!result.required) return result;
+  for (const row of input.core.bidders ?? []) {
+    const account = accounts.get(row.bidder);
+    if (!account) { result.issues.push({code:'missing_bidder_account', message:`Bidder ${row.bidder} has no account configuration.`}); continue; }
+    result.modules.push(adapterModuleForAccount(account));
+  }
+  result.modules = [...new Set(result.modules)].sort();
+  return result;
+}
 const MAX_BYTES = 20 * 1024 * 1024;
 const HEADER_BYTES = 500_000;
 const MODULE = /^[A-Za-z0-9][A-Za-z0-9_]{0,119}$/;

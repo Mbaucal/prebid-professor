@@ -42,6 +42,7 @@ ogury,{},true
 richaudience,{},true`,
     tips: [
       'paramsJson must be a JSON object, never an array.',
+      'Optional account columns: baseAdapter, displayName, schainJson. Omitting them preserves saved account settings. schainJson uses {"mode":"inherit"}, {"mode":"none"}, or a custom config.',
       'Use {} for override-only bidders such as Ogury or RichAudience.',
       'Bidder codes are normalized to lowercase.',
     ],

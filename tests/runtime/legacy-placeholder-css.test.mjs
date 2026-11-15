@@ -1,3 +1,4 @@
+import {applyBidderAccountSchema} from '../support/bidder-account-schema.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -10,6 +11,7 @@ test.afterEach(()=>{while(active.length)active.pop().close();});
 async function generate(maps,units){
   const f=workspaceStore();active.push(f);
   f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
+  applyBidderAccountSchema(f.sqlite);
   f.sqlite.exec("INSERT INTO publishers(id,name,domain,gam_path) VALUES('legacy','Legacy','legacy.invalid','/123/legacy/');");
   f.sqlite.prepare("INSERT INTO publisher_configs(id,publisher_id,config_json) VALUES('cfg','legacy',?)").run(JSON.stringify({generatorProfileId:'fixture',userSync:{userIds:[]},runtimeControls:{floors:{enabled:false}}}));
   for(const [name,map]of Object.entries(maps))f.sqlite.prepare('INSERT INTO size_maps(id,publisher_id,name,map_json) VALUES(?,?,?,?)').run('map-'+name,'legacy',name,JSON.stringify(map));

@@ -1,6 +1,6 @@
 import { LOGIN_LIMITER_TABLE_SQL, LOGIN_LIMITER_INDEX_SQL } from '../auth.ts';
 import {validOrganizationObjects} from '../organization/schema.mjs';
-import { statements, schemaSha256 } from '../../.generated/test-workspace-schema.mjs';
+import { statements, schemaSha256, legacyStatements, legacySchemaSha256, bidderAccountMigration } from '../../.generated/test-workspace-schema.mjs';
 import { WorkspaceError, TEST_DATABASE, TEST_BUCKET, TEST_SITE } from './boundary.mjs';
 export { schemaSha256 };
 function session(db) {
@@ -14,11 +14,13 @@ function normalizedDdl(sql) {
   return (sql.match(/'(?:[^']|'')*'|"(?:[^"]|"")*"|`(?:[^`]|``)*`|\[[^\]]*\]|\s+|[^\s'"`\[]+/g) || [])
     .map((token) => /^\s+$/.test(token) ? ' ' : token).join('').trim().replace(/;$/, '');
 }
-const expectedObjects = statements.map((sql) => {
+const objectsFor = ddl => ddl.map((sql) => {
   const match = sql.match(/^CREATE (TABLE|INDEX|TRIGGER) (\w+)/);
   if (!match) throw new Error('Unexpected prepared schema object.');
   return { name: match[2], type: match[1].toLowerCase(), sql: normalizedDdl(sql) };
 }).sort((a,b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+const expectedObjects = objectsFor(statements);
+const legacyObjects = objectsFor(legacyStatements);
 export async function inspectTestSchema(db) {
   const current = session(db);
   const result = await current.prepare("SELECT name,type,sql FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' ORDER BY name").all();
@@ -36,18 +38,42 @@ export async function inspectTestSchema(db) {
   const extension = workspaceObjects.filter(row => row.name.startsWith('organization_'));
   if (extension.length && !validOrganizationObjects(extension)) throw new WorkspaceError(409,'Agency schema extension does not match the reviewed version. No repairs were applied.');
   const actual = workspaceObjects.filter(row => !row.name.startsWith('organization_')).map((row) => ({name:row.name,type:row.type,sql:normalizedDdl(row.sql)}));
-  if (JSON.stringify(actual) !== JSON.stringify(expectedObjects)) {
+  const legacy = JSON.stringify(actual) === JSON.stringify(legacyObjects);
+  if (!legacy && JSON.stringify(actual) !== JSON.stringify(expectedObjects)) {
     throw new WorkspaceError(409,'The current test schema, indexes or safety guards do not match the reviewed version. Nothing was initialized.');
   }
   const marker = await current.prepare('SELECT * FROM tessera_test_environment WHERE id=1').first();
-  if (marker?.schema_sha256 !== schemaSha256 || marker?.database_id !== TEST_DATABASE || marker?.bucket_name !== TEST_BUCKET) {
+  if (marker?.schema_sha256 !== (legacy ? legacySchemaSha256 : schemaSha256) || marker?.database_id !== TEST_DATABASE || marker?.bucket_name !== TEST_BUCKET) {
     throw new WorkspaceError(409,'Test database identity does not match this workspace.');
   }
-  return { ready:true, empty:false };
+  return legacy ? {ready:false, empty:false, requiresMigration:'bidder-accounts'} : { ready:true, empty:false };
+}
+export async function migrateBidderAccountSchema(db, actor) {
+  const existing = await inspectTestSchema(db);
+  if (existing.ready) return {...existing, migrated:false};
+  if (existing.requiresMigration !== 'bidder-accounts') throw new WorkspaceError(409,'Prepare the empty test database before upgrading it.');
+  const current = session(db);
+  const guard = crypto.randomUUID();
+  // A second simultaneous upgrade fails its ALTER and rolls back. A retry after
+  // a lost response sees the new exact schema and returns without another write.
+  await current.batch([
+    current.prepare('INSERT INTO builtin_draft_assertions (id,valid) VALUES (?,CASE WHEN EXISTS (SELECT 1 FROM tessera_test_environment WHERE id=1 AND schema_sha256=? AND database_id=? AND bucket_name=?) THEN 1 ELSE 0 END)')
+      .bind(guard,legacySchemaSha256,TEST_DATABASE,TEST_BUCKET),
+    current.prepare(bidderAccountMigration),
+    current.prepare('UPDATE tessera_test_environment SET schema_sha256=? WHERE id=1 AND schema_sha256=? AND database_id=? AND bucket_name=?')
+      .bind(schemaSha256,legacySchemaSha256,TEST_DATABASE,TEST_BUCKET),
+    current.prepare('INSERT INTO audit_log (id,actor,action,publisher_id,details_json) VALUES (?,?,?,?,?)')
+      .bind('test-bidder-accounts-migrated',actor,'test_workspace.bidder_accounts_migrated',TEST_SITE,JSON.stringify({from:legacySchemaSha256,to:schemaSha256})),
+    current.prepare('DELETE FROM builtin_draft_assertions WHERE id=?').bind(guard),
+  ]);
+  const verified = await inspectTestSchema(db);
+  if (!verified.ready) throw new WorkspaceError(503,'Test schema upgrade could not be verified.');
+  return {...verified,migrated:true};
 }
 export async function initializeTestSchema(db, actor) {
   const existing = await inspectTestSchema(db);
   if (existing.ready) return { ...existing, created:false };
+  if (!existing.empty) throw new WorkspaceError(409,'Upgrade the existing test data to support bidder accounts. No data was changed.');
   const current = session(db);
   const config = JSON.stringify({ enablePrebid:false, runtimeControls:{ sticky:{bottomAdUnitId:'Sticky'}, floors:{enabled:false}, output:{cleanComments:true} } });
   const writes = [

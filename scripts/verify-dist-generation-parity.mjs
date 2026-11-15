@@ -1,3 +1,4 @@
+import {applyBidderAccountD1Schema} from '../tests/support/bidder-account-schema.mjs';
 /** Generated scripts from the compiled production Worker must equal a direct compile.
  *
  * Runs dist/prebid_professor/index.js (the module `npm run deploy` uploads with
@@ -60,7 +61,7 @@ const chunks = (await readdir(dist, {recursive: true})).filter(path => /\.m?js$/
 const chunkModules = await Promise.all(chunks.map(async path => ({type: 'ESModule', path, contents: await readFile(join(dist, path), 'utf8')})));
 const origin = 'https://generation-parity.example.invalid', email = 'parity@example.invalid', password = randomBytes(24).toString('hex');
 // Synthetic Prebid file: the generated scripts only reference it; the browser check uses the repository mock.
-const MODULES = ['adpod', 'appnexusBidAdapter', 'consentManagementGpp', 'consentManagementTcf', 'consentManagementUsp', 'currency', 'dfpAdServerVideo',
+const MODULES = ['adpod', 'adfBidAdapter', 'appnexusBidAdapter', 'consentManagementGpp', 'consentManagementTcf', 'consentManagementUsp', 'currency', 'dfpAdServerVideo',
   'gppControl_usnat', 'gppControl_usstates', 'gptPreAuction', 'id5IdSystem', 'criteoIdSystem', 'pubProvidedIdSystem', 'priceFloors', 'pubmaticBidAdapter',
   'rtdModule', 'schain', 'sharedIdSystem', 'tcfControl', 'userId', 'videoModule'].sort();
 const PREBID_FILE = new TextEncoder().encode(`/* prebid.js v11.34.0\nModules: ${MODULES.join(', ')} */\nwindow.fixtureOnly=true;`);
@@ -126,6 +127,7 @@ try {
   for (const [file, stop] of [['0001_initial.sql', 'INSERT OR IGNORE INTO publishers'], ['0002_publisher_accounts.sql', '-- Politika.rs']]) {
     for (const statement of (await readFile(resolve(root, 'migrations', file), 'utf8')).split(stop)[0].split(';').map(s => s.trim()).filter(Boolean)) await db.prepare(statement).run();
   }
+ await applyBidderAccountD1Schema(db);
   const login = await mf.dispatchFetch(origin + '/api/auth/login', {method: 'POST', redirect: 'manual', headers: {origin, 'content-type': 'application/x-www-form-urlencoded'},
     body: new URLSearchParams({email, password}).toString()});
   assert.equal(login.status, 303);
@@ -295,6 +297,27 @@ try {
     guard[configName] = describeCalls(calls);
     if (calls.length) failures.push(`${configName}: Function.prototype.toString ran on ${calls.length} non-native functions in the compiled Worker: ${guard[configName].join('; ')}`);
     console.log(`${calls.length ? 'GUARD    ' : 'guard ok '} ${configName}${calls.length ? ': ' + guard[configName].join('; ') : ''}`);
+  }
+  // Exercise account compilation through the actual bundled save/download path,
+  // with TakeOver timing as well as inherited, custom and omitted upstream chains.
+  {
+    const site='parity-accounts', version='3.22.1';
+    await createSite(site,'prebid',5);
+    for (const [bidder,mid,schain] of [
+      ['adf_smn',999991,{mode:'inherit'}], ['adf_ag',999992,{mode:'none'}],
+      ['adf_other',999993,{mode:'custom',config:{ver:'1.0',complete:1,nodes:[{asi:'other.example',sid:'other',hp:1}]}}],
+    ]) await json(`/api/publishers/${site}/bidders`,{bidder,baseAdapter:'adf',params:{mid},schain},201);
+    const config=await readConfig(site);
+    config.runtimeControls.schain={enabled:true,version:'1.0',complete:1,nodes:[{asi:'seller.example',sid:'site',hp:1}]};
+    await writeConfig(site,config);
+    const runtime=(await json(settingsPath(site))).runtimes.find(row=>row.version===version);
+    assert(runtime,'The reviewed account runtime must be selectable explicitly');
+    await select(site,runtime,true);
+    await addTakeOver(site,'prebid',5);
+    await savedPackage(site,{config:'prebid-accounts',demand:'prebid',takeover:'interval-5',path:'saved-package',version,accountCase:true});
+    const calls=await guardCalls(mf,origin);
+    guard['prebid-accounts']=describeCalls(calls);
+    if(calls.length)failures.push('prebid-accounts: non-canonical function serialization: '+guard['prebid-accounts'].join('; '));
   }
 } finally {
   await mf.dispose();

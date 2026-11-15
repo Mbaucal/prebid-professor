@@ -95,11 +95,11 @@ test('a position whose own Refresh schedule disagrees with Unit rules is not tol
  assert.deepEqual(refreshSummary(previewInput(s,runtime,'20261024_120000'),s.units,runtime,s.rules).warnings,['The refresh interval saved in Unit rules is not used for: P1 (15s; the script uses its Refresh schedule: 25s). To use the saved interval, edit and save the rule in Unit rules, or set “Same every time” for it in Refresh schedules.']);
 });
 
-test('3.21.0 retains inherited visibility thresholds and Sticky refresh explanations',()=>{
+for(const version of ['3.21.0','3.22.0'])test(version+' retains inherited visibility thresholds and Sticky refresh explanations',()=>{
  const input={core:{adUnitRules:{},atfTimeout:2500,btfTimeout:2500,globalRefresh:{enabled:true,minSeconds:30,minViewPct:70}},options:{sticky:{bottomAdUnitId:'Sticky'}}};
  const units=[{code:'m.box_1',type:'BTF',enabled:1},{code:'Sticky',type:'BTF',enabled:1}];
  const previous={runtimeId:'tessera-3.20.1',runtimeVersion:'3.20.1',capabilities:['refresh-wall-clock-gap']};
- const current={runtimeId:'tessera-3.21.0',runtimeVersion:'3.21.0',capabilities:['refresh-wall-clock-gap','contextual-signals']};
+ const current={runtimeId:'tessera-'+version,runtimeVersion:version,capabilities:['refresh-wall-clock-gap','contextual-signals']};
  const result=refreshSummary(input,units,current);
  assert.deepEqual(result,refreshSummary(input,units,previous));
  assert.equal(result.units[0].label,'30s · 70%');
