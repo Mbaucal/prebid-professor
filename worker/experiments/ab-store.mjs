@@ -101,14 +101,16 @@ async function listAll(bucket,prefix,{include}={}){
 }
 
 /** The verified record, its exact bytes and their sha256, or null when the record does not exist.
- * Throws 409 record-unverified when it exists but is not exactly what the store wrote. */
+ * Throws 409 record-unverified when it exists but is not exactly what the store wrote. An error while reading the
+ * body is a storage fault (503 Retry), not a mismatch, so it is not caught here. */
 async function readRecord(bucket,site,id){
   const object=await bucket.get(keys.record(site,id));
   if(!object)return null;
+  const meta=object.customMetadata??{};
+  if(meta.kind!=='ab-test-record'||!HASH.test(meta.sha256??'')||!(object.size>0&&object.size<=AB_LIMITS.record))unverified();
+  const bytes=new Uint8Array(await object.arrayBuffer());
   try{
-    const meta=object.customMetadata??{};
-    if(meta.kind!=='ab-test-record'||!HASH.test(meta.sha256??'')||!(object.size>0&&object.size<=AB_LIMITS.record))unverified();
-    const bytes=new Uint8Array(await object.arrayBuffer()),recordSha256=await sha256(bytes);
+    const recordSha256=await sha256(bytes);
     if(bytes.length!==object.size||recordSha256!==meta.sha256)unverified();
     const record=JSON.parse(decode.decode(bytes));
     if(!isRecord(record)||record.schema!==AB_TEST_SCHEMA||record.site!==site||record.id!==id)unverified();

@@ -276,6 +276,42 @@ test('a tampered record, summary, ZIP or ZIP size is refused', async () => {
   assert.equal('abx-' + hash(abTestIdentity((await readAbTest(r2.bucket, SITE, id)).record)), id);
 });
 
+test('an R2 read error on a record is a storage fault (503), never 409 record-unverified', async () => {
+  // A body stream that fails says nothing about the stored bytes: the API maps a status-less error to 503 Retry.
+  const flaky = (r2, when) => {
+    const get = r2.bucket.get;
+    r2.bucket.get = async key => {
+      const object = await get(key);
+      if (object && key.includes('/records/') && when()) object.arrayBuffer = async () => { throw new Error('Network connection lost.'); };
+      return object;
+    };
+    return () => { r2.bucket.get = get; };
+  };
+  const transient = async promise => {
+    const error = await promise.then(() => assert.fail('expected a failure'), e => e);
+    assert.equal(error.status, undefined, `${error.status} ${error.code}: ${error.message}`);
+    assert.notEqual(error.code, 'record-unverified');
+  };
+  {
+    const r2 = memoryR2(), {record} = await createAbTest(r2.bucket, input());
+    flaky(r2, () => true);
+    await transient(readAbTest(r2.bucket, SITE, record.id));
+    await transient(readAbZip(r2.bucket, SITE, record.id));
+    await transient(readAbRecordBytes(r2.bucket, SITE, record.id));
+    await transient(createAbTest(r2.bucket, input()));
+  }
+  {
+    // The record put succeeds and only its read-back fails: a retry returns the stored test through the idempotent path.
+    const r2 = memoryR2();
+    const restore = flaky(r2, () => r2.log.puts.some(key => key.includes('/records/')));
+    await transient(createAbTest(r2.bucket, input()));
+    restore();
+    const retry = await createAbTest(r2.bucket, input());
+    assert.equal(retry.created, false);
+    assert.deepEqual((await readAbTest(r2.bucket, SITE, retry.record.id)).record, retry.record);
+  }
+});
+
 test('trash and restore need the exact confirmation and never delete bytes', async () => {
   const r2 = memoryR2();
   const {record} = await createAbTest(r2.bucket, input());
