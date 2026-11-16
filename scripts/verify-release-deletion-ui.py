@@ -32,6 +32,25 @@ for width in (1280, 390):
                 assert card.get_by_role('button', name='Delete release', exact=True).is_disabled()
                 assert card.get_by_text(reason, exact=False).is_visible()
             assert page.locator('article').filter(has_text='Earlier archived package').get_by_role('button', name='Delete release', exact=True).is_enabled()
+            assert page.locator('article').filter(has_text='Earlier archived package').get_by_text('Script version unavailable', exact=False).is_visible()
+            confirmations = []
+            def dismiss_confirmation(dialog):
+                confirmations.append(dialog.message)
+                dialog.dismiss()
+            page.on('dialog', dismiss_confirmation)
+            for title, action, version in [
+                ('Sticky desktop maximum', 'Stage package', '3.16.2'),
+                ('Staging package', 'Publish package', '3.21.2'),
+                ('Older built-in package', 'Restore published package', '3.16.0-revenue.preview.1'),
+            ]:
+                card = page.locator('article.runtime-release').filter(has_text=title)
+                assert card.get_by_text(f'Script {version}', exact=False).is_visible()
+                card.get_by_role('button', name=action, exact=True).click()
+                assert confirmations[-1].startswith(action.split()[0]+' package ')
+                assert title in confirmations[-1] and f'Script {version}' in confirmations[-1]
+            assert len(confirmations)==3
+            assert not any(call['method']=='POST' for call in calls)
+            page.remove_listener('dialog', dismiss_confirmation)
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
             page.screenshot(path=str(out/f'{width}-releases.png'), full_page=True)
             draft.get_by_role('button', name='Delete release', exact=True).click()
@@ -52,7 +71,7 @@ for width in (1280, 390):
             assert all(call['headers']['x-confirm-delete']==ready['id'] for call in deletes)
             snapshot = json.loads(base64.b64decode(fixture('/__fixture/snapshot')['body']))
             assert not snapshot['exists']; assert len(snapshot['deleted'])==2
-            assert len(snapshot['rows'])==4
+            assert len(snapshot['rows'])==5
             assert not errors, errors
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
             page.screenshot(path=str(out/f'{width}-deleted.png'), full_page=True)

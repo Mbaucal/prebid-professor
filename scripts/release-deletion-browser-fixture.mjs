@@ -14,6 +14,13 @@ for (const [index, status] of ['staging', 'production', 'archived'].entries()) {
   f.sqlite.prepare('INSERT INTO releases(id,publisher_id,version,status,notes) VALUES(?,?,?,?,?)').run(key, 'first', key, status, names[status]);
 }
 f.sqlite.prepare('UPDATE releases SET notes=? WHERE id=?').run(names[id], id);
+const archivedId = 'builtin-release-' + '4'.repeat(64);
+f.sqlite.prepare("INSERT INTO releases(id,publisher_id,version,status,notes) VALUES(?,'first',?,'archived','Older built-in package')").run(archivedId, archivedId);
+const runtimeVersions = {
+  [id]: '3.16.2',
+  ['builtin-release-' + '1'.repeat(64)]: '3.21.2',
+  [archivedId]: '3.16.0-revenue.preview.1',
+};
 let failNext = false;
 globalThis.fetch = () => { throw Error('No hosted traffic in this fixture'); };
 const bundle = await build({stdin: {contents: `
@@ -32,7 +39,7 @@ for await (const line of createInterface({input: process.stdin})) {
       response = new Response(bundle.outputFiles.find(file => file.path.endsWith(ext)).text, {headers: {'content-type': ext === '.js' ? 'application/javascript' : 'text/css'}});
     } else if (input.path === '/__fixture/fail-next') { failNext = true; response = Response.json({ok: true}); }
     else if (input.path === '/__fixture/snapshot') response = Response.json({exists: f.exists(), deleted: f.deleted, rows: f.sqlite.prepare('SELECT id,status FROM releases').all()});
-    else if (input.path === '/api/publishers/first/builtin-releases') response = Response.json({site: {id: 'first', name: 'Release deletion fixture'}, runtime: {runtimeVersion: '3.16.2'}, enablePrebid: true, revision: 'fixture', channelRevision: 'fixture', ready: true, error: null, nextStep: null, testOnly: false, ...Object.fromEntries(['releases','earlierReleases'].map((field, i) => [field, f.sqlite.prepare('SELECT id,version,status,notes,created_at AS createdAt FROM releases WHERE publisher_id=? AND id '+(i ? 'NOT LIKE' : 'LIKE')+' ? ORDER BY id').all('first', 'builtin-release-%')]))});
+    else if (input.path === '/api/publishers/first/builtin-releases') response = Response.json({site: {id: 'first', name: 'Release deletion fixture'}, runtime: {runtimeVersion: '3.22.1'}, enablePrebid: true, revision: 'fixture', channelRevision: 'fixture', ready: true, error: null, nextStep: null, testOnly: false, ...Object.fromEntries(['releases','earlierReleases'].map((field, i) => [field, f.sqlite.prepare('SELECT id,version,status,notes,created_at AS createdAt FROM releases WHERE publisher_id=? AND id '+(i ? 'NOT LIKE' : 'LIKE')+' ? ORDER BY id').all('first', 'builtin-release-%').map(row=>({...row,runtimeVersion:runtimeVersions[row.id]??null}))]))});
     else if (input.method === 'DELETE') {
       f.failStorage = failNext; failNext = false;
       response = await worker.fetch(new Request(origin + input.path, {method: input.method, headers: {...input.headers, origin, cookie: f.cookie}}), f.env, {});

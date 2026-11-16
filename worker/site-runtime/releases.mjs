@@ -20,7 +20,29 @@ const snapshot=(env,site)=>readPreviewSnapshot(db(env),site,{includePrebid:true}
 const key=(site,id,name)=>`publishers/${site}/releases/${id}/${name}`;
 const type=name=>name.endsWith('.js')?'application/javascript':name.endsWith('.json')?'application/json':name.endsWith('.css')?'text/css':name.endsWith('.html')?'text/html':'text/plain';
 const zip=files=>zipSync(Object.fromEntries(Object.entries(files).map(([n,b])=>[n,[b,{level:0,mtime:new Date(1980,0,1)}]])),{level:0});
-const payload=row=>({id:row.id,version:row.version,status:row.status,notes:row.notes,createdAt:row.created_at,publishedAt:row.published_at});
+const exactRuntimeVersion = value => typeof value === 'string' && /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(value) ? value : null;
+const payload=row=>({id:row.id,version:row.version,runtimeVersion:exactRuntimeVersion(row.runtime_version),status:row.status,notes:row.notes,createdAt:row.created_at,publishedAt:row.published_at});
+
+async function savedPackages(database, site, testOnly) {
+ // Both stores register the manifest's runtime version in the same transaction
+ // as the release. Join that record without reading each saved ZIP or manifest.
+ const rows = await database.prepare(`WITH saved AS (
+   SELECT * FROM releases WHERE publisher_id=? AND version LIKE ?
+   ORDER BY created_at DESC,id DESC LIMIT 50
+ ), generated AS (
+   SELECT entity_id, CASE WHEN json_valid(details_json) THEN json_extract(details_json, ?) END AS runtime_version
+   FROM audit_log WHERE publisher_id=? AND entity_type='release' AND action=?
+   AND entity_id IN (SELECT id FROM saved)
+ ), versions AS (
+   SELECT entity_id, MIN(runtime_version) AS runtime_version
+   FROM generated GROUP BY entity_id HAVING COUNT(DISTINCT runtime_version)=1
+ )
+ SELECT saved.*, versions.runtime_version FROM saved LEFT JOIN versions ON versions.entity_id=saved.id
+ ORDER BY saved.created_at DESC,saved.id DESC`)
+  .bind(site,testOnly?'builtin-draft-%':'builtin-release-%',testOnly?'$.runtimeVersion':'$.runtime',
+   site,testOnly?'builtin_draft.stored':'builtin_release.generated').all();
+ return rows.results.map(payload);
+}
 export async function packageState(env,site,{testOnly=false}={}){
  const saved=await snapshot(env,site),revision=await digest(saved);let error=null,selected=null;
  try{selected=await readPinnedSiteRuntime({siteId:site,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);}catch(e){error=e.message;}
@@ -37,7 +59,7 @@ export async function packageState(env,site,{testOnly=false}={}){
  const warnings=selected?refreshSummary(previewInput(selected.snapshot,selected.descriptor,'20000101_000000'),saved.units,selected.pin,saved.rules).warnings:[];
  if(setup.userSyncWarning)warnings.push(setup.userSyncWarning);
  let cacheBlocked=false;try{requireSupportedCacheGenerator(JSON.parse(saved.config.config_json));}catch(e){error=e.message;cacheBlocked=true;}
- const rows=await db(env).prepare("SELECT * FROM releases WHERE publisher_id=? AND version LIKE ? ORDER BY created_at DESC,id DESC LIMIT 50").bind(site,testOnly?'builtin-draft-%':'builtin-release-%').all();
+ const releases=await savedPackages(db(env),site,testOnly);
  // Keep prior production packages reachable after selecting a built-in runtime.
  const earlier=testOnly?{results:[]}:await db(env).prepare(`SELECT r.*,
    EXISTS(SELECT 1 FROM audit_log a WHERE a.publisher_id=r.publisher_id AND
@@ -45,7 +67,7 @@ export async function packageState(env,site,{testOnly=false}={}){
      (a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id))) AS was_production
    FROM releases r WHERE r.publisher_id=? AND r.id NOT LIKE 'builtin-%' AND r.version NOT LIKE 'builtin-%'
    ORDER BY CASE WHEN r.status='production' OR EXISTS(SELECT 1 FROM audit_log a WHERE a.publisher_id=r.publisher_id AND a.action='builtin_release.production' AND json_extract(a.details_json,'$.previousReleaseId')=r.id) THEN 0 ELSE 1 END,was_production DESC,r.created_at DESC,r.id DESC LIMIT 50`).bind(site).all();
- return {site:saved.site,enablePrebid:JSON.parse(saved.config.config_json).enablePrebid===true,revision,ready:!error,error,warnings,nextStep:cacheBlocked?'demand':error?setup.nextStep:null,runtime:displayPin,testOnly,releases:rows.results.map(payload),earlierReleases:earlier.results.map(r=>({...payload(r),canRestore:r.status==='archived'&&Boolean(r.was_production)}))};
+ return {site:saved.site,enablePrebid:JSON.parse(saved.config.config_json).enablePrebid===true,revision,ready:!error,error,warnings,nextStep:cacheBlocked?'demand':error?setup.nextStep:null,runtime:displayPin,testOnly,releases,earlierReleases:earlier.results.map(r=>({...payload(r),canRestore:r.status==='archived'&&Boolean(r.was_production)}))};
 }
 async function build(env,site,revision,stamp,testOnly){
  const saved=await snapshot(env,site);check(await digest(saved)===revision,'Settings changed. Reload before generating.');
@@ -64,7 +86,7 @@ export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
  if(testOnly){
   check(site==='test-site','Only the existing TEST site is allowed.',403);
   const result=await saveDraftRelease({isolation:'explicit-test-store',db:env.DB,bucket:env.BUILDS},{siteId:site,candidate,actor,note:body.notes});
-  return {release:{...result.draft,notes:result.draft.note},testOnly:true};
+  return {release:{...result.draft,notes:result.draft.note,runtimeVersion:result.draft.runtime.runtimeVersion},testOnly:true};
  }
  const {descriptor}=await describeCandidate(site,candidate);
  const id=`builtin-release-${descriptor.packageSha256}`,files={...candidate.files};
@@ -106,7 +128,8 @@ export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
   db(env).prepare("INSERT INTO audit_log(id,actor,action,publisher_id,entity_type,entity_id,details_json) SELECT ?,?,'builtin_release.generated',?,'release',?,? WHERE changes()=1").bind(crypto.randomUUID(),actor,site,id,JSON.stringify({runtime:manifest.runtime.runtimeVersion})),
  ]);
  check(result[0].meta.changes===1,'Settings changed or package already exists. Reload releases.');
- return {release:payload(await db(env).prepare('SELECT * FROM releases WHERE publisher_id=? AND id=?').bind(site,id).first()),testOnly:false};
+ const row=await db(env).prepare('SELECT * FROM releases WHERE publisher_id=? AND id=?').bind(site,id).first();
+ return {release:payload({...row,runtime_version:manifest.runtime.runtimeVersion}),testOnly:false};
 }
 export async function readPackage(env,site,id,{testOnly=false,requestedFile=null}={}){
  if(testOnly){check(site==='test-site'&&/^builtin-draft-[a-f0-9]{64}$/.test(id),'Unknown TEST package.',404);const p=await readDraftRelease({isolation:'explicit-test-store',db:env.DB,bucket:env.BUILDS},{siteId:site,releaseId:id});check(p,'Package not found.',404);return {files:p.files,release:p.draft};}
