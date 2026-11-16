@@ -37,7 +37,7 @@ jobs:
       - name: Verify contextual taxonomy settings, auction isolation and build integration
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/contextual-signals-*.test.mjs
       - name: Verify audited 3.22.1 composition and immutable release history
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3221-package-qa.test.mjs tests/runtime/runtime-lineage.test.mjs tests/runtime/runtime-release-history.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3221-package-qa.test.mjs tests/runtime/runtime3222-lazy.test.mjs tests/runtime/runtime-lineage.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/runtime-allow-list-parity.test.mjs
       - name: Verify bidder eligibility and generated request isolation
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/bidder-rules-*.test.mjs
       - name: Reproduce and prevent the independent audit failures
@@ -86,6 +86,8 @@ jobs:
         run: node scripts/prepare-boot3212-browser.mjs && python scripts/verify-boot3212-browser.py
       - name: 3.23.0 bid caching, deal keys and preset targeting with the vendored Prebid.js 11.34.0 on desktop and mobile (synthetic bidders and CMP, no network)
         run: node scripts/prepare-bidcache323-browser.mjs && python scripts/verify-bidcache323-browser.py
+      - name: Lazy observer ordering on full readable and minified 3.22.2 scripts
+        run: node --experimental-strip-types scripts/prepare-lazy3222-browser-fixtures.mjs && python scripts/verify-lazy3222-browser.py
       - name: Bidder rule editor and simulator on desktop and narrow screens
         run: python scripts/verify-bidder-rules-ui.py
       - run: python scripts/verify-site-editor.py
@@ -121,6 +123,7 @@ jobs:
             .generated/draft-inventory-ui/
             .generated/contextual-signals-ui-evidence/
             .generated/bidder-rules-ui-evidence/
+            .generated/lazy3222-evidence/
             .generated/site-editor-evidence/
             .generated/position-evidence/
             .generated/site-workspace-evidence/
