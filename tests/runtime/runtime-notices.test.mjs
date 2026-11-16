@@ -58,19 +58,35 @@ test('warning names the alternative and the current version from data, not from 
   assert(!/current/i.test(notice.warning), 'The fixed text never names the current version');
   // Derived as the endpoint does, excluding only the exact known earlier cache source.
   assert(current && current.channel === 'stable' && current.version !== '3.22.0');
-  assert.equal(runtimeNoticeText(notice, choices, current), `${WARNING} 3.22.1 (Preview) has bidder rules with these fixes. ${current.version} is the current version.`);
+  assert.equal(runtimeNoticeText(notice, choices, current), `${WARNING} 3.22.2 (Preview) has bidder rules with these fixes. ${current.version} is the current version.`);
   const today = {version: '3.21.2', channel: 'stable', pin: pinOf('3.21.2')};
-  assert.equal(runtimeNoticeText(notice, choices, today), `${WARNING} 3.22.1 (Preview) has bidder rules with these fixes. 3.21.2 is the current version.`);
+  assert.equal(runtimeNoticeText(notice, choices, today), `${WARNING} 3.22.2 (Preview) has bidder rules with these fixes. 3.21.2 is the current version.`);
   // A later stable release (for example 3.23.0) becomes current without editing the notice.
   const future = {version: '3.23.0', channel: 'stable', pin: {runtimeVersion: '3.23.0', runtimeSha256: 'a'.repeat(64)}};
-  assert.equal(runtimeNoticeText(notice, publicRuntimeChoices([...runtimes, future]), future), `${WARNING} 3.22.1 (Preview) has bidder rules with these fixes. 3.23.0 is the current version.`);
+  assert.equal(runtimeNoticeText(notice, publicRuntimeChoices([...runtimes, future]), future), `${WARNING} 3.22.2 (Preview) has bidder rules with these fixes. 3.23.0 is the current version.`);
   // Missing recommendation: no current-version sentence.
-  assert.equal(runtimeNoticeText(notice, choices, null), `${WARNING} 3.22.1 (Preview) has bidder rules with these fixes.`);
+  assert.equal(runtimeNoticeText(notice, choices, null), `${WARNING} 3.22.2 (Preview) has bidder rules with these fixes.`);
   // The alternative is named only when it is offered.
-  assert.equal(runtimeNoticeText(notice, choices.filter(item => item.version !== '3.22.1'), today), `${WARNING} 3.21.2 is the current version.`);
+  assert.equal(runtimeNoticeText(notice, choices.filter(item => item.version !== '3.22.2'), today), `${WARNING} 3.21.2 is the current version.`);
   // If the alternative itself were the stable recommendation, it is named once.
-  const promoted = {version: '3.22.1', channel: 'stable', pin: {runtimeVersion: '3.22.1', runtimeSha256: 'b'.repeat(64)}};
-  assert.equal(runtimeNoticeText(notice, publicRuntimeChoices([...runtimes, promoted]), promoted), `${WARNING} 3.22.1, the current version, has bidder rules with these fixes.`);
+  const promoted = {version: '3.22.2', channel: 'stable', pin: {runtimeVersion: '3.22.2', runtimeSha256: 'b'.repeat(64)}};
+  assert.equal(runtimeNoticeText(notice, publicRuntimeChoices([...runtimes, promoted]), promoted), `${WARNING} 3.22.2, the current version, has bidder rules with these fixes.`);
+});
+
+test('each notice names an alternative that is offered, has no notice and no newer patch of its line', () => {
+  const numbers = version => version.split('.').map(Number);
+  for (const notice of [runtimeNotice(pinOf('3.22.0')), runtimeNotice(pinOf('3.23.0'))]) {
+    const alternative = runtimeReleaseHistory.find(r => r.version === notice.alternative.version);
+    assert(alternative && runtimeCatalog.some(r => r.version === alternative.version && r.codeSha256 === alternative.codeSha256), notice.alternative.version);
+    assert.equal(runtimeNotice({runtimeVersion: alternative.version, runtimeSha256: alternative.codeSha256}), undefined, alternative.version);
+    // It has every capability of the noticed version, and no newer patch of the same line with those capabilities replaces it.
+    const record = runtimeReleaseHistory.find(r => r.version === notice.version && r.codeSha256 === notice.runtimeSha256);
+    assert(record.capabilities.every(c => alternative.capabilities.includes(c)), alternative.version);
+    const [major, minor, patch] = numbers(alternative.version);
+    const newer = runtimeReleaseHistory.filter(r => { const [m, n, p] = numbers(r.version); return m === major && n === minor && p > patch && alternative.capabilities.every(c => r.capabilities.includes(c)); });
+    assert.deepEqual(newer.map(r => r.version), [], `${notice.version}: name the newest patch instead of ${alternative.version}`);
+  }
+  assert.equal(runtimeNotice(pinOf('3.22.0')).alternative.version, '3.22.2');
 });
 
 test('the exact earlier cache source is labelled without changing its channel, pin or availability',()=>{
@@ -167,7 +183,7 @@ test('TEST workspace Script version page labels and explains 3.22.0 without an A
   assert.equal(page.note.hidden, true);
   page.choose('3.22.0');
   assert.equal(page.note.hidden, false);
-  assert.equal(page.note.textContent, `${WARNING} 3.22.1 (Preview) has bidder rules with these fixes.`);
+  assert.equal(page.note.textContent, `${WARNING} 3.22.2 (Preview) has bidder rules with these fixes.`);
   assert.equal(page.runtime.getAttribute('aria-describedby'), 'runtime-notice');
   for (const version of ['3.21.2', '3.22.1']) {
     page.choose(version);

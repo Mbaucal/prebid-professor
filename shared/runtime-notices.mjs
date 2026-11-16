@@ -14,7 +14,8 @@ export const runtimeNotices = Object.freeze([Object.freeze({
   // Inter.
   optionSuffix: ' · No 3.21.1+ fixes',
   warning: '3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for page and category size maps when no key-value mapping sets a size map, contextual signals with existing Prebid RTD providers, and the TakeOver frequency cap and debug storage before CMP consent.',
-  alternative: Object.freeze({ version: '3.22.1', offers: 'bidder rules with these fixes' }),
+  // The newest patch of the 3.22 line: 3.22.2 keeps everything 3.22.1 has.
+  alternative: Object.freeze({ version: '3.22.2', offers: 'bidder rules with these fixes' }),
 }),Object.freeze({
   version: '3.23.0',
   runtimeSha256: 'c2b9e027f2bd263c17b3f0d81b701120b29bde23efeaa3efd81ad2163f47c224',

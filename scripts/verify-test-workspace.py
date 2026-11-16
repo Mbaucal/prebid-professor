@@ -40,7 +40,7 @@ def exercise_322_notice(page):
     select.select_option(labeled[0]['value'])
     expect(note).to_be_visible()
     text=note.text_content()
-    check('3.22.0 note names the missing fixes and the alternative',text.startswith('3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for ') and text.endswith(' 3.22.1 (Preview) has bidder rules with these fixes.'))
+    check('3.22.0 note names the missing fixes and the alternative',text.startswith('3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for ') and text.endswith(' 3.22.2 (Preview) has bidder rules with these fixes.'))
     expect(select).to_have_accessible_description(text)
     check('3.22.0 saves without Preview opt-in',page.locator('#save-selection').is_enabled() and not page.locator('#allow-preview').is_checked())
     page.set_viewport_size({'width':390,'height':844})
