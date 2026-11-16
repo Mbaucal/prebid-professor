@@ -153,7 +153,8 @@ export function createTesseraBidCache(win, settings, options) {
     if (!options.zeroFloorModel || !floors || typeof floors !== 'object' || floors.floorMin !== 0) return false;
     if (floors.endpoint && (typeof floors.endpoint !== 'object' || Object.keys(floors.endpoint).length)) return false;
     var data = floors.data, schema = data && data.schema, values = data && data.values;
-    if (!data || typeof data !== 'object' || Object.keys(data).sort().join(',') !== 'currency,schema,values' ||
+    if (!data || typeof data !== 'object' || !['currency,schema,values','currency,floorsSchemaVersion,schema,values'].includes(Object.keys(data).sort().join(',')) ||
+      (Object.prototype.hasOwnProperty.call(data,'floorsSchemaVersion') && data.floorsSchemaVersion !== 1) ||
       typeof data.currency !== 'string' || data.currency.toUpperCase() !== options.floorCurrency ||
       !schema || schema.delimiter !== '|' || !Array.isArray(schema.fields) ||
       schema.fields.join(',') !== 'mediaType,size,deviceType,dayType,timeOfDay' ||
