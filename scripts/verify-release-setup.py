@@ -75,11 +75,14 @@ def dashboard_fits(browser):
             panel.get_by_role('status').filter(has_text='Script setup saved').wait_for()
             fit=select_fits(version);fits.append({'viewport':390,'context':'Dashboard Script setup','state':'saved '+saved,**fit});assert fit['fits'],fit
             assert version.locator('option:checked').text_content().strip()==label,version.locator('option:checked').text_content()
+            # The closed select leaves out the saved marker; screen readers still hear it with the select.
+            expect(version).to_have_accessible_description('Script version '+label+' · Saved version')
             page.get_by_role('button',name='Generate and releases',exact=True).click()
             releases.get_by_role('button',name='Change script setup',exact=True).click()
             inline=releases.get_by_role('combobox',name='Script version',exact=True);inline.wait_for()
             fit=select_fits(inline);fits.append({'viewport':390,'context':'Dashboard Releases inline setup','state':'saved '+saved,**fit});assert fit['fits'],fit
             assert inline.locator('option:checked').text_content().strip()==label,inline.locator('option:checked').text_content()
+            expect(inline).to_have_accessible_description('Script version '+label+' · Saved version')
             inline.screenshot(path=str(out/f'runtime-{saved.replace(".","")}-dashboard-inline-select.png'))
             inline.select_option(next(item['value'] for item in labels(inline) if item['label']=='3.21.2 · Current version'))
             assert label+' · Saved version' in [item['label'] for item in labels(inline)],labels(inline)
@@ -141,7 +144,8 @@ try:
     cache_notice=page.get_by_role('note').filter(has_text='3.23.0 adds bid caching')
     cache_notice.wait_for()
     expect(cache_notice).to_contain_text('3.24.0 (Preview) has bid caching, bidder accounts and rules with these safeguards.')
-    expect(version).to_have_accessible_description(cache_notice.inner_text())
+    # The select is described by the line under it (whether the version is saved), then by the notice.
+    expect(version).to_have_accessible_description('Script version 3.23.0 · Unsaved version change '+cache_notice.inner_text())
     cache_fit=select_fits(version);fits.append({'viewport':390,'context':'Script setup','state':'earlier-cache',**cache_fit});assert cache_fit['fits'],cache_fit
     page.screenshot(path=str(out/'runtime-323-notice-mobile.png'),full_page=True)
     page.set_viewport_size({'width':1280,'height':900})
@@ -159,7 +163,7 @@ try:
     assert legacy_notice.text_content()==legacy_warning(current_label),legacy_notice.text_content()
     assert legacy_notice.get_attribute('class')==preview_notice_class
     # Screen readers hear the warning with the select, not only when reading the page.
-    expect(version).to_have_accessible_description(legacy_warning(current_label))
+    expect(version).to_have_accessible_description('Script version 3.22.0 · Unsaved version change '+legacy_warning(current_label))
     assert page.locator('.script-version-summary').text_content().startswith('Script version 3.22.0 · Unsaved version change')
     assert not preview_notice.is_visible()
     assert page.get_by_role('button',name='Save script setup',exact=True).is_enabled()
@@ -170,7 +174,7 @@ try:
     page.get_by_role('button',name='Use current version',exact=True).click()
     assert version.input_value()==by_label[stable]
     assert legacy_notice.count()==0
-    assert version.get_attribute('aria-describedby') is None
+    expect(version).to_have_accessible_description('Script version '+current_label+' · Current version for new scripts')
     chosen='3.14.0'
     version.select_option(next(item['value'] for item in options if item['label'].split(' · ')[0]==chosen))
     assert page.get_by_text('Frozen engine',exact=True).count()==0
@@ -224,7 +228,7 @@ try:
     legacy_notice.wait_for()
     assert version.locator('option:checked').text_content().strip()==legacy
     assert legacy_notice.text_content()==legacy_warning(current_label)
-    expect(version).to_have_accessible_description(legacy_warning(current_label))
+    expect(version).to_have_accessible_description('Script version 3.22.0 · Saved version '+legacy_warning(current_label))
     assert page.locator('.script-version-summary').filter(has_text='Script version').text_content().startswith('Script version 3.22.0 · Saved version')
     page.screenshot(path=str(out/'runtime-322-saved-desktop.png'),full_page=True)
     page.set_viewport_size({'width':390,'height':844})
