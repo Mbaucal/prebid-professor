@@ -7,13 +7,14 @@ import {prebidRequirements, inspectPrebidArtifact, sha256} from '../../worker/ru
 import {positionFixture} from '../support/position-runtime-fixture.mjs';
 import {mapping} from '../support/conditional-maps-fixture.mjs';
 import {configure, TS} from './artifact-fixture.mjs';
+import {bidCacheSite} from './bid-cache323-site.mjs';
 import {GROUP_RULE_FORMAT_SCRIPTS, groupRuleFormatText} from '../../src/site-workspace/group-rule-scripts.ts';
 
 /* Unit rules help text (src/components/UnitRulesPanel.tsx) names the scripts where Default, ATF and BTF
  * conditions skip TakeOver and Outstream instead of rejecting the package. The compilers decide this per
- * version, with no capability, so the list is static and checked here against generated packages. Every
- * numeric release from 3.21.0 on must be classified: a new release fails this test until it is added to
- * GROUP_RULE_FORMAT_SCRIPTS or to REJECTS below. */
+ * version, with no capability, so the list is static and checked here against generated packages, for
+ * both formats. Every numeric release from 3.21.0 on must be classified: a new release fails this test
+ * until it is added to GROUP_RULE_FORMAT_SCRIPTS or to REJECTS below. */
 const REJECTS = ['3.21.0', '3.22.0'];
 const numbers = version => version.split('.').map(Number);
 const from3210 = version => { const [major, minor] = numbers(version); return major > 3 || (major === 3 && minor >= 21); };
@@ -27,32 +28,39 @@ async function prebid(snapshot, descriptor) {
   const object = {size: bytes.byteLength, customMetadata: {sha256: await sha256(bytes), version: '11.34.0'}, async arrayBuffer() { return bytes; }};
   return {bytes, report: await inspectPrebidArtifact({siteId: snapshot.site.id, builds: [build], requirements}, {async get() { return object; }})};
 }
-/** A Default or ATF country rule that reaches the TakeOver position: excluded (true) or refused (false). */
-async function excludes(descriptor, scope) {
-  const snapshot = configure(positionFixture(true), config => { config.runtimeControls.adPositions.Overlay.frequencyMinutes = 5; });
+// The help text states both formats, so each one is generated: a TakeOver position (Overlay) and an Outstream
+// position (P2), each with the reason a script that does not skip it gives.
+const FORMATS = {
+  TakeOver: {site: () => configure(positionFixture(true), config => { config.runtimeControls.adPositions.Overlay.frequencyMinutes = 5; }),
+    code: 'Overlay', refusal: /^Overlay: key-value rules currently support in-page Banner and Sticky positions/},
+  Outstream: {site: () => bidCacheSite({outstream: true}), code: 'P2', refusal: /^P2: key-value map rules currently support Banner\. Keep Outstream/},
+};
+/** A Default or ATF country rule that reaches the TakeOver or Outstream position: excluded (true) or refused (false). */
+async function excludes(descriptor, scope, format) {
+  const {site, code, refusal} = FORMATS[format], snapshot = site(), label = `${descriptor.version} ${scope} ${format}`;
   snapshot.rules = [...snapshot.rules.filter(rule => rule.rule_key !== scope), {rule_key: scope, rule_json: JSON.stringify({conditionalMappings: [
     mapping({sizeMapKey: null, slotAction: 'disable', conditions: [{key: 'geo_country', operator: 'notEquals', value: 'RS'}]})]})}];
   try {
     const result = await buildArtifactCandidate({snapshot, pin: pinRuntime(descriptor, {allowPreview: true}), buildTimestamp: TS, prebid: await prebid(snapshot, descriptor)});
     const config = JSON.parse(new TextDecoder().decode(result.files['config.json']));
     const exclusions = config.conditionalRuleExclusions ?? config.core?.conditionalRuleExclusions;
-    assert.deepEqual(exclusions, [{code: 'Overlay', format: 'TakeOver', scopes: [scope]}], `${descriptor.version} ${scope}`);
+    assert.deepEqual(exclusions, [{code, format, scopes: [scope]}], label);
     return true;
   } catch (error) {
     if (error instanceof assert.AssertionError) throw error;
-    assert.match(error.message, /key-value rules currently support in-page Banner and Sticky positions/, `${descriptor.version} ${scope}`);
+    assert.match(error.message, refusal, label);
     return false;
   }
 }
 
-test('the Unit rules list of scripts that skip TakeOver for group rules matches generated packages', async () => {
+test('the Unit rules list of scripts that skip TakeOver and Outstream for group rules matches generated packages', async () => {
   const unclassified = releases.filter(release => !GROUP_RULE_FORMAT_SCRIPTS.includes(release.version) && !REJECTS.includes(release.version)).map(release => release.version);
   assert.deepEqual(unclassified, [], 'Classify each new release for the Unit rules help text');
   for (const release of releases) {
     const descriptor = runtimeCatalog.find(entry => entry.version === release.version && entry.codeSha256 === release.codeSha256);
     assert(descriptor, release.version);
-    for (const scope of ['__DEFAULT__', '__ATF__'])
-      assert.equal(await excludes(descriptor, scope), GROUP_RULE_FORMAT_SCRIPTS.includes(release.version), `${release.version} ${scope}`);
+    for (const format of Object.keys(FORMATS)) for (const scope of ['__DEFAULT__', '__ATF__'])
+      assert.equal(await excludes(descriptor, scope, format), GROUP_RULE_FORMAT_SCRIPTS.includes(release.version), `${release.version} ${scope} ${format}`);
   }
   assert.deepEqual([...GROUP_RULE_FORMAT_SCRIPTS], ['3.21.1', '3.21.2', '3.22.1', '3.22.2', '3.23.0', '3.24.0']);
 });
