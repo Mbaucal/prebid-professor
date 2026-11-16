@@ -5,8 +5,8 @@ from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/site-workspace-evidence';out.mkdir(exist_ok=True)
-# The current version for new scripts is the newest stable release record.
-current=next(r for r in json.loads((root/'worker/runtime/runtime-releases.json').read_text()) if r['channel']=='stable')
+# Keep the audited recommendation while the combined runtime is Preview; earlier stable records remain selectable.
+current=next(r for r in json.loads((root/'worker/runtime/runtime-releases.json').read_text()) if r['version']=='3.21.2')
 process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/site-workspace-browser-fixture.mjs'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
 assert json.loads(process.stdout.readline())['ready']
 errors=[];requests=[]

@@ -90,3 +90,18 @@ test('a Demand change during compilation cannot register a script under stale se
  }});
  assert.equal(response.status,409);assert.equal(f.writes(),0);
 });
+test('named scripts keep their own 19 positions: an override for another site position is refused clearly',async()=>{
+ const f=fixture();
+ f.row.config_json=JSON.stringify({enablePrebid:true,prebidBidCache:{enabled:false,maxBidAgeSeconds:60,positionOverrides:{Sticky:true,Home_Top:true}}});
+ const state=await(await f.call()).json();assert.equal(state.supported,true);
+ assert.deepEqual(state.prebid.bidCache.positionOverrides,{Home_Top:true,Sticky:true},'the library still reads the saved site settings');
+ const response=await f.call('scripts',{revision:state.revision,name:'Positions',refreshSeconds:30});
+ assert.equal(response.status,409);
+ assert.equal((await response.json()).error,'Named scripts use the reviewed Tanjug inventory of 19 positions, which has no Home_Top. Set that position to Use site setting under Config → Ad units → Bid cache, or remove unused overrides under Config → Demand → Prebid, before creating a named script.');
+ assert.equal(f.writes(),0);
+ // With only reviewed positions the same request creates the versioned position script.
+ f.row.config_json=JSON.stringify({enablePrebid:true,prebidBidCache:{enabled:false,maxBidAgeSeconds:60,positionOverrides:{Sticky:true,Billboard:false}}});
+ const next=await(await f.call()).json(),created=await f.call('scripts',{revision:next.revision,name:'Positions',refreshSeconds:30});
+ assert.equal(created.status,201,await created.clone().text());
+ const item=(await created.json()).item;assert.match(item.id,/^tanjug-script-2\.0\.0-/);assert.deepEqual(item.settings.positionOverrides,{Billboard:false,Sticky:true});
+});

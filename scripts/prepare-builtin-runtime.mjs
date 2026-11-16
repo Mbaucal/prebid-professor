@@ -1,3 +1,4 @@
+import { prepareRuntime324 } from './prepare-runtime324.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { brotliDecompressSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
@@ -11,11 +12,13 @@ import { prepareRevenueV3Runtime } from './prepare-revenue-v3-runtime.mjs';
 import { prepareRuntime316 } from './prepare-runtime316.mjs';
 import { prepareRuntime3161 } from './prepare-runtime3161.mjs';
 import { prepareRuntime3191 } from './prepare-runtime3191.mjs';
+import { prepareRuntime3222 } from './prepare-runtime3222.mjs';
 import { prepareRuntime3221 } from './prepare-runtime3221.mjs';
 import { prepareRuntime322 } from './prepare-runtime322.mjs';
 import { prepareRuntime321 } from './prepare-runtime321.mjs';
 import { prepareRuntime3211 } from './prepare-runtime3211.mjs';
 import { prepareRuntime3212 } from './prepare-runtime3212.mjs';
+import { prepareRuntime323 } from './prepare-runtime323.mjs';
 import { prepareRuntime3201 } from './prepare-runtime3201.mjs';
 import { prepareRuntime320 } from './prepare-runtime320.mjs';
 import { prepareRuntime319 } from './prepare-runtime319.mjs';
@@ -105,6 +108,9 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareRuntime3212(root);
   await prepareRuntime322(root);
   await prepareRuntime3221(root);
+  await prepareRuntime3222(root);
+  await prepareRuntime323(root);
+  await prepareRuntime324(root);
   await prepareTestPageClient(root);
   // Source text the Worker entries install; see worker/runtime-canonical/functions.mjs.
   await prepareBrowserCanonical(root);

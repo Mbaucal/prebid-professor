@@ -300,8 +300,8 @@ try {
   }
   // Exercise account compilation through the actual bundled save/download path,
   // with TakeOver timing as well as inherited, custom and omitted upstream chains.
-  {
-    const site='parity-accounts', version='3.22.1';
+  for (const version of ['3.22.1','3.22.2','3.24.0']) {
+    const site='parity-accounts-'+version.replaceAll('.','-');
     await createSite(site,'prebid',5);
     for (const [bidder,mid,schain] of [
       ['adf_smn',999991,{mode:'inherit'}], ['adf_ag',999992,{mode:'none'}],
@@ -309,15 +309,22 @@ try {
     ]) await json(`/api/publishers/${site}/bidders`,{bidder,baseAdapter:'adf',params:{mid},schain},201);
     const config=await readConfig(site);
     config.runtimeControls.schain={enabled:true,version:'1.0',complete:1,nodes:[{asi:'seller.example',sid:'site',hp:1}]};
+    if (version === '3.24.0') {
+      config.prebidBidCache={enabled:true,maxBidAgeSeconds:45};
+      config.runtimeControls.bidderRules={schemaVersion:1,enabled:true,rules:[{
+        id:'account-scope',name:'Agency account eligibility',enabled:true,bidder:'adf_ag',positions:['P1'],
+        countries:{mode:'exclude',values:['DE'],unknown:'allow'},devices:['desktop','mobile'],
+      }]};
+    }
     await writeConfig(site,config);
     const runtime=(await json(settingsPath(site))).runtimes.find(row=>row.version===version);
     assert(runtime,'The reviewed account runtime must be selectable explicitly');
     await select(site,runtime,true);
     await addTakeOver(site,'prebid',5);
-    await savedPackage(site,{config:'prebid-accounts',demand:'prebid',takeover:'interval-5',path:'saved-package',version,accountCase:true});
+    await savedPackage(site,{config:'prebid-accounts-'+version,demand:'prebid',takeover:'interval-5',path:'saved-package',version,accountCase:true});
     const calls=await guardCalls(mf,origin);
-    guard['prebid-accounts']=describeCalls(calls);
-    if(calls.length)failures.push('prebid-accounts: non-canonical function serialization: '+guard['prebid-accounts'].join('; '));
+    guard['prebid-accounts-'+version]=describeCalls(calls);
+    if(calls.length)failures.push('prebid-accounts: non-canonical function serialization: '+guard['prebid-accounts-'+version].join('; '));
   }
 } finally {
   await mf.dispose();
