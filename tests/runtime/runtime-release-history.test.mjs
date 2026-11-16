@@ -52,7 +52,8 @@ test('recorded commit must exist and reproduce its declared source checksum',()=
 
 
 test('TEST keeps its existing 3.22.0 record and order while 3.22.1 is prepended',()=>{
-  const current=history(), previous=current.filter(r=>r.version!=='3.22.1');
+  const records=history(), current=records.slice(records.findIndex(r=>r.version==='3.22.1'));
+  const previous=current.filter(r=>r.version!=='3.22.1');
   assert.doesNotThrow(()=>checkRuntimeReleaseHistory(current,previous));
   const imported=previous.find(r=>r.version==='3.22.0');
   assert.throws(()=>checkRuntimeReleaseHistory([imported,...current.filter(r=>r!==imported)],previous),/historical release order/);
