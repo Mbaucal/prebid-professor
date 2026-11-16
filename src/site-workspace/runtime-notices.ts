@@ -26,7 +26,7 @@ const notices: readonly RuntimeNotice[] = Object.freeze([Object.freeze({
   version: '3.22.0',
   runtimeSha256: '1aa3c8ad0dcc1c94fddf6d50b0a7b3073a524dee4750563277fd5c6d22525268',
   optionSuffix: ' · No 3.21.1+ fixes',
-  warning: '3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for size maps when a key-value rule does not match, contextual signals with existing Prebid RTD providers, and TakeOver frequency and debug storage before CMP consent.',
+  warning: '3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for page and category size maps when no key-value mapping sets a size map, contextual signals with existing Prebid RTD providers, and the TakeOver frequency cap and debug storage before CMP consent.',
   alternative: Object.freeze({ version: '3.22.1', offers: 'bidder rules with these fixes' }),
 })]);
 

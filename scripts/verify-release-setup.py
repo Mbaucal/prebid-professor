@@ -10,7 +10,7 @@ requests=[];errors=[]
 # MBA-419: 3.22.0 stays selectable and savable, labeled and explained. The
 # current version is read from the endpoint, never assumed.
 legacy='3.22.0 · No 3.21.1+ fixes'
-legacy_warning_start='3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for size maps when a key-value rule does not match, contextual signals with existing Prebid RTD providers, and TakeOver frequency and debug storage before CMP consent.'
+legacy_warning_start='3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for page and category size maps when no key-value mapping sets a size map, contextual signals with existing Prebid RTD providers, and the TakeOver frequency cap and debug storage before CMP consent.'
 def legacy_warning(current):
     return legacy_warning_start+' 3.22.1 (Preview) has bidder rules with these fixes. '+current+' is the current version.'
 def select_fits(select):

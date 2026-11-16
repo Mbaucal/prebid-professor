@@ -1,4 +1,5 @@
 import test from 'node:test';
+import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {parse} from 'acorn';
 import {runtimeLabel, publicRuntimeChoices} from '../../src/site-workspace/runtime-labels.ts';
@@ -10,10 +11,11 @@ import {compileRuntime321} from '../../worker/runtime-321/compiler.mjs';
 import {compileRuntime3212} from '../../worker/runtime-3212/compiler.mjs';
 import {compileRuntime322} from '../../worker/runtime-322/compiler.mjs';
 import {positionFixture} from '../support/position-runtime-fixture.mjs';
+import {conditionalFixture} from '../support/conditional-maps-fixture.mjs';
 import {configure, TS} from './artifact-fixture.mjs';
 
 const SUFFIX = ' · No 3.21.1+ fixes';
-const WARNING = '3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for size maps when a key-value rule does not match, contextual signals with existing Prebid RTD providers, and TakeOver frequency and debug storage before CMP consent.';
+const WARNING = '3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for page and category size maps when no key-value mapping sets a size map, contextual signals with existing Prebid RTD providers, and the TakeOver frequency cap and debug storage before CMP consent.';
 // The same payload shape and recommendation the Script setup endpoint returns.
 const runtimes = runtimeCatalog.map(r => ({version: r.version, channel: r.channel, pin: pinRuntime(r, {allowPreview: true})}));
 const recommended = runtimeReleaseHistory.find(r => r.channel === 'stable');
@@ -95,4 +97,27 @@ test('the fixes named in the warning are absent from generated 3.22.0 and presen
   const debugStorage = source => (source.match(/localStorage\.(?:getItem|setItem|removeItem)\(\s*['"]ADOPS_DEBUG['"]/g) || []).length;
   assert.equal(debugStorage(legacy), 3);
   assert.equal(debugStorage(audited), 0);
+});
+
+// adConditionalConfig in a VM. The unit's base map is 'base'; the page and
+// category maps chosen before the rules run are 'category' (GPT) and
+// 'prebid-category' (Prebid).
+function sizeMaps(source, selected) {
+  const context = {AD_CONDITIONAL_UNITS: {P2: {usesGeo: false, baseMap: 'base', maps: ['base', 'category', 'rule']}}, AD_CONDITIONAL_DECISIONS: {},
+    AD_GEO_STATE: {settled: true}, adGeoSelect: () => selected, document: {getElementById: () => null}};
+  vm.createContext(context);
+  vm.runInContext(`${source}; this.adConditionalConfig = adConditionalConfig;`, context);
+  const config = context.adConditionalConfig('P2', {sizeMapName: 'category', prebidSizeConfigName: 'prebid-category'});
+  return [config.sizeMapName, config.prebidSizeConfigName];
+}
+test('3.22.0 drops page and category size maps whenever no key-value mapping sets a size map', () => {
+  const snapshot = conditionalFixture({prebid: true});
+  const source = (version, compile) => functions(compile(previewInput(snapshot, runtimeCatalog.find(r => r.version === version), TS)).adsJs).get('adConditionalConfig');
+  // No mapping matches; a mapping matches but only enables the slot; a mapping sets a size map.
+  const cases = {noMatch: undefined, matchWithoutMap: {sizeMapKey: null, slotAction: 'enable'}, matchWithMap: {sizeMapKey: 'rule', slotAction: 'inherit'}};
+  const run = text => Object.fromEntries(Object.entries(cases).map(([name, selected]) => [name, sizeMaps(text, selected)]));
+  const legacy = run(source('3.22.0', compileRuntime322));
+  assert.deepEqual(legacy, run(source('3.21.0', compileRuntime321)));
+  assert.deepEqual(legacy, {noMatch: ['base', 'base'], matchWithoutMap: ['base', 'base'], matchWithMap: ['rule', 'rule']});
+  assert.deepEqual(run(source('3.21.2', compileRuntime3212)), {noMatch: ['category', 'prebid-category'], matchWithoutMap: ['category', 'prebid-category'], matchWithMap: ['rule', 'rule']});
 });
