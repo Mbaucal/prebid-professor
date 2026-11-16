@@ -123,8 +123,8 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
           ? 'AdX-only mode is enabled. Bidder, override and User ID settings remain saved but are omitted from releases.'
           : cacheSaved && !next.runtimeSupportsBidCache
             ? next.namedScriptLibrary
-              ? `Prebid settings saved. New named scripts use them; select script ${next.bidCacheRuntimeVersion} in Script setup before you generate packages.`
-              : `Prebid settings saved. Select script ${next.bidCacheRuntimeVersion} in Script setup before you generate; earlier script versions do not apply bid caching.`
+              ? `Prebid settings saved. New named scripts use them; select a compatible script in Script setup before you generate packages.`
+              : `Prebid settings saved. Select a compatible script in Script setup before you generate; your bid cache settings are kept.`
             : 'Prebid settings saved. Generate a new script version to use these settings.',
       );
       await onChanged?.();
@@ -233,7 +233,7 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
               <span>A bid may expire sooner according to its original TTL.</span>
               {!validAge ? <span role="alert">Enter a whole number from 1 to 300.</span> : null}
             </label> : null}
-            <p>{payload.runtimeSupportsBidCache ? `Applies to new packages generated with script ${version} or later.` : savedCache ? `Select script ${version} in Script setup to apply bid caching.${dirty ? '' : ' Your setting is saved.'}` : `Bid caching needs script ${version} or later.`}{payload.namedScriptLibrary ? ' New named scripts in Releases → Scripts and A/B tests use it too; saved scripts and tests keep their own settings.' : ''}</p>
+            <p>{payload.runtimeSupportsBidCache ? `Applies to new packages generated with script ${version} or later.` : savedCache ? `Select a compatible script in Script setup to apply bid caching.${dirty ? '' : ' Your setting is saved.'}` : `Bid caching needs script ${version} or later.`}{payload.namedScriptLibrary ? ' New named scripts in Releases → Scripts and A/B tests use it too; saved scripts and tests keep their own settings.' : ''}</p>
           </fieldset> : <p>Bid caching is inactive while Prebid is off. Its saved settings are kept.</p>}
 
           <div className="prebid-mode-state-grid">

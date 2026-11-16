@@ -7,5 +7,8 @@ export type RuntimeNotice = {
   readonly warning: string;
   /** A release with the same feature and the missing fixes, named only when it is offered. */
   readonly alternative: { readonly version: string; readonly offers: string };
+  /** A known earlier source stays selectable but is not offered as the recommendation. */
+  readonly excludeFromRecommendation?: boolean;
 };
 export const runtimeNotices: readonly RuntimeNotice[];
+export function recommendedRuntimeRelease<T extends {version: string; codeSha256: string; channel: string}>(history: readonly T[]): T | undefined;

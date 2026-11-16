@@ -1,3 +1,4 @@
+import os
 """Bid cache settings on a site that is not Tanjug: real React panels and the compiled Worker
 with local D1, all external traffic blocked. Desktop and 390 px, save, 409/422 and recovery.
 Then Releases → Generate on the MAIN fixture (scripts/main-revenue-browser-fixture.mjs
@@ -38,16 +39,17 @@ def route(r):
 def release():forward(held.pop())
 def no_scroll(page):return page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
 def card(page,code):return page.locator('.ad-unit-card').filter(has=page.locator('code',has_text=code))
-SELECT_TEXT='Select script 3.23.0 in Script setup to apply bid caching. Your setting is saved.'
+SELECT_TEXT='Select a compatible script in Script setup to apply bid caching. Your setting is saved.'
 # Saved settings would cache, but the form has unsaved changes: nothing claims it is saved.
-SELECT_DIRTY_TEXT='Select script 3.23.0 in Script setup to apply bid caching.'
+SELECT_DIRTY_TEXT='Select a compatible script in Script setup to apply bid caching.'
 # Nothing saved would cache yet.
 NEEDS_TEXT='Bid caching needs script 3.23.0 or later.'
-GENERATOR_TEXT=('Bid caching needs script version 3.23.0. Select 3.23.0 in Script setup and save; your bid cache settings are kept. '
+GENERATOR_TEXT=('Bid caching needs a compatible script version. Select 3.24.0 (Preview) in Script setup and save; your bid cache settings are kept. '
+ + 'This version combines bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
  'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.')
 try:
  with sync_playwright() as p:
-  browser=p.chromium.launch(headless=True);page=browser.new_page(viewport={'width':1280,'height':1000})
+  browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'));page=browser.new_page(viewport={'width':1280,'height':1000})
   page.route('**/*',route);page.on('pageerror',lambda e:errors.append(str(e)))
   page.goto('https://tessera.fixture.invalid/');page.get_by_role('button',name='Demand → Prebid',exact=True).wait_for()
   # Loading state of Demand → Prebid.
@@ -65,7 +67,7 @@ try:
   hold['PUT']=True;page.get_by_role('button',name='Save Prebid settings',exact=True).click()
   page.get_by_role('button',name='Saving…',exact=True).wait_for()
   check('Saving disables the cache controls',cache.is_disabled() and page.get_by_label('Maximum bid age (seconds)',exact=True).is_disabled() and page.get_by_role('button',name='Saving…',exact=True).is_disabled())
-  release();page.get_by_text('Prebid settings saved. Select script 3.23.0 in Script setup before you generate; earlier script versions do not apply bid caching.',exact=False).wait_for()
+  release();page.get_by_text('Prebid settings saved. Select a compatible script in Script setup before you generate; your bid cache settings are kept.',exact=False).wait_for()
   status,saved=api('GET','/prebid-mode')
   check('The site default is saved in D1',status==200 and saved['prebidMode']['bidCache']=={'enabled':True,'maxBidAgeSeconds':45})
   check('Saved, on 3.21.2: the panel asks for 3.23.0 and says the setting is saved',fieldset.get_by_text(SELECT_TEXT,exact=True).is_visible())
@@ -102,9 +104,9 @@ try:
   dialog=page.get_by_role('dialog',name='Bid cache · In_Article',exact=True);dialog.get_by_text('Loading bid cache settings…',exact=True).wait_for()
   check('The position dialog shows its loading state',len(held)==1);release()
   dialog.get_by_label('Bid cache for In_Article',exact=True).wait_for()
-  check('The dialog says it applies to the next package generated with 3.23.0',dialog.get_by_text('Applies to the next package generated with script 3.23.0 or later. Select 3.23.0 in Script setup to use it.',exact=True).is_visible())
+  check('The dialog says it applies to the next package generated with 3.23.0',dialog.get_by_text('Applies to the next package generated with script 3.23.0 or later. Select a compatible script in Script setup to use it.',exact=True).is_visible())
   dialog.get_by_label('Bid cache for In_Article',exact=True).select_option('off')
-  dialog.get_by_role('button',name='Save position setting').click();dialog.get_by_role('status').filter(has_text='Saved. Select script 3.23.0 in Script setup to apply it.').wait_for()
+  dialog.get_by_role('button',name='Save position setting').click();dialog.get_by_role('status').filter(has_text='Saved. Select a compatible script in Script setup to apply it.').wait_for()
   check('The position override is saved for this site',api('GET','/prebid-mode')[1]['prebidMode']['bidCache'].get('positionOverrides')=={'In_Article':False} and dialog.get_by_text('Effective: Off',exact=True).is_visible())
   page.screenshot(path=str(out/'position-saved-desktop.png'))
   page.get_by_role('button',name='Close bid cache settings').click();dialog.wait_for(state='detached')
@@ -192,10 +194,10 @@ def open_generate(browser,width,height):
 try:
  ready=json.loads(fixture.stdout.readline());assert ready['ready'] and ready['bidCacheBlocked'] and ready['runtimeVersion']=='3.21.2'
  with sync_playwright() as p:
-  browser=p.chromium.launch(headless=True)
+  browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'))
   for width,height,name in [(1280,1000,'desktop'),(390,844,'390')]:
    page,panel=open_generate(browser,width,height)
-   alert=panel.get_by_role('alert').filter(has_text='Bid caching needs script version 3.23.0.');alert.wait_for()
+   alert=panel.get_by_role('alert').filter(has_text='Bid caching needs a compatible script version.');alert.wait_for()
    status,state=main_api('GET','/builtin-releases')
    check(f'Generate blocked by bid caching shows the reason and both ways out ({name})',alert.inner_text()==GENERATOR_TEXT and status==200
     and state['ready'] is False and state['nextStep']=='demand' and state['error']==GENERATOR_TEXT
@@ -209,19 +211,19 @@ try:
   page,panel=open_generate(browser,1280,1000)
   status,state=main_api('GET','/builtin-releases')
   check('With bid caching off, 3.21.2 generates again',status==200 and state['ready'] is True and state['runtime']['runtimeVersion']=='3.21.2'
-   and panel.get_by_text('Bid caching needs script version',exact=False).count()==0 and panel.get_by_role('button',name='Generate and save package',exact=True).is_enabled())
+   and panel.get_by_text('Bid caching needs a compatible script version',exact=False).count()==0 and panel.get_by_role('button',name='Generate and save package',exact=True).is_enabled())
   page.close()
   # Way out 2: bid caching on again, and 3.23.0 selected in Script setup.
   status,mode=main_api('GET','/prebid-mode')
   status,_=main_api('PUT','/prebid-mode',{'enabled':True,'revision':mode['revision'],'bidCache':{'enabled':True,'maxBidAgeSeconds':60}});assert status==200
   assert main_api('GET','/builtin-releases')[1]['nextStep']=='demand'
   status,selection=main_api('GET','/builtin-site-settings')
-  pin=next(r['pin'] for r in selection['runtimes'] if r['version']=='3.23.0')
-  status,_=main_api('POST','/builtin-site-settings',{'action':'version','revision':selection['revision'],'runtime':pin,'allowPreview':False});assert status==200,_
+  pin=next(r['pin'] for r in selection['runtimes'] if r['version']=='3.24.0')
+  status,_=main_api('POST','/builtin-site-settings',{'action':'version','revision':selection['revision'],'runtime':pin,'allowPreview':True});assert status==200,_
   page,panel=open_generate(browser,1280,1000)
   status,state=main_api('GET','/builtin-releases')
-  check('With 3.23.0 selected, Generate shows no bid cache block',status==200 and state['ready'] is True and state['runtime']['runtimeVersion']=='3.23.0'
-   and panel.get_by_text('Bid caching needs script version',exact=False).count()==0 and panel.get_by_role('button',name='Generate and save package',exact=True).is_enabled())
+  check('With the 3.24.0 Preview explicitly selected, Generate shows no bid cache block',status==200 and state['ready'] is True and state['runtime']['runtimeVersion']=='3.24.0'
+   and panel.get_by_text('Bid caching needs a compatible script version',exact=False).count()==0 and panel.get_by_role('button',name='Generate and save package',exact=True).is_enabled())
   page.screenshot(path=str(out/'generate-capable-desktop.png'),full_page=True);page.close()
   check('No unhandled UI error on Generate',not errors)
   browser.close()
