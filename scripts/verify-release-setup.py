@@ -61,6 +61,28 @@ def dashboard_fits(browser):
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
         page.screenshot(path=str(out/'runtime-322-dashboard-inline-mobile.png'),full_page=True)
         inline.screenshot(path=str(out/'runtime-322-dashboard-inline-select.png'))
+        # A saved Preview version that is also selected: the closed select shows "<version> · Preview"
+        # and fits, standalone and inside Releases. The open list keeps "Saved version" on it while
+        # another version is selected.
+        labels=lambda select:select.locator('option').evaluate_all('(items)=>items.map(item=>({label:item.textContent.trim(),value:item.value}))')
+        for saved in ['3.24.0','3.22.2','3.22.1']:
+            label=saved+' · Preview'
+            page.get_by_role('button',name='Configuration',exact=True).click()
+            version=panel.get_by_role('combobox',name='Script version',exact=True);version.wait_for()
+            version.select_option(next(item['value'] for item in labels(version) if item['label'].startswith(label)))
+            panel.get_by_role('button',name='Save script setup',exact=True).click()
+            panel.get_by_role('status').filter(has_text='Script setup saved').wait_for()
+            fit=select_fits(version);fits.append({'viewport':390,'context':'Dashboard Script setup','state':'saved '+saved,**fit});assert fit['fits'],fit
+            assert version.locator('option:checked').text_content().strip()==label,version.locator('option:checked').text_content()
+            page.get_by_role('button',name='Generate and releases',exact=True).click()
+            releases.get_by_role('button',name='Change script setup',exact=True).click()
+            inline=releases.get_by_role('combobox',name='Script version',exact=True);inline.wait_for()
+            fit=select_fits(inline);fits.append({'viewport':390,'context':'Dashboard Releases inline setup','state':'saved '+saved,**fit});assert fit['fits'],fit
+            assert inline.locator('option:checked').text_content().strip()==label,inline.locator('option:checked').text_content()
+            inline.screenshot(path=str(out/f'runtime-{saved.replace(".","")}-dashboard-inline-select.png'))
+            inline.select_option(next(item['value'] for item in labels(inline) if item['label']=='3.21.2 · Current version'))
+            assert label+' · Saved version' in [item['label'] for item in labels(inline)],labels(inline)
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
         page.close()
     finally:
         fixture.stdin.close();fixture.wait(timeout=10)
