@@ -33,6 +33,7 @@ export function createTesseraBidCache(win, settings, options) {
   var maxAgeMs = settings.maxAgeSeconds * 1000;
   var pb = null, active = false, configured = false;
   var status = 'waiting-prebid', reason = null, prebidVersion = null;
+  var floorAdjustments = Object.create(null);
   var consentReady = false, consentEpoch = 0;
   var known = Object.create(null), auctions = [], latest = Object.create(null);
   var started = Object.create(null), requested = Object.create(null), requestOrder = [];
@@ -124,7 +125,7 @@ export function createTesseraBidCache(win, settings, options) {
         var code = bid && bid.adUnitCode;
         if (typeof code !== 'string' || !admitted[code] || admitted[code][bidder] !== true) return;
         if (!incoming[code]) incoming[code] = Object.create(null);
-        incoming[code][bidder] = true;
+        incoming[code][bidder] = bid;
       });
     }
   }
@@ -148,6 +149,43 @@ export function createTesseraBidCache(win, settings, options) {
     }
     return false;
   }
+  /** The current native floor contract, in the original adapter bid currency.
+   * getFloor inversely adjusts bidder floors; comparing an already adjusted
+   * cached CPM would undercut floors when a bidder multiplier is above one. */
+  function floorRejection(row, nativeRequest) {
+    var floors;
+    try { floors = pb && pb.getConfig('floors'); } catch (_) { return 'floor-unavailable'; }
+    if (!floors || typeof floors !== 'object') return options.floorsRequired ? 'floor-unavailable' : null;
+    if (floors.enabled === false) return null;
+    var enforcement = floors.enforcement || {};
+    if (enforcement.enforceJS === false) return null;
+    var bidders = enforcement.enforceBidders;
+    if (Array.isArray(bidders) && bidders.length && bidders.indexOf('*') < 0 && bidders.indexOf(row.adapter) < 0) return null;
+    if (row.deal && enforcement.floorDeals !== true) return null;
+    if (nativeRequest && nativeRequest.floorData && nativeRequest.floorData.skipped === true) return null;
+    // The wrapper owns standard hard-floor and saved per-bidder zeroing
+    // adjustments. Arbitrary publisher functions can be nonlinear, while
+    // native getFloor's inverse adjustment is approximate; keep them fresh.
+    var bidderSettings = pb.bidderSettings || {}, standard = bidderSettings.standard || {};
+    var exact = bidderSettings[row.bidder] || {}, base = pb.aliasRegistry && pb.aliasRegistry[row.bidder];
+    var inherited = base && bidderSettings[base] && bidderSettings[base].adjustAlternateBids === true ? bidderSettings[base] : {};
+    if (standard.bidCpmAdjustment !== floorAdjustments.standard || typeof standard.inverseBidAdjustment === 'function' ||
+      typeof exact.inverseBidAdjustment === 'function' || typeof inherited.inverseBidAdjustment === 'function' ||
+      (typeof exact.bidCpmAdjustment === 'function' && exact.bidCpmAdjustment !== floorAdjustments[row.bidder]) ||
+      (typeof exact.bidCpmAdjustment !== 'function' && typeof inherited.bidCpmAdjustment === 'function' && inherited.bidCpmAdjustment !== floorAdjustments[base])) return 'floor-adjustment-unsupported';
+    if (!nativeRequest || typeof nativeRequest.getFloor !== 'function' || !Number.isFinite(row.originalCpm) || row.originalCpm < 0 ||
+      typeof row.originalCurrency !== 'string' || !/^[A-Z]{3}$/.test(row.originalCurrency)) return 'floor-unavailable';
+    try {
+      var value = nativeRequest.getFloor({currency:row.originalCurrency, mediaType:'banner', size:[row.width,row.height]});
+      // A literal null is the module's explicit no-floor rule.
+      if (value === null) return null;
+      // Native priceFloors returns {} for a zero or absent matching floor.
+      if (value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) return null;
+      if (!value || typeof value !== 'object' || typeof value.floor !== 'number' || !Number.isFinite(value.floor) || value.floor < 0 ||
+        typeof value.currency !== 'string' || value.currency.toUpperCase() !== row.originalCurrency) return 'floor-unavailable';
+      return row.originalCpm < value.floor ? 'floor' : null;
+    } catch (_) { return 'floor-unavailable'; }
+  }
   /** null when this earlier bid may compete now, else the reason it may not. */
   function rejection(bid) {
     if (!active) return 'disabled';
@@ -162,7 +200,7 @@ export function createTesseraBidCache(win, settings, options) {
     var admitted = current.admitted && current.admitted[code];
     if (!admitted || admitted[row.bidder] !== true) return 'bidder-not-requested';
     var native = current.native && current.native[code];
-    if (!native || native[row.bidder] !== true) return 'native-bidder-not-requested';
+    if (!native || !native[row.bidder]) return 'native-bidder-not-requested';
     try { if (!options.currentAllows(row.bidder, code)) return 'bidder-ineligible'; }
     catch (_) { return 'bidder-ineligible'; }
     if (!consentReady || row.entry.epoch !== consentEpoch || current.epoch !== consentEpoch) return 'consent';
@@ -177,7 +215,7 @@ export function createTesseraBidCache(win, settings, options) {
     if (!sizeAllowed(code, row.width, row.height)) return 'size';
     var now = Date.now();
     if (now < row.received || now >= row.expires) return 'expired';
-    return null;
+    return floorRejection(row, native[row.bidder]);
   }
   /** Prebid bidCacheFilterFunction: consulted for bids of earlier auctions. */
   function filter(bid) {
@@ -197,6 +235,11 @@ export function createTesseraBidCache(win, settings, options) {
       if (!instance || typeof instance.setConfig !== 'function' || typeof instance.getConfig !== 'function' ||
         typeof instance.onEvent !== 'function' || typeof instance.getAdserverTargetingForAdUnitCode !== 'function') { fresh('prebid-api-missing'); return; }
       prebidVersion = typeof instance.version === 'string' ? instance.version.slice(0, 40) : null;
+      var bidderSettings = instance.bidderSettings || {};
+      floorAdjustments.standard = bidderSettings.standard && bidderSettings.standard.bidCpmAdjustment;
+      (options.floorOwnedBidders || []).forEach(function(code) {
+        floorAdjustments[code] = bidderSettings[code] && bidderSettings[code].bidCpmAdjustment;
+      });
       var existing = instance.getConfig('bidCacheFilterFunction');
       if (existing !== undefined && existing !== null) { fresh('publisher-filter-present'); return; }
       instance.onEvent('auctionInit', onInit);
@@ -228,7 +271,9 @@ export function createTesseraBidCache(win, settings, options) {
         if (bid.adId === undefined || bid.adId === null || bid.adId === '') return;
         var ttl = Number(bid.ttl), received = Number(bid.responseTimestamp);
         if (!Number.isFinite(ttl) || ttl <= 0 || !Number.isFinite(received) || received <= 0) return;
-        known[String(bid.adId)] = {code:code, entry:entry, auctionId:id, bid:bid, bidder:String(bid.bidderCode),
+        known[String(bid.adId)] = {code:code, entry:entry, auctionId:id, bid:bid, bidder:String(bid.bidderCode), adapter:String(bid.adapterCode || bid.bidderCode),
+          originalCpm:Number(bid.originalCpm), originalCurrency:typeof bid.originalCurrency === 'string' ? bid.originalCurrency.toUpperCase() : null,
+          deal:bid.dealId !== undefined && bid.dealId !== null && bid.dealId !== '',
           mediaType:bid.mediaType, cpm:Number(bid.cpm), width:Number(bid.width), height:Number(bid.height),
           received:received, expires:received + Math.min(maxAgeMs, Math.max(0, ttl - 1) * 1000),
           submitted:false, won:false};
