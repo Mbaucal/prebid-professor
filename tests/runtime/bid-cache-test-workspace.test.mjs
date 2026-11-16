@@ -132,7 +132,7 @@ test('a stale TEST Bid caching form is told to reload, not to change Prebid on/o
  assert.deepEqual(config(f),before);
 });
 
-test('bidder rules and bid caching: every refusal says no script version has both, and none points at the other',async()=>{
+test('historical scripts refuse combined settings with an actionable combined Preview choice',async()=>{
  const f=await fixture();await enablePrebid(f);
  const mode=(await f.req(MODE)).data;
  assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
@@ -152,7 +152,7 @@ test('bidder rules and bid caching: every refusal says no script version has bot
  assert.equal(refused.status,422);assert.equal(refused.data.error,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE);
  assert.deepEqual(config(f),before);
  for(const message of [TEST_BID_CACHE_BIDDER_RULES_MESSAGE,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE]){
-  assert.match(message,/No script version has both yet\./);assert.match(message,/turn off bidder rules/);assert.doesNotMatch(message,/or later|Config/);
+  assert.match(message,/select 3\.24\.0 Preview in Script setup, allow Preview scripts, and save/);assert.doesNotMatch(message,/No script version has both|or later|Config/);
  }
  // Bid caching off: 3.23.0 is still refused for the bidder rules, with the same reason.
  const off=(await f.req(MODE)).data;
@@ -167,4 +167,25 @@ test('bidder rules and bid caching: every refusal says no script version has bot
  const on=(await f.req(MODE)).data;
  assert.equal((await f.req(MODE,{enabled:true,revision:on.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
  assert.equal((await f.req('/test-api/site-packages')).data.error,TEST_BID_CACHE_GENERATOR_MESSAGE);
+});
+
+
+test('the TEST site explicitly selects combined Preview and generates both saved caching and bidder rules',async()=>{
+ const f=await fixture();await enablePrebid(f);
+ const mode=(await f.req(MODE)).data;
+ assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
+ const rules=(await f.req('/test-api/bidder-rules')).data;
+ assert.equal((await f.req('/test-api/bidder-rules',{revision:rules.revision,settings:{schemaVersion:1,enabled:true,rules:[]}})).status,200);
+ await select(f,'3.24.0',true);
+ const before=config(f),state=(await f.req('/test-api/site-packages')).data;
+ assert.equal(state.ready,true,state.error);assert.equal(state.runtime.runtimeVersion,'3.24.0');
+ const created=await f.req('/test-api/site-packages',{action:'generate',revision:state.revision,notes:'Combined Preview package'});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const download=await f.req('/test-api/releases/'+created.data.release.id+'/download');assert.equal(download.status,200);
+ const files=unzipSync(new Uint8Array(await download.response.arrayBuffer())),exported=JSON.parse(text(files['config.json']));
+ assert.equal(JSON.parse(text(files['manifest.json'])).runtime.runtimeVersion,'3.24.0');
+ assert.equal(exported.bidCache.defaultEnabled,true);assert.equal(exported.bidCache.maxAgeSeconds,45);
+ assert.deepEqual(exported.bidderRules,{schemaVersion:1,enabled:true,rules:[]});
+ assert.match(text(files['ads.min.js']),/createTesseraBidCache/);assert.match(text(files['ads.min.js']),/__AD_BIDDER_RULES/);
+ assert.deepEqual(config(f),before,'Generating leaves the explicitly selected configuration unchanged');
 });

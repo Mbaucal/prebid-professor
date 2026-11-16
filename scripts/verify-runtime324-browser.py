@@ -1,0 +1,300 @@
+"""Full 3.24.0 programs with native Prebid core, synthetic adapters/GPT/TCF.
+
+Run prepare-runtime324-browser-fixtures.mjs with a pinned native build first.
+Every HTTP request is intercepted; this verifies native auction/targeting and
+account/context integration, not SSP or Google acceptance or revenue.
+"""
+import hashlib
+import json
+import os
+import sys
+import urllib.parse
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+
+ROOT=Path(__file__).resolve().parent.parent
+OUT=Path(sys.argv[1]) if len(sys.argv)>1 else ROOT/'.generated/runtime324-browser'
+MANIFEST=json.loads((OUT/'manifest.json').read_text())
+for name,digest in MANIFEST['files'].items():
+    assert hashlib.sha256((OUT/name).read_bytes()).hexdigest()==digest,'Changed package: '+name
+MOCK=(ROOT/'tests/runtime/mock-ad-libraries.js').read_text()
+MOCK=MOCK[:MOCK.index('  window.pbjs = {')]+MOCK[MOCK.index('  window.__testAds ='):]
+ORIGIN='https://combined.example.invalid'
+PAGE=ORIGIN+'/sports'
+BID=ORIGIN+'/synthetic-bid'
+NOW=datetime(2026,11,16,12,tzinfo=timezone.utc)
+SETUP=r'''
+(() => {
+ window.__inflight=0;window.__wire=[];window.__gam=[];window.__rounds={};window.__country='RS';window.__gptConfigs=[];window.__floorGetters=[];
+ window.__holdGpt=false;window.__gptCallbacks=[];
+ const pushGpt=googletag.cmd.push;googletag.cmd.push=function(callback){if(__holdGpt)__gptCallbacks.push(callback);else return pushGpt.apply(this,arguments);};
+ window.__releaseGpt=()=>{__holdGpt=false;const queue=__gptCallbacks.splice(0);for(const callback of queue)callback();};
+ const gptConfig=googletag.setConfig;googletag.setConfig=function(value){__gptConfigs.push(JSON.parse(JSON.stringify(value)));return gptConfig.apply(this,arguments);};
+ window.adsKeywords={pageType:'sports',category:'Sports'};
+ window.__AD_GEO={version:1,getSnapshot:()=>({version:1,status:__country?'known':'unknown',country:__country,source:'cloudflare'}),ready:()=>Promise.resolve(__AD_GEO.getSnapshot())};
+ const fetch=window.fetch.bind(window);window.fetch=(...args)=>{__inflight++;return fetch(...args).finally(()=>__inflight--);};
+ const send=XMLHttpRequest.prototype.send;
+ XMLHttpRequest.prototype.send=function(...args){__inflight++;this.addEventListener('loadend',()=>__inflight--,{once:true});return send.apply(this,args);};
+ const grants=Object.fromEntries(Array.from({length:10000},(_,i)=>[i+1,true]));
+ window.__tc={gdprApplies:true,tcString:'synthetic-combined-consent',listenerId:1,eventStatus:'tcloaded',cmpStatus:'loaded',
+  purpose:{consents:grants,legitimateInterests:grants},vendor:{consents:grants,legitimateInterests:grants},specialFeatureOptins:grants,publisher:{consents:grants,restrictions:{}}};
+ const listeners=[];
+ window.__tcfapi=(command,version,callback)=>{
+  if(command==='addEventListener'){listeners.push(callback);callback({...__tc},true);}
+  else if(command==='getTCData')callback({...__tc},true);
+  else if(command==='ping')callback({cmpLoaded:true,gdprApplies:true,cmpStatus:'loaded'},true);
+  else callback(true);
+ };
+ window.__emitTc=change=>{Object.assign(__tc,change);for(const callback of listeners)callback({...__tc},true);};
+ const scenario=%SCENARIO%;window.__scenario=scenario;
+ if(scenario==='pending')Object.assign(__tc,{eventStatus:'cmpuishown'});
+ if(scenario==='lazy'){
+  window.__observers=[];
+  window.IntersectionObserver=class{
+   constructor(callback,options){this.callback=callback;this.options=options;__observers.push(this);}
+   observe(){} unobserve(){} disconnect(){}
+   fire(){this.callback([{target:document.getElementById('P1'),isIntersecting:true,intersectionRatio:1}],this);}
+  };
+  window.__fireLazy=step=>{
+   const observer=__observers.find(row=>step==='display'?row.options.rootMargin==='0px'&&Array.isArray(row.options.threshold):row.options.rootMargin!=='0px'&&row.options.threshold===0);
+   if(!observer)throw Error('Missing '+step+' observer');observer.fire();
+  };
+ }
+ window.pbjs={que:[()=>{
+  pbjs.setConfig({realTimeData:{auctionDelay:0,dataProviders:[{name:'contextualAudit',waitForIt:false,params:{}},{name:'contextualSignals',waitForIt:false,params:{}}]},
+   ortb2:{site:{content:{data:[{name:'publisher-marker',ext:{segtax:4},segment:[{id:'existing'}]}]}}}});
+  if(scenario==='foreign-filter')pbjs.setConfig({bidCacheFilterFunction:()=>false});
+  for(const base of ['pubmatic','openx'])pbjs.registerBidAdapter(null,base,{
+   code:base,gvlid:base==='pubmatic'?76:69,supportedMediaTypes:['banner','video'],isBidRequestValid:()=>true,
+   buildRequests(bids,request){
+    const account=request.bidderCode;
+    const payload=bids.map(bid=>{
+     const key=account+':'+bid.adUnitCode,round=(__rounds[key]||0)+1;__rounds[key]=round;
+     const ortb2=bid.ortb2||request.ortb2||{};
+     const record={bidder:account,code:bid.adUnitCode,round,auction:request.auctionId,params:bid.params,
+      sizes:bid.mediaTypes.banner&&bid.mediaTypes.banner.sizes||[],video:!!bid.mediaTypes.video,
+      ortb2:JSON.parse(JSON.stringify(ortb2)),ortb2Imp:JSON.parse(JSON.stringify(bid.ortb2Imp||{}))};
+     __wire.push(record);
+     const size=record.sizes.find(row=>Array.isArray(row)&&row[0]>1)||[300,250];
+     record.floor=typeof bid.getFloor==='function'?bid.getFloor({currency:'EUR',mediaType:'banner',size:size}):null;
+     record.floorData=bid.floorData?JSON.parse(JSON.stringify(bid.floorData)):null;
+     if(typeof bid.getFloor==='function')__floorGetters.push(()=>bid.getFloor({currency:'EUR',mediaType:'banner',size:size}));
+     let cpms=account==='pubmatic'?(round===1?[10,4]:round===2?[1]:[2]):account==='pm_ag'?(round===1?[8,3]:[1.2]):account==='pm_no'?(round===1?[6,2.5]:[0.8]):[0.5];
+     if(scenario.startsWith('floor')){
+      if(account==='pubmatic')cpms=round===1?[10,4]:[12];
+      if(account==='pm_ag')cpms=round===1?[8,4]:[1];
+      if(scenario==='floor-deal'&&account==='pm_ag'&&round===1)cpms=[{cpm:8,dealId:'D-999'},{cpm:4,dealId:'D-999'}];
+     }
+     if(scenario==='size'&&innerWidth>=1024&&account==='pubmatic'&&round===1)cpms=[{cpm:10,width:size[0],height:size[1]},{cpm:4,width:970,height:250}];
+     if(scenario==='ttl'&&round===1)cpms=cpms.map((row,index)=>Object.assign(typeof row==='number'?{cpm:row}:row,{ttl:index===0?120:1}));
+     if(scenario==='deal'&&account==='pm_ag'&&round===2)cpms=[{cpm:1.2,dealId:'D-999'}];
+     return cpms.map(row=>Object.assign({requestId:bid.bidId,ttl:120,width:size[0],height:size[1],round,account,code:bid.adUnitCode},typeof row==='number'?{cpm:row}:row));
+    }).flat();
+    if(scenario==='inflight-device'&&payload.some(row=>row.round===2))window.__secondStarted=true;
+    return {method:'GET',url:'%BID%',options:{withCredentials:false},data:{payload:JSON.stringify(payload)}};
+   },interpretResponse:response=>response.body.bids,
+  });
+ }]};
+ const service=__testAds.service,refresh=service.refresh;
+ service.refresh=function(slots){
+  for(const slot of slots||[]){
+   const keys=Object.fromEntries(slot.getTargetingKeys().filter(key=>key.startsWith('hb_')).map(key=>[key,slot.getTargeting(key)]));
+   const events=pbjs&&typeof pbjs.getEvents==='function'?pbjs.getEvents():[];
+   const find=id=>{const row=events.find(event=>event.eventType==='bidResponse'&&event.args.adId===id);return row?{id,cpm:row.args.cpm,bidder:row.args.bidderCode,auction:row.args.auctionId,code:row.args.adUnitCode,deal:row.args.dealId||null}:null;};
+   __gam.push({code:slot.id,at:Date.now(),keys,bids:Object.fromEntries(Object.entries(keys).filter(([key])=>key==='hb_adid'||key.startsWith('hb_adid_')).map(([key,value])=>[key,find(value[0])]))});
+  }
+  return refresh.apply(this,arguments);
+ };
+})();
+'''.replace('%BID%',BID)
+
+def settle(page):
+    for _ in range(600):
+        if page.evaluate('window.__inflight')==0:return
+        page.wait_for_timeout(5)
+    raise AssertionError('Synthetic requests did not settle')
+
+def advance(page,ms,step=400):
+    remaining=ms
+    while remaining:
+        n=min(remaining,step);page.clock.run_for(n);settle(page);remaining-=n
+
+SCENARIOS={'standard':'on','off':'off','geo':'on','geo-unknown':'on','device':'on','inflight-device':'on','size':'on','consent':'on','activity':'on','expiry':'expiry','ttl':'on','deal':'on',
+ 'floor':'floor','floor-delayed':'floor','floor-valid':'floor-valid','floor-deal':'floor-deal','floor-zero':'floor-zero','floor-zero-delayed':'floor-zero',
+ 'foreign-filter':'on','late-filter':'on','alias-conflict':'on','pending':'on','lazy':'lazy','sticky':'sticky','gam':'gam','formats':'formats'}
+
+def run(browser,name,width,program):
+    package=SCENARIOS[name];folder=OUT/package
+    context=browser.new_context(viewport={'width':width,'height':900 if width>600 else 844},service_workers='block',timezone_id='UTC')
+    page=context.new_page();errors=[];escaped=[];answered=[];shifted=False
+    page.on('pageerror',lambda error:errors.append(str(error)))
+    def route(request):
+        nonlocal shifted
+        url=request.request.url;path=urllib.parse.urlsplit(url).path
+        if url==PAGE:
+            html='<html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+            if name!='gam':html+='<script src="/prebid.js"></script>'
+            html+='<script defer src="/ads.min.js"></script></head><body style="margin:0">'
+            if name=='lazy':html+='<div id="P1" class="wrapperAd lazyAd" style="height:250px"></div>'
+            else:html+='<div id="Billboard" class="wrapperAd" style="height:250px"></div><div id="P1" class="wrapperAd" style="height:250px"></div>'
+            if name=='formats':html+='<div id="P2" class="wrapperAd" style="height:360px"></div>'
+            request.fulfill(content_type='text/html',body=html+'<main style="height:2000px"></main></body></html>')
+        elif url.startswith(ORIGIN+'/') and path in ['/prebid.js','/ads.min.js']:
+            request.fulfill(content_type='application/javascript',body=(folder/(program if path=='/ads.min.js' else 'prebid.js')).read_bytes())
+        elif url.startswith(BID+'?'):
+            rows=json.loads(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['payload'][0]);answered.extend(rows)
+            if name=='inflight-device' and width>600 and not shifted and any(row['round']==2 for row in rows):
+                shifted=True;page.set_viewport_size({'width':390,'height':900})
+            if name in ['floor-delayed','floor-zero-delayed'] and not shifted and any(row['round']==2 for row in rows):
+                shifted=True;page.evaluate('__holdGpt=true')
+            bids=[{**row,'mediaType':'banner','creativeId':'synthetic','currency':'EUR','netRevenue':True,'ad':'<div>Local combined fixture</div>',
+                   'meta':{'advertiserDomains':['example.invalid']}} for row in rows]
+            request.fulfill(content_type='application/json',body=json.dumps({'bids':bids}))
+        elif url.startswith('https://cdn.jsdelivr.net/gh/prebid/currency-file@1/latest.json'):
+            request.fulfill(content_type='application/json',headers={'access-control-allow-origin':'*'},body=json.dumps({'conversions':{'EUR':{'EUR':1,'USD':1},'USD':{'USD':1,'EUR':1}}}))
+        else:escaped.append(url);request.abort()
+    context.route('**/*',route)
+    start=NOW-timedelta(seconds=20) if name.startswith('floor') else NOW
+    page.clock.install(time=start);page.clock.pause_at(start+timedelta(seconds=1))
+    page.add_init_script(MOCK+'\n'+SETUP.replace('%SCENARIO%',json.dumps(name)))
+    page.goto(PAGE);advance(page,2000)
+    if name=='pending':
+        assert page.evaluate('__gam.length')==0 and page.evaluate('__wire.length')==0,'Pending CMP sent demand'
+        page.evaluate("__emitTc({eventStatus:'useractioncomplete'})");advance(page,2000)
+    if name=='lazy':
+        page.evaluate("__fireLazy('display')");advance(page,2000)
+        page.evaluate("__fireLazy('prefetch');__fireLazy('prefetch');__fireLazy('display')");advance(page,1000)
+    else:
+        if name=='geo':page.evaluate("__country='DE'")
+        if name=='geo-unknown':page.evaluate("__country=null")
+        if name=='device':page.set_viewport_size({'width':390 if width>600 else 1440,'height':900})
+        if name=='size' and width>600:page.set_viewport_size({'width':390,'height':900})
+        if name=='consent':page.evaluate("__emitTc({eventStatus:'useractioncomplete',tcString:'synthetic-new-decision'})")
+        if name=='activity':page.evaluate("pbjs.setConfig({allowActivities:{fetchBids:{rules:[{condition:params=>params.componentName==='pm_ag',allow:false}]}}})")
+        if name=='alias-conflict':page.evaluate("pbjs.aliasRegistry.pm_ag='openx'")
+        if name=='late-filter':page.evaluate("pbjs.setConfig({bidCacheFilterFunction:()=>true})")
+        advance(page,36000)
+        if name in ['floor-delayed','floor-zero-delayed']:
+            page.evaluate('''()=>{window.__lateFloors=__floorGetters.map(getFloor=>{try{return getFloor();}catch(error){return {error:String(error)};}});__releaseGpt();}''')
+            advance(page,1000)
+        if name=='standard':advance(page,36000)
+    state=page.evaluate('''()=>({version:window.pbjs?.version,gam:__gam,wire:__wire,cache:window.__tesseraBidCache?.snapshot(),
+     accounts:window.__AD_BIDDER_ACCOUNTS?.snapshot(),rules:window.__AD_BIDDER_RULES?.snapshot(),context:window.__AD_CONTEXT?.snapshot(),floorConfig:window.pbjs?.getConfig?.('floors'),
+     floorIdentity:(()=>{const a=window.pbjs?.getConfig?.('floors'),b=window.pbjs?.getConfig?.('floors');return{sameConfig:a===b,sameData:a?.data===b?.data,fieldTypes:Object.fromEntries(Object.entries(a?.additionalSchemaFields||{}).map(([key,value])=>[key,typeof value]))};})(),
+     auditCalls:window.__contextualAuditCalls||0,pps:__gptConfigs,lateFloors:window.__lateFloors||[],auctions:window.pbjs?.getEvents?.().filter(event=>event.eventType==='auctionInit').length||0})''')
+    context.close();return state,errors,escaped
+
+def check(name,width,program,state,errors,escaped):
+    assert not errors,errors
+    assert not escaped,('A request left the local fixture',escaped)
+    gam=state['gam'];wire=state['wire']
+    if name=='gam':
+        assert not wire and state.get('cache') is None,'GAM-only created a cache/native auction'
+        assert gam and all(not row['keys'] for row in gam),'GAM-only leaked Prebid targeting'
+        return
+    assert state['version']=='v'+MANIFEST['prebid']['version'],state['version']
+    if name=='lazy':
+        assert len(gam)==1 and gam[0]['code']=='P1' and state['auctions']==1,(gam,state['auctions'])
+        return
+    for code in ['Billboard','P1']:
+        sent=[row for row in gam if row['code']==code]
+        assert len(sent)>=2,(name,width,code,sent)
+        rounds=sent[:3 if name=='standard' else 2]
+        base=[row['bids'].get('hb_adid_pubmatic') for row in rounds]
+        assert all(base),(name,code,'Missing base bidder targeting',rounds)
+        assert rounds[0]['bids'].get('hb_adid_pm_ag',{}).get('cpm')==8,('Positive alias demand control',name,width,rounds[0])
+        if name=='standard':
+            assert [bid['cpm'] for bid in base]==[10,4,2],(name,width,code,base)
+            assert [row['bids']['hb_adid_pm_ag']['cpm'] for row in rounds]==[8,3,1.2],('Exact alias cache identity',rounds)
+        elif name.startswith('floor'):assert base[1]['cpm']==12,(name,width,code,base)
+        elif name in ['off','expiry','ttl','consent','foreign-filter','late-filter'] or name=='size' and width>600:
+            assert base[1]['cpm']==1,(name,width,code,base)
+        else:assert base[1]['cpm']==4,(name,width,code,base)
+        if name in ['geo','geo-unknown','alias-conflict','activity']:
+            assert not rounds[1]['bids'].get('hb_adid_pm_ag'),('Excluded alias acquired cached targeting',rounds[1])
+            assert not [row for row in wire if row['code']==code and row['round']>1 and row['bidder']=='pm_ag'],('Excluded alias sent demand',wire)
+        if name=='device':
+            second=rounds[1]['bids'].get('hb_adid_pm_no')
+            if width>600:assert second is None,('Desktop-only alias survived mobile rule',second)
+        if name=='inflight-device' and width>600:
+            second=rounds[1]['bids'].get('hb_adid_pm_no')
+            # Existing rules govern fresh demand at request time. The response
+            # requested while desktop was allowed may finish after resize;
+            # an earlier cached response must follow the current layout.
+            assert second and second['cpm']==0.8 and second['auction']!=rounds[0]['bids']['hb_adid_pm_no']['auction'],('Excluded old alias cache survived the resize',second)
+        if name=='deal':
+            alias=rounds[1]['bids'].get('hb_adid_pm_ag')
+            assert alias and alias['cpm']==1.2 and rounds[1]['keys'].get('hb_deal_pm_ag')==['D-999'],('Fresh alias deal lost to cache',rounds[1])
+        if name.startswith('floor'):
+            alias=rounds[1]['bids'].get('hb_adid_pm_ag')
+            if name in ['floor','floor-delayed']:assert alias is None,('Cached alias bypassed raised floor',alias)
+            else:
+                assert alias and alias['cpm']==4 and alias['auction']==rounds[0]['bids']['hb_adid_pm_ag']['auction'],('Valid cached alias was unnecessarily rejected',alias)
+                if name=='floor-deal':assert rounds[1]['keys'].get('hb_deal_pm_ag')==['D-999'],('floorDeals:false exemption lost',rounds[1])
+        # Every sent adId belongs to this exact position, never another alias/slot.
+        for row in rounds:
+            for key,bid in row['bids'].items():
+                assert bid and bid['code']==code,(name,key,bid)
+                if key.startswith('hb_adid_'):assert bid['bidder']==key[len('hb_adid_'):],('Alias identity mixed',key,bid)
+    cache=state.get('cache')
+    if name=='off':assert cache is None,'Saved cache off installed a policy'
+    elif name in ['foreign-filter','late-filter']:assert cache and cache['status']=='fresh-only',cache
+    else:assert cache and cache['status']=='active',('Combined policy silently disabled caching',cache)
+    assert state['auditCalls']>0,'The existing native RTD provider never ran'
+    assert any(row.get('pps',{}).get('taxonomies',{}).get('IAB_CONTENT_2_2',{}).get('values')==['483'] for row in state['pps']),('GAM PPS missing',state['pps'])
+    assert state.get('context',{}).get('rtd',{}).get('providerObserved') is True,('Context provider was not observed',state.get('context'))
+    for record in wire:
+        if record['video']:continue
+        chain=record['ortb2'].get('source',{}).get('schain') or record['ortb2'].get('source',{}).get('ext',{}).get('schain')
+        bidder=record['bidder']
+        if bidder=='pm_ag':assert chain and chain['nodes'][0]['sid']=='agency',('Custom alias SChain',record)
+        elif bidder=='pm_no':assert chain is None,('Omitted alias SChain leaked',record)
+        else:assert chain and chain['nodes'][0]['sid']=='site',('Inherited SChain changed',record)
+        data=record['ortb2'].get('site',{}).get('content',{}).get('data',[])
+        assert any(row.get('name')=='publisher-marker' for row in data),('Publisher FPD disappeared',record)
+        if bidder in ['pubmatic','pm_ag','openx']:
+            tax=7 if bidder=='pm_ag' else 6
+            assert any(row.get('ext',{}).get('segtax')==tax for row in data),('Native contextual route missing',record)
+        assert [160,600] not in record['sizes'],('Page-type size map was lost',record)
+        if record['code']!='Overlay':assert record['ortb2Imp'].get('ext',{}).get('gpid'),('Native in-page GPID missing',record)
+    if name.startswith('floor'):
+        for code in ['Billboard','P1']:
+            floors=[row['floor'].get('floor') for row in wire if row['bidder']=='pm_ag' and row['code']==code and isinstance(row.get('floor'),dict)]
+            expected=[None,None] if name.startswith('floor-zero') else [2,3 if name=='floor-valid' else 10]
+            assert floors[:2]==expected,('Native floor context did not advance',code,floors)
+        if name in ['floor-delayed','floor-zero-delayed']:assert any(isinstance(row,dict) and not row for row in state['lateFloors']),('Native floor context was not cleaned up',state['lateFloors'])
+    if name=='formats':
+        positions={row['code'] for row in cache['positions']}
+        assert 'Overlay' not in positions and 'P2' not in positions,('Formats entered cache',positions)
+        assert len([row for row in gam if row['code']=='adsx-takeover-slot'])==1,'TakeOver initial request changed'
+    if name=='sticky':
+        sent=[row for row in gam if row['code']=='Sticky']
+        assert len(sent)>=2 and [row['bids']['hb_adid_pubmatic']['cpm'] for row in sent[:2]]==[10,4],('Sticky cache/refresh changed',sent)
+
+results=[];failures=[]
+with sync_playwright() as p:
+    browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox'])
+    try:
+        selected=os.environ.get('RUNTIME324_SCENARIOS')
+        if selected:assert all(name in SCENARIOS for name in selected.split(',')),'Unknown scenario filter'
+        cases=[name for name,package in SCENARIOS.items() if package in MANIFEST['cases'] and (not selected or name in selected.split(','))]
+        assert cases,'No prepared scenarios selected'
+        for name in cases:
+            for width in [1440,390]:
+                for program in ['ads.js','ads.min.js']:
+                    state=None
+                    try:
+                        state,errors,escaped=run(browser,name,width,program);check(name,width,program,state,errors,escaped)
+                        result={'scenario':name,'width':width,'program':program,'passed':True,'state':state}
+                    except Exception as error:
+                        result={'scenario':name,'width':width,'program':program,'passed':False,'error':str(error),'state':state};failures.append(result)
+                    results.append(result);print(json.dumps({key:value for key,value in result.items() if key!='state'}),flush=True)
+    finally:browser.close()
+report={'scope':'Native pinned Prebid core and custom synthetic adapters; generated programs, synthetic GPT/TCF, intercepted HTTP. Not hosted/SSP/GAM acceptance.',
+        'contract':'Fresh demand follows eligibility at native request time; older cached demand is revalidated at each targeting read. A viewport change alone does not retroactively invalidate an allowed fresh request.',
+        'runtime':MANIFEST['runtime'],'programHashes':MANIFEST['files'],'scenarios':cases,
+        'prebid':MANIFEST['prebid'],'nativeBuild':MANIFEST.get('nativeBuild'),'programs':len(results),'passed':len(results)-len(failures),'failures':failures,'results':results}
+(OUT/'browser-results.json').write_text(json.dumps(report,indent=1)+'\n')
+print(json.dumps({'prebid':MANIFEST['prebid']['version'],'programs':len(results),'failures':len(failures)}),flush=True)
+if failures:raise SystemExit(1)

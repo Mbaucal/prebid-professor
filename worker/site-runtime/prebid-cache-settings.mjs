@@ -1,6 +1,6 @@
 /** Site-owned choices for future packages. Saved releases always keep their own snapshot. */
 import {CACHE_POSITIONS,hasBidCache} from '../experiments/position-cache-settings.mjs';
-import {BID_CACHE_RUNTIME_VERSION,runtimeSupportsBidCache} from '../../shared/bid-cache/eligibility.mjs';
+import {runtimeSupportsBidCache} from '../../shared/bid-cache/eligibility.mjs';
 import {validateAdUnitCode} from '../../shared/gam/ad-unit-code.mjs';
 export {hasBidCache};
 export const DEFAULT_BID_CACHE = Object.freeze({enabled:false,maxBidAgeSeconds:60});
@@ -61,7 +61,8 @@ export function settingsForScript(config,refreshSeconds) {
     ...(bidCache.enabled||bidCache.positionOverrides?{maxBidAgeSeconds:bidCache.maxBidAgeSeconds}:{}),
     ...(bidCache.positionOverrides?{positionOverrides:bidCache.positionOverrides}:{})};
 }
-export const BID_CACHE_GENERATOR_MESSAGE = `Bid caching needs script version ${BID_CACHE_RUNTIME_VERSION}. Select ${BID_CACHE_RUNTIME_VERSION} in Script setup and save; your bid cache settings are kept. `
+export const BID_CACHE_GENERATOR_MESSAGE = 'Bid caching needs a compatible script version. Select 3.24.0 (Preview) in Script setup and save; your bid cache settings are kept. '
+  + 'This version combines bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
   + 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.';
 /** Saved cache settings that would reuse bids (site default on, or a position override on) are
  * applied only by a runtime with the 'bid-cache' capability, never silently ignored. Without a

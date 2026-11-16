@@ -317,9 +317,9 @@ for (const demand of ['gam', 'prebid']) for (const [takeover, frequency] of Obje
 }
 // The account path is a saved package from the sealed TEST Worker, including
 // capped TakeOver plus independent site/custom/omitted upstream chains.
-{
-  const s = await start('prebid-accounts');
-  const entry = {config:'prebid-accounts',demand:'prebid',takeover:'interval-5',path:'saved-package',version:'3.22.1',accountCase:true};
+for (const version of ['3.22.1','3.22.2','3.24.0']) {
+  const s = await start('prebid-accounts-'+version);
+  const entry = {config:'prebid-accounts-'+version,demand:'prebid',takeover:'interval-5',path:'saved-package',version,accountCase:true};
   try {
     const runtime=(await s.json('/test-api/site-runtime')).runtimes.find(r=>r.version===entry.version);
     assert(runtime, 'The account runtime must be selectable explicitly');
@@ -341,6 +341,13 @@ for (const demand of ['gam', 'prebid']) for (const [takeover, frequency] of Obje
     const savedConfig=JSON.parse(row.config_json);
     savedConfig.runtimeControls??={};
     savedConfig.runtimeControls.schain={enabled:true,version:'1.0',complete:1,nodes:[{asi:'seller.example',sid:'site',hp:1}]};
+    if (version === '3.24.0') {
+      savedConfig.prebidBidCache={enabled:true,maxBidAgeSeconds:45};
+      savedConfig.runtimeControls.bidderRules={schemaVersion:1,enabled:true,rules:[{
+        id:'account-scope',name:'Agency account eligibility',enabled:true,bidder:'adf_ag',positions:['P1'],
+        countries:{mode:'exclude',values:['DE'],unknown:'allow'},devices:['desktop','mobile'],
+      }]};
+    }
     await db.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").bind(JSON.stringify(savedConfig)).run();
     await addTakeOver(s,'prebid',5);
     const selected=await s.json('/test-api/site-runtime');
@@ -350,8 +357,8 @@ for (const demand of ['gam', 'prebid']) for (const [takeover, frequency] of Obje
     const bundled=await zipFiles(response);
     await record(entry,bundled,await directSiteRuntime(s,stampOf(bundled)));
     const calls=await guardCalls(s.mf,origin);
-    guard['prebid-accounts']=describeCalls(calls);
-    if(calls.length)failures.push('prebid-accounts: non-canonical serialization: '+guard['prebid-accounts'].join('; '));
+    guard['prebid-accounts-'+version]=describeCalls(calls);
+    if(calls.length)failures.push('prebid-accounts: non-canonical serialization: '+guard['prebid-accounts-'+version].join('; '));
   } catch(error) {refused(entry,error);}
   finally {await s.mf.dispose();await rm(s.directory,{recursive:true,force:true});}
 }
