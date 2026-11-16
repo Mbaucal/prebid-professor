@@ -84,7 +84,7 @@ jobs:
       - name: Conditional map generation and saved package contracts
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/conditional-maps.test.mjs
       - name: Deals and Outstream contracts, routes and exact package integration
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/outstream-runtime-eligibility.test.mjs tests/runtime/revenue-integration.test.mjs tests/runtime/test-revenue-settings.test.mjs tests/runtime/outstream-position-scope.test.mjs tests/runtime/outstream-responsive.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/runtime-labels.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/deals.test.mjs tests/runtime/deal-settings.test.mjs tests/runtime/outstream-settings.test.mjs tests/runtime/outstream-runtime-eligibility.test.mjs tests/runtime/revenue-integration.test.mjs tests/runtime/test-revenue-settings.test.mjs tests/runtime/outstream-position-scope.test.mjs tests/runtime/outstream-responsive.test.mjs tests/runtime/browser-package-download.test.mjs tests/runtime/runtime-labels.test.mjs tests/runtime/runtime-notices.test.mjs
       - name: Install pinned Chromium verification tools
         run: |
           python -m pip install playwright==1.55.0

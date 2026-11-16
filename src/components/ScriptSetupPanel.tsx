@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { publicRuntimeChoices, publicRuntimeHistory, runtimeLabel } from '../site-workspace/runtime-labels';
+import { runtimeNotice, runtimeNoticeSuffix, runtimeNoticeText } from '../site-workspace/runtime-notices';
 import '../site-workspace/runtime.css';
 
 type Pin = { runtimeSha256: string; runtimeVersion: string; capabilities?: readonly string[] };
@@ -75,6 +76,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
     : undefined;
   const versionOptions = savedOption ? [savedOption, ...choices] : choices;
   const selected = state?.runtimes.find(item => samePin(item.pin, selection));
+  const notice = runtimeNotice(selection);
   const unavailable = Boolean(state && !current);
   const isCurrent = Boolean(current && samePin(selection, current.pin));
   const earlierBuild = Boolean(selection && current && !isCurrent && runtimeLabel(selection.runtimeVersion) === runtimeLabel(current.version));
@@ -124,8 +126,9 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
           if (next) { setSelection(next.pin); setMessage(''); }
         }}>
           {!selection ? <option value="">Unavailable</option> : null}
+          {/* A version notice takes the place of the plain saved marker so the label fits a phone-width select; the line below still says Saved version. */}
           {versionOptions.map(item => <option key={pinKey(item.pin)} value={pinKey(item.pin)} disabled={item === savedOption && !savedRuntime}>
-            {runtimeLabel(item.version)}{item.channel === 'preview' ? ' · Preview' : ''}{samePin(item.pin, current?.pin ?? null) ? ' · Current version' : item === savedOption ? savedRuntime ? ' · Saved earlier build' : ' · Saved version unavailable' : samePin(item.pin, state.selected) ? ' · Saved version' : ''}
+            {runtimeLabel(item.version)}{item.channel === 'preview' ? ' · Preview' : ''}{runtimeNoticeSuffix(item.pin)}{samePin(item.pin, current?.pin ?? null) ? ' · Current version' : item === savedOption ? savedRuntime ? ' · Saved earlier build' : ' · Saved version unavailable' : samePin(item.pin, state.selected) && !runtimeNotice(item.pin) ? ' · Saved version' : ''}
           </option>)}
         </select>
       </label>
@@ -134,6 +137,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
         {current && !isCurrent ? <button type="button" disabled={busy || stale} onClick={() => { setSelection(current.pin); setMessage(''); }}>Use current version</button> : null}
       </div>
       {selected?.channel === 'preview' ? <p className="script-prebid-note" role="note">Preview version selected. Save explicitly and verify a generated package on TEST before using it on a live site.</p> : null}
+      {notice ? <p className="script-prebid-note" role="note">{runtimeNoticeText(notice, choices, current)}</p> : null}
       <p className="script-prebid-note">Changing the script version keeps your ad units, size maps, bidders and other site settings. Save the setup, then generate a new package to apply it.</p>
       {selected?.pin.capabilities?.includes('consent-readiness') ? <p className="script-prebid-note">
         Waits for your CMP decision before requesting ads. If Prebid fails to load, Google ads are requested only after consent is resolved.
