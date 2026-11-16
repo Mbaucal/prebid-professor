@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { api } from '../api';
+import { normalizeBidderAccount } from '../../shared/bidder-accounts/settings.mjs';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { api, ApiError } from '../api';
+import DealsPanel from './DealsPanel';
 import type {
   AdUnit,
   Bidder,
@@ -18,6 +20,10 @@ type OverrideMode = 'create' | 'edit' | 'duplicate';
 
 type BidderFormState = {
   bidder: string;
+  baseAdapter: string;
+  displayName: string;
+  schainMode: 'inherit' | 'custom' | 'none';
+  schainText: string;
   paramsText: string;
   enabled: boolean;
   copyOverrides: boolean;
@@ -32,6 +38,10 @@ type OverrideFormState = {
 
 const emptyBidderForm: BidderFormState = {
   bidder: '',
+  baseAdapter: '',
+  displayName: '',
+  schainMode: 'inherit',
+  schainText: JSON.stringify({ver:'1.0',complete:1,nodes:[]}, null, 2),
   paramsText: '{}',
   enabled: true,
   copyOverrides: true,
@@ -45,6 +55,9 @@ const emptyOverrideForm: OverrideFormState = {
 };
 
 const idKeys = [
+  'mid',
+  'inv',
+  'mname',
   'networkId',
   'siteId',
   'zoneId',
@@ -63,6 +76,13 @@ const idKeys = [
   'partner',
   'pubId',
 ];
+
+function requestErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback;
+  if (!(error instanceof ApiError) || error.status >= 500) return error.message;
+  const details = typeof error.details === 'string' ? error.details : Array.isArray(error.details) ? error.details.filter((item): item is string => typeof item === 'string').join(' · ') : '';
+  return details ? `${error.message} ${details}` : error.message;
+}
 
 function prettyJson(value: JsonObject): string {
   return JSON.stringify(value ?? {}, null, 2);
@@ -137,6 +157,8 @@ function IdChips({ params }: { params: JsonObject }) {
 }
 
 export default function BiddersPanel({ publisherId, onChanged }: Props) {
+  const currentSite = useRef(publisherId); currentSite.current = publisherId;
+  const loadSequence = useRef(0);
   const [bidders, setBidders] = useState<Bidder[]>([]);
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -155,24 +177,28 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
     try {
       const [bidderItems, unitItems] = await Promise.all([
         api.listBidders(publisherId),
         api.listAdUnits(publisherId),
       ]);
+      if (sequence !== loadSequence.current || currentSite.current !== publisherId) return;
       setBidders(bidderItems);
       setAdUnits(unitItems);
       setError(null);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Could not load bidders.');
+      if (sequence === loadSequence.current && currentSite.current === publisherId) setError(requestErrorMessage(requestError, 'Could not load bidders.'));
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current && currentSite.current === publisherId) setLoading(false);
     }
   }, [publisherId]);
 
   useEffect(() => {
+    setBidders([]); setAdUnits([]); setBidderMode(null); setOverrideMode(null); setSubmitting(false);
     void load();
+    return () => { loadSequence.current++; };
   }, [load]);
 
   const summary = useMemo(
@@ -199,6 +225,10 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
     setBidderSource(bidder);
     setBidderForm({
       bidder: bidder.bidder,
+      baseAdapter: bidder.baseAdapter ?? bidder.bidder,
+      displayName: bidder.displayName ?? '',
+      schainMode: bidder.schain?.mode ?? 'inherit',
+      schainText: bidder.schain?.config ? JSON.stringify(bidder.schain.config, null, 2) : emptyBidderForm.schainText,
       paramsText: prettyJson(bidder.params),
       enabled: bidder.enabled,
       copyOverrides: true,
@@ -211,6 +241,10 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
     setBidderSource(bidder);
     setBidderForm({
       bidder: nextBidderCopyName(bidder.bidder),
+      baseAdapter: bidder.baseAdapter ?? bidder.bidder,
+      displayName: bidder.displayName ? bidder.displayName + ' copy' : '',
+      schainMode: bidder.schain?.mode ?? 'inherit',
+      schainText: bidder.schain?.config ? JSON.stringify(bidder.schain.config, null, 2) : emptyBidderForm.schainText,
       paramsText: prettyJson(bidder.params),
       enabled: bidder.enabled,
       copyOverrides: true,
@@ -282,7 +316,9 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
     }
 
     let params: JsonObject;
+    let account;
     try {
+      account = normalizeBidderAccount({ baseAdapter: bidderForm.baseAdapter.trim() || bidderName, displayName: bidderForm.displayName, schain: {mode: bidderForm.schainMode, ...(bidderForm.schainMode === 'custom' || bidderForm.schainText.trim() !== emptyBidderForm.schainText.trim() ? {config: parseObjectJson(bidderForm.schainText, 'Custom SChain draft (select Custom SChain to correct it, or discard the draft)')} : {})} }, {bidder: bidderName});
       params = parseObjectJson(bidderForm.paramsText, 'Base params');
     } catch (formError) {
       setBidderFormError(formError instanceof Error ? formError.message : String(formError));
@@ -293,31 +329,36 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
     try {
       if (bidderMode === 'duplicate' && bidderSource) {
         await api.duplicateBidder(publisherId, bidderSource.id, {
+          ...account,
           bidder: bidderName,
           enabled: bidderForm.enabled,
           copyOverrides: bidderForm.copyOverrides,
         });
       } else if (bidderMode === 'edit' && bidderSource) {
         await api.updateBidder(publisherId, bidderSource.id, {
+          ...account,
+          expectedUpdatedAt: bidderSource.updatedAt,
           bidder: bidderName,
           params,
           enabled: bidderForm.enabled,
         });
       } else {
         await api.createBidder(publisherId, {
+          ...account,
           bidder: bidderName,
           params,
           enabled: bidderForm.enabled,
         });
       }
 
+      if (currentSite.current !== publisherId) return;
       await load();
       await onChanged?.();
-      closeBidderForm();
+      setBidderMode(null); setBidderSource(null); setBidderFormError(null);
     } catch (requestError) {
-      setBidderFormError(requestError instanceof Error ? requestError.message : 'Bidder operation failed.');
+      if (currentSite.current === publisherId) setBidderFormError(requestErrorMessage(requestError, 'Bidder operation failed.'));
     } finally {
-      setSubmitting(false);
+      if (currentSite.current === publisherId) setSubmitting(false);
     }
   }
 
@@ -363,13 +404,14 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
         });
       }
 
+      if (currentSite.current !== publisherId) return;
       await load();
       await onChanged?.();
-      closeOverrideForm();
+      setOverrideMode(null); setOverrideBidder(null); setOverrideSource(null); setOverrideFormError(null);
     } catch (requestError) {
-      setOverrideFormError(requestError instanceof Error ? requestError.message : 'Override operation failed.');
+      if (currentSite.current === publisherId) setOverrideFormError(requestErrorMessage(requestError, 'Override operation failed.'));
     } finally {
-      setSubmitting(false);
+      if (currentSite.current === publisherId) setSubmitting(false);
     }
   }
 
@@ -381,10 +423,11 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
 
     try {
       await api.deleteBidder(publisherId, bidder.id);
+      if (currentSite.current !== publisherId) return;
       await load();
       await onChanged?.();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Could not delete bidder.');
+      if (currentSite.current === publisherId) setError(requestErrorMessage(requestError, 'Could not delete bidder.'));
     }
   }
 
@@ -396,10 +439,11 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
 
     try {
       await api.deleteBidderOverride(publisherId, override.id);
+      if (currentSite.current !== publisherId) return;
       await load();
       await onChanged?.();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Could not delete override.');
+      if (currentSite.current === publisherId) setError(requestErrorMessage(requestError, 'Could not delete override.'));
     }
   }
 
@@ -407,6 +451,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
 
   return (
     <>
+      <DealsPanel publisherId={publisherId} onChanged={onChanged}/>
       <section className="config-page bidders-page">
         <div className="config-toolbar">
           <div>
@@ -428,7 +473,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
           <div><strong>{summary.overrideOnly}</strong><span>Override-only</span></div>
         </div>
 
-        {error ? <div className="form-error config-error">{error}</div> : null}
+        {error ? <div className="form-error config-error" role="alert">{error} <button className="button secondary" onClick={() => void load()} disabled={loading} type="button">Reload bidders</button></div> : null}
         {loading ? <div className="config-loading">Loading bidders from D1…</div> : null}
 
         <div className="bidder-grid">
@@ -442,6 +487,8 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                 <div className="bidder-card-heading">
                   <div>
                     <code>{bidder.bidder}</code>
+                    {bidder.displayName ? <strong>{bidder.displayName}</strong> : null}
+                    <span>Adapter: {bidder.baseAdapter ?? bidder.bidder} · SChain: {bidder.schain?.mode === 'none' ? 'No upstream chain' : bidder.schain?.mode === 'custom' ? 'Custom' : 'Site chain'}</span>
                     <span>{bidder.overrides.length} override(s)</span>
                   </div>
                   <div className="bidder-status-stack">
@@ -559,8 +606,20 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                   placeholder="openx"
                   value={bidderForm.bidder}
                 />
-                <small>This must match a Prebid adapter or configured alias.</small>
+                <small>Exact account code used in auctions and GAM targeting. For another Adform account, use a distinct code such as adf_agency.</small>
               </label>
+
+
+              <div className="form-grid-two">
+                <label><span>Base adapter</span><input aria-label="Base adapter" value={bidderForm.baseAdapter} placeholder={bidderForm.bidder || 'adf'} onChange={event => setBidderForm(current => ({...current, baseAdapter: event.target.value.toLowerCase()}))}/><small>Original Prebid adapter code, for example adf. Leave blank to use the bidder code above. Different codes register this account as an alias.</small></label>
+                <label><span>Account name</span><input aria-label="Account name" maxLength={100} value={bidderForm.displayName} placeholder="Agency account" onChange={event => setBidderForm(current => ({...current, displayName: event.target.value}))}/><small>Internal label only.</small></label>
+              </div>
+              <label><span>Account SChain</span><select aria-label="Account SChain" value={bidderForm.schainMode} onChange={event => setBidderForm(current => ({...current, schainMode:event.target.value as BidderFormState['schainMode']}))}>
+                <option value="inherit">Use site SChain</option><option value="custom">Custom SChain</option><option value="none">No upstream SChain (direct publisher path)</option>
+              </select><small>{bidderForm.schainMode === 'none' ? 'The wrapper adds no site or intermediary node for this account. The exchange may build its own downstream chain. Use this only when that is the actual selling path.' : bidderForm.schainMode === 'custom' ? 'This complete account-specific configuration replaces the site chain for this account. Use the verified seller IDs in payment order.' : 'This account receives the saved site chain.'}</small></label>
+              {bidderForm.schainText.trim() !== emptyBidderForm.schainText.trim() ? <div className="form-options"><p>Custom values are kept when you choose another SChain mode. Invalid custom drafts must be corrected or discarded before saving.</p><button className="button secondary" type="button" disabled={submitting} onClick={() => setBidderForm(current => ({...current, schainText:emptyBidderForm.schainText}))}>Discard custom draft</button></div> : null}
+              {bidderForm.schainMode === 'custom' ? <label><span>Custom SChain JSON</span><textarea className="json-textarea" aria-label="Custom SChain JSON" spellCheck={false} value={bidderForm.schainText} onChange={event => setBidderForm(current => ({...current, schainText:event.target.value}))}/><small>Version, completeness and ordered seller nodes. Include only the verified selling path for this account.</small></label> : null}
+              <p className="muted-copy">Aliases and account-specific SChain require script 3.22.1. Save the account, then explicitly select that version in Script setup and generate a new package. Existing scripts keep their saved settings.</p>
 
               {bidderMode !== 'duplicate' ? (
                 <label>
@@ -587,7 +646,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                     />
                     <span>Copy all slot, device and ad-unit overrides</span>
                   </label>
-                  <p>Base params are always copied. The new bidder code must still exist in the uploaded Prebid build.</p>
+                  <p>Base params and the selected SChain settings are copied. The base adapter must be present in the uploaded Prebid build; the new account alias is registered by script 3.22.1. Review partner IDs before enabling this account.</p>
                 </div>
               )}
 
@@ -602,7 +661,12 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                 <span>Enabled</span>
               </label>
 
-              {bidderFormError ? <div className="form-error">{bidderFormError}</div> : null}
+              {bidderFormError ? <div className="form-error" role="alert">{bidderFormError}{bidderMode === 'edit' && bidderSource ? <button className="button secondary" type="button" disabled={submitting} onClick={async () => {
+                setSubmitting(true);
+                try { const saved = (await api.listBidders(publisherId)).find(row => row.id === bidderSource.id); if (currentSite.current !== publisherId) return; if (!saved) throw new Error('This account no longer exists. Close this form and reload bidders.'); openEditBidder(saved); }
+                catch (reloadError) { if (currentSite.current === publisherId) setBidderFormError(requestErrorMessage(reloadError, 'Could not reload this account.')); }
+                finally { if (currentSite.current === publisherId) setSubmitting(false); }
+              }}>Reload saved account (discard edits)</button> : null}</div> : null}
 
               <div className="modal-actions">
                 <button className="button secondary" disabled={submitting} onClick={closeBidderForm} type="button">

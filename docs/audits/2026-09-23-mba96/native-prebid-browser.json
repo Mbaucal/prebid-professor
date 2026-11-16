@@ -1,0 +1,227 @@
+{
+  "scope": "CI loopback Chromium; shipped ZIP scripts + native Prebid, synthetic GPT/TCF; external attempts blocked, no live auction",
+  "checks": [
+    {
+      "name": "S 1280 normal: exact packaged runtime once with native Prebid",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: all 19 positions labeled before requests",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: only selected arm fetched",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: one Prebid fetch",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: fluid and 1x1 retained",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: every first request carries Variant",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: exact saved script identity and name",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: explicit standalone/test mode",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: diagnostic matches saved arm settings",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: ten-second refresh reaches GAM without a hidden thirty-second minimum",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: native TCF module stays enabled",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: cache policy is active with native fresh targeting",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: lazy request carries Variant",
+      "passed": true
+    },
+    {
+      "name": "B native refresh selects unused cached bid",
+      "passed": true
+    },
+    {
+      "name": "B actually starts new auctions while allowing cached competition",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: refresh keeps labels on all slots",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: reinsertion does not switch or launch another arm",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: direct duplicate arm execution blocked",
+      "passed": true
+    },
+    {
+      "name": "S 1280 normal: debugger agrees with actual slot targeting",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: exact packaged runtime once with native Prebid",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: all 19 positions labeled before requests",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: only selected arm fetched",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: one Prebid fetch",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: fluid and 1x1 retained",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: every first request carries Variant",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: exact saved script identity and name",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: explicit standalone/test mode",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: diagnostic matches saved arm settings",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: native TCF module stays enabled",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: cache policy is active with native fresh targeting",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: lazy request carries Variant",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: refresh keeps labels on all slots",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: reinsertion does not switch or launch another arm",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: direct duplicate arm execution blocked",
+      "passed": true
+    },
+    {
+      "name": "S 390 normal: debugger agrees with actual slot targeting",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: exact packaged runtime once with native Prebid",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: all 19 positions labeled before requests",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: only selected arm fetched",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: one Prebid fetch",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: fluid and 1x1 retained",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: every first request carries Variant",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: exact saved script identity and name",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: explicit standalone/test mode",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: diagnostic matches saved arm settings",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: native TCF module stays enabled",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: lazy request carries Variant",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: refresh keeps labels on all slots",
+      "passed": true
+    },
+    {
+      "name": "duplicate HTML loader blocked",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: reinsertion does not switch or launch another arm",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: direct duplicate arm execution blocked",
+      "passed": true
+    },
+    {
+      "name": "S 1280 duplicate: debugger agrees with actual slot targeting",
+      "passed": true
+    },
+    {
+      "name": "No unhandled JavaScript error in any successful delivery case",
+      "passed": true
+    }
+  ],
+  "passed": 52,
+  "failed": 0,
+  "pageErrors": [],
+  "blockedExternalHosts": [
+    "a.teads.tv",
+    "at.teads.tv",
+    "cdn.id5-sync.com",
+    "cdn.jsdelivr.net",
+    "grid-bidder.criteo.com",
+    "gum.criteo.com",
+    "id.crwdcntrl.net",
+    "id5-sync.com",
+    "readiness-fixture.invalid"
+  ]
+}

@@ -1,5 +1,6 @@
 import { apiError, getActor, json } from './http';
 import type { DatabaseEnv } from './publishers';
+import { assertCompilerStrings } from './compiler-input-compatibility.mjs';
 
 type JsonRecord = Record<string, unknown>;
 type StorageType = 'cookie' | 'html5' | 'cookie&html5';
@@ -48,7 +49,7 @@ type CatalogItem = {
   defaultStorage: JsonRecord | null;
 };
 
-const USER_ID_CATALOG: CatalogItem[] = [
+export const USER_ID_CATALOG: CatalogItem[] = [
   {
     name: 'sharedId',
     moduleCode: 'sharedIdSystem',
@@ -94,9 +95,9 @@ const USER_ID_CATALOG: CatalogItem[] = [
     name: 'lotamePanoramaId',
     moduleCode: 'lotamePanoramaIdSystem',
     label: 'Lotame Panorama ID',
-    description: 'Lotame Panorama identity module configured with a registered client ID.',
-    registration: 'Requires a Lotame Panorama Client ID.',
-    defaultParams: { clientId: '' },
+    description: 'Lotame Panorama identity module with an optional client ID.',
+    registration: 'Lotame registration provides a client ID. The Prebid module also accepts an omitted clientId; confirm enrollment requirements with Lotame.',
+    defaultParams: {},
     defaultStorage: null,
   },
 ];
@@ -201,7 +202,15 @@ function normalizeStorage(value: unknown, moduleName: string): JsonRecord | null
   return storage;
 }
 
-function validateKnownModule(module: UserIdModuleConfig, warnings: string[]): void {
+/** Reviewed Prebid 9/11 modules accept no clientId; supplied IDs follow their string contract. */
+export function validateLotameClientId(params: JsonRecord): void {
+  if (!Object.prototype.hasOwnProperty.call(params, 'clientId')) return;
+  if (typeof params.clientId !== 'string' || !params.clientId.trim()) {
+    throw new Error('lotamePanoramaId.params.clientId must be a nonempty string when supplied.');
+  }
+}
+
+function validateKnownModule(module: UserIdModuleConfig, warnings: string[], readingStored = false): void {
   if (!module.enabled) return;
 
   if (module.name === 'sharedId' && !module.storage) {
@@ -213,6 +222,7 @@ function validateKnownModule(module: UserIdModuleConfig, warnings: string[]): vo
     if (!Number.isInteger(partner) || partner <= 0) {
       throw new Error('id5Id.params.partner must be a positive ID5 Partner Number.');
     }
+    module.params.partner = partner;
     const refresh = Number(module.storage?.refreshInSeconds ?? 0);
     if (module.storage && (!Number.isFinite(refresh) || refresh <= 0 || refresh > 7200)) {
       warnings.push('ID5 recommends storage.refreshInSeconds of 7200 seconds or less.');
@@ -226,8 +236,18 @@ function validateKnownModule(module: UserIdModuleConfig, warnings: string[]): vo
     }
   }
 
-  if (module.name === 'lotamePanoramaId' && !String(module.params.clientId ?? '').trim()) {
-    throw new Error('lotamePanoramaId.params.clientId is required.');
+  if (module.name === 'lotamePanoramaId') {
+    try {
+      validateLotameClientId(module.params);
+    } catch (error) {
+      // Earlier saves accepted numbers/objects through String(value). Reading
+      // them must not discard this module or the site's other saved User IDs.
+      if (!readingStored || !String(module.params.clientId ?? '').trim()) throw error;
+      warnings.push('The saved Lotame clientId must be corrected to a nonempty string or omitted before saving User ID settings.');
+    }
+    if (!Object.prototype.hasOwnProperty.call(module.params, 'clientId')) {
+      warnings.push('Lotame clientId is omitted. The Prebid module supports this configuration; confirm enrollment requirements with Lotame.');
+    }
   }
 
   if (module.name === 'criteo' && module.storage) {
@@ -235,7 +255,7 @@ function validateKnownModule(module: UserIdModuleConfig, warnings: string[]): vo
   }
 }
 
-function normalizeModule(value: unknown, index: number, warnings: string[]): UserIdModuleConfig {
+function normalizeModule(value: unknown, index: number, warnings: string[], readingStored = false): UserIdModuleConfig {
   if (!isRecord(value)) throw new Error(`modules[${index}] must be an object.`);
 
   const name = String(value.name ?? '').trim();
@@ -260,11 +280,15 @@ function normalizeModule(value: unknown, index: number, warnings: string[]): Use
     notes: nullableString(value.notes),
   };
 
-  validateKnownModule(module, warnings);
+  assertCompilerStrings(module.params, `${name}.params`);
+  assertCompilerStrings(module.storage, `${name}.storage`);
+  assertCompilerStrings(module.value, `${name}.value`);
+
+  validateKnownModule(module, warnings, readingStored);
   return module;
 }
 
-function normalizeConfig(value: unknown): { config: UserIdConfig; warnings: string[] } {
+function normalizeConfig(value: unknown, readingStored = false): { config: UserIdConfig; warnings: string[] } {
   if (!isRecord(value)) throw new Error('userIdConfig must be an object.');
   const warnings: string[] = [];
 
@@ -283,7 +307,7 @@ function normalizeConfig(value: unknown): { config: UserIdConfig; warnings: stri
   if (!Array.isArray(rawModules)) throw new Error('modules must be an array.');
   if (rawModules.length > 50) throw new Error('No more than 50 User ID modules can be configured.');
 
-  const modules = rawModules.map((module, index) => normalizeModule(module, index, warnings));
+  const modules = rawModules.map((module, index) => normalizeModule(module, index, warnings, readingStored));
   const names = new Set<string>();
   const moduleCodes = new Set<string>();
   for (const module of modules) {
@@ -336,7 +360,7 @@ function storedUserIdConfig(config: JsonRecord): UserIdConfig {
   const raw = config.userIdConfig;
   if (!isRecord(raw)) return cloneDefault();
   try {
-    return normalizeConfig(raw).config;
+    return normalizeConfig(raw, true).config;
   } catch {
     return cloneDefault();
   }
@@ -374,6 +398,18 @@ export function compileUserSync(config: UserIdConfig): JsonRecord {
   return userSync;
 }
 
+export function defaultUserIdSettings(): {userIdConfig: UserIdConfig; userSync: JsonRecord} {
+  const userIdConfig = cloneDefault();
+  return { userIdConfig, userSync: compileUserSync(userIdConfig) };
+}
+
+/** Called only on an explicit setup/mode save; never backfill existing sites on read. */
+export function initializeMissingUserSync<T extends JsonRecord>(config: T): T {
+  if (Object.prototype.hasOwnProperty.call(config, 'userSync')) return config;
+  const userIdConfig = isRecord(config.userIdConfig) ? normalizeConfig(config.userIdConfig, true).config : cloneDefault();
+  return { ...config, userIdConfig, userSync: compileUserSync(userIdConfig) };
+}
+
 function requiredModules(config: UserIdConfig): string[] {
   if (!config.enabled) return [];
   const enabled = config.modules.filter((module) => module.enabled);
@@ -388,12 +424,12 @@ async function siteExists(db: D1Database, siteId: string): Promise<boolean> {
   return Boolean(row);
 }
 
-async function readPublisherConfig(db: D1Database, siteId: string): Promise<{ id: string; config: JsonRecord } | null> {
+async function readPublisherConfig(db: D1Database, siteId: string): Promise<{ id: string; config: JsonRecord; configJson: string } | null> {
   const row = await db
     .prepare('SELECT id, config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1')
     .bind(siteId)
     .first<{ id: string; config_json: string }>();
-  return row ? { id: row.id, config: parseStoredConfig(row.config_json) } : null;
+  return row ? { id: row.id, config: parseStoredConfig(row.config_json), configJson: row.config_json } : null;
 }
 
 export async function readRequiredUserIdModules(db: D1Database, siteId: string): Promise<string[]> {
@@ -412,11 +448,13 @@ export async function getUserIdConfig(env: DatabaseEnv, siteId: string): Promise
 
   return json({
     ok: true,
+    saved: isRecord(row.config.userSync),
     userIdConfig: config,
     userSyncPreview: compileUserSync(config),
     requiredModules: requiredModules(config),
     catalog: USER_ID_CATALOG,
-    warnings: normalizeConfig(config).warnings,
+    warnings: [...normalizeConfig(config, true).warnings, ...(!isRecord(row.config.userSync) && row.config.enablePrebid !== false
+      ? ['User ID settings have not been saved. Existing generated scripts use cookie sync off. Review these defaults and save before generating a new package.'] : [])],
   });
 }
 
@@ -455,15 +493,19 @@ export async function updateUserIdConfig(
   const now = new Date().toISOString();
 
   try {
-    await env.DB.batch([
+    // The whole config is rewritten from this read, so it may only replace the config it
+    // was built from; otherwise a save that landed in between (unit rules, Refresh
+    // schedules and their kept intervals, consent mode) would be silently undone. The
+    // audit row needs that write.
+    const results = await env.DB.batch([
       env.DB
-        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ?')
-        .bind(JSON.stringify(configJson), now, siteId),
+        .prepare('UPDATE publisher_configs SET config_json = ?, updated_at = ? WHERE publisher_id = ? AND config_json = ?')
+        .bind(JSON.stringify(configJson), now, siteId, row.configJson),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'user_id_config.updated', ?, 'user_id_config', ?, ?, ?)`,
+           ) SELECT ?, ?, 'user_id_config.updated', ?, 'user_id_config', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
@@ -481,6 +523,9 @@ export async function updateUserIdConfig(
           now,
         ),
     ]);
+    if (results[0]?.meta.changes !== 1) {
+      return apiError('Other site settings were saved at the same time, so nothing was saved. Select Save again.', 409);
+    }
   } catch (error) {
     return apiError(
       'User ID configuration could not be saved.',

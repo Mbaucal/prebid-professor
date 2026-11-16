@@ -12,12 +12,15 @@ import type {
 } from '../src/shared/types';
 import { apiError, getActor, json, readJson } from './http';
 import type { DatabaseEnv } from './publishers';
+import { normalizeBidderAccount, normalizeBidderAccounts } from '../shared/bidder-accounts/settings.mjs';
+import { assertCompilerStrings } from './compiler-input-compatibility.mjs';
 
 type BidderRow = {
   id: string;
   publisher_id: string;
   bidder: string;
   params_json: string;
+  account_json?: string;
   enabled: number;
   created_at: string;
   updated_at: string;
@@ -55,6 +58,7 @@ function normalizeObject(value: unknown, field = 'params'): JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${field} must be a JSON object, not an array or primitive.`);
   }
+  assertCompilerStrings(value, field);
   return value as JsonObject;
 }
 
@@ -102,13 +106,39 @@ function toBidder(row: BidderRow, overrides: BidderOverride[] = []): Bidder {
   return {
     id: row.id,
     publisherId: row.publisher_id,
-    bidder: row.bidder,
+    ...normalizeBidderAccount(JSON.parse(row.account_json ?? '{}'), { bidder: row.bidder }),
     params: parseStoredObject(row.params_json),
     enabled: Boolean(row.enabled),
     overrides,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+async function validateAccountSet(db: D1Database, publisherId: string, account: ReturnType<typeof normalizeBidderAccount>, replacedId?: string): Promise<string | null> {
+  const stored = await db.prepare('SELECT id, bidder, account_json FROM bidders WHERE publisher_id = ?').bind(publisherId).all<{id: string; bidder: string; account_json: string}>();
+  const accounts = (stored.results ?? []).filter(row => row.id !== replacedId).map(row => normalizeBidderAccount(JSON.parse(row.account_json ?? '{}'), {bidder: row.bidder}));
+  try {
+    normalizeBidderAccounts([...accounts, account]);
+  } catch (error) { return error instanceof Error ? error.message : String(error); }
+  return null;
+}
+
+async function referencedSettings(db: D1Database, publisherId: string, bidder: string): Promise<string[]> {
+  const row = await db.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1').bind(publisherId).first<{config_json: string}>();
+  if (!row) return [];
+  const config = JSON.parse(row.config_json) as Record<string, unknown>;
+  const matches: string[] = [];
+  const visit = (value: unknown, path: string) => {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) { value.forEach((child, index) => { if (child === bidder) matches.push(`${path}[${index}]`); else visit(child, `${path}[${index}]`); }); return; }
+    for (const [key, child] of Object.entries(value)) {
+      if (key === bidder || (key === 'bidder' && child === bidder)) matches.push(path + '.' + key);
+      else visit(child, path + '.' + key);
+    }
+  };
+  for (const key of ['runtimeControls', 'userSync', 'testPrebidPlan']) visit(config[key], key);
+  return matches;
 }
 
 async function publisherExists(db: D1Database, publisherId: string): Promise<boolean> {
@@ -171,7 +201,7 @@ async function fetchBidder(
 ): Promise<Bidder | null> {
   const row = await db
     .prepare(
-      `SELECT id, publisher_id, bidder, params_json, enabled, created_at, updated_at
+      `SELECT id, publisher_id, bidder, params_json, account_json, enabled, created_at, updated_at
        FROM bidders
        WHERE publisher_id = ? AND id = ?
        LIMIT 1`,
@@ -208,7 +238,7 @@ export async function listBidders(env: DatabaseEnv, publisherId: string): Promis
 
   const bidderResult = await env.DB
     .prepare(
-      `SELECT id, publisher_id, bidder, params_json, enabled, created_at, updated_at
+      `SELECT id, publisher_id, bidder, params_json, account_json, enabled, created_at, updated_at
        FROM bidders
        WHERE publisher_id = ?
        ORDER BY bidder COLLATE NOCASE`,
@@ -265,12 +295,16 @@ export async function createBidder(
   if (errors.length) return apiError('Bidder validation failed.', 422, errors);
 
   let params: JsonObject;
+  let account;
   try {
+    account = normalizeBidderAccount({ baseAdapter: input.baseAdapter, displayName: input.displayName, schain: input.schain }, { bidder: bidderName });
     params = normalizeObject(input.params);
   } catch (error) {
     return apiError('Bidder validation failed.', 422, error instanceof Error ? error.message : String(error));
   }
 
+  const accountError = await validateAccountSet(env.DB, publisherId, account);
+  if (accountError) return apiError('Bidder validation failed.', 422, accountError);
   const id = crypto.randomUUID();
   const enabled = input.enabled === false ? 0 : 1;
   const actor = getActor(request);
@@ -281,10 +315,10 @@ export async function createBidder(
       env.DB
         .prepare(
           `INSERT INTO bidders (
-             id, publisher_id, bidder, params_json, enabled, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             id, publisher_id, bidder, params_json, account_json, enabled, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(id, publisherId, bidderName, JSON.stringify(params), enabled, now, now),
+        .bind(id, publisherId, bidderName, JSON.stringify(params), JSON.stringify(account), enabled, now, now),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
@@ -296,7 +330,7 @@ export async function createBidder(
           actor,
           publisherId,
           id,
-          JSON.stringify({ bidder: bidderName, enabled: Boolean(enabled) }),
+          JSON.stringify({ bidder: bidderName, enabled: Boolean(enabled), baseAdapter: account.baseAdapter, schainMode: account.schain.mode }),
           now,
         ),
     ]);
@@ -343,41 +377,52 @@ export async function updateBidder(
     }
   }
 
+  let account;
+  try { account = normalizeBidderAccount({ baseAdapter: input.baseAdapter ?? current.baseAdapter ?? current.bidder, displayName: input.displayName ?? current.displayName ?? '', schain: input.schain ?? current.schain ?? {mode:'inherit'} }, {bidder: bidderName}); }
+  catch (error) { return apiError('Bidder validation failed.', 422, error instanceof Error ? error.message : String(error)); }
+  const accountError = await validateAccountSet(env.DB, publisherId, account, bidderId);
+  if (accountError) return apiError('Bidder validation failed.', 422, accountError);
+  if (bidderName !== current.bidder) {
+    const references = await referencedSettings(env.DB, publisherId, current.bidder);
+    if (references.length) return apiError('Update these references before renaming this bidder.', 409, references);
+  }
+  if (input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt !== current.updatedAt) return apiError('This bidder changed in another tab. Reload before saving.', 409);
   const enabled = input.enabled === undefined ? current.enabled : Boolean(input.enabled);
   const actor = getActor(request);
-  const now = new Date().toISOString();
+  const now = new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString();
 
   try {
-    await env.DB.batch([
+    const result = await env.DB.batch([
       env.DB
         .prepare(
           `UPDATE bidders
-           SET bidder = ?, params_json = ?, enabled = ?, updated_at = ?
-           WHERE publisher_id = ? AND id = ?`,
+           SET bidder = ?, params_json = ?, account_json = ?, enabled = ?, updated_at = ?
+           WHERE publisher_id = ? AND id = ? AND updated_at = ?`,
         )
-        .bind(bidderName, JSON.stringify(params), enabled ? 1 : 0, now, publisherId, bidderId),
-      env.DB
-        .prepare(
-          `UPDATE bidder_overrides
-           SET bidder = ?, updated_at = ?
-           WHERE publisher_id = ? AND bidder = ?`,
-        )
-        .bind(bidderName, now, publisherId, current.bidder),
+        .bind(bidderName, JSON.stringify(params), JSON.stringify(account), enabled ? 1 : 0, now, publisherId, bidderId, current.updatedAt),
       env.DB
         .prepare(
           `INSERT INTO audit_log (
              id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'bidder.updated', ?, 'bidder', ?, ?, ?)`,
+           ) SELECT ?, ?, 'bidder.updated', ?, 'bidder', ?, ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
           actor,
           publisherId,
           bidderId,
-          JSON.stringify({ previousBidder: current.bidder, bidder: bidderName, enabled }),
+          JSON.stringify({ previousBidder: current.bidder, bidder: bidderName, enabled, baseAdapter: account.baseAdapter, schainMode: account.schain.mode }),
           now,
         ),
+      env.DB
+        .prepare(
+          `UPDATE bidder_overrides
+           SET bidder = ?, updated_at = ?
+           WHERE publisher_id = ? AND bidder = ? AND changes() = 1`,
+        )
+        .bind(bidderName, now, publisherId, current.bidder),
     ]);
+    if (result[0]?.meta?.changes !== 1) return apiError('This bidder changed in another tab. Reload before saving.', 409);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const conflict = /unique|constraint/i.test(message);
@@ -412,6 +457,11 @@ export async function duplicateBidder(
   const errors = validateBidderName(bidderName);
   if (errors.length) return apiError('Bidder validation failed.', 422, errors);
 
+  let account;
+  try { account = normalizeBidderAccount({ baseAdapter: input.baseAdapter ?? source.baseAdapter ?? source.bidder, displayName: input.displayName ?? source.displayName ?? '', schain: input.schain ?? source.schain ?? {mode:'inherit'} }, {bidder: bidderName}); }
+  catch (error) { return apiError('Bidder validation failed.', 422, error instanceof Error ? error.message : String(error)); }
+  const accountError = await validateAccountSet(env.DB, publisherId, account);
+  if (accountError) return apiError('Bidder validation failed.', 422, accountError);
   const id = crypto.randomUUID();
   const enabled = input.enabled === undefined ? source.enabled : Boolean(input.enabled);
   const actor = getActor(request);
@@ -420,10 +470,10 @@ export async function duplicateBidder(
     env.DB
       .prepare(
         `INSERT INTO bidders (
-           id, publisher_id, bidder, params_json, enabled, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           id, publisher_id, bidder, params_json, account_json, enabled, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .bind(id, publisherId, bidderName, JSON.stringify(source.params), enabled ? 1 : 0, now, now),
+      .bind(id, publisherId, bidderName, JSON.stringify(source.params), JSON.stringify(account), enabled ? 1 : 0, now, now),
   ];
 
   if (input.copyOverrides !== false) {
@@ -463,7 +513,7 @@ export async function duplicateBidder(
         actor,
         publisherId,
         id,
-        JSON.stringify({ sourceBidder: source.bidder, bidder: bidderName, copyOverrides: input.copyOverrides !== false }),
+        JSON.stringify({ sourceBidder: source.bidder, bidder: bidderName, baseAdapter: account.baseAdapter, schainMode: account.schain.mode, copyOverrides: input.copyOverrides !== false }),
         now,
       ),
   );
@@ -492,6 +542,8 @@ export async function deleteBidder(
   if (!env.DB) return databaseMissing();
   const current = await fetchBidder(env.DB, publisherId, bidderId);
   if (!current) return apiError('Bidder not found.', 404);
+  const references = await referencedSettings(env.DB, publisherId, current.bidder);
+  if (references.length) return apiError('Remove this bidder from these settings before deleting it.', 409, references);
 
   const actor = getActor(request);
   const now = new Date().toISOString();

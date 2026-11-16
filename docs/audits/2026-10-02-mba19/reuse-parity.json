@@ -1,0 +1,131 @@
+{
+  "reviewedSourceTree": "e3ea81d240b1ad4f5f44fc59dba162d6bf0ef777",
+  "identicalFiles": [
+    {
+      "path": "worker/experiments/cmp-aa-v1.mjs",
+      "sha256": "41c3f76c230c3611fbff8b71784b2b34df5553757724759f8345a052d66dae94"
+    },
+    {
+      "path": "worker/experiments/saved-script-settings.mjs",
+      "sha256": "00e89021e60625097ee3a73775cb697960c75759f344da54360c6a0eb4c693a7"
+    },
+    {
+      "path": "worker/experiments/position-cache-settings.d.mts",
+      "sha256": "ff222b8a5fb0cce88664f91296f7dd3362e0f0b9d55c6100b0db5345c34b5240"
+    },
+    {
+      "path": "worker/experiments/position-cache-settings.mjs",
+      "sha256": "66fef60a5fbb81798a2aec4b6342773dedef27e3ef20b8b92d3b43f10749257e"
+    },
+    {
+      "path": "worker/experiments/saved-script-settings.d.mts",
+      "sha256": "72f77775d6847f6d055eefb67ddb6925bf075268edf2c4cf412926719ecbb6a0"
+    },
+    {
+      "path": "worker/experiments/package-settings-v1.d.mts",
+      "sha256": "9e225d9a6fc7ce433282bbdf41cb396ea473d13196f39aec0780a2b4599b5c84"
+    },
+    {
+      "path": "worker/experiments/position-cache-v2.mjs",
+      "sha256": "2f6136e8d967f5376ee156f620f29a594cda5ebd39b6a32b19dc92ba908892ae"
+    },
+    {
+      "path": "worker/experiments/configurable-cache-v1.mjs",
+      "sha256": "0c8cae98b0516f84377be4aaacb1406569a72bd25ba8c6bcb60033880c2e2f95"
+    },
+    {
+      "path": "worker/experiments/saved-scripts-v1.mjs",
+      "sha256": "f64063bdbafd7432d8f84c7f62b16cc77a04c283d66e465fdd1e3f4381474c57"
+    },
+    {
+      "path": "worker/experiments/static-aa-v1.mjs",
+      "sha256": "281a539f36393ca36d1cf3c6bd5409233f3a88de91e9bd29b8dfa601c6d2b1bb"
+    },
+    {
+      "path": "worker/experiments/package-settings-v1.mjs",
+      "sha256": "9b84ad86da2f90091e7a324124c25bcc7a9145829157bfdc663bb398481626a6"
+    },
+    {
+      "path": "worker/experiments/full-cache-v2.mjs",
+      "sha256": "27ebe3a9c5d01e8b0cbd2be532ce75090735e9294a6eb9d38fac064a0b7f1c22"
+    },
+    {
+      "path": "worker/runtime-cache/full-lifecycle-v1.mjs",
+      "sha256": "a5b4476fc8598ca33b1be6713c2de0c05691f043d0755bed3bbe1359cb424d0f"
+    },
+    {
+      "path": "worker/runtime-cache/position-policy-v2.mjs",
+      "sha256": "fc49dfa7a0cd30afe4897eea96f566f77eead8f752ef216242fc17ac98e04c51"
+    },
+    {
+      "path": "worker/runtime-cache/full-policy-v1.mjs",
+      "sha256": "d53d826ff3821b67aec666a6eafc6ebdca1581bfe04226ae591f6d7fa835bf47"
+    },
+    {
+      "path": "worker/runtime-cache/consent-epoch.mjs",
+      "sha256": "bc58bdc1762ee250b48f3d0726af58b61dcb6722cd4df07c193c8dfb39002b39"
+    },
+    {
+      "path": "worker/site-runtime/prebid-cache-settings.mjs",
+      "sha256": "6bf2c4a4040c3c6ea6d56d2bd3646821c7fa9b387f4080c8a2f58db263bae8b7"
+    },
+    {
+      "path": "worker/site-runtime/prebid-cache-settings.d.mts",
+      "sha256": "2fcfff4061bb08b857bf46057b83ef406d734fb8b075fe374979d698a21d59cc"
+    },
+    {
+      "path": "worker/site-runtime/saved-package-trash.mjs",
+      "sha256": "a93a2628eb1a710eb0982a08eda89cbab5d4c298063f9864d1dd8aabcd3ac488"
+    },
+    {
+      "path": "worker/site-runtime/script-library.mjs",
+      "sha256": "4b879f06b4d56089a467aa7ee34d87f05d719301cc42f1440be65412b716bc42"
+    },
+    {
+      "path": "worker/site-runtime/script-library.d.mts",
+      "sha256": "cd957b247153b467d80d48e8731c15c8511fbc7d2b4a3bfc4e28b9029f639ccc"
+    },
+    {
+      "path": "scripts/saved-script-package.mjs",
+      "sha256": "f49f3b232c8e12aeaeeae1f03fc701feee2bf87ed11ffe92fa5b891ff2504a22"
+    },
+    {
+      "path": "scripts/static-aa-package.mjs",
+      "sha256": "a49ff583e6a797d147f466fb54f977f0a98305b103d7541822e75cfff530248f"
+    },
+    {
+      "path": "scripts/prepare-site-ab-baseline.mjs",
+      "sha256": "be1f56429464d530506e4dda6eb36af75e564f75a8de0efc4ca19fa5da1c5e98"
+    },
+    {
+      "path": "scripts/prepare-tanjug-aa.mjs",
+      "sha256": "e629004499b3b0ad3b5758dd9739aba53d2a37fe114b6628485942402cca1069"
+    },
+    {
+      "path": "scripts/prepare-tanjug-compact.mjs",
+      "sha256": "f703d0a04601619a42cfbbec35d7a94f0d17ba42066908885b9866d44ffa9910"
+    },
+    {
+      "path": "scripts/prepare-tanjug-cmp.mjs",
+      "sha256": "85fbb0ccf518a05a6d59a6d1f934860cdc4250325008396875e4b7ed398fedd8"
+    },
+    {
+      "path": "src/components/ConfirmDeleteButton.tsx",
+      "sha256": "6c370a4776d7b43d604ef4d16b5ea87939a9df9c56b49ec809a4e04e9988fbae"
+    },
+    {
+      "path": "src/components/ab-experiments.css",
+      "sha256": "d9d1c27b66a240f7774118509140e2d68056b5b67031fb44394119354276d835"
+    },
+    {
+      "path": "src/components/confirm-delete.css",
+      "sha256": "1a1541189bee9082ca1fb8893f93aa0b5364c73e5b7843ba281ed41a5385d6df"
+    }
+  ],
+  "explicitAdaptations": {
+    "src/components/ScriptLibraryPanel.tsx": "Optional testOnly context for TEST navigation/download/footer copy; normal context unchanged.",
+    "worker/prebid-mode.ts": "Only explicit .ts extension in shared HTTP import for direct strip-types tests.",
+    "src/components/PrebidModePanel.tsx": "Optional testOnly navigation copy; normal context unchanged.",
+    "src/components/PositionBidCachePanel.tsx": "Optional testOnly navigation copy; normal context unchanged."
+  }
+}

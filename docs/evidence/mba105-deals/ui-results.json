@@ -1,0 +1,52 @@
+[
+  {
+    "case": "error-retains-draft",
+    "width": 1440,
+    "passed": true
+  },
+  {
+    "case": "save-string-id",
+    "width": 1440,
+    "passed": true
+  },
+  {
+    "case": "reload",
+    "width": 1440,
+    "passed": true
+  },
+  {
+    "case": "saved-plan-size-and-adid",
+    "width": 1440,
+    "passed": true
+  },
+  {
+    "case": "late-save-site-switch",
+    "width": 1440,
+    "passed": true
+  },
+  {
+    "case": "error-retains-draft",
+    "width": 390,
+    "passed": true
+  },
+  {
+    "case": "save-string-id",
+    "width": 390,
+    "passed": true
+  },
+  {
+    "case": "reload",
+    "width": 390,
+    "passed": true
+  },
+  {
+    "case": "saved-plan-size-and-adid",
+    "width": 390,
+    "passed": true
+  },
+  {
+    "case": "late-save-site-switch",
+    "width": 390,
+    "passed": true
+  }
+]

@@ -1,0 +1,83 @@
+import {previewInput as previousInput} from '../runtime-3162/snapshot.mjs';
+import {encodeSnapshot, decodeValue, rememberInput} from '../runtime-3191/identity.mjs';
+import {contextualSignalsInput} from '../../shared/contextual-signals/settings.mjs';
+import {COUNTRY_ENDPOINTS} from '../runtime-318/snapshot.mjs';
+import {countryMappings, INTERSTITIAL_SCOPE} from '../runtime-319/snapshot.mjs';
+import {normalizeSizeMaps} from '../runtime-320/size-maps.mjs';
+import {placeholderStyles} from '../runtime-3201/styles.mjs';
+
+/** Adapt a private copy; historical sources and the stored settings stay exact. */
+function scopedInput(snapshot, descriptor, timestamp, takeOver, countryTarget = 'main') {
+  if (!Object.hasOwn(COUNTRY_ENDPOINTS, countryTarget)) throw Error('Unknown country service target.');
+  const copy = structuredClone(snapshot), saved = JSON.parse(copy.config.config_json);
+  const raw = Object.create(null);
+  let fallback = {};
+  function extract(scope, rule) {
+    if (!rule || typeof rule !== 'object' || Array.isArray(rule)) throw Error(`Invalid unit rule ${scope}.`);
+    if (['__proto__', 'constructor', 'prototype'].includes(scope)) throw Error('Unsafe rule key.');
+    if (Object.hasOwn(rule, 'conditionalMappings')) raw[scope] = rule.conditionalMappings;
+    delete rule.conditionalMappings;
+    return rule;
+  }
+  copy.rules = (copy.rules || []).filter(row => {
+    if (row.rule_key !== INTERSTITIAL_SCOPE) return true;
+    fallback = JSON.parse(row.rule_json); return false;
+  }).map(row => ({...row, rule_json: JSON.stringify(extract(row.rule_key, JSON.parse(row.rule_json)))}));
+  if (saved.advancedUnitRules?.[INTERSTITIAL_SCOPE]) {
+    fallback = {...fallback, ...saved.advancedUnitRules[INTERSTITIAL_SCOPE]};
+    delete saved.advancedUnitRules[INTERSTITIAL_SCOPE];
+  }
+  // Match existing basic/advanced precedence, including an explicit empty list.
+  for (const [scope, rule] of Object.entries(saved.advancedUnitRules || {})) extract(scope, rule);
+  copy.config.config_json = JSON.stringify(saved);
+  const inactive = new Set((copy.units || []).filter(unit => (unit.enabled !== 1 || unit.type === 'DRAFT') && /^[A-Za-z][A-Za-z0-9_:-]*$/.test(unit.code) && !['__proto__', 'constructor', 'prototype'].includes(unit.code)).map(unit => unit.code));
+  copy.overrides = (copy.overrides || []).filter(row => row.scope_type !== 'adunit' || !inactive.has(row.scope_key) || ['__proto__', 'constructor', 'prototype'].includes(row.bidder));
+  const input = previousInput(copy, descriptor, timestamp, takeOver);
+  const rules = Object.create(null);
+  for (const [scope, mappings] of Object.entries(raw)) rules[scope] = countryMappings(mappings, scope, input.core.sizeMapsRaw);
+  input.conditionalUnits = Object.create(null);
+  input.conditionalRuleExclusions = [];
+  for (const unit of input.core.explicitUnits) {
+    const scopes = ['__DEFAULT__', unit.type === 'ATF' ? '__ATF__' : '__BTF__', unit.id];
+    const unsupported = unit.id === input.overlay?.code ? 'TakeOver' : input.outstream.disabledRefreshCodes.includes(unit.id) ? 'Outstream' : null;
+    if (unsupported) {
+      if ((rules[unit.id] || []).length) throw Error(`${unit.id}: conditional rules on this ${unsupported} position are not supported. Keep its saved responsive map; use Banner or Sticky rules, or the separate Interstitial fallback rule.`);
+      const inherited = scopes.slice(0, 2).filter(scope => (rules[scope] || []).length);
+      if (inherited.length) input.conditionalRuleExclusions.push({code: unit.id, format: unsupported, scopes: inherited});
+      continue;
+    }
+    const list = scopes.flatMap(scope => rules[scope] || []).map((rule, order) => ({...rule, order}));
+    list.sort((a, b) => b.priority - a.priority || a.order - b.order);
+    if (!list.length) continue;
+    const maps = [...new Set([unit.sizeMapName, ...Object.keys(input.core.sizeMapsRaw).filter(name => name.endsWith('_' + unit.sizeMapName)), ...list.map(rule => rule.sizeMapKey).filter(Boolean)])];
+    const normalized = list.map(({order, ...rule}) => rule);
+    input.conditionalUnits[unit.id] = {baseMap: unit.sizeMapName, maps, rules: normalized,
+      usesGeo: normalized.some(rule => rule.conditions.some(condition => condition.key === 'geo_country'))};
+  }
+  if (['timeout', 'lazy', 'refresh'].some(key => fallback[key] != null)) throw Error('Interstitial fallback supports conditional slot actions only.');
+  const fallbackRules = countryMappings(fallback.conditionalMappings, 'Interstitial fallback', input.core.sizeMapsRaw);
+  if (fallbackRules.some(rule => rule.sizeMapKey)) throw Error('Interstitial fallback uses Google responsive sizes. Choose a slot action without a size map.');
+  fallbackRules.sort((a, b) => b.priority - a.priority);
+  input.interstitialRules = {rules: fallbackRules, usesGeo: fallbackRules.some(rule => rule.conditions.some(condition => condition.key === 'geo_country'))};
+  input.countrySignal = {version: 1, endpoint: COUNTRY_ENDPOINTS[countryTarget], timeoutMs: 1500,
+    scope: 'document', blocking: false, storage: 'memory', targetingKey: 'geo_country', rulesVersion: 1};
+  normalizeSizeMaps(input);
+  input.conditionalCss = placeholderStyles(input);
+  return input;
+}
+
+/** New bugfix version: retain literal GAM identities and frozen historical inputs. */
+export function previewInput(snapshot, descriptor, timestamp, takeOver = {enabled: false}, countryTarget = 'main') {
+  const identity = encodeSnapshot(snapshot, takeOver);
+  let safeInput;
+  try {
+    safeInput = scopedInput(identity.snapshot, descriptor, timestamp, identity.takeOver, countryTarget);
+  } catch (error) {
+    for (const [alias, code] of identity.reverse) error.message = error.message.split(alias).join(code);
+    throw error;
+  }
+  const input = decodeValue(safeInput, identity.reverse);
+  input.conditionalCss = placeholderStyles(input);
+  input.contextualSignals = contextualSignalsInput(snapshot);
+  return rememberInput(input, safeInput, identity);
+}

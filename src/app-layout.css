@@ -1,0 +1,132 @@
+/* One bounded viewport. Only the content regions scroll; no document scroll. */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.app-shell > .sidebar {
+  position: relative;
+  top: auto;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  padding: 24px 18px 18px;
+  overflow: hidden;
+}
+
+.sidebar .brand { flex: none; min-width: 0; }
+.sidebar-toggle { display: none; }
+.sidebar-menu {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 22px;
+  min-height: 0;
+}
+.sidebar-navigation { flex: none; max-height: 36dvh; overflow: auto; }
+.sidebar-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #566171 #171b21;
+}
+.sidebar-content .publisher-nav, .sidebar-content .global-sidebar-context { margin-top: 0; }
+.sidebar-content .publisher-tree { align-content: start; }
+.sidebar-content .publisher-account-link > span, .sidebar-content .site-link > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sidebar-footer { flex: none; padding-top: 14px; }
+.sidebar-footer .auth-account-card {
+  position: static;
+  width: 100%;
+  min-width: 0;
+  box-shadow: none;
+}
+.sidebar-footer .auth-account-avatar { width: 30px; height: 30px; }
+.sidebar-footer .auth-account-card { grid-template-columns: 30px minmax(0, 1fr) 28px 28px; gap: 5px; padding: 8px; }
+.sidebar-footer .auth-account-card > button:not(.auth-account-identity) { width: 28px; height: 30px; }
+
+.app-shell > .workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.workspace > .topbar {
+  flex: none;
+  flex-wrap: wrap;
+  min-height: 0;
+  max-height: 40dvh;
+  overflow: auto;
+  gap: 16px;
+}
+.workspace > .topbar > div:first-child { flex: 1 1 360px; min-width: 0; overflow-wrap: anywhere; }
+.workspace > .topbar .top-actions { flex: 0 1 auto; flex-wrap: wrap; }
+.workspace > .topbar .button { white-space: nowrap; }
+.workspace > .tabbar {
+  flex: none;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.workspace > .tabbar .tab { flex: none; white-space: nowrap; }
+.workspace-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: #edf0f4;
+}
+.workspace-content:focus-visible, .sidebar-content:focus-visible { outline: 2px solid #ef722d; outline-offset: -2px; }
+.workspace-content .content-grid > * { min-width: 0; }
+
+@media (max-height: 650px) and (min-width: 761px) {
+  .app-shell > .sidebar { padding-top: 12px; padding-bottom: 12px; }
+  .sidebar .brand { padding-bottom: 12px; }
+  .sidebar-menu { gap: 12px; }
+  .sidebar-navigation .nav-item { padding-top: 7px; padding-bottom: 7px; }
+  .workspace > .topbar { padding: 16px 24px; }
+}
+
+@media (max-width: 760px) {
+  .app-shell { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .app-shell > .sidebar { height: auto; max-height: 65dvh; padding: 10px 14px; border-right: 0; }
+  .sidebar .brand { padding: 0; gap: 10px; }
+  .sidebar .brand-mark { width: 32px; height: 32px; flex-basis: 32px; }
+  .sidebar .brand span { display: none; }
+  .sidebar-toggle { display: block; margin-left: auto; border: 1px solid #46505e; border-radius: 7px; padding: 7px 10px; color: #fff; background: #282e37; }
+  .sidebar-menu, .sidebar-footer { display: none; }
+  .navigation-open > .sidebar { height: 65dvh; }
+  .navigation-open .sidebar-menu { display: flex; margin-top: 12px; gap: 12px; }
+  .navigation-open .sidebar-footer { display: block; padding-top: 10px; }
+  .sidebar-navigation { max-height: 20dvh; }
+  .sidebar .main-nav { display: flex; flex-wrap: wrap; gap: 4px; }
+  .sidebar .nav-item { width: auto; padding: 8px 10px; font-size: 13px; }
+  .sidebar .publisher-tree { display: grid; }
+  .workspace > .topbar { flex-direction: row; padding: 16px 18px; max-height: 32dvh; gap: 12px; }
+  .workspace > .topbar > div:first-child { flex-basis: 100%; }
+  .workspace > .topbar h1 { font-size: 24px; }
+  .workspace > .topbar .top-actions { gap: 6px; }
+  .workspace > .topbar .button { padding: 8px 10px; font-size: 12px; }
+  .workspace > .tabbar { gap: 18px; }
+  .navigation-open .workspace > .topbar { max-height: 12dvh; }
+  .workspace-content .panel-heading { flex-wrap: wrap; }
+}

@@ -2,7 +2,7 @@ import { zipSync } from 'fflate';
 import { runtimeDescriptor, readPreviewSnapshot } from './builtin-preview-service.mjs';
 import { previewInput, digest, assertReview } from './preview-snapshot.mjs';
 import { pinRuntime } from './version-pin.mjs';
-import { prebidRequirements, inspectPrebidArtifact } from './prebid-artifact-check.mjs';
+import { prebidRequirements, inspectPrebidArtifact } from './prebid-artifact-check-v2.mjs';
 import { buildArtifactCandidate } from './artifact-candidate.mjs';
 
 const HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' };

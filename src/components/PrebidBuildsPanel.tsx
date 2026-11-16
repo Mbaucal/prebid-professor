@@ -1,3 +1,4 @@
+import { adapterModuleForAccount } from '../../shared/bidder-accounts/modules.mjs';
 import {
   useCallback,
   useEffect,
@@ -112,19 +113,6 @@ const MODULE_GROUPS: ModuleGroup[] = [
 
 const DEFAULT_PLATFORM_MODULES = MODULE_GROUPS.flatMap((group) => group.modules);
 
-const BIDDER_MODULE_ALIASES: Record<string, string> = {
-  connectad: 'connectadBidAdapter',
-  criteo: 'criteoBidAdapter',
-  eskimi: 'eskimiBidAdapter',
-  ix: 'ixBidAdapter',
-  magnite: 'magniteBidAdapter',
-  ogury: 'oguryBidAdapter',
-  openx: 'openxBidAdapter',
-  pubmatic: 'pubmaticBidAdapter',
-  richaudience: 'richaudienceBidAdapter',
-  rtbhouse: 'rtbhouseBidAdapter',
-  teads: 'teadsBidAdapter',
-};
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
@@ -136,10 +124,7 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
   return payload;
 }
 
-function adapterModuleForBidder(bidder: string): string {
-  const normalized = bidder.trim().toLowerCase();
-  return BIDDER_MODULE_ALIASES[normalized] ?? `${normalized}BidAdapter`;
-}
+
 
 function uniqueSorted(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) =>
@@ -313,7 +298,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
   );
 
   const requiredAdapters = useMemo(
-    () => uniqueSorted(enabledBidders.map((bidder) => adapterModuleForBidder(bidder.bidder))),
+    () => uniqueSorted(enabledBidders.map((bidder) => adapterModuleForAccount(bidder))),
     [enabledBidders],
   );
 
@@ -333,6 +318,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
     () => builds.find((build) => build.status === 'current') ?? null,
     [builds],
   );
+  const multipleCurrentBuilds = builds.filter((build) => build.status === 'current').length > 1;
 
   function resetSelectedBuild() {
     setAnalysis(null);
@@ -528,7 +514,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
               {enabledBidders.map((bidder) => (
                 <div className="required-adapter-chip" key={bidder.id}>
                   <b>{bidder.bidder}</b>
-                  <code>{adapterModuleForBidder(bidder.bidder)}</code>
+                  <code>{adapterModuleForAccount(bidder)}</code>
                 </div>
               ))}
               {!loading && enabledBidders.length === 0 ? (
@@ -717,8 +703,8 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
             <h3>R2 build history</h3>
             <p>Current is the build that the next release generator will use.</p>
           </div>
-          <span className={currentBuild ? 'build-state valid' : 'build-state invalid'}>
-            {currentBuild ? `Current v${currentBuild.version}` : 'No current build'}
+          <span className={currentBuild && !multipleCurrentBuilds ? 'build-state valid' : 'build-state invalid'}>
+            {multipleCurrentBuilds ? 'Multiple current files — use Set current to choose one' : currentBuild ? `Current v${currentBuild.version}` : 'No current build'}
           </span>
         </div>
 
@@ -751,7 +737,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
               </div>
               <div className="stored-build-actions">
                 <a className="button secondary" href={build.downloadUrl}>Download</a>
-                {build.status !== 'current' && build.valid ? (
+                {(build.status !== 'current' || multipleCurrentBuilds) && build.valid ? (
                   <button
                     className="button secondary"
                     disabled={busyBuildId === build.id}
