@@ -186,6 +186,11 @@ function BidderFormDialog({ titleId, busy, opener, fallbackFocus, onDismiss, chi
       className="modal-backdrop bidder-form-dialog"
       aria-labelledby={titleId}
       aria-busy={busy}
+      closedby={busy ? 'none' : undefined}
+      onClose={() => {
+        const element = dialog.current;
+        if (element?.isConnected && !element.open) element.showModal();
+      }}
       onCancel={(event) => {
         event.preventDefault();
         onDismiss();

@@ -36,7 +36,7 @@ with sync_playwright() as pw:
     if url.netloc!='accounts-review.fixture.invalid':external.append(request.url);route.abort();return
     if reject and url.path==endpoint and request.method=='GET':
      reject.pop();route.fulfill(status=503,headers={'content-type':'application/json'},body=json.dumps({'error':'Synthetic list outage: retry.'}));return
-    if hold and url.path==endpoint and request.method==hold[0]:pending.append(route);hold.pop();return
+    if hold and url.path.startswith(endpoint) and request.method==hold[0]:pending.append(route);hold.pop();return
     fulfill(route)
    page.route('**/*',route)
    def passed(name):checks.append(name)
@@ -107,6 +107,78 @@ with sync_playwright() as pw:
     expect(add_override).to_be_focused()
     assert data(endpoint) == before_keyboard_tests
     passed('Bidder and override dialogs wrap keyboard focus and return it to the exact opener without saving')
+
+    def escape_while_saving(finish_name):
+        hold.append('POST')
+        d.get_by_role('button', name=finish_name, exact=True).click()
+        expect(d.get_by_role('button', name='Saving…', exact=True)).to_be_disabled()
+        # A native close removes the open attribute during the Escape itself, before any reopen.
+        page.evaluate('''() => {
+            const changes = window.savingDialogOpenChanges = [];
+            new MutationObserver((records) => changes.push(...records)).observe(document.querySelector('dialog.bidder-form-dialog'), {attributeFilter: ['open']});
+        }''')
+        for _ in range(5):
+            page.keyboard.press('Escape')
+        # While the dialog stays open the page behind it is inert, so Enter cannot reach the opener and reset the form.
+        page.keyboard.press('Enter')
+        expect(page.locator('dialog.bidder-form-dialog')).to_have_js_property('open', True)
+        expect(d).to_be_visible()
+        assert page.evaluate('window.savingDialogOpenChanges.length') == 0, 'The saving dialog closed natively'
+        # The disabled Saving… button can leave focus on body; it must not reach the page behind the dialog.
+        assert page.evaluate('document.activeElement === document.body || document.querySelector("dialog[open]")?.contains(document.activeElement) === true'), 'Focus moved to the page behind the saving dialog'
+        assert len(pending) == 1
+        return pending.pop()
+
+    def synthetic_save_outage(held, message):
+        held.fulfill(status=503, headers={'content-type': 'application/json'}, body=json.dumps({'error': message}))
+
+    new_bidder.click()
+    bidder_code.fill('escape_failed')
+    held = escape_while_saving('Create bidder')
+    screen('bidder-saving-after-escape', d)
+    synthetic_save_outage(held, 'Synthetic bidder save outage: retry.')
+    expect(d.get_by_role('alert')).to_contain_text('Synthetic bidder save outage')
+    expect(d.get_by_role('alert')).to_be_visible()
+    expect(bidder_code).to_be_visible()
+    expect(bidder_code).to_have_value('escape_failed')
+    screen('bidder-save-failed-after-escape', d.get_by_role('alert'))
+    # Chromium closes the dialog on a non-cancelable Escape and sends the close event later, so the
+    # event can arrive after the failed save has rendered. close() reproduces that order every time.
+    page.evaluate('document.querySelector("dialog.bidder-form-dialog").close()')
+    expect(page.locator('dialog.bidder-form-dialog')).to_have_js_property('open', True)
+    expect(d.get_by_role('alert')).to_be_visible()
+    expect(bidder_code).to_have_value('escape_failed')
+    passed('A close event that arrives after a failed save reopens the mounted bidder dialog')
+    page.keyboard.press('Escape')
+    expect(d).to_have_count(0)
+    expect(new_bidder).to_be_focused()
+    new_bidder.click()
+    expect(bidder_code).to_be_focused()
+    expect(bidder_code).to_have_value('')
+    page.keyboard.press('Escape')
+    expect(d).to_have_count(0)
+    expect(new_bidder).to_be_focused()
+    passed('Repeated Escape cannot close a saving bidder dialog; a failed save keeps its error and form open')
+
+    add_override.click()
+    held = escape_while_saving('Create override')
+    synthetic_save_outage(held, 'Synthetic override save outage: retry.')
+    expect(d.locator('.form-error')).to_contain_text('Synthetic override save outage')
+    expect(d.locator('.form-error')).to_be_visible()
+    expect(d.get_by_label('Scope key', exact=False)).to_have_value('P1')
+    screen('override-save-failed-after-escape', d.locator('.form-error'))
+    page.keyboard.press('Escape')
+    expect(d).to_have_count(0)
+    expect(add_override).to_be_focused()
+    assert data(endpoint) == before_keyboard_tests
+    passed('Repeated Escape cannot close a saving override dialog; a failed save keeps its error and form open')
+
+    d = create('adf_escape', 'inherit', {'mid': 333}, 'Escape Adform')
+    fulfill(escape_while_saving('Create bidder'))
+    expect(d).to_have_count(0)
+    expect(card('adf_escape')).to_contain_text('Site chain')
+    expect(new_bidder).to_be_focused()
+    passed('Repeated Escape keeps a successful bidder save open until the save closes it')
 
     d=create('adf_smn','inherit',{'mid':111},'SMN Adform')
     d.get_by_role('button',name='Create bidder',exact=True).click();expect(d).to_have_count(0);expect(card('adf_smn')).to_contain_text('Site chain')
