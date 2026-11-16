@@ -14,6 +14,7 @@ fixture=json.loads(process.stdout.readline());assert fixture['ready']
 origin=fixture['origin'];assert urlsplit(origin).hostname=='127.0.0.1'
 errors=[];requests=[];checks=[]
 LOCK='Turn Prebid on or off in Prebid and bidders. Here you can change bid caching only.'
+RULES_NOTE='You can save rules now. Select and save script version {} before generating a package that uses them.'
 NEEDS='Bid caching needs script 3.23.0 or later.'
 BLOCKED=('Bid caching needs a compatible script version. Select 3.24.0 (Preview) in Script setup and save; your bid cache settings are kept. '
  'This version combines bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
@@ -48,10 +49,10 @@ try:
   page.goto(origin+'/named-scripts')
   page.get_by_text('A separate Tanjug test copy for named scripts. Bid caching for your TEST site is in Site workspace → Bid caching. Your existing TEST site stays unchanged. No ads run here.',exact=True).wait_for()
   check('Named script test does not tie bid caching to the Tanjug copy','bid-cache settings' not in page.locator('body').inner_text())
-  # Bidder rules name 3.22.0 only: 3.23.0 is later but has no bidder rules.
+  # Bidder rules name the versions the server derives for them with the saved options: 3.23.0 is later but has none.
   page.goto(origin+'/site-workspace#bidder-rules')
-  note=page.get_by_text('You can save rules now. Select and save script version 3.22.0 before generating a package that uses them.',exact=True);note.wait_for()
-  check('Bidder rules name script 3.22.0, not 3.22.0 or later','or later' not in page.locator('main').inner_text())
+  note=page.get_by_text(RULES_NOTE.format('3.22.2 (Preview) or 3.24.0 (Preview)'),exact=True);note.wait_for()
+  check('Bidder rules name 3.22.2 (Preview) or 3.24.0 (Preview), not a fixed version or "or later"','or later' not in page.locator('main').inner_text())
   # The TEST home page opens the TEST site's own Bid caching view.
   page.goto(origin+'/')
   link=page.get_by_role('link',name='Bid caching',exact=True);link.wait_for()
@@ -88,6 +89,11 @@ try:
   page.get_by_text('Change these under Bid cache by position below.',exact=False).wait_for()
   check('The override is saved and listed with this page as the place to change it',api('/api/publishers/test-site/prebid-mode')[1]['prebidMode']['bidCache'].get('positionOverrides')=={'Sticky':False})
   shots(page,'bid-cache-saved')
+  # With bid caching saved, Bidder rules name only the script that applies both.
+  page.goto(origin+'/site-workspace#bidder-rules')
+  page.get_by_text(RULES_NOTE.format('3.24.0 (Preview)'),exact=True).wait_for()
+  check('With bid caching saved, Bidder rules name only 3.24.0 (Preview)','3.22.2' not in page.locator('main').inner_text())
+  shots(page,'bidder-rules-bid-cache-saved')
   # Generate with 3.21.2: blocked, with the reason shown above Script setup.
   page.get_by_role('button',name='Generate and releases',exact=True).click()
   alert=page.get_by_role('alert').filter(has_text='Bid caching needs a compatible script version.');alert.wait_for()

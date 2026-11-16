@@ -4,6 +4,8 @@ import {createInterface} from 'node:readline';
 import {build} from 'esbuild';
 import worker from '../worker/app-builtin-runtime-preview.ts';
 import {adminAuditStore} from '../tests/support/admin-audit-store.mjs';
+import {runtimeCatalog} from '../worker/test-workspace/runtime-catalog.mjs';
+import {pinRuntime} from '../worker/runtime/version-pin.mjs';
 import {TEST_EMAIL,TEST_PASSWORD,TEST_SECRET} from '../tests/support/test-workspace-store.mjs';
 const origin='https://bidder-rules.fixture.invalid',siteId='audit-site';
 const f=adminAuditStore();
@@ -26,6 +28,11 @@ for await(const line of createInterface({input:process.stdin})){
     else if(input.path==='/__fixture/remove-bidder'){
       f.sqlite.prepare("DELETE FROM bidders WHERE publisher_id='audit-site' AND bidder='pubmatic'").run();
       f.sqlite.prepare("DELETE FROM ad_units WHERE publisher_id='audit-site' AND code='m.box_1'").run();response=Response.json({ok:true});
+    }else if(input.path==='/__fixture/bid-cache-323'){
+      // Saved bid caching with script 3.23.0, which applies bid caching but not bidder rules.
+      const runtime=pinRuntime(runtimeCatalog.find(entry=>entry.version==='3.23.0'),{allowPreview:true});
+      f.writeConfig({...f.readConfig(),prebidBidCache:{enabled:true,maxBidAgeSeconds:60},builtinRuntimeSelection:{schemaVersion:1,runtime,prebid:{id:'audit-prebid',version:'11.34.0',sha256:'0'.repeat(64),byteSize:1,modules:['pubmaticBidAdapter']}}});
+      response=Response.json({ok:true});
     }else if(input.path==='/__fixture/stale'){
       f.writeConfig({...f.readConfig(),otherTabChange:true});response=Response.json({ok:true});
     }else response=await worker.fetch(new Request(origin+input.path,{method:input.method,headers:{origin,cookie,...input.headers,...(input.body?{'content-type':'application/json'}:{})},body:input.body||undefined}),f.env,ctx);

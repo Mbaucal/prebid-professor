@@ -178,3 +178,16 @@ test('versions come from release capabilities: notices, superseded patches and t
   assert.equal(scriptGuidance({accounts:['pm_ag'],rules:true,cache:false},r322),'Script 3.22.0 cannot apply bidder accounts (pm_ag). To keep them with your saved bidder rules, select 3.22.2 (Preview) or 3.24.0 (Preview) in Script setup and save. Your saved settings and previous packages are unchanged.');
   assert.equal(scriptGuidance({accounts:['pm_ag'],rules:true,cache:true},runtimeCatalog.find(x=>x.version==='3.24.0')),null);
 });
+
+// Panel copy reads the versions from the server payloads, so it follows the saved options and the registry.
+test('the Bidder rules and Bidders payloads name the versions for their option plus the saved ones',async()=>{
+  const {getBidderRuleSettings}=await import('../../worker/site-runtime/bidder-rule-settings.mjs');
+  const {listBidders}=await import('../../worker/bidders.ts');
+  for(const [options,expected] of [[{},['3.22.2 (Preview)','3.24.0 (Preview)']],[{cache:true},['3.24.0 (Preview)']],[{cache:true,rules:true,alias:true,version:'3.23.0'},['3.24.0 (Preview)']]]){
+    const f=savedSite(options),label=JSON.stringify(options);
+    const rules=await getBidderRuleSettings(f.env,'audit-site');
+    assert.deepEqual(rules.scriptVersions,expected,label);assert.equal(rules.runtimeEligible,false,label);
+    const bidders=await (await listBidders(f.env,'audit-site')).json();
+    assert.deepEqual(bidders.accountScriptVersions,expected,label);assert.ok(Array.isArray(bidders.bidders),label);
+  }
+});

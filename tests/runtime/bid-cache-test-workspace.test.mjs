@@ -212,3 +212,16 @@ test('saved bidder accounts on 3.23.0: TEST Script setup and Releases name the s
  const ready=(await f.req('/test-api/site-packages')).data;
  assert.equal(ready.ready,true,ready.error);assert.equal(ready.runtime.runtimeVersion,'3.24.0');
 });
+
+test('the TEST Bidder rules view and Prebid editor name the versions for their option plus the saved ones',async()=>{
+ const f=await fixture();await enablePrebid(f);
+ // 3.22.1 is superseded by 3.22.2; 3.22.0 and 3.23.0 carry runtime notices; 3.23.0 has neither option.
+ const both=['3.22.2 (Preview)','3.24.0 (Preview)'];
+ assert.deepEqual((await f.req('/test-api/bidder-rules')).data.scriptVersions,both);
+ assert.deepEqual((await f.req('/test-api/prebid-settings')).data.accountScriptVersions,both);
+ // Saved bid caching: only the script that applies bid caching with bidder rules or bidder accounts.
+ const mode=(await f.req(MODE)).data;
+ assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
+ assert.deepEqual((await f.req('/test-api/bidder-rules')).data.scriptVersions,['3.24.0 (Preview)']);
+ assert.deepEqual((await f.req('/test-api/prebid-settings')).data.accountScriptVersions,['3.24.0 (Preview)']);
+});

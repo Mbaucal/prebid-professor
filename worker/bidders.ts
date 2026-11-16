@@ -14,6 +14,7 @@ import { apiError, getActor, json, readJson } from './http';
 import type { DatabaseEnv } from './publishers';
 import { normalizeBidderAccount, normalizeBidderAccounts } from '../shared/bidder-accounts/settings.mjs';
 import { assertCompilerStrings } from './compiler-input-compatibility.mjs';
+import { savedScriptVersionLabels } from './site-runtime/script-version-guidance.mjs';
 
 type BidderRow = {
   id: string;
@@ -267,11 +268,16 @@ export async function listBidders(env: DatabaseEnv, publisherId: string): Promis
     overridesByBidder.set(override.bidder, list);
   }
 
+  // The script versions the account form names: bidder accounts together with the site's other saved options.
+  const config = await env.DB.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1').bind(publisherId).first<{config_json: string}>();
+  const accountScriptVersions = savedScriptVersionLabels('bidder-accounts', {config: {config_json: config?.config_json ?? '{}'}, bidders: bidderResult.results ?? []});
+
   return json({
     ok: true,
     bidders: (bidderResult.results ?? []).map((row) =>
       toBidder(row, overridesByBidder.get(row.bidder) ?? []),
     ),
+    accountScriptVersions,
   });
 }
 

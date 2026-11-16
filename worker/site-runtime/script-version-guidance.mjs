@@ -26,8 +26,10 @@ export function scriptVersionsWith(capabilities,history=runtimeReleaseHistory){
     return !offered.some(other=>{const [m,n,p]=parts(other.version);return m===major&&n===minor&&p>patch&&covers(other,release.capabilities);});
   }).sort(byVersion);
 }
+/** ['3.22.2 (Preview)', '3.24.0 (Preview)'] for the panels, which join them like scriptVersionText. */
+export const scriptVersionLabels=(capabilities,history)=>scriptVersionsWith(capabilities,history).map(label);
 /** "3.22.2 (Preview) or 3.24.0 (Preview)"; empty when no release has every capability. */
-export const scriptVersionText=(capabilities,history)=>list(scriptVersionsWith(capabilities,history).map(label),'or');
+export const scriptVersionText=(capabilities,history)=>list(scriptVersionLabels(capabilities,history),'or');
 
 /** The saved options that only some scripts apply, by the same tests as their guards: active bidder accounts with an
  * alias or their own SChain (requireBidderAccounts), enabled bidder rules (requireBidderRulesRuntime) and bid caching
@@ -41,6 +43,14 @@ function configNeeds(config){
   // Invalid saved cache settings are refused at Generate with their own reason.
   let cache=false;try{cache=bidCacheActive(config);}catch{}
   return {rules:config?.enablePrebid===true&&config?.runtimeControls?.bidderRules?.enabled===true,cache};
+}
+/** The versions a panel names for its own option (bidder rules, or a bidder account not saved yet), together with
+ * the site's other saved options. Unreadable saved settings are left to the guards that refuse them. */
+export function savedScriptVersionLabels(capability,snapshot){
+  let needs;
+  try{needs=savedScriptNeeds(snapshot);}
+  catch{let config=null;try{config=JSON.parse(snapshot.config.config_json);}catch{}needs={accounts:[],...configNeeds(config)};}
+  return scriptVersionLabels([...new Set([capability,...neededCapabilities(needs)])]);
 }
 export const neededCapabilities=needs=>[...(needs.accounts.length?['bidder-accounts']:[]),...(needs.rules?['bidder-rules']:[]),...(needs.cache?['bid-cache']:[])];
 const NAMES={'bidder-accounts':'bidder accounts','bidder-rules':'bidder rules','bid-cache':'bid caching'};
