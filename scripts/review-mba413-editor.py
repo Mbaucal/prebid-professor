@@ -9,6 +9,8 @@ root=Path(__file__).resolve().parent.parent
 out=root/'.generated/review-mba413-ui';out.mkdir(parents=True,exist_ok=True)
 origin='https://accounts-review.fixture.invalid';site='account-review-site';endpoint='/api/publishers/'+site+'/bidders'
 results=[]
+# Script versions with bidder accounts in the registry, without runtime notices or superseded patches.
+ACCOUNT_SCRIPTS='3.22.2 (Preview) or 3.24.0 (Preview)'
 custom={'ver':'1.0','complete':1,'nodes':[{'asi':'agency-seller.example','sid':'agency-42','hp':1}]}
 with sync_playwright() as pw:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
@@ -60,6 +62,8 @@ with sync_playwright() as pw:
     d=create('adf_smn','inherit',{'mid':111},'SMN Adform')
     d.get_by_role('button',name='Create bidder',exact=True).click();expect(d).to_have_count(0);expect(card('adf_smn')).to_contain_text('Site chain')
     d=create('adf_ag','custom',{'mid':222},'Agency Adform')
+    expect(d.get_by_text('Aliases and account-specific SChain require',exact=False)).to_have_text(f'Aliases and account-specific SChain require script {ACCOUNT_SCRIPTS}. Save the account, then explicitly select one of these versions in Script setup and generate a new package. Existing scripts keep their saved settings.')
+    expect(d).not_to_contain_text('3.22.1');passed('Account form names the script versions that apply bidder accounts')
     d.get_by_label('Custom SChain JSON',exact=True).fill('{bad')
     d.get_by_role('button',name='Create bidder',exact=True).click();expect(d.get_by_role('alert')).to_contain_text('not valid JSON')
     expect(d.get_by_label('Base params JSON',exact=False)).to_have_value(json.dumps({'mid':222}));screen('custom-json-error',d.get_by_role('alert'));passed('Invalid custom chain preserves account and parameter input')
@@ -73,6 +77,7 @@ with sync_playwright() as pw:
     card('adf_ag').get_by_role('button',name='＋ Add override',exact=True).click();d=dialog();d.get_by_label('Scope type',exact=False).select_option('adunit');d.get_by_label('Scope key',exact=False).fill('P1');d.get_by_label('Params JSON',exact=False).fill('{"mid":224}')
     d.get_by_role('button',name='Create override',exact=True).click();expect(d).to_have_count(0)
     card('adf_ag').locator('.bidder-actions').get_by_role('button',name='Duplicate',exact=True).click();d=dialog();d.get_by_label('Bidder code',exact=False).fill('adf_ag2');expect(d.get_by_label('Base adapter',exact=True)).to_have_value('adf');expect(d.get_by_label('Account SChain',exact=True)).to_have_value('none');d.get_by_label('Enabled',exact=True).uncheck()
+    expect(d.get_by_text('the new account alias is registered by',exact=False)).to_contain_text(f'the new account alias is registered by script {ACCOUNT_SCRIPTS}. Review partner IDs')
     screen('duplicate-account',d);d.get_by_role('button',name='Duplicate bidder',exact=True).click();expect(d).to_have_count(0)
     saved=data(endpoint)['bidders'];copy=next(row for row in saved if row['bidder']=='adf_ag2');agency=next(row for row in saved if row['bidder']=='adf_ag');assert not copy['enabled'] and copy['schain']['mode']=='none';assert copy['overrides'][0]['bidder']=='adf_ag2' and copy['overrides'][0]['id']!=agency['overrides'][0]['id'];passed('Duplicate preserves mode and base adapter, copies overrides to distinct account, and respects disabled state')
     card('adf_ag').get_by_role('button',name='Edit bidder',exact=True).click();d=dialog();d.get_by_label('Base params JSON',exact=False).fill('{"mid":999}')

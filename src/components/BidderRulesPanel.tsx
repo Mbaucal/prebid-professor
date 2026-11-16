@@ -2,14 +2,17 @@ import {useEffect,useRef,useState} from 'react';
 import {evaluateBidderRule,normalizeBidderRules} from '../../shared/bidder-rules/settings.mjs';
 import type {BidderRule,BidderRules,DeviceLayout} from '../../shared/bidder-rules/settings.mjs';
 import {normalizeCountry} from '../../shared/geo-country.mjs';
+import {versionChoice} from '../site-workspace/runtime-labels';
 import '../bidder-rules.css';
 
 type Props={publisherId:string;onChanged?:()=>void|Promise<void>;endpoint?:string};
-type Payload={revision:string;settings:BidderRules;bidders:{bidder:string;enabled:boolean;configured:boolean}[];positions:{code:string;enabled:boolean;configured:boolean}[];enablePrebid:boolean;runtimeEligible:boolean;published:false};
+type Payload={revision:string;settings:BidderRules;bidders:{bidder:string;enabled:boolean;configured:boolean}[];positions:{code:string;enabled:boolean;configured:boolean}[];enablePrebid:boolean;runtimeEligible:boolean;scriptVersions:string[];published:false};
 type RuleDraft=Omit<BidderRule,'countries'>&{scope:'all'|'selected';countries:Omit<BidderRule['countries'],'values'>&{codes:string}};
 type Draft=Omit<BidderRules,'rules'>&{rules:RuleDraft[]};
 const layouts:{id:DeviceLayout;label:string}[]=[{id:'mobile',label:'Mobile · below 768px'},{id:'tablet',label:'Tablet · 768–1023px'},{id:'desktop',label:'Desktop · 1024px and above'}];
 const reasons:Record<string,string>={disabled:'Bidder rules are off.', 'no-rule':'No matching rule. Normal bidder setup applies.', 'layout-excluded':'This viewport layout is excluded.', 'layout-unknown':'Viewport width is unknown and the rule allows only selected layouts.', 'country-unknown-allowed':'Country is unknown; this rule allows it.', 'country-unknown-skipped':'Country is unknown; this rule skips it.', 'country-excluded':'This country is excluded.',allowed:'Country and viewport layout match.'};
+// Versions from the server: those with bidder rules and every other saved option, such as bid caching.
+const scriptChoice=(payload:Payload)=>{const choice=versionChoice(payload.scriptVersions??[]);return choice?`script version ${choice}`:'a script version that applies bidder rules with your other saved options';};
 function draftFor(settings:BidderRules):Draft{
   return {...structuredClone(settings),rules:settings.rules.map(rule=>({...structuredClone(rule),scope:rule.positions.length?'selected':'all',countries:{mode:rule.countries.mode,unknown:rule.countries.unknown,codes:rule.countries.values.join(', ')}}))};
 }
@@ -53,7 +56,7 @@ export default function BidderRulesPanel({publisherId,onChanged,endpoint}:Props)
     try{
       const value=await request({revision:data.revision,settings:validated(draft)});
       if(!alive.current||id!==operation.current)return;
-      setData(value);setDraft(draftFor(value.settings));setMessage('Saved. Generate a new script with version 3.22.0 or later to apply these rules. Existing scripts are unchanged.');
+      setData(value);setDraft(draftFor(value.settings));setMessage(!value.settings.enabled?'Saved. Generate a new script to apply this change. Existing scripts are unchanged.':value.runtimeEligible?'Saved. Generate a new script to apply these rules. Existing scripts are unchanged.':`Saved. Select and save ${scriptChoice(value)}, then generate a new script to apply these rules. Existing scripts are unchanged.`);
       try{await onChanged?.();}catch{/* A parent refresh does not undo the successful save. */}
     }catch(e){if(alive.current&&id===operation.current)setError((e as Error).message);}
     finally{if(id===operation.current){savingRef.current=false;if(alive.current)setSaving(false);}}
@@ -83,7 +86,7 @@ export default function BidderRulesPanel({publisherId,onChanged,endpoint}:Props)
         <legend>1. Enable rules</legend>
         <label className="check-row"><input type="checkbox" checked={draft.enabled} onChange={event=>change({enabled:event.target.checked})}/><span>Enable bidder rules for this site</span></label>
         <p className="bidder-rules-help">A bidder with no matching rule keeps its normal behavior. A rule for selected positions overrides that bidder’s All positions rule. Country and viewport layout must both match.</p>
-        {!data.runtimeEligible?<p className="bidder-rules-note">You can save rules now. Select and save script version 3.22.0 or later before generating a package that uses them.</p>:null}
+        {!data.runtimeEligible?<p className="bidder-rules-note">You can save rules now. Select and save {scriptChoice(data)} before generating a package that uses them.</p>:null}
         {!data.enablePrebid?<p className="bidder-rules-note">Prebid is off. Rules remain saved and are not applied in a GAM-only package.</p>:null}
       </fieldset>
       <fieldset className="bidder-rules-card" disabled={saving}>
