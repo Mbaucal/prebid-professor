@@ -1,5 +1,5 @@
 import {normalizeBidderAccount} from '../../shared/bidder-accounts/settings.mjs';
-import { defaultUserIdSettings } from '../user-id-config.ts';
+import { defaultUserIdSettings, validateLotameClientId } from '../user-id-config.ts';
 import { descriptorForPin, previewInput } from './runtime-catalog.mjs';
 /** Data-only Prebid Download plan. Uses the same normalized input as activation. */
 import { fields, params, normalizePrebidDraft } from './prebid-draft.mjs';
@@ -12,7 +12,7 @@ export const USER_IDS = Object.freeze([
   {name:'id5Id',label:'ID5',module:'id5IdSystem',settings:{params:{partner:0},storage:{type:'html5',name:'id5id',expires:90,refreshInSeconds:7200}}},
   {name:'teadsId',label:'Teads ID',module:'teadsIdSystem',settings:{params:{pubId:0}}},
   {name:'criteo',label:'Criteo ID',module:'criteoIdSystem',settings:{}},
-  {name:'lotamePanoramaId',label:'Lotame Panorama',module:'lotamePanoramaIdSystem',settings:{params:{clientId:''}}},
+  {name:'lotamePanoramaId',label:'Lotame Panorama',module:'lotamePanoramaIdSystem',settings:{}},
 ]);
 const fail = (message) => {throw new WorkspaceError(422,message);};
 export function planOptions(config) {
@@ -54,7 +54,9 @@ function normalizeOptions(input) {
       if(row.name==='sharedId'&&!settings.storage)fail('SharedID needs storage settings.');
       if(row.name==='id5Id'&&(!Number.isInteger(settings.params?.partner)||settings.params.partner<1))fail('Enter your ID5 Partner Number in params.partner.');
       if(row.name==='teadsId'&&(!Number.isInteger(settings.params?.pubId)||settings.params.pubId<1))fail('Enter your Teads Publisher ID in params.pubId.');
-      if(row.name==='lotamePanoramaId'&&!String(settings.params?.clientId??'').trim())fail('Enter your Lotame clientId.');
+      if(row.name==='lotamePanoramaId'){
+        try{validateLotameClientId(settings.params??{});}catch(error){fail(error.message);}
+      }
     }
     return {name:row.name,enabled:row.enabled,settings};
   }).sort((a,b)=>a.name.localeCompare(b.name));

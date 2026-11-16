@@ -67,6 +67,31 @@ test('existing disabled User ID records and private settings are retained throug
 });
 test('supply chain and all supported User IDs derive requirements from actual normalized input',()=>{const p=prebidRequirements({core:{bidders:[{bidder:'ix'}],userSync:{userIds:['sharedId','id5Id','teadsId','criteo','lotamePanoramaId'].map(name=>({name}))}},options:{enablePrebid:true,floors:{enabled:false},currencyConversion:{enabled:false},schain:{nodes:[{}]}}});assert.deepEqual(p.modules,['consentManagementTcf','criteoIdSystem','id5IdSystem','ixBidAdapter','lotamePanoramaIdSystem','schain','sharedIdSystem','tcfControl','teadsIdSystem','userId']);});
 test('public verification messages drop raw storage failures and unknown issue content',()=>{const s=prebidFailureMessage({missingModules:['openxBidAdapter'],issues:[{code:'storage_read_failed',message:'secret key'},{code:'unknown',message:'private error'}]});assert(!/secret|private/.test(s));assert.match(s,/openxBidAdapter.*Bidder: openx/);});
+test('Lotame without a clientId survives TEST plan save/reload, activation and generation',async()=>{
+  const f=await ready(),r=await request(f),id=r.options.userIds.find(row=>row.name==='lotamePanoramaId');
+  assert.deepEqual(id.settings,{});id.enabled=true;
+  const p=await plan(f,r);assert(p.configuration.modules.includes('lotamePanoramaIdSystem'));
+  await saveBuildPlan(f.env,actor,{...r,acknowledge:true});
+  const pending=await getPrebidSettings(f.env);
+  assert.deepEqual(pending.plan.options.userIds.find(row=>row.name==='lotamePanoramaId').settings,{});
+  r.expectedRevision=pending.revision;r.draft.buildId=await upload(f,p.configuration);await activate(f,r);
+  const settings=await snap(f),resolved=await selectedWorkspaceRuntime(settings,f.env.BUILDS),{prebidBuilds,...snapshot}=settings;
+  const out=await buildArtifactCandidate({snapshot,pin:resolved.pin,buildTimestamp:'20261116_120000',takeOver:{enabled:false},prebid:resolved.prebid});
+  const source=new TextDecoder().decode(out.files['ads.js']);
+  assert.match(source,/name:\s*"lotamePanoramaId"/);assert.doesNotMatch(source,/clientId/);
+  const loaded=await getPrebidSettings(f.env);
+  assert.deepEqual(loaded.options.userIds.find(row=>row.name==='lotamePanoramaId').settings,{});
+});
+test('TEST Lotame plan preserves a custom clientId and rejects malformed supplied values without writes',async()=>{
+  const f=await ready(),r=await request(f),id=r.options.userIds.find(row=>row.name==='lotamePanoramaId');id.enabled=true;
+  id.settings={params:{clientId:'1001'}};
+  assert.deepEqual((await plan(f,r)).options.userIds.find(row=>row.name===id.name).settings,id.settings);
+  for(const clientId of ['', '  ', null, 1001, false, {}, []]){
+    id.settings={params:{clientId}};const before=await snap(f);
+    await assert.rejects(plan(f,r),error=>error.status===422&&/clientId must be a nonempty string when supplied/.test(error.message));
+    assert.deepEqual(await snap(f),before);
+  }
+});
 for(const change of [r=>r.version='latest',r=>r.options.userIds[0].settings={name:'evil'},r=>r.options.userIds[0].settings=JSON.parse('{"__proto__":{"x":1}}'),r=>r.options.currencyConversionEnabled='false'])test('invalid plan never writes: '+change,async()=>{const f=await ready(),r=await request(f),before=await snap(f);change(r);await assert.rejects(plan(f,r));assert.deepEqual(await snap(f),before);});
 
 test('preparation response carries its committed revision for continuing without reloading the form',async()=>{

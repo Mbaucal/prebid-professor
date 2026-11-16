@@ -95,9 +95,9 @@ export const USER_ID_CATALOG: CatalogItem[] = [
     name: 'lotamePanoramaId',
     moduleCode: 'lotamePanoramaIdSystem',
     label: 'Lotame Panorama ID',
-    description: 'Lotame Panorama identity module configured with a registered client ID.',
-    registration: 'Requires a Lotame Panorama Client ID.',
-    defaultParams: { clientId: '' },
+    description: 'Lotame Panorama identity module with an optional client ID.',
+    registration: 'Lotame registration provides a client ID. The Prebid module also accepts an omitted clientId; confirm enrollment requirements with Lotame.',
+    defaultParams: {},
     defaultStorage: null,
   },
 ];
@@ -202,7 +202,15 @@ function normalizeStorage(value: unknown, moduleName: string): JsonRecord | null
   return storage;
 }
 
-function validateKnownModule(module: UserIdModuleConfig, warnings: string[]): void {
+/** Reviewed Prebid 9/11 modules accept no clientId; supplied IDs follow their string contract. */
+export function validateLotameClientId(params: JsonRecord): void {
+  if (!Object.prototype.hasOwnProperty.call(params, 'clientId')) return;
+  if (typeof params.clientId !== 'string' || !params.clientId.trim()) {
+    throw new Error('lotamePanoramaId.params.clientId must be a nonempty string when supplied.');
+  }
+}
+
+function validateKnownModule(module: UserIdModuleConfig, warnings: string[], readingStored = false): void {
   if (!module.enabled) return;
 
   if (module.name === 'sharedId' && !module.storage) {
@@ -228,8 +236,18 @@ function validateKnownModule(module: UserIdModuleConfig, warnings: string[]): vo
     }
   }
 
-  if (module.name === 'lotamePanoramaId' && !String(module.params.clientId ?? '').trim()) {
-    throw new Error('lotamePanoramaId.params.clientId is required.');
+  if (module.name === 'lotamePanoramaId') {
+    try {
+      validateLotameClientId(module.params);
+    } catch (error) {
+      // Earlier saves accepted numbers/objects through String(value). Reading
+      // them must not discard this module or the site's other saved User IDs.
+      if (!readingStored || !String(module.params.clientId ?? '').trim()) throw error;
+      warnings.push('The saved Lotame clientId must be corrected to a nonempty string or omitted before saving User ID settings.');
+    }
+    if (!Object.prototype.hasOwnProperty.call(module.params, 'clientId')) {
+      warnings.push('Lotame clientId is omitted. The Prebid module supports this configuration; confirm enrollment requirements with Lotame.');
+    }
   }
 
   if (module.name === 'criteo' && module.storage) {
@@ -237,7 +255,7 @@ function validateKnownModule(module: UserIdModuleConfig, warnings: string[]): vo
   }
 }
 
-function normalizeModule(value: unknown, index: number, warnings: string[]): UserIdModuleConfig {
+function normalizeModule(value: unknown, index: number, warnings: string[], readingStored = false): UserIdModuleConfig {
   if (!isRecord(value)) throw new Error(`modules[${index}] must be an object.`);
 
   const name = String(value.name ?? '').trim();
@@ -266,11 +284,11 @@ function normalizeModule(value: unknown, index: number, warnings: string[]): Use
   assertCompilerStrings(module.storage, `${name}.storage`);
   assertCompilerStrings(module.value, `${name}.value`);
 
-  validateKnownModule(module, warnings);
+  validateKnownModule(module, warnings, readingStored);
   return module;
 }
 
-function normalizeConfig(value: unknown): { config: UserIdConfig; warnings: string[] } {
+function normalizeConfig(value: unknown, readingStored = false): { config: UserIdConfig; warnings: string[] } {
   if (!isRecord(value)) throw new Error('userIdConfig must be an object.');
   const warnings: string[] = [];
 
@@ -289,7 +307,7 @@ function normalizeConfig(value: unknown): { config: UserIdConfig; warnings: stri
   if (!Array.isArray(rawModules)) throw new Error('modules must be an array.');
   if (rawModules.length > 50) throw new Error('No more than 50 User ID modules can be configured.');
 
-  const modules = rawModules.map((module, index) => normalizeModule(module, index, warnings));
+  const modules = rawModules.map((module, index) => normalizeModule(module, index, warnings, readingStored));
   const names = new Set<string>();
   const moduleCodes = new Set<string>();
   for (const module of modules) {
@@ -342,7 +360,7 @@ function storedUserIdConfig(config: JsonRecord): UserIdConfig {
   const raw = config.userIdConfig;
   if (!isRecord(raw)) return cloneDefault();
   try {
-    return normalizeConfig(raw).config;
+    return normalizeConfig(raw, true).config;
   } catch {
     return cloneDefault();
   }
@@ -388,7 +406,7 @@ export function defaultUserIdSettings(): {userIdConfig: UserIdConfig; userSync: 
 /** Called only on an explicit setup/mode save; never backfill existing sites on read. */
 export function initializeMissingUserSync<T extends JsonRecord>(config: T): T {
   if (Object.prototype.hasOwnProperty.call(config, 'userSync')) return config;
-  const userIdConfig = isRecord(config.userIdConfig) ? normalizeConfig(config.userIdConfig).config : cloneDefault();
+  const userIdConfig = isRecord(config.userIdConfig) ? normalizeConfig(config.userIdConfig, true).config : cloneDefault();
   return { ...config, userIdConfig, userSync: compileUserSync(userIdConfig) };
 }
 
@@ -435,7 +453,7 @@ export async function getUserIdConfig(env: DatabaseEnv, siteId: string): Promise
     userSyncPreview: compileUserSync(config),
     requiredModules: requiredModules(config),
     catalog: USER_ID_CATALOG,
-    warnings: [...normalizeConfig(config).warnings, ...(!isRecord(row.config.userSync) && row.config.enablePrebid !== false
+    warnings: [...normalizeConfig(config, true).warnings, ...(!isRecord(row.config.userSync) && row.config.enablePrebid !== false
       ? ['User ID settings have not been saved. Existing generated scripts use cookie sync off. Review these defaults and save before generating a new package.'] : [])],
   });
 }
