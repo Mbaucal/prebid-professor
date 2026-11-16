@@ -43,3 +43,19 @@ test('fresh repeated save does not create duplicate audit or mutate other config
 test('mutation after commit reports uncertainty rather than undoing successfully saved values',async()=>{const f=await ready(),p=await proposal(f),plan=await preparePrebidSettings(f.env,p);const original=f.env.DB.batch;f.env.DB.batch=async(items)=>{const rows=await original(items);throw Error('Lost after COMMIT');};await assert.rejects(commitPrebidSettings(f.store,plan,actor),e=>e.status===503);f.env.DB.batch=original;assert.equal((await read(f)).draft.enablePrebid,true);});
 for(const change of [d=>d.bidders[0].params=[],d=>d.bidders.push(d.bidders[0]),d=>d.bidders[0].bidder='unknown',d=>d.bidders[0].params=JSON.parse('{"__proto__":{"x":1}}'),d=>d.bidders[0].params={x:{constructor:1}},d=>d.bidders[0].params={},d=>d.buildId='https://example.invalid/prebid.js'])test('rejects unsupported bidder or build input: '+String(change),async()=>{const f=await ready(),p=await proposal(f),before=await snap(f);change(p.draft);await assert.rejects(save(f,p));assert.deepEqual(await snap(f),before);});
 test('new upload may be retried after 50-file quota; a 51st registration is refused',async()=>{const f=await ready(),first=await upload(f);for(let i=1;i<50;i++){const data=await inspectUpload(file(String(i)));f.sqlite.prepare("INSERT INTO prebid_builds(id,publisher_id,version,file_key,modules_json,status) VALUES(?,?,?,?,?,'archived')").run(data.id,'test-site',data.version,data.key,JSON.stringify(data.modules));}assert.equal((await upload(f)).created,false);await assert.rejects(upload(f,file('fifty-one')),e=>e.status===409);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM prebid_builds').get().n,50);});
+// The account note names the script versions the server derives for bidder accounts with the site's other saved
+// options, never the superseded 3.22.1 or "a later version" (3.23.0 is later and has no bidder accounts).
+test('the account note names the script versions from the server, narrowed by saved bid caching',async()=>{
+  const {prebidPage,prebidScript}=await import('../../worker/test-workspace/prebid-page.mjs');
+  assert.doesNotMatch(prebidPage(),/3\.22\.1|or a later version/);
+  assert.match(prebidPage(),/<p class="muted" id="account-scripts">Account aliases and custom or no-upstream SChain require a script version that applies bidder accounts with your other saved options\. Saving preparation does not switch the script version\.<\/p>/);
+  assert.match(prebidScript,/el\('account-scripts'\)\.textContent=accountNote\(state\.accountScriptVersions\|\|\[\]\)/);
+  const accountNote=new Function(`${/^function accountNote\(versions\)\{.*\}$/m.exec(prebidScript)?.[0]??''};return accountNote;`)();
+  assert.equal(accountNote(['3.22.2 (Preview)','3.24.0 (Preview)']),'Account aliases and custom or no-upstream SChain require script 3.22.2 (Preview) or 3.24.0 (Preview). Saving preparation does not switch the script version.');
+  assert.equal(accountNote(['3.24.0 (Preview)']),'Account aliases and custom or no-upstream SChain require script 3.24.0 (Preview). Saving preparation does not switch the script version.');
+  const f=await ready();await save(f,await proposal(f));
+  assert.deepEqual((await read(f)).accountScriptVersions,['3.22.2 (Preview)','3.24.0 (Preview)']);
+  const c=JSON.parse((await snap(f)).config.config_json);c.prebidBidCache={enabled:true,maxBidAgeSeconds:45};
+  f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(c));
+  assert.deepEqual((await read(f)).accountScriptVersions,['3.24.0 (Preview)']);
+});

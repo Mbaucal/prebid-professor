@@ -7,6 +7,8 @@ from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/review-mba413-test-editor';out.mkdir(parents=True,exist_ok=True)
 custom={'ver':'1.0','complete':1,'nodes':[{'asi':'agency.example','sid':'agency-42','hp':1}]}
+# Script versions with bidder accounts in the registry, without runtime notices or superseded patches.
+ACCOUNT_SCRIPTS='3.22.2 (Preview) or 3.24.0 (Preview)'
 reports=[]
 with sync_playwright() as pw:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
@@ -52,6 +54,8 @@ with sync_playwright() as pw:
    try:
     reject.append(True);page.goto(origin+'/prebid-settings',wait_until='domcontentloaded');expect(page.locator('#message')).to_contain_text('Synthetic TEST read outage');screen('read-error')
     page.locator('#reload-prebid').click();expect(page.locator('#editor')).to_be_enabled();checks.append('Read failure is visible and reload recovers actual TEST data')
+    expect(page.locator('#account-scripts')).to_have_text(f'Account aliases and custom or no-upstream SChain require script {ACCOUNT_SCRIPTS}. Saving preparation does not switch the script version.')
+    expect(page.locator('#editor')).not_to_contain_text('3.22.1');checks.append('Account note names the script versions that apply bidder accounts')
     own=add('adf_smn','inherit',111,'SMN Adform');agency=add('adf_ag','custom',222,'Agency Adform');field(agency,'schainJson').fill('{bad')
     page.locator('#enable-prebid').check();saveplan();expect(page.locator('#message.error')).to_contain_text('JSON');expect(field(agency,'params')).to_have_value(json.dumps({'mid':222}));screen('custom-json-error',agency)
     assert not data('/__fixture/snapshot')['bidders'];checks.append('Invalid custom JSON is rejected without activation or lost account inputs')
