@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { publicRuntimeChoices, publicRuntimeHistory, runtimeLabel } from '../site-workspace/runtime-labels';
 import { runtimeNotice, runtimeNoticeSuffix, runtimeNoticeText } from '../site-workspace/runtime-notices';
 import '../site-workspace/runtime.css';
@@ -46,6 +46,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
   const [stale, setStale] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const noticeId = useId();
 
   async function request(body?: unknown): Promise<State> {
     const response = await fetch(url, {
@@ -121,7 +122,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
         </label>
       </div>
       <label>Script version
-        <select aria-label="Script version" value={selection ? pinKey(selection) : ''} disabled={busy || stale || unavailable} onChange={event => {
+        <select aria-label="Script version" aria-describedby={notice ? noticeId : undefined} value={selection ? pinKey(selection) : ''} disabled={busy || stale || unavailable} onChange={event => {
           const next = versionOptions.find(item => pinKey(item.pin) === event.target.value);
           if (next) { setSelection(next.pin); setMessage(''); }
         }}>
@@ -137,7 +138,8 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
         {current && !isCurrent ? <button type="button" disabled={busy || stale} onClick={() => { setSelection(current.pin); setMessage(''); }}>Use current version</button> : null}
       </div>
       {selected?.channel === 'preview' ? <p className="script-prebid-note" role="note">Preview version selected. Save explicitly and verify a generated package on TEST before using it on a live site.</p> : null}
-      {notice ? <p className="script-prebid-note" role="note">{runtimeNoticeText(notice, choices, current)}</p> : null}
+      {/* Described by the select, so screen readers hear the warning with the version, not only when reading the page. */}
+      {notice ? <p id={noticeId} className="script-prebid-note" role="note">{runtimeNoticeText(notice, choices, current)}</p> : null}
       <p className="script-prebid-note">Changing the script version keeps your ad units, size maps, bidders and other site settings. Save the setup, then generate a new package to apply it.</p>
       {selected?.pin.capabilities?.includes('consent-readiness') ? <p className="script-prebid-note">
         Waits for your CMP decision before requesting ads. If Prebid fails to load, Google ads are requested only after consent is resolved.

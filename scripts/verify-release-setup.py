@@ -2,7 +2,7 @@
 import base64,json,re,subprocess,zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/site-workspace-evidence';out.mkdir(exist_ok=True)
 process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/site-workspace-browser-fixture.mjs','--release-setup'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
@@ -120,6 +120,8 @@ try:
     legacy_notice.wait_for()
     assert legacy_notice.text_content()==legacy_warning(current_label),legacy_notice.text_content()
     assert legacy_notice.get_attribute('class')==preview_notice_class
+    # Screen readers hear the warning with the select, not only when reading the page.
+    expect(version).to_have_accessible_description(legacy_warning(current_label))
     assert page.locator('.script-version-summary').text_content().startswith('Script version 3.22.0 · Unsaved version change')
     assert not preview_notice.is_visible()
     assert page.get_by_role('button',name='Save script setup',exact=True).is_enabled()
@@ -130,6 +132,7 @@ try:
     page.get_by_role('button',name='Use current version',exact=True).click()
     assert version.input_value()==by_label[stable]
     assert legacy_notice.count()==0
+    assert version.get_attribute('aria-describedby') is None
     chosen='3.14.0'
     version.select_option(next(item['value'] for item in options if item['label'].split(' · ')[0]==chosen))
     assert page.get_by_text('Frozen engine',exact=True).count()==0
@@ -183,6 +186,7 @@ try:
     legacy_notice.wait_for()
     assert version.locator('option:checked').text_content().strip()==legacy
     assert legacy_notice.text_content()==legacy_warning(current_label)
+    expect(version).to_have_accessible_description(legacy_warning(current_label))
     assert page.locator('.script-version-summary').filter(has_text='Script version').text_content().startswith('Script version 3.22.0 · Saved version')
     page.screenshot(path=str(out/'runtime-322-saved-desktop.png'),full_page=True)
     page.set_viewport_size({'width':390,'height':844})
