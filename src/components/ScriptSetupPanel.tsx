@@ -127,9 +127,9 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
           if (next) { setSelection(next.pin); setMessage(''); }
         }}>
           {!selection ? <option value="">Unavailable</option> : null}
-          {/* While a noticed saved version is also selected, its notice takes the place of the plain saved marker so the closed select fits a phone-width screen; the line below then says Saved version. In the open list, with another version selected, the choice keeps the marker. */}
+          {/* While a noticed or Preview saved version is also selected, the closed select leaves out the plain saved marker so it fits a phone-width screen; the line below then says Saved version. In the open list, with another version selected, the choice keeps the marker. */}
           {versionOptions.map(item => <option key={pinKey(item.pin)} value={pinKey(item.pin)} disabled={item === savedOption && !savedRuntime}>
-            {runtimeLabel(item.version)}{item.channel === 'preview' ? ' · Preview' : ''}{runtimeNoticeSuffix(item.pin)}{samePin(item.pin, current?.pin ?? null) ? ' · Current version' : item === savedOption ? savedRuntime ? ' · Saved earlier build' : ' · Saved version unavailable' : samePin(item.pin, state.selected) && !(runtimeNotice(item.pin) && samePin(item.pin, selection)) ? ' · Saved version' : ''}
+            {runtimeLabel(item.version)}{item.channel === 'preview' ? ' · Preview' : ''}{runtimeNoticeSuffix(item.pin)}{samePin(item.pin, current?.pin ?? null) ? ' · Current version' : item === savedOption ? savedRuntime ? ' · Saved earlier build' : ' · Saved version unavailable' : samePin(item.pin, state.selected) && !((runtimeNotice(item.pin) || item.channel === 'preview') && samePin(item.pin, selection)) ? ' · Saved version' : ''}
           </option>)}
         </select>
       </label>
