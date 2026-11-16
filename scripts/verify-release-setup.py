@@ -190,6 +190,18 @@ try:
     assert legacy_notice.is_visible() and legacy_notice.text_content()==legacy_warning(current_label)
     fit=select_fits(version);fits.append({'viewport':390,'context':'Releases inline setup','state':'saved',**fit});assert fit['fits'],fit
     page.screenshot(path=str(out/'runtime-322-saved-mobile.png'),full_page=True)
+    # With 3.22.0 saved and another version selected, its choice still says it is the saved version.
+    page.get_by_role('button',name='Use current version',exact=True).click()
+    assert version.input_value()==by_label[stable]
+    labels=[label.strip() for label in version.locator('option').all_text_contents()]
+    assert legacy+' · Saved version' in labels and legacy not in labels,labels
+    assert page.locator('.script-version-summary').filter(has_text='Script version').text_content().startswith('Script version '+current_label+' · Unsaved version change')
+    assert legacy_notice.count()==0
+    page.screenshot(path=str(out/'runtime-322-saved-switched-mobile.png'),full_page=True)
+    version.select_option(by_label[legacy])
+    legacy_notice.wait_for()
+    assert version.locator('option:checked').text_content().strip()==legacy
+    assert page.locator('.script-version-summary').filter(has_text='Script version').text_content().startswith('Script version 3.22.0 · Saved version')
     page.get_by_role('button',name='Cancel setup changes',exact=True).click()
     summary.wait_for()
     assert summary.text_content().startswith('GAM / AdX only · '+legacy)
