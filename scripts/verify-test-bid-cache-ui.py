@@ -15,7 +15,8 @@ origin=fixture['origin'];assert urlsplit(origin).hostname=='127.0.0.1'
 errors=[];requests=[];checks=[]
 LOCK='Turn Prebid on or off in Prebid and bidders. Here you can change bid caching only.'
 NEEDS='Bid caching needs script 3.23.0 or later.'
-BLOCKED=('Bid caching needs script version 3.23.0. Select 3.23.0 in Script setup and save; your bid cache settings are kept. '
+BLOCKED=('Bid caching needs a compatible script version. Select 3.24.0 (Preview) in Script setup and save; your bid cache settings are kept. '
+ 'This version combines bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
  'To keep this script version instead, open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position.')
 def check(name,ok):
  assert ok,name
@@ -41,7 +42,7 @@ def shots(page,name):
  page.set_viewport_size({'width':1280,'height':900})
 try:
  with sync_playwright() as p:
-  browser=p.chromium.launch(headless=True);page=browser.new_page(viewport={'width':1280,'height':900})
+  browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'));page=browser.new_page(viewport={'width':1280,'height':900})
   page.route('**/*',route);page.on('pageerror',lambda e:errors.append(str(e)))
   # The named-script page does not present the Tanjug copy as the place for bid caching.
   page.goto(origin+'/named-scripts')
@@ -73,10 +74,10 @@ try:
   check('The site default is saved for the TEST site',status==200 and mode['prebidMode']['bidCache']=={'enabled':True,'maxBidAgeSeconds':45} and mode['prebidMode']['enabled'] is True)
   page.get_by_role('button',name='Sticky · Bid cache: On',exact=True).click()
   dialog=page.get_by_role('dialog',name='Bid cache · Sticky',exact=True);dialog.get_by_label('Bid cache for Sticky',exact=True).wait_for()
-  check('The position dialog asks for 3.23.0 without production menus',dialog.get_by_text('Applies to the next package generated with script 3.23.0 or later. Select 3.23.0 in Script setup to use it.',exact=True).is_visible())
+  check('The position dialog asks for a compatible script without production menus',dialog.get_by_text('Applies to the next package generated with script 3.23.0 or later. Select a compatible script in Script setup to use it.',exact=True).is_visible())
   dialog.get_by_label('Bid cache for Sticky',exact=True).select_option('off')
   dialog.get_by_role('button',name='Save position setting').click()
-  dialog.get_by_role('status').filter(has_text='Saved. Select script 3.23.0 in Script setup to apply it.').wait_for()
+  dialog.get_by_role('status').filter(has_text='Saved. Select a compatible script in Script setup to apply it.').wait_for()
   page.set_viewport_size({'width':390,'height':844})
   check('The position dialog fits 390 px',dialog.bounding_box()['width']<=390 and no_scroll(page))
   page.screenshot(path=str(out/'bid-cache-position-390.png'))
@@ -89,7 +90,7 @@ try:
   shots(page,'bid-cache-saved')
   # Generate with 3.21.2: blocked, with the reason shown above Script setup.
   page.get_by_role('button',name='Generate and releases',exact=True).click()
-  alert=page.get_by_role('alert').filter(has_text='Bid caching needs script version 3.23.0.');alert.wait_for()
+  alert=page.get_by_role('alert').filter(has_text='Bid caching needs a compatible script version.');alert.wait_for()
   setup=page.get_by_role('heading',name='Script setup',exact=True).first
   check('Generate is blocked with the TEST reason above Script setup',alert.inner_text()==BLOCKED
    and page.get_by_role('button',name='Generate and save package',exact=True).count() in (0,1)
@@ -106,13 +107,13 @@ try:
    and status==409 and refused=={'error':BLOCKED})
   shots(page,'home-generate-blocked')
   page.goto(origin+'/site-workspace#packages')
-  page.get_by_role('alert').filter(has_text='Bid caching needs script version 3.23.0.').wait_for()
+  page.get_by_role('alert').filter(has_text='Bid caching needs a compatible script version.').wait_for()
   # Select 3.23.0 the way Script setup saves it, then generate and download.
   status,state=api('/test-api/runtime-selection')
   pin=next(r['pin'] for r in state['runtimes'] if r['version']=='3.23.0')
   status,_=api('/test-api/runtime-selection',{'expectedRevision':state['revision'],'selection':{'runtime':pin,'allowPreview':True,'enablePrebid':True,'prebidBuildId':state['prebidBuildId']}});assert status==200,_
   page.reload();page.get_by_label('What changed?',exact=True).fill('Bid cache TEST package')
-  check('With 3.23.0 selected the reason is gone',page.get_by_text('Bid caching needs script version',exact=False).count()==0)
+  check('With 3.23.0 selected the reason is gone',page.get_by_text('Bid caching needs a compatible script version',exact=False).count()==0)
   page.get_by_role('button',name='Generate and save package',exact=True).click()
   page.get_by_role('status').filter(has_text='Package saved in Releases').wait_for()
   shots(page,'generate-saved')
