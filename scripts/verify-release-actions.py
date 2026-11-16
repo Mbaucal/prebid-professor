@@ -42,7 +42,7 @@ try:
     def focus_target(name):expect(page.locator(f'[data-release-target="{name}"]:not(:disabled)').first).to_be_focused()
     def open_site():page.goto(origin+'/?section=publishers&publisher=publisher-a&site=site-a&tab=overview');expect(page.locator('.workspace h1')).to_have_text('site-a.example.com')
     open_site();top('Generate').click();focus_target('generate')
-    note=page.get_by_label('What changed?') if workflow=='builtin' else page.locator('textarea').first
+    note=page.get_by_label('Version name',exact=True) if workflow=='builtin' else page.locator('textarea').first
     note.fill('Keep this entered release note')
     for name,target in [('Publish ↗','generate'),('Generate','generate'),('Generate','generate'),('Publish ↗','generate')]:
      top(name).click();focus_target(target);expect(note).to_have_value('Keep this entered release note')

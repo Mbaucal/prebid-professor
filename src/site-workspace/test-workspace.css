@@ -1,0 +1,3 @@
+/* TEST site workspace only (imported by test-entry.tsx). runtime.css is left as it is, because the Tanjug pilot bundles
+   it: here a long unbroken version name (up to 160 characters) wraps in Saved versions and in notices. */
+.runtime-release strong,.runtime-message,.runtime-error{overflow-wrap:anywhere}
