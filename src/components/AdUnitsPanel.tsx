@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AdUnit, AdUnitType } from '../shared/types';
 import OutstreamSettingsPanel from './OutstreamSettingsPanel';
@@ -114,6 +114,12 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
     fetchBidCacheSettings(publisherId).then(data=>{if(active)setCacheSettings(data);}).catch(e=>{if(active)setCacheError(e.message||'Could not load bid cache settings.');});
     return()=>{active=false;};
   },[publisherId,cacheAttempt]);
+  // Which positions can reuse bids follows the saved units, Formats and TakeOver: re-read it
+  // after those change, without hiding the current buttons while it loads.
+  const cacheSite=useRef(publisherId);cacheSite.current=publisherId;
+  const refreshCacheSettings=useCallback(()=>{const site=publisherId;
+    fetchBidCacheSettings(site).then(data=>{if(cacheSite.current===site){setCacheSettings(data);setCacheError('');}}).catch(e=>{if(cacheSite.current===site)setCacheError(e.message||'Could not load bid cache settings.');});
+  },[publisherId]);
 
   const grouped = useMemo(() => {
     const result: Record<AdUnitType, AdUnit[]> = { ATF: [], BTF: [], DRAFT: [] };
@@ -205,6 +211,7 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
 
       setNotice(keptIntervalsNotice(kept));
       await load();
+      refreshCacheSettings();
       await onChanged?.();
       closeForm();
     } catch (requestError) {
@@ -224,6 +231,7 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
     try {
       await api.deleteAdUnit(publisherId, adUnit.id);
       await load();
+      refreshCacheSettings();
       await onChanged?.();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Could not delete ad unit.');
@@ -303,10 +311,10 @@ export default function AdUnitsPanel({ publisherId, onChanged, onOpenSizeMaps }:
         </div>
       </section>
 
-      {outstreamUnit?<OutstreamSettingsPanel key={publisherId+outstreamUnit} publisherId={publisherId} code={outstreamUnit} onClose={()=>setOutstreamUnit(null)} onSaved={()=>void onChanged?.()} onOpenSizeMaps={onOpenSizeMaps?()=>{setOutstreamUnit(null);onOpenSizeMaps();}:undefined}/>:null}
-      {runtimeUnit?<div className="modal-backdrop"><section className="modal-card ad-unit-modal" role="dialog" aria-modal="true" aria-label={`Display settings for ${runtimeUnit}`}><button className="icon-button" type="button" onClick={()=>setRuntimeUnit(null)} aria-label="Close display settings">×</button><SiteRuntimePanel key={publisherId+runtimeUnit} publisherId={publisherId} view="positions" unitCode={runtimeUnit} onChanged={onChanged}/></section></div>:null}
+      {outstreamUnit?<OutstreamSettingsPanel key={publisherId+outstreamUnit} publisherId={publisherId} code={outstreamUnit} onClose={()=>setOutstreamUnit(null)} onSaved={()=>{refreshCacheSettings();void onChanged?.();}} onOpenSizeMaps={onOpenSizeMaps?()=>{setOutstreamUnit(null);onOpenSizeMaps();}:undefined}/>:null}
+      {runtimeUnit?<div className="modal-backdrop"><section className="modal-card ad-unit-modal" role="dialog" aria-modal="true" aria-label={`Display settings for ${runtimeUnit}`}><button className="icon-button" type="button" onClick={()=>setRuntimeUnit(null)} aria-label="Close display settings">×</button><SiteRuntimePanel key={publisherId+runtimeUnit} publisherId={publisherId} view="positions" unitCode={runtimeUnit} onChanged={()=>{refreshCacheSettings();return onChanged?.();}}/></section></div>:null}
       {cacheError?<p className="form-error" role="alert">{cacheError} <button type="button" onClick={()=>setCacheAttempt(n=>n+1)}>Reload bid cache settings</button></p>:null}
-      {cacheUnit?<PositionBidCachePanel key={publisherId+cacheUnit} publisherId={publisherId} code={cacheUnit} onClose={()=>setCacheUnit(null)} onSaved={next=>{setCacheSettings(next);void onChanged?.();}}/>:null}
+      {cacheUnit?<PositionBidCachePanel key={publisherId+cacheUnit} publisherId={publisherId} code={cacheUnit} onClose={()=>{setCacheUnit(null);refreshCacheSettings();}} onSaved={next=>{setCacheSettings(next);void onChanged?.();}}/>:null}
       {mode ? (
         <div className="modal-backdrop" onMouseDown={closeForm} role="presentation">
           <section

@@ -6,7 +6,9 @@ import {join} from 'node:path';
 import {Miniflare} from './local-miniflare.mjs';
 import {unzipSync} from 'fflate';
 import {buildSavedScript,buildSavedTest} from './saved-script-package.mjs';
-import {seedScriptLibrary} from './script-library-test-db.mjs';
+import {seedScriptLibrary,seedExampleSite,EXAMPLE_SITE,EXAMPLE_ELIGIBLE} from './script-library-test-db.mjs';
+import {runtimeCatalog} from '../worker/test-workspace/runtime-catalog.mjs';
+import {pinRuntime} from '../worker/runtime/version-pin.mjs';
 import {sha256} from './static-aa-package.mjs';
 import {guardedModules,guardCalls,describeCalls} from './canonical-text-guard.mjs';
 
@@ -25,6 +27,8 @@ try {
   await mf.ready;
   const db=await mf.getD1Database('DB');
   await seedScriptLibrary(db);
+  const runtime3212=runtimeCatalog.find(r=>r.id==='tessera-3.21.2'&&r.version==='3.21.2');
+  await seedExampleSite(db,{builtinRuntimeSelection:{schemaVersion:1,runtime:pinRuntime(runtime3212),prebid:null}});
   const path='/api/publishers/tanjug/script-library';
   check('Unauthenticated settings are rejected',(await mf.dispatchFetch(origin+path)).status===401);
   const login=await mf.dispatchFetch(origin+'/api/auth/login',{method:'POST',headers:{origin,'content-type':'application/x-www-form-urlencoded'},
@@ -44,6 +48,26 @@ try {
   };
   check('Cross-origin Demand save is rejected',(await demand({enabled:true,revision:initialDemand.revision,bidCache:{enabled:true,maxBidAgeSeconds:60}},{cookie,origin:'https://other.invalid'})).status===403);
   check('Invalid cache age is rejected',(await demand({enabled:true,revision:initialDemand.revision,bidCache:{enabled:true,maxBidAgeSeconds:0}})).status===422);
+  check('Tanjug lists its own saved positions and keeps its named-script library',JSON.stringify(initialDemand.bidCachePositions)==='["Billboard","Sticky"]'&&initialDemand.namedScriptLibrary===true&&initialDemand.selectedRuntime===null&&initialDemand.runtimeSupportsBidCache===false);
+  // Bid caching is a site setting for every site, not only Tanjug (synthetic example.invalid site on 3.21.2).
+  const exampleDemand=(body,headers={cookie,origin})=>mf.dispatchFetch(origin+'/api/publishers/'+EXAMPLE_SITE+'/prebid-mode',{method:body?'PUT':'GET',headers:{...headers,'content-type':'application/json'},body:body?JSON.stringify(body):undefined});
+  const example=await(await exampleDemand()).json();
+  check('Another site sees its own eligible positions and no named-script library',example.bidCacheAvailable===true&&JSON.stringify(example.bidCachePositions)===JSON.stringify(EXAMPLE_ELIGIBLE)&&example.namedScriptLibrary===false);
+  check('Another site sees that 3.21.2 does not apply bid caching',example.selectedRuntime?.version==='3.21.2'&&example.runtimeSupportsBidCache===false&&example.bidCacheRuntimeVersion==='3.23.0');
+  const exampleSaved=await exampleDemand({enabled:true,revision:example.revision,bidCache:{enabled:true,maxBidAgeSeconds:45,positionOverrides:{Home_Top:false,In_Article:true}}});
+  check('Another site saves cache and overrides for its own positions',exampleSaved.status===200&&JSON.stringify((await exampleSaved.json()).prebidMode.bidCache)==='{"enabled":true,"maxBidAgeSeconds":45,"positionOverrides":{"Home_Top":false,"In_Article":true}}');
+  const exampleNow=await(await exampleDemand()).json();
+  const tanjugCode=await exampleDemand({enabled:true,revision:exampleNow.revision,bidCache:{enabled:true,maxBidAgeSeconds:45,positionOverrides:{Sticky:true}}});
+  check('Another site cannot save a Tanjug position it does not have',tanjugCode.status===422&&(await tanjugCode.json()).error.includes('Sticky is not an enabled ATF or BTF banner position on this site'));
+  for(const code of ['Video_Slot','Off_Unit','Draft_Unit','Takeover_Unit','Outstream_Unit'])check('Another site cannot cache '+code,(await exampleDemand({enabled:true,revision:exampleNow.revision,bidCache:{enabled:true,maxBidAgeSeconds:45,positionOverrides:{[code]:true}}})).status===422);
+  check('Another site cannot overwrite newer settings from a stale form',(await exampleDemand({enabled:true,revision:example.revision,bidCache:{enabled:false,maxBidAgeSeconds:60}})).status===409);
+  check('Another site keeps the saved settings after refused saves',JSON.stringify((await(await exampleDemand()).json()).prebidMode.bidCache)==='{"enabled":true,"maxBidAgeSeconds":45,"positionOverrides":{"Home_Top":false,"In_Article":true}}');
+  const exampleLibrary=await mf.dispatchFetch(origin+'/api/publishers/'+EXAMPLE_SITE+'/script-library',{headers:{cookie}});
+  check('The named-script library stays Tanjug-only',(await exampleLibrary.json()).supported===false);
+  const exampleOld=await mf.dispatchFetch(origin+'/api/publishers/'+EXAMPLE_SITE+'/releases/generate',{method:'POST',headers:{cookie,origin,'content-type':'application/json'},body:'{}'});
+  // The older route never applies bid caching; it must not ask a built-in site to select a version it may already use.
+  const exampleOldError=(await exampleOld.json()).error;
+  check('A built-in site is not told to select a script version by the older route',exampleOld.status===409&&!exampleOldError.includes('Bid caching')&&!exampleOldError.includes('3.23.0'));
   const inputs={base:await readFile('.generated/tanjug-pilot/ads.js'),previousArchive:await readFile('.generated/tanjug-cmp/tanjug-aa-1.0.2.zip')};
   const scripts={};const savedScripts={};
   const output='.generated/script-library-delivered/';await mkdir(output,{recursive:true});

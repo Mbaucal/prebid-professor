@@ -24,7 +24,8 @@ function topFunctions(source){
 }
 test('3.22.1 is an explicit preview, retains every audited source, and leaves the frozen 3.22.0 hash intact',async()=>{
  assert.equal(descriptor.channel,'preview');assert.throws(()=>pinRuntime(descriptor),/explicit opt-in/);
- assert.equal(runtimeReleaseHistory.find(r=>r.channel==='stable').version,'3.21.2');
+ // 3.22.1 never becomes the recommendation; the newest stable record (3.23.0, bid caching) is.
+ assert.equal(runtimeReleaseHistory.find(r=>r.channel==='stable').version,'3.23.0');
  for(const path of auditedFiles)assert(sourceFiles.includes(path),path);
  assert.equal((await runtime3221Source(process.cwd())).codeSha256,descriptor.codeSha256);
  assert.equal((await runtime322Source(process.cwd())).codeSha256,'1aa3c8ad0dcc1c94fddf6d50b0a7b3073a524dee4750563277fd5c6d22525268');

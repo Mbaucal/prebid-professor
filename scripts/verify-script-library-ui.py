@@ -11,6 +11,10 @@ errors=[];requests=[];checks=[];last_saved=None;hold_next_save=False;held_save=[
 def check(name,ok):
  assert ok,name
  checks.append(name)
+def sql(statement,*args):
+ """Test-only: change saved D1 state the way another user would."""
+ process.stdin.write(json.dumps({'sql':statement,'args':list(args)})+'\n');process.stdin.flush()
+ assert 'error' not in json.loads(process.stdout.readline())
 def route(r):
  global last_saved,hold_next_save
  url=urlsplit(r.request.url);assert url.netloc=='tessera.fixture.invalid'
@@ -36,6 +40,7 @@ try:
   check('Releases has a cache summary, not a second cache form',page.get_by_label('Auction mode',exact=True).count()==0 and page.get_by_text('Bid caching: Off',exact=True).is_visible())
   page.get_by_role('button',name='Edit Prebid settings',exact=True).click()
   cache=page.get_by_role('checkbox',name='Reuse valid, unused bids',exact=True);cache.wait_for();cache.check()
+  check('Demand says new named scripts use the cache setting too, and never calls an unsaved change saved',page.get_by_text('Bid caching needs script 3.23.0 or later. New named scripts in Releases → Scripts and A/B tests use it too; saved scripts and tests keep their own settings.',exact=True).is_visible())
   page.get_by_label('Maximum bid age (seconds)',exact=True).fill('60')
   page.get_by_role('button',name='Save Prebid settings',exact=True).click()
   page.get_by_text('Prebid settings saved.',exact=False).wait_for()
@@ -155,6 +160,18 @@ try:
   page.reload();page.get_by_role('button',name='Ad positions',exact=True).click()
   position('Billboard').get_by_role('button',name='Bid cache: On',exact=True).wait_for()
   check('Inherited setting survives reload',position('Sticky').get_by_role('button',name='Bid cache: On',exact=True).is_visible())
+  # An eligible Tanjug position outside the reviewed named-script inventory: its dialog says named scripts do not include it.
+  sql("INSERT INTO ad_units VALUES('home-top','tanjug','Home_Top','ATF','banner','Billboard',1,2,NULL,'2026-11-15','2026-11-15')")
+  page.reload();page.get_by_role('button',name='Ad positions',exact=True).click()
+  position('Home_Top').get_by_role('button',name='Bid cache: On',exact=True).click()
+  home=page.get_by_role('dialog',name='Bid cache · Home_Top',exact=True);home.get_by_label('Bid cache for Home_Top',exact=True).wait_for()
+  check('A position outside the named-script inventory is not said to reach named scripts',home.get_by_text('Applies to the next package generated with script 3.23.0 or later. Select 3.23.0 in Script setup to use it. Named scripts in Releases → Scripts and A/B tests do not include this position; an override here stops new named scripts until it is set to Use site setting.',exact=True).is_visible())
+  page.screenshot(path=str(out/'position-outside-named-scripts.png'))
+  page.keyboard.press('Escape');home.wait_for(state='detached')
+  position('Sticky').get_by_role('button',name='Bid cache: On',exact=True).click()
+  sticky=page.get_by_role('dialog',name='Bid cache · Sticky',exact=True);sticky.get_by_label('Bid cache for Sticky',exact=True).wait_for()
+  check('A named-script position still says new named scripts use it too',sticky.get_by_text('Applies to the next package generated with script 3.23.0 or later. Select 3.23.0 in Script setup to use it. New named scripts in Releases → Scripts and A/B tests use it too.',exact=True).is_visible())
+  page.keyboard.press('Escape');sticky.wait_for(state='detached')
   check('Position settings introduce no UI error',not errors)
   browser.close()
 finally:
