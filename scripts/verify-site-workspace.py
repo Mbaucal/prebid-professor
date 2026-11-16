@@ -1,12 +1,12 @@
 """Shared React controls + real Worker/SQLite; only intercepted or loopback requests."""
-import base64,json,subprocess,zipfile
+import base64,json,os,subprocess,zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/site-workspace-evidence';out.mkdir(exist_ok=True)
-# The current version for new scripts is the newest stable release record.
-current=next(r for r in json.loads((root/'worker/runtime/runtime-releases.json').read_text()) if r['channel']=='stable')
+# The operator recommendation excludes the exact earlier cache source; history stays unchanged.
+current=next(r for r in json.loads((root/'worker/runtime/runtime-releases.json').read_text()) if r['version']=='3.21.2')
 process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/site-workspace-browser-fixture.mjs','--http'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
 fixture=json.loads(process.stdout.readline());assert fixture['ready']
 origin=fixture['origin'];assert urlsplit(origin).hostname=='127.0.0.1'
@@ -21,7 +21,7 @@ def route(request):
     request.fulfill(status=result['status'],headers=result['headers'],body=base64.b64decode(result['body']))
 try:
  with sync_playwright() as p:
-    browser=p.chromium.launch(headless=True)
+    browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'))
     page=browser.new_page(viewport={'width':1280,'height':900});page.route('**/*',route);page.on('pageerror',lambda e:errors.append(str(e)))
     page.goto(origin+'/')
     page.get_by_role('link',name='Loading rules',exact=True).click()
@@ -105,7 +105,7 @@ try:
     assert stored_download.value.suggested_filename.startswith('builtin-draft-')
     with zipfile.ZipFile(stored_download.value.path()) as archive:
         manifest=json.loads(archive.read('manifest.json'))
-        assert manifest['runtime']['runtimeVersion']==current['version']=='3.23.0'
+        assert manifest['runtime']['runtimeVersion']==current['version']=='3.21.2'
         assert manifest['runtime']['runtimeSha256']==current['codeSha256']
         assert 'deals-plan.json' in archive.namelist()
         assert 'prebid.js' not in archive.namelist()

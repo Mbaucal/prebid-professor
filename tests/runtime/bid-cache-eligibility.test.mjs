@@ -32,8 +32,8 @@ test('runtimeSupportsBidCache is true only when the capabilities list bid-cache'
   assert.equal(runtimeSupportsBidCache({capabilities: ['bid-cache']}), true);
   assert.ok(runtime3212, '3.21.2 is in the catalog');
   assert.equal(runtimeSupportsBidCache(runtime3212), false);
-  for (const descriptor of runtimeCatalog) assert.equal(runtimeSupportsBidCache(descriptor), descriptor.id === 'tessera-3.23.0', `${descriptor.id}: only 3.23.0 has the bid-cache capability`);
-  assert.equal(runtimeCatalog.filter(runtimeSupportsBidCache).map(descriptor => descriptor.version).join(), '3.23.0', '3.23.0 is in the catalog with the capability');
+  for (const descriptor of runtimeCatalog) assert.equal(runtimeSupportsBidCache(descriptor), ['tessera-3.23.0','tessera-3.24.0'].includes(descriptor.id), `${descriptor.id}: only registered cache-capable runtimes may reuse bids`);
+  assert.equal(runtimeCatalog.filter(runtimeSupportsBidCache).map(descriptor => descriptor.version).join(), '3.23.0,3.24.0', 'both cache-capable runtimes are selectable');
   for (const value of [undefined, null, {}, [], 'bid-cache', ['bid-cache'], {capabilities: 'bid-cache'}, {capabilities: ['bid-cache-v2']},
     {capabilities: [['bid-cache']]}, {capabilities: null}, {version: '3.23.0'}, {id: 'tessera-3.23.0', version: '3.23.0', capabilities: []}]) {
     assert.equal(runtimeSupportsBidCache(value), false, JSON.stringify(value));
@@ -179,8 +179,9 @@ test('malformed compiled input fails closed', () => {
   assert.deepEqual(bidCacheEligibleInputCodes(widened), []);
 });
 
-test('the generator 409 names both ways out: select 3.23.0, or turn bid caching off for this site', () => {
-  assert.equal(BID_CACHE_GENERATOR_MESSAGE, 'Bid caching needs script version 3.23.0. Select 3.23.0 in Script setup and save; your bid cache settings are kept. '
+test('the generator 409 names the combined preview and preserving the current script with caching off', () => {
+  assert.equal(BID_CACHE_GENERATOR_MESSAGE, 'Bid caching needs a compatible script version. Select 3.24.0 (Preview) in Script setup and save; your bid cache settings are kept. '
+    + 'This version combines bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
     + 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.');
 });
 

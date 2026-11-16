@@ -14,9 +14,9 @@ const stamp='20261011_140000';
 test('explicit selection preserves the old default and refuses discarded active settings',()=>{
   assert.equal(runtimeCatalog[0].id,'tessera-positions-preview-1');
   const snapshot=dealsRuntimeFixture();
-  for(const old of runtimeCatalog.filter(r=>!['tessera-revenue-preview-1','tessera-revenue-preview-2','tessera-revenue-preview-3','tessera-3.16.0','tessera-3.16.1','tessera-3.16.2','tessera-3.17.0','tessera-3.18.0','tessera-3.19.0','tessera-3.19.1','tessera-3.20.0','tessera-3.20.1','tessera-3.21.0','tessera-3.21.1','tessera-3.21.2','tessera-3.22.0','tessera-3.22.1','tessera-3.23.0','tessera-3.22.2'].includes(r.id)))assert.throws(()=>previewInput(snapshot,old,stamp),/Active Deals or Outstream/);
+  for(const old of runtimeCatalog.filter(r=>!['tessera-revenue-preview-1','tessera-revenue-preview-2','tessera-revenue-preview-3','tessera-3.16.0','tessera-3.16.1','tessera-3.16.2','tessera-3.17.0','tessera-3.18.0','tessera-3.19.0','tessera-3.19.1','tessera-3.20.0','tessera-3.20.1','tessera-3.21.0','tessera-3.21.1','tessera-3.21.2','tessera-3.22.0','tessera-3.22.1','tessera-3.23.0','tessera-3.22.2','tessera-3.24.0'].includes(r.id)))assert.throws(()=>previewInput(snapshot,old,stamp),/Active Deals or Outstream/);
   assert.equal(previewInput(snapshot,runtimeCatalog.find(r=>r.id==='tessera-3.21.1'),stamp).deals.entries[0].dealId,'0000199');
-  for(const version of ['3.22.1','3.22.2','3.23.0']) {
+  for(const version of ['3.22.1','3.22.2','3.23.0','3.24.0']) {
     const selected=runtimeCatalog.find(r=>r.version===version);
     assert.equal(previewInput(snapshot,selected,stamp).deals.entries[0].dealId,'0000199',version+' retains active Deals through the catalog guard');
   }

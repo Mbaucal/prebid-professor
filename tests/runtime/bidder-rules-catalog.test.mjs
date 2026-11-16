@@ -11,12 +11,15 @@ const policy=()=>({schemaVersion:1,enabled:true,rules:[{id:'rs',name:'RS only',b
 test('every older bundled runtime rejects enabled rules with an actionable version choice',()=>{
   assert(current?.capabilities.includes('bidder-rules'));
   const snapshot=configure(fixture(),c=>{c.runtimeControls.bidderRules=policy();});
-  // 3.23.0 (bid caching, 3.21.2 lineage) is later than 3.22.0 but has no bidder rules: its refusal says no script has both.
-  const cache=runtimeCatalog.filter(row=>row.capabilities.includes('bid-cache'));
+  // The historical 3.23.0 cache script still refuses rules; the combined Preview supports them.
+  const cache=runtimeCatalog.filter(row=>row.capabilities.includes('bid-cache')&&!row.capabilities.includes('bidder-rules'));
   assert.deepEqual(cache.map(row=>row.version),['3.23.0']);
   for(const descriptor of cache)assert.throws(()=>previewInput(snapshot,descriptor,TS),error=>error.message===BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE&&error.status===422&&!/or later/.test(error.message));
   for(const descriptor of runtimeCatalog.filter(row=>!row.capabilities.includes('bidder-rules')&&!cache.includes(row)))assert.throws(()=>previewInput(snapshot,descriptor,TS),/Bidder rules require script 3.22.0/);
   assert.deepEqual(previewInput(snapshot,current,TS).bidderRules,policy());
+  const combined=runtimeCatalog.find(row=>row.version==='3.24.0');
+  assert(combined?.capabilities.includes('bid-cache'));assert(combined.capabilities.includes('bidder-rules'));
+  assert.deepEqual(previewInput(snapshot,combined,TS).bidderRules,policy());
   assert.equal(descriptorForPin(pinRuntime(current)).version,'3.22.0');
 });
 test('unconfigured rules and disabled rules preserve older script selections',()=>{

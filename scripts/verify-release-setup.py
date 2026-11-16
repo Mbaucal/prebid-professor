@@ -96,7 +96,7 @@ try:
     options=version.locator('option').evaluate_all('(items)=>items.map(item=>({label:item.textContent.trim(),value:item.value}))')
     assert options and all(re.fullmatch(r'\d+\.\d+\.\d+',item['label'].split(' · ')[0]) for item in options),options
     by_label={item['label']:item['value'] for item in options}
-    stable='3.23.0 · Current version'
+    stable='3.21.2 · Current version'
     preview='3.22.1 · Preview'
     assert stable in by_label and preview in by_label,options
     assert version.input_value()==by_label[stable]
@@ -112,6 +112,21 @@ try:
     assert version.input_value()==by_label[stable]
     assert not preview_notice.is_visible()
     current_label=stable.split(' · ')[0]
+    earlier_cache='3.23.0 · Earlier bid cache'
+    assert earlier_cache in by_label,options
+    version.select_option(by_label[earlier_cache])
+    cache_notice=page.get_by_role('note').filter(has_text='3.23.0 adds bid caching')
+    cache_notice.wait_for()
+    expect(cache_notice).to_contain_text('3.24.0 (Preview) has bid caching, bidder accounts and rules with these safeguards.')
+    expect(version).to_have_accessible_description(cache_notice.inner_text())
+    cache_fit=select_fits(version);fits.append({'viewport':390,'context':'Script setup','state':'earlier-cache',**cache_fit});assert cache_fit['fits'],cache_fit
+    page.screenshot(path=str(out/'runtime-323-notice-mobile.png'),full_page=True)
+    page.set_viewport_size({'width':1280,'height':900})
+    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+    page.screenshot(path=str(out/'runtime-323-notice-desktop.png'),full_page=True)
+    page.set_viewport_size({'width':390,'height':844})
+    version.select_option(by_label[stable])
+    assert not cache_notice.is_visible()
     assert legacy in by_label,options
     assert [item['label'] for item in options].index(legacy)==[item['label'] for item in options].index(preview)+1,options
     legacy_notice=page.get_by_role('note').filter(has_text='3.22.0 adds bidder rules')

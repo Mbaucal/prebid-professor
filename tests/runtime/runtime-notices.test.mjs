@@ -5,6 +5,7 @@ import {parse} from 'acorn';
 import {runtimeLabel, publicRuntimeChoices} from '../../src/site-workspace/runtime-labels.ts';
 import {runtimeNotice, runtimeNoticeSuffix, runtimeNoticeText} from '../../src/site-workspace/runtime-notices.ts';
 import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
+import {recommendedRuntimeRelease} from '../../shared/runtime-notices.mjs';
 import {runtimeCatalog, previewInput} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {compileRuntime321} from '../../worker/runtime-321/compiler.mjs';
@@ -19,15 +20,15 @@ const SUFFIX = ' · No 3.21.1+ fixes';
 const WARNING = '3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for page and category size maps when no key-value mapping sets a size map, contextual signals with existing Prebid RTD providers, and the TakeOver frequency cap and debug storage before CMP consent.';
 // The same payload shape and recommendation the Script setup endpoint returns.
 const runtimes = runtimeCatalog.map(r => ({version: r.version, channel: r.channel, pin: pinRuntime(r, {allowPreview: true})}));
-const recommended = runtimeReleaseHistory.find(r => r.channel === 'stable');
+const recommended = recommendedRuntimeRelease(runtimeReleaseHistory);
 const current = runtimes.find(r => r.pin.runtimeSha256 === recommended.codeSha256);
 const record = runtimeReleaseHistory.find(r => r.version === '3.22.0');
 const pinOf = version => runtimes.find(r => r.version === version).pin;
 
-test('only the exact registered 3.22.0 build carries a notice; the registry is read, never changed', () => {
+test('only exact registered earlier builds carry notices; the registry is read, never changed', () => {
   const before = JSON.stringify(runtimeReleaseHistory);
   const noticed = runtimeReleaseHistory.filter(r => runtimeNotice({runtimeVersion: r.version, runtimeSha256: r.codeSha256}));
-  assert.deepEqual(noticed.map(r => r.version), ['3.22.0']);
+  assert.deepEqual(noticed.map(r => r.version), ['3.23.0','3.22.0']);
   const notice = runtimeNotice(pinOf('3.22.0'));
   assert.equal(notice.runtimeSha256, record.codeSha256);
   assert.equal(record.channel, 'stable', '3.22.0 stays a stable, savable choice without preview opt-in');
@@ -47,14 +48,15 @@ test('Script setup labels: 3.22.0 gets the short suffix, order and every other l
   assert.deepEqual(['3.22.1', '3.22.0', '3.21.2'].map(version => labels[index(version)]), ['3.22.1 · Preview', '3.22.0' + SUFFIX, '3.21.2']);
   assert.deepEqual(labels.filter(label => label.includes(SUFFIX)), ['3.22.0' + SUFFIX]);
   assert.equal(SUFFIX.split(' · ')[1], 'No 3.21.1+ fixes', 'Verifiers split labels on the existing separator');
-  for (const item of choices) if (item.version !== '3.22.0') assert.equal(runtimeNoticeSuffix(item.pin), '');
+  for (const item of choices) if (!['3.22.0','3.23.0'].includes(item.version)) assert.equal(runtimeNoticeSuffix(item.pin), '');
+  assert.equal(runtimeNoticeSuffix(pinOf('3.23.0')),' · Earlier bid cache');
 });
 
 test('warning names the alternative and the current version from data, not from a literal', () => {
   const notice = runtimeNotice(pinOf('3.22.0')), choices = publicRuntimeChoices(runtimes);
   assert.equal(notice.warning, WARNING);
   assert(!/current/i.test(notice.warning), 'The fixed text never names the current version');
-  // Derived as the endpoint does: the first stable registry record (3.21.2 on this branch).
+  // Derived as the endpoint does, excluding only the exact known earlier cache source.
   assert(current && current.channel === 'stable' && current.version !== '3.22.0');
   assert.equal(runtimeNoticeText(notice, choices, current), `${WARNING} 3.22.1 (Preview) has bidder rules with these fixes. ${current.version} is the current version.`);
   const today = {version: '3.21.2', channel: 'stable', pin: pinOf('3.21.2')};
@@ -69,6 +71,18 @@ test('warning names the alternative and the current version from data, not from 
   // If the alternative itself were the stable recommendation, it is named once.
   const promoted = {version: '3.22.1', channel: 'stable', pin: {runtimeVersion: '3.22.1', runtimeSha256: 'b'.repeat(64)}};
   assert.equal(runtimeNoticeText(notice, publicRuntimeChoices([...runtimes, promoted]), promoted), `${WARNING} 3.22.1, the current version, has bidder rules with these fixes.`);
+});
+
+test('the exact earlier cache source is labelled without changing its channel, pin or availability',()=>{
+  const cache=runtimeCatalog.find(r=>r.version==='3.23.0'),notice=runtimeNotice(pinOf('3.23.0'));
+  assert.equal(cache.channel,'stable');assert.doesNotThrow(()=>pinRuntime(cache));
+  assert.equal(notice.optionSuffix,' · Earlier bid cache');
+  assert.match(notice.warning,/bidder activity restriction or a raised price floor/);
+  assert.equal(runtimeNotice({runtimeVersion:'3.23.0',runtimeSha256:'f'.repeat(64)}),undefined);
+  const choices=publicRuntimeChoices(runtimes),text=runtimeNoticeText(notice,choices,current);
+  assert(text.includes('3.24.0 (Preview) has bid caching, bidder accounts and rules with these safeguards.'));
+  assert(text.endsWith('3.21.2 is the current version.'));
+  assert(!runtimeNoticeText(notice,choices.filter(r=>r.version!=='3.24.0'),current).includes('3.24.0'));
 });
 
 // The warning's claims, checked against generated output from one synthetic
@@ -147,7 +161,7 @@ test('TEST workspace Script version page labels and explains 3.22.0 without an A
   const page = selectionPage();
   await new Promise(resolve => setImmediate(resolve));
   const labels = page.runtime.children.slice(1).map(option => option.textContent);
-  assert.deepEqual(labels, page.state.runtimes.map(r => `${r.version} · ${r.channel}${r.version === '3.22.0' ? SUFFIX : ''}`));
+  assert.deepEqual(labels, page.state.runtimes.map(r => `${r.version} · ${r.channel}${runtimeNoticeSuffix(r.pin)}`));
   assert(page.note, 'The page has a note for the selected version');
   assert.match(page.html, /<p id="runtime-notice"[^>]* role="note"[^>]* hidden>/);
   assert.equal(page.note.hidden, true);
@@ -161,4 +175,8 @@ test('TEST workspace Script version page labels and explains 3.22.0 without an A
     assert.equal(page.note.textContent, '', version);
     assert.equal(page.runtime.getAttribute('aria-describedby'), null, version);
   }
+  page.choose('3.23.0');
+  assert.equal(page.note.hidden,false);
+  assert(page.note.textContent.includes('3.24.0 (Preview) has bid caching, bidder accounts and rules with these safeguards.'));
+  assert.equal(page.runtime.getAttribute('aria-describedby'),'runtime-notice');
 });

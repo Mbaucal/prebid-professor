@@ -304,7 +304,7 @@ test('TEST workspace: a 3.23.0 package saves and reopens; a saved 3.21.2 pin sti
   assert.equal(ok(await req(f, '/test-api/runtime-selection', cookie)).selected.runtime.runtimeVersion, '3.21.2', 'no implicit upgrade');
 });
 
-test('the current recommendation is the newest stable runtime, 3.23.0, and carries the 3.21.1 storage and 3.21.2 boot fixes', async () => {
+test('the retained historical 3.23.0 stable record carries the 3.21.1 storage and 3.21.2 boot fixes', async () => {
   const current = runtimeReleaseHistory.find(release => release.channel === 'stable');
   assert.equal(current.id, 'tessera-3.23.0');
   const descriptor = runtimeCatalog.find(entry => entry.id === current.id && entry.version === current.version && entry.codeSha256 === current.codeSha256);
