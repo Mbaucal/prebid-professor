@@ -33,7 +33,7 @@ function App(){
   useEffect(()=>{void load();const change=()=>setView(currentView());window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[]);
   const open=(next:View)=>{location.hash=next;setView(next);};
   return <main style={{maxWidth:1100,margin:'24px auto',padding:16}}><h1>Tessera · TEST named scripts</h1>
-    <p>A separate Tanjug test copy for named scripts and bid-cache settings. Your existing TEST site stays unchanged. No ads run here.</p>
+    <p>A separate Tanjug test copy for named scripts. Bid caching for your TEST site is in Site workspace → Bid caching. Your existing TEST site stays unchanged. No ads run here.</p>
     <p>This generator uses its reviewed inventory, bidders and consent setup. It does not use the runtime selected in Script setup. Saved ZIPs are test packages, not live deployments.</p>
     <p><a href="/">Back to TEST workspace</a></p>
     {error?<p role="alert" className="runtime-error">{error}</p>:null}

@@ -14,6 +14,7 @@ import { loadingSummary } from './loading-summary.mjs';
 import { initializeMissingUserSync } from '../user-id-config.ts';
 import { assertSnapshotCompilerCompatibility } from '../compiler-input-compatibility.mjs';
 import { refreshSummary } from './refresh-summary.mjs';
+import { recommendedRuntimeRelease } from '../../shared/runtime-notices.mjs';
 
 export class SiteRuntimeError extends Error { constructor(message,status=422){super(message);this.status=status;} }
 const fail=(message,status)=>{throw new SiteRuntimeError(message,status);};
@@ -66,7 +67,7 @@ export async function siteRuntimeSettings(env,siteId){
  const saved=await read(env,siteId),config=JSON.parse(saved.config.config_json);
  // Operator recommendation only. Historical pins and catalog order remain
  // available to the checked readers; saving a new pin is still explicit.
- const recommended=runtimeReleaseHistory.find(release=>release.channel==='stable');
+ const recommended=recommendedRuntimeRelease(runtimeReleaseHistory);
  const current=recommended&&runtimeCatalog.find(r=>r.id===recommended.id&&r.version===recommended.version&&r.codeSha256===recommended.codeSha256&&r.channel==='stable');
  const pin=config.builtinRuntimeSelection?.runtime;let validationIssue=null,preview=null;
  try{if(pin){const descriptor=descriptorForPin(pin);assertSnapshotCompilerCompatibility(saved,descriptor);preview=previewInput(saved,descriptor,'20000101_000000');}}catch(e){validationIssue=e.message;}

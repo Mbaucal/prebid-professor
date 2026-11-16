@@ -32,9 +32,11 @@ import { takeOverForBuild } from './takeover-settings.mjs';
 import { tanjugPilotResponse } from './tanjug-pilot.mjs';
 import { deploymentResponse, runnerPath, runnerResponse } from './deployments.mjs';
 import { adsVersionsPreviewResponse } from './ads-versions-preview.mjs';
-import { siteWorkspaceResponse } from './site-workspace.mjs';
+import { siteWorkspaceResponse, siteWorkspaceMethodAllowed } from './site-workspace.mjs';
 import { isTestUnitRuleItemPath, unitRulesResponse } from './unit-rules.mjs';
 import {namedScriptMethodAllowed,namedScriptsResponse} from './named-scripts.mjs';
+import {requireSupportedCacheGenerator} from '../site-runtime/prebid-cache-settings.mjs';
+import {testBidCacheMessage} from './bid-cache-messages.mjs';
 
 // HTML form navigation under no-referrer sends Origin:null. same-origin keeps
 // legitimate form Origin while still suppressing cross-origin referrers.
@@ -60,8 +62,15 @@ async function candidate(settings, buildTimestamp, takeOverEnabled, bucket) {
   // Use the saved TEST-copy GAM path. No production configuration is imported.
   const resolved=await selectedWorkspaceRuntime(settings,bucket);
   const {prebidBuilds,...configuration}=settings;
-  return buildArtifactCandidate({snapshot:configuration,pin:resolved.pin,
-    buildTimestamp,countryTarget:'test',takeOver:takeOverForBuild(settings,takeOverEnabled),prebid:resolved.prebid});
+  try {
+    return await buildArtifactCandidate({snapshot:configuration,pin:resolved.pin,
+      buildTimestamp,countryTarget:'test',takeOver:takeOverForBuild(settings,takeOverEnabled),prebid:resolved.prebid});
+  } catch(error) {
+    // A guard refusal with its own 4xx status (bid caching, bidder rules) is a settings reason, not a storage failure.
+    if(Number.isInteger(error?.status)&&error.status>=400&&error.status<500&&typeof error.message==='string')
+      throw new WorkspaceError(error.status,testBidCacheMessage(error.message,JSON.parse(settings.config.config_json)));
+    throw error;
+  }
 }
 async function list(env) {
   const result=await env.DB.withSession('first-primary').prepare('SELECT release_id,package_sha256,state,created_at,note,descriptor_json FROM builtin_draft_uploads WHERE publisher_id=? ORDER BY created_at DESC,release_id LIMIT 20').bind(TEST_SITE).all();
@@ -74,7 +83,7 @@ async function list(env) {
 }
 async function route(request,env) {
   const {origin,auth}=workspaceBoundary(request,env);
-  if (!['GET','POST'].includes(request.method)&&!namedScriptMethodAllowed(request)&&!(['PATCH','DELETE'].includes(request.method)&&isTestUnitRuleItemPath(new URL(request.url).pathname))) throw new WorkspaceError(405,'Method not allowed.');
+  if (!['GET','POST'].includes(request.method)&&!namedScriptMethodAllowed(request)&&!siteWorkspaceMethodAllowed(request)&&!(['PATCH','DELETE'].includes(request.method)&&isTestUnitRuleItemPath(new URL(request.url).pathname))) throw new WorkspaceError(405,'Method not allowed.');
   if (runnerPath(new URL(request.url).pathname)) return runnerResponse(request,env,headers);
   sameOrigin(request,origin);
   const url=new URL(request.url), path=url.pathname;
@@ -161,6 +170,11 @@ async function route(request,env) {
     let selected=null,validationIssue=null;
     try { selected=pin?descriptorForPin(pin):runtimeCatalog[1]; }
     catch { validationIssue='The saved script version is unavailable or has changed. Open Script version and choose an available version. Your settings and saved packages are unchanged.'; }
+    // Saved bid caching that this script cannot apply: say so before Generate.
+    if(selected&&settings){
+      const config=JSON.parse(settings.config.config_json);
+      try { requireSupportedCacheGenerator(config,selected); } catch(error) { validationIssue=testBidCacheMessage(error.message,config); }
+    }
     return json({...schema,runtime:selected?{version:selected.version,sha256:selected.codeSha256}:null,validationIssue,
       ...(settings?{takeOver:takeOverForBuild(settings)}:{}),publishable:false});
   }

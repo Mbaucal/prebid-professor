@@ -5,9 +5,10 @@ import {downloadStoredPackage} from '../download/saved-package.mjs';
 import ExternalDeploymentsPanel from './ExternalDeploymentsPanel';
 import '../site-workspace/runtime.css';
 import { runtimeLabel } from '../site-workspace/runtime-labels';
+import { runtimeNoticeSuffix } from '../site-workspace/runtime-notices';
 type Release = {id:string;version:string;notes:string|null;status:'draft'|'staging'|'production'|'archived'|'failed';createdAt:string;publishedAt:string|null;canRestore?:boolean};
 type PackageState = {
- site:{id:string;name:string};runtime:{runtimeVersion:string}|null;enablePrebid:boolean;
+ site:{id:string;name:string};runtime:{runtimeVersion:string;runtimeSha256?:string}|null;enablePrebid:boolean;
  revision:string;channelRevision:string;ready:boolean;error:string|null;nextStep:string|null;
  testOnly:boolean;releases:Release[];earlierReleases:Release[];
  warnings?:string[];
@@ -45,13 +46,15 @@ export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint
  {message?<p role="status" className={failed?'runtime-error':'runtime-message'}>{message}</p>:null}
  {!state?(failed?<button data-release-retry onClick={()=>void run(reload)}>Retry releases</button>:<p data-release-loading>Loading saved packages…</p>):<>
  <p>{state.site.name} · {state.runtime?runtimeLabel(state.runtime.runtimeVersion):'Setup needed'}{earlierBuild?' · Saved earlier build':''}</p>
+ {/* Saved bid cache settings the selected script version cannot apply: say why Generate is blocked. */}
+ {!state.ready && state.nextStep==='demand' && state.error ? <p role="alert" className="runtime-error">{state.error}</p> : null}
  {(!state.ready && state.nextStep) || editingSetup ? <div tabIndex={-1} data-release-target="setup"><ScriptSetupPanel
    publisherId={publisherId} endpoint={settingsEndpoint}
    onOpenPrebid={onNavigate?()=>onNavigate('prebid'):undefined}
    onChanged={async()=>{await reload();setEditingSetup(false);await onChanged?.();}}
  /></div> : <>
    {state.error?<p tabIndex={-1} data-release-target="blocked" role="alert" className="runtime-error">{state.error}</p>:null}
-   <div className="script-version-summary"><span><strong>{state.enablePrebid?'GAM + Prebid':'GAM / AdX only'}</strong> · {state.runtime?runtimeLabel(state.runtime.runtimeVersion):'Setup needed'}{earlierBuild?' · Saved earlier build':''}</span><button disabled={busy} onClick={()=>setEditingSetup(true)}>Change script setup</button></div>
+   <div className="script-version-summary"><span><strong>{state.enablePrebid?'GAM + Prebid':'GAM / AdX only'}</strong> · {state.runtime?runtimeLabel(state.runtime.runtimeVersion)+runtimeNoticeSuffix(state.runtime):'Setup needed'}{earlierBuild?' · Saved earlier build':''}</span><button disabled={busy} onClick={()=>setEditingSetup(true)}>Change script setup</button></div>
  </>}
  {editingSetup && state.ready ? <button disabled={busy} onClick={()=>setEditingSetup(false)}>Cancel setup changes</button> : null}
  <h3>2. Generate your script</h3>

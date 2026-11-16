@@ -4,14 +4,22 @@ import {runtimeCatalog,previewInput,descriptorForPin,buildArtifactCandidate} fro
 import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {fixture,configure,checkedFixture,TS} from './artifact-fixture.mjs';
 import {defaultBidderRules} from '../../shared/bidder-rules/settings.mjs';
+import {BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE} from '../../worker/test-workspace/bid-cache-messages.mjs';
 const current=runtimeCatalog.find(row=>row.version==='3.22.0');
 const policy=()=>({schemaVersion:1,enabled:true,rules:[{id:'rs',name:'RS only',bidder:'ix',enabled:true,positions:['P1'],countries:{mode:'include',values:['RS'],unknown:'skip'},devices:['desktop']}]});
 
 test('every older bundled runtime rejects enabled rules with an actionable version choice',()=>{
   assert(current?.capabilities.includes('bidder-rules'));
   const snapshot=configure(fixture(),c=>{c.runtimeControls.bidderRules=policy();});
-  for(const descriptor of runtimeCatalog.filter(row=>!row.capabilities.includes('bidder-rules')))assert.throws(()=>previewInput(snapshot,descriptor,TS),/Bidder rules require script 3.22.0/);
+  // The historical 3.23.0 cache script still refuses rules; the combined Preview supports them.
+  const cache=runtimeCatalog.filter(row=>row.capabilities.includes('bid-cache')&&!row.capabilities.includes('bidder-rules'));
+  assert.deepEqual(cache.map(row=>row.version),['3.23.0']);
+  for(const descriptor of cache)assert.throws(()=>previewInput(snapshot,descriptor,TS),error=>error.message===BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE&&error.status===422&&!/or later/.test(error.message));
+  for(const descriptor of runtimeCatalog.filter(row=>!row.capabilities.includes('bidder-rules')&&!cache.includes(row)))assert.throws(()=>previewInput(snapshot,descriptor,TS),/Bidder rules require script 3.22.0/);
   assert.deepEqual(previewInput(snapshot,current,TS).bidderRules,policy());
+  const combined=runtimeCatalog.find(row=>row.version==='3.24.0');
+  assert(combined?.capabilities.includes('bid-cache'));assert(combined.capabilities.includes('bidder-rules'));
+  assert.deepEqual(previewInput(snapshot,combined,TS).bidderRules,policy());
   assert.equal(descriptorForPin(pinRuntime(current)).version,'3.22.0');
 });
 test('unconfigured rules and disabled rules preserve older script selections',()=>{

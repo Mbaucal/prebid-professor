@@ -22,6 +22,7 @@ import type { ReleaseEnv } from './releases';
 import { siteRuntimeResponse } from './site-runtime/service.mjs';
 import { packageResponse, packageAssetResponse, builtInCdn } from './site-runtime/releases.mjs';
 import { packageTestPageResponse } from './site-runtime/test-page.mjs';
+import {requireSupportedCacheGenerator} from './site-runtime/prebid-cache-settings.mjs';
 interface Env extends AuthEnv, ReleaseEnv { ASSETS: Fetcher; GAM_CREDENTIALS_KEY?: string }
 const downstream = baseApp as {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
@@ -62,7 +63,9 @@ export default {
     if(oldGenerate){
       if(!await getAuthenticatedUser(request,env))return new Response('Authentication required.',{status:401});
       const row=await env.DB?.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=?').bind(oldGenerate[1]).first<{config_json:string}>();
-      if(row){try{requireRevenueRuntime(JSON.parse(row.config_json),null);requireContextualRuntime(JSON.parse(row.config_json),null);requireBidderRulesRuntime(JSON.parse(row.config_json),null);}catch(e){return new Response(JSON.stringify({error:(e as Error).message}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});}}
+      // A site with a saved built-in script version is told to use Generate and releases, not
+      // to select a version it may already have; this older route never applies bid caching.
+      if(row){try{if(!JSON.parse(row.config_json).builtinRuntimeSelection)requireSupportedCacheGenerator(JSON.parse(row.config_json));requireRevenueRuntime(JSON.parse(row.config_json),null);requireContextualRuntime(JSON.parse(row.config_json),null);requireBidderRulesRuntime(JSON.parse(row.config_json),null);}catch(e){return new Response(JSON.stringify({error:(e as Error).message}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});}}
       if(row&&JSON.parse(row.config_json).builtinRuntimeSelection)return new Response(JSON.stringify({error:'Use Generate and releases with the saved built-in script version.'}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});
     }
     const revenueMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/(deals|outstream-settings|contextual-signals|bidder-rules)(\/build-kit)?$/);
@@ -101,7 +104,11 @@ export default {
     try { siteId = decodeURIComponent(match[1]); } catch { return fail('Invalid site ID.', 400); }
     const revenueConfig=await env.DB?.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=?').bind(siteId).first<{config_json:string}>();
     if(revenueConfig){try{requireRevenueRuntime(JSON.parse(revenueConfig.config_json),null);requireContextualRuntime(JSON.parse(revenueConfig.config_json),null);requireBidderRulesRuntime(JSON.parse(revenueConfig.config_json),null);}catch(e){return fail((e as Error).message,409);}}
-    if (bundle) return handleArtifactBundle(request, env, siteId);
+    if (bundle) {
+      // The artifact bundle never applies bid caching; saved settings that would reuse bids are refused.
+      if(revenueConfig){try{requireSupportedCacheGenerator(JSON.parse(revenueConfig.config_json));}catch(e){return fail((e as Error).message,409);}}
+      return handleArtifactBundle(request, env, siteId);
+    }
     if (prebidCheck) return handlePrebidPreflight(request, env, siteId, {
       readSnapshot: readPreviewSnapshot, normalizeInput: previewInput, digest, runtime: runtimeDescriptor,
     });
