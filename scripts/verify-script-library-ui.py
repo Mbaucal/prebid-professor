@@ -1,5 +1,5 @@
 """Named script library: real React + service with all external traffic blocked."""
-import base64,json,subprocess,hashlib
+import base64,json,subprocess,hashlib,os
 from pathlib import Path
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright
@@ -28,7 +28,7 @@ def route(r):
  r.fulfill(status=result['status'],headers=result['headers'],body=body)
 try:
  with sync_playwright() as p:
-  browser=p.chromium.launch(headless=True);page=browser.new_page(viewport={'width':1280,'height':1000})
+  browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'));page=browser.new_page(viewport={'width':1280,'height':1000})
   page.route('**/*',route);page.on('pageerror',lambda e:errors.append(str(e)))
   page.goto('https://tessera.fixture.invalid/');page.get_by_role('button',name='Save script version',exact=True).wait_for()
   check('Opening the library is read-only',all(r['method']=='GET' for r in requests))
@@ -165,12 +165,12 @@ try:
   page.reload();page.get_by_role('button',name='Ad positions',exact=True).click()
   position('Home_Top').get_by_role('button',name='Bid cache: On',exact=True).click()
   home=page.get_by_role('dialog',name='Bid cache · Home_Top',exact=True);home.get_by_label('Bid cache for Home_Top',exact=True).wait_for()
-  check('A position outside the named-script inventory is not said to reach named scripts',home.get_by_text('Applies to the next package generated with script 3.23.0 or later. Select 3.23.0 in Script setup to use it. Named scripts in Releases → Scripts and A/B tests do not include this position; an override here stops new named scripts until it is set to Use site setting.',exact=True).is_visible())
+  check('A position outside the named-script inventory is not said to reach named scripts',home.get_by_text('Applies to the next package generated with script 3.23.0 or later. Select a compatible script in Script setup to use it. Named scripts in Releases → Scripts and A/B tests do not include this position; an override here stops new named scripts until it is set to Use site setting.',exact=True).is_visible())
   page.screenshot(path=str(out/'position-outside-named-scripts.png'))
   page.keyboard.press('Escape');home.wait_for(state='detached')
   position('Sticky').get_by_role('button',name='Bid cache: On',exact=True).click()
   sticky=page.get_by_role('dialog',name='Bid cache · Sticky',exact=True);sticky.get_by_label('Bid cache for Sticky',exact=True).wait_for()
-  check('A named-script position still says new named scripts use it too',sticky.get_by_text('Applies to the next package generated with script 3.23.0 or later. Select 3.23.0 in Script setup to use it. New named scripts in Releases → Scripts and A/B tests use it too.',exact=True).is_visible())
+  check('A named-script position still says new named scripts use it too',sticky.get_by_text('Applies to the next package generated with script 3.23.0 or later. Select a compatible script in Script setup to use it. New named scripts in Releases → Scripts and A/B tests use it too.',exact=True).is_visible())
   page.keyboard.press('Escape');sticky.wait_for(state='detached')
   check('Position settings introduce no UI error',not errors)
   browser.close()

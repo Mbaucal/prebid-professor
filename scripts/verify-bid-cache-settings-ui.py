@@ -1,9 +1,8 @@
-import os
 """Bid cache settings on a site that is not Tanjug: real React panels and the compiled Worker
 with local D1, all external traffic blocked. Desktop and 390 px, save, 409/422 and recovery.
 Then Releases → Generate on the MAIN fixture (scripts/main-revenue-browser-fixture.mjs
 --bid-cache-blocked, full D1 schema): 3.21.2 selected with bid caching saved blocks Generate with
-the reason and both ways out, and turning caching off or selecting 3.23.0 unblocks it."""
+the reason and both ways out, and turning caching off or selecting 3.24.0 Preview unblocks it."""
 import base64,json,os,subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
