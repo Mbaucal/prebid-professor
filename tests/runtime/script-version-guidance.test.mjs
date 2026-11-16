@@ -89,6 +89,22 @@ test('a script without bidder rules or accounts names only versions that apply e
   assert.ok(checked>=30&&other<checked,`checked ${checked} refusals, ${other} for other settings`);
 });
 
+test('the bidder rules off-switch is offered only where turning rules off lets the selected script generate',async()=>{
+  const {scriptGuidance,savedScriptNeeds}=await import('../../worker/site-runtime/script-version-guidance.mjs');
+  const rulesOff=snapshot=>configure(snapshot,c=>{c.runtimeControls.bidderRules={...c.runtimeControls.bidderRules,enabled:false};});
+  const offered=[];
+  for(const [name,{make}] of Object.entries(CASES))for(const descriptor of selectable){
+    const message=scriptGuidance(savedScriptNeeds(make()),descriptor);
+    if(!message?.includes('or turn off bidder rules'))continue;
+    assert.equal(refusal(rulesOff(make()),descriptor),null,`${name} on ${descriptor.version}: ${message}`);
+    offered.push(`${name} ${descriptor.version}`);
+  }
+  assert.ok(offered.includes('rules 3.21.2')&&offered.includes('rules 3.23.0'),offered.join('; '));
+  // A script that cannot apply the saved bid caching either names only the versions that apply both.
+  assert.equal(scriptGuidance(savedScriptNeeds(CASES['rules+cache'].make()),runtimeCatalog.find(r=>r.version==='3.21.2')),
+    'Script 3.21.2 cannot apply enabled bidder rules. To keep them with your saved bid caching, select 3.24.0 (Preview) in Script setup and save. Your saved settings and previous packages are unchanged.');
+});
+
 test('3.23.0 with bid caching names 3.24.0 (Preview) only, in the real Generate order',async()=>{
   const r323=runtimeCatalog.find(r=>r.version==='3.23.0'),r324=runtimeCatalog.find(r=>r.version==='3.24.0');
   for(const name of ['rules+cache','accounts+cache','accounts+rules+cache']){
@@ -155,6 +171,13 @@ test('Script setup on 3.21.2 without bid caching names both versions with bidder
   const state=await siteRuntimeSettings(f.env,'audit-site');
   assert.equal(state.validationIssue,'Script 3.21.2 cannot apply enabled bidder rules. Select 3.22.2 (Preview) or 3.24.0 (Preview) in Script setup and save, or turn off bidder rules. Your saved settings and previous packages are unchanged.');
   assert.equal((await packageState(f.env,'audit-site')).error,state.validationIssue);
+});
+
+test('Script setup on 3.21.2 with bid caching offers no bidder rules off-switch that Generate would refuse',async()=>{
+  const f=savedSite({rules:true,cache:true,version:'3.21.2'});
+  const state=await siteRuntimeSettings(f.env,'audit-site');
+  assert.equal(state.validationIssue,'Script 3.21.2 cannot apply enabled bidder rules. To keep them with your saved bid caching, select 3.24.0 (Preview) in Script setup and save. Your saved settings and previous packages are unchanged.');
+  assert.equal(configurationErrorMessage(Error(state.validationIssue)),state.validationIssue);
 });
 
 test('versions come from release capabilities: notices, superseded patches and the empty case',async()=>{

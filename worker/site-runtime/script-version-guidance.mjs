@@ -66,8 +66,10 @@ export function scriptGuidance(needs,descriptor,history){
   const needed=neededCapabilities(needs),kept=needed.filter(capability=>capability==='bid-cache'||has(capability)).map(capability=>NAMES[capability]);
   const version=/^(\d+\.\d+\.\d+)(?:-(?:tessera|revenue)\.preview\.\d+)?$/.exec(descriptor?.version??'')?.[1];
   const versions=scriptVersionText(needed,history);
+  // Turning bidder rules off is offered only when that alone lets this script apply the other saved options.
+  const offSwitch=!accountsLacking&&(!needs.cache||has('bid-cache'));
   const choice=!versions?`No available script version applies ${list(needed.map(capability=>NAMES[capability]),'and')} together`
-    :`${kept.length?`To keep them with your saved ${list(kept,'and')}, select`:'Select'} ${versions} in Script setup and save${accountsLacking?'':', or turn off bidder rules'}`;
+    :`${kept.length?`To keep them with your saved ${list(kept,'and')}, select`:'Select'} ${versions} in Script setup and save${offSwitch?', or turn off bidder rules':''}`;
   return `${version?`Script ${version}`:'This script'} cannot apply ${list(lacking,'or')}. ${choice}. Your saved settings and previous packages are unchanged.`;
 }
 /** Checked before the shared guards, whose wording names one fixed version or says "or later". Same status as the
