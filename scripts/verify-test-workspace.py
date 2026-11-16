@@ -29,6 +29,34 @@ def check(name,condition):
     assert condition,name
     checks.append({'name':name,'passed':True})
 
+def exercise_322_notice(page):
+    # MBA-419: 3.22.0 stays a stable, savable choice, labeled and explained as in Script setup.
+    select=page.locator('#runtime');note=page.locator('#runtime-notice')
+    options=select.locator('option').evaluate_all('(items)=>items.map(item=>({label:item.textContent,value:item.value}))')
+    labeled=[item for item in options if 'No 3.21.1+ fixes' in item['label']]
+    check('Only 3.22.0 is labeled with its missing fixes',[item['label'] for item in labeled]==['3.22.0 · stable · No 3.21.1+ fixes'])
+    expect(note).to_be_hidden()
+    select.select_option(labeled[0]['value'])
+    expect(note).to_be_visible()
+    text=note.text_content()
+    check('3.22.0 note names the missing fixes and the alternative',text.startswith('3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for ') and text.endswith(' 3.22.1 (Preview) has bidder rules with these fixes.'))
+    expect(select).to_have_accessible_description(text)
+    check('3.22.0 saves without Preview opt-in',page.locator('#save-selection').is_enabled() and not page.locator('#allow-preview').is_checked())
+    page.set_viewport_size({'width':390,'height':844})
+    fit=select.evaluate("""(el)=>{const s=getComputedStyle(el),c=document.createElement('canvas').getContext('2d'),text=el.options[el.selectedIndex].textContent,size=s.fontWeight+' '+s.fontSize+' ';
+      const width=Math.max(...[s.font,size+'"DejaVu Sans"',size+'"Liberation Sans"'].map(font=>{c.font=font;return c.measureText(text).width;}));
+      return {text,width:Math.ceil(width),room:Math.floor(el.clientWidth-parseFloat(s.paddingLeft)-parseFloat(s.paddingRight)-24)};}""")
+    check('3.22.0 label fits the 390 px select in default fonts '+json.dumps(fit,ensure_ascii=False),fit['width']<=fit['room'])
+    check('3.22.0 note fits mobile without horizontal overflow',page.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+    page.screenshot(path=str(out/'selection-322-notice-mobile.png'),full_page=True)
+    page.set_viewport_size({'width':1280,'height':900})
+    stable=next(item for item in options if item['label']=='3.21.2 · stable')
+    select.select_option(stable['value'])
+    expect(note).to_be_hidden()
+    check('Other versions carry no 3.22.0 note',select.get_attribute('aria-describedby') is None)
+    select.select_option('')
+    expect(page.locator('#save-selection')).to_be_disabled()
+
 def exercise(page):
     navigation=page.goto(origin+'/')
     page.wait_for_url(origin+'/login')
@@ -47,6 +75,7 @@ def exercise(page):
     page.goto(origin+'/runtime-selection')
     expect(page.locator('#runtime')).to_be_enabled()
     check('Selection requires explicit version and Preview opt-in',page.locator('#save-selection').is_disabled())
+    exercise_322_notice(page)
     second=page.context.new_page()
     second.on('response',inspect_response)
     second.on('pageerror',lambda error:page_errors.append(str(error)[:500]))
