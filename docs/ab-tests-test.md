@@ -151,22 +151,20 @@ The A/B loader itself is covered by `tests/runtime/ab-loader.test.mjs`, `tests/r
 
 ## Files shared with MAIN (P4a baseline)
 
-These files are meant to be byte-identical on both lines. P4a carries them to MAIN in one commit and adds a pinned blob-hash check. Blob hashes at this PR's head (`git rev-parse HEAD:<file>`):
+These files are meant to be byte-identical on both lines. P4a carries them to MAIN in one commit and adds a check that pins their blob hashes (`git rev-parse <commit>:<file>`) as they are on TEST when this PR merges:
 
-| File | Blob |
-|---|---|
-| `worker/experiments/ab-store.mjs` | `894ac74` |
-| `worker/experiments/ab-tests-api.mjs` | `f9d0020` |
-| `worker/experiments/ab-bundle.mjs` | `71fecf1` |
-| `shared/pages/headers.mjs` | `31ef2a6` |
-| `src/components/AbTestsPanel.tsx` | `218b0f0` |
-| `src/components/ab-tests.css` | `8fa4372` |
-| `tests/support/memory-r2.mjs` | `3ce0be2` |
-| `tests/support/ab-synthetic-drafts.mjs` | `3653ea4` |
-| `tests/runtime/ab-store.test.mjs` | `3680613` |
-| `tests/runtime/ab-tests-api.test.mjs` | `facad88` |
-| `scripts/verify-ab-tests-workerd.mjs` | `2222386` |
-| `scripts/verify-ab-tests-ui.py` | `868b9f2` |
-| `tests/support/test-workspace-store.mjs` | `0381eaf` (main and this PR's base: `74e52b0`) |
+- `worker/experiments/ab-store.mjs`
+- `worker/experiments/ab-tests-api.mjs`
+- `worker/experiments/ab-bundle.mjs`
+- `shared/pages/headers.mjs`
+- `src/components/AbTestsPanel.tsx`
+- `src/components/ab-tests.css`
+- `tests/support/memory-r2.mjs`
+- `tests/support/ab-synthetic-drafts.mjs`
+- `tests/runtime/ab-store.test.mjs`
+- `tests/runtime/ab-tests-api.test.mjs`
+- `scripts/verify-ab-tests-workerd.mjs`
+- `scripts/verify-ab-tests-ui.py`
+- `tests/support/test-workspace-store.mjs` (main has the same copy as this PR's base today, so P4a brings this PR's change to it)
 
 `scripts/ab-tests-line.mjs` is the TEST line adapter and differs on MAIN on purpose. The delivery files (`delivery-layout.mjs`, `deployment-contract.mjs`, `deployments.mjs`, `deployment-page.mjs`, `scripts/builtin-test-delivery.mjs`, `scripts/publisher-delivery-verification.mjs`, `tests/support/deployment-store.mjs`, `scripts/deployment-ui-server.mjs`) are not changed by this PR.
