@@ -39,7 +39,7 @@ test('a newer stable record built on 3.21.0 is rejected', async () => {
   await assert.rejects(assertBuiltOnAuditCorrections([forged, ...runtimeReleaseHistory]), /must include the tessera-3\.\d+\.\d+ source closure/);
 });
 test('a newer stable record that drops a 3.21.1 capability is rejected', async () => {
-  const top = runtimeReleaseHistory[0];
+  const top = runtimeReleaseHistory.find(release => release.channel === 'stable');
   const forged = {...top, id: 'tessera-9.9.9', version: '9.9.9', capabilities: top.capabilities.filter(name => name !== 'consent-readiness')};
   await assert.rejects(assertBuiltOnAuditCorrections([forged, ...runtimeReleaseHistory]), /must keep every tessera-3\.\d+\.\d+ capability/);
 });

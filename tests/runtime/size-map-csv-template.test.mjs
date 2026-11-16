@@ -1,3 +1,4 @@
+import {applyBidderAccountSchema} from '../support/bidder-account-schema.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -13,6 +14,7 @@ test('approved CSV imports all 7 maps and 25 breakpoints without changing unrela
     // Use the actual schema without its production sample records.
     const schema = readFileSync(new URL('../../migrations/0001_initial.sql', import.meta.url), 'utf8');
     store.sqlite.exec(schema.split('INSERT OR IGNORE INTO publishers')[0]);
+  applyBidderAccountSchema(store.sqlite);
     store.sqlite.exec(`
       INSERT INTO publishers (id, name, domain, gam_path) VALUES
         ('test-site', 'Example', 'example.com', '/123/example/'),
@@ -68,6 +70,7 @@ test('the ad-units example in the CSV import panel imports after the size-map te
   try {
     const schema = readFileSync(new URL('../../migrations/0001_initial.sql', import.meta.url), 'utf8');
     store.sqlite.exec(schema.split('INSERT OR IGNORE INTO publishers')[0]);
+  applyBidderAccountSchema(store.sqlite);
     store.sqlite.exec(`
       INSERT INTO publishers (id, name, domain, gam_path) VALUES ('test-site', 'Example', 'example.com', '/123/example/');
       INSERT INTO publisher_configs (id, publisher_id, config_json) VALUES ('config', 'test-site', '{"enablePrebid":false}');

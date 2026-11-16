@@ -110,7 +110,7 @@ test('deals-plan and Deals serving lists match the prebid-deals capability for t
 });
 
 test('a registry record missing from an allow-list fails the parity check', async () => {
-  const lists = await everyList(), forged = {...runtimeReleaseHistory[0], id: 'tessera-9.9.9', version: '9.9.9'};
+  const lists = await everyList(), forged = {...runtimeReleaseHistory.find(release => release.channel === 'stable' && featured(release)), id: 'tessera-9.9.9', version: '9.9.9'};
   assert(featured(forged) && forged.channel === 'stable');
   const history = [forged, ...runtimeReleaseHistory];
   assert.throws(() => assertAllowListParity(history, lists), /is missing (?:tessera-)?9\.9\.9$/);

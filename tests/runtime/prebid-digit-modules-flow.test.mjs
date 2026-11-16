@@ -1,3 +1,4 @@
+import {applyBidderAccountSchema} from '../support/bidder-account-schema.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -17,6 +18,7 @@ const jsonRequest=body=>new Request('https://audit.invalid/api/sites',{method:'P
 async function fixture(){
   const f=workspaceStore();active.push(f);
   f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
+  applyBidderAccountSchema(f.sqlite);
   f.sqlite.exec(readFileSync('migrations/0002_publisher_accounts.sql','utf8').split('-- Politika.rs')[0]);
   assert.equal((await createSite(jsonRequest({id:'source',name:'Source',domain:'source.invalid',gamPath:'/123/source/'}),f.env)).status,201);
   f.sqlite.exec(`INSERT INTO ad_units(id,publisher_id,code,type,media_type,size_map_key,enabled,sort_order) VALUES('unit','source','P1','ATF','banner','display',1,0);

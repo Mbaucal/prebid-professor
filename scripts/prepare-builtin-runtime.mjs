@@ -11,6 +11,8 @@ import { prepareRevenueV3Runtime } from './prepare-revenue-v3-runtime.mjs';
 import { prepareRuntime316 } from './prepare-runtime316.mjs';
 import { prepareRuntime3161 } from './prepare-runtime3161.mjs';
 import { prepareRuntime3191 } from './prepare-runtime3191.mjs';
+import { prepareRuntime3221 } from './prepare-runtime3221.mjs';
+import { prepareRuntime322 } from './prepare-runtime322.mjs';
 import { prepareRuntime321 } from './prepare-runtime321.mjs';
 import { prepareRuntime3211 } from './prepare-runtime3211.mjs';
 import { prepareRuntime3212 } from './prepare-runtime3212.mjs';
@@ -102,6 +104,8 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareRuntime321(root);
   await prepareRuntime3211(root);
   await prepareRuntime3212(root);
+  await prepareRuntime322(root);
+  await prepareRuntime3221(root);
   await prepareRuntime323(root);
   await prepareTestPageClient(root);
   // Source text the Worker entries install; see worker/runtime-canonical/functions.mjs.

@@ -13,6 +13,13 @@ const legacyHashes=new Set([
   '71fddef7fb9e7c3a23eca8a1098776e0b1c4c7e299e2cc5766e8a649e7e94939'
 ]);
 const identity=r=>[r.id,r.version,r.codeSha256].join('/');
+// 3.22.0 was registered and shipped on TEST before the independent 3.21.1 audit.
+// Import this exact record at its historical position; never reinterpret it as a
+// newer stable release or relax ordering for any new engine.
+const importedTest322 = {
+  identity: 'tessera-3.22.0/3.22.0/1aa3c8ad0dcc1c94fddf6d50b0a7b3073a524dee4750563277fd5c6d22525268',
+  recordSha256: '301371ac891b992c2024b7988d811dbf3e52f3af86cd4f62216b17e12d243998', before: 'tessera-3.21.0'
+};
 const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
 const readGitSource=(commit,path)=>{
   assert.equal(execFileSync('git',['cat-file','-t',commit],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim(),'commit','Source reference must be a commit');
@@ -30,7 +37,7 @@ export function verifyRuntimeReleaseProvenance(releases,readSource=readGitSource
       for(const value of Object.values(node))if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')visit(value);
     }
     const manifest=release.sourceManifest??'scripts/prepare-builtin-runtime.mjs';
-    assert(['scripts/prepare-builtin-runtime.mjs','scripts/prepare-next-runtime.mjs','scripts/prepare-reporting-runtime.mjs','scripts/prepare-readiness-runtime.mjs','scripts/prepare-revenue-runtime.mjs','scripts/prepare-revenue-v2-runtime.mjs','scripts/prepare-revenue-v3-runtime.mjs','scripts/prepare-runtime316.mjs','scripts/prepare-runtime3161.mjs','scripts/prepare-runtime3162.mjs','scripts/prepare-runtime317.mjs','scripts/prepare-runtime318.mjs','scripts/prepare-runtime319.mjs','scripts/prepare-runtime3191.mjs','scripts/prepare-runtime320.mjs','scripts/prepare-runtime3201.mjs','scripts/prepare-runtime321.mjs','scripts/prepare-runtime3211.mjs','scripts/prepare-runtime3212.mjs','scripts/prepare-runtime323.mjs'].includes(manifest),'Known source manifest required');
+    assert(['scripts/prepare-builtin-runtime.mjs','scripts/prepare-next-runtime.mjs','scripts/prepare-reporting-runtime.mjs','scripts/prepare-readiness-runtime.mjs','scripts/prepare-revenue-runtime.mjs','scripts/prepare-revenue-v2-runtime.mjs','scripts/prepare-revenue-v3-runtime.mjs','scripts/prepare-runtime316.mjs','scripts/prepare-runtime3161.mjs','scripts/prepare-runtime3162.mjs','scripts/prepare-runtime317.mjs','scripts/prepare-runtime318.mjs','scripts/prepare-runtime319.mjs','scripts/prepare-runtime3191.mjs','scripts/prepare-runtime320.mjs','scripts/prepare-runtime3201.mjs','scripts/prepare-runtime321.mjs','scripts/prepare-runtime3211.mjs','scripts/prepare-runtime3212.mjs','scripts/prepare-runtime322.mjs','scripts/prepare-runtime3221.mjs','scripts/prepare-runtime323.mjs'].includes(manifest),'Known source manifest required');
     visit(parse(readSource(release.sourceCommit,manifest).toString('utf8'),{ecmaVersion:'latest',sourceType:'module'}));
     const files=declarations.filter(d=>d.id.name==='sourceFiles'),module=declarations.filter(d=>d.id.name==='MODULE_SHA256');
     assert(files.length===1&&files[0].init?.type==='ArrayExpression','Recorded source closure must declare one literal file list');
@@ -72,8 +79,14 @@ export function checkRuntimeReleaseHistory(current,previous){
     for(const r of current)if(!previous.some(old=>identity(old)===identity(r)))assert(!oldVersions.has(r.version),'An upgrade must use a new version number');
     const retained=current.filter(r=>previous.some(old=>identity(old)===identity(r)));
     assert.deepEqual(retained,previous,'Keep historical release order');
-    const added=current.length-previous.length;
-    assert.deepEqual(current.slice(added),previous,'New releases go before the retained history');
+    const imported=current.filter(r=>identity(r)===importedTest322.identity&&!previous.some(old=>identity(old)===identity(r)));
+    for(const record of imported){
+      assert.equal(sha256(JSON.stringify(record)),importedTest322.recordSha256,'Imported TEST 3.22.0 record must remain exact');
+      assert.equal(current[current.indexOf(record)+1]?.id,importedTest322.before,'Imported TEST 3.22.0 keeps its pre-audit position');
+    }
+    const additions=current.filter(record=>!imported.includes(record));
+    const added=additions.length-previous.length;
+    assert.deepEqual(additions.slice(added),previous,'New releases go before the retained history');
   }
 }
 

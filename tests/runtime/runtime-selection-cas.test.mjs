@@ -9,7 +9,7 @@ function fixture() {
   sqlite.exec(`CREATE TABLE publishers(id TEXT PRIMARY KEY,name TEXT,domain TEXT,gam_path TEXT);
     CREATE TABLE publisher_configs(publisher_id TEXT UNIQUE,config_json TEXT,config_hash TEXT,updated_at TEXT);
     CREATE TABLE ad_units(publisher_id TEXT,code TEXT,type TEXT,media_type TEXT,size_map_key TEXT,enabled INTEGER,sort_order INTEGER);
-    CREATE TABLE bidders(publisher_id TEXT,bidder TEXT,params_json TEXT,enabled INTEGER);
+    CREATE TABLE bidders(publisher_id TEXT,bidder TEXT,params_json TEXT,account_json TEXT NOT NULL DEFAULT '{}',enabled INTEGER);
     CREATE TABLE bidder_overrides(publisher_id TEXT,bidder TEXT,scope_type TEXT,scope_key TEXT,params_json TEXT,enabled INTEGER);
     CREATE TABLE size_maps(publisher_id TEXT,name TEXT,map_json TEXT);
     CREATE TABLE unit_rules(publisher_id TEXT,rule_key TEXT,rule_json TEXT);
@@ -31,7 +31,7 @@ function fixture() {
   const snapshot=()=>({site:select('SELECT id,name,domain,gam_path FROM publishers WHERE id=? LIMIT 1')[0],
     config:select('SELECT config_json FROM publisher_configs WHERE publisher_id=? LIMIT 1')[0],
     units:select('SELECT code,type,media_type,size_map_key,enabled,sort_order FROM ad_units WHERE publisher_id=? ORDER BY sort_order,code'),
-    bidders:select('SELECT bidder,params_json,enabled FROM bidders WHERE publisher_id=? ORDER BY bidder'),
+    bidders:select('SELECT bidder,params_json,account_json,enabled FROM bidders WHERE publisher_id=? ORDER BY bidder'),
     overrides:select('SELECT bidder,scope_type,scope_key,params_json,enabled FROM bidder_overrides WHERE publisher_id=? ORDER BY bidder,scope_type,scope_key'),
     maps:select('SELECT name,map_json FROM size_maps WHERE publisher_id=? ORDER BY name'),
     rules:select('SELECT rule_key,rule_json FROM unit_rules WHERE publisher_id=? ORDER BY rule_key'),
@@ -59,7 +59,7 @@ const changes=[
   ['unit ordering',"UPDATE ad_units SET sort_order=2 WHERE publisher_id='test-site'"],
   ['unit addition',"INSERT INTO ad_units VALUES('test-site','P1','BTF','banner','display',1,1)"],
   ['unit deletion',"DELETE FROM ad_units WHERE publisher_id='test-site'"],
-  ['bidder',`INSERT INTO bidders VALUES('test-site','ix','{"siteId":"synthetic"}',1)`],
+  ['bidder',`INSERT INTO bidders(publisher_id,bidder,params_json,enabled) VALUES('test-site','ix','{"siteId":"synthetic"}',1)`],
   ['override',`INSERT INTO bidder_overrides VALUES('test-site','ix','device','mobile','{"siteId":"synthetic"}',1)`],
   ['size map',"UPDATE size_maps SET map_json='[]' WHERE publisher_id='test-site'"],
   ['map addition',"INSERT INTO size_maps VALUES('test-site','other','[]')"],
@@ -67,6 +67,27 @@ const changes=[
   ['current Prebid',"INSERT INTO prebid_builds VALUES('build-1','test-site','1.0.0','key','[]','current','2026-01-01')"],
 ];
 for(const [name,sql] of changes)test(`a changed ${name} between validation and transaction aborts before the update`,async()=>{const x=f(),s=x.snapshot();x.onBatch(()=>x.sqlite.exec(sql));await assert.rejects(x.save(s),conflict);assert.equal(x.count('audit_log'),0);assert.equal(x.count('builtin_draft_assertions'),0);assert.equal(x.commits(),0);if(name!=='configuration')assert.equal(x.config().config_json,oldConfig);});
+function seedReviewedAccount(x,account) {
+  const config={...JSON.parse(oldConfig),testPrebidDraft:{schemaVersion:1,candidateOnly:true},builtinRuntimeSelection:{runtime:{id:'reviewed-synthetic-runtime'}}};
+  const original=JSON.stringify(config),proposal=JSON.stringify({...config,unrelated:{keep:'yes',selectionNote:'changed'}});
+  x.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(original);
+  x.sqlite.prepare('INSERT INTO bidders(publisher_id,bidder,params_json,account_json,enabled) VALUES(?,?,?,?,?)').run('test-site','adf_ag','{"mid":222}',JSON.stringify(account),1);
+  return {original,proposal};
+}
+for(const mode of ['none','custom'])test(`a concurrent bidder account SChain ${mode} change aborts runtime selection`,async()=>{
+  const x=f();
+  const {original,proposal}=seedReviewedAccount(x,{baseAdapter:'adf',schain:{mode:'inherit'}});
+  const before=x.snapshot(),schain=mode==='none'?{mode}:{mode,config:{ver:'1.0',complete:1,nodes:[{asi:'agency.example',sid:'account-42',hp:1}]}};
+  const newer=JSON.stringify({baseAdapter:'adf',schain});
+  x.onBatch(()=>x.sqlite.prepare("UPDATE bidders SET account_json=? WHERE publisher_id='test-site' AND bidder='adf_ag'").run(newer));
+  await assert.rejects(x.save(before,proposal),conflict);
+  assert.equal(x.config().config_json,original);assert.equal(x.count('audit_log'),0);assert.equal(x.count('builtin_draft_assertions'),0);assert.equal(x.commits(),0);
+  assert.equal(x.snapshot().bidders[0].account_json,newer);
+});
+test('reviewed bidder account metadata survives a successful runtime selection unchanged',async()=>{
+  const x=f(),{proposal}=seedReviewedAccount(x,{baseAdapter:'adf',displayName:'Agency account',schain:{mode:'none'}});
+  const before=x.snapshot().bidders;await x.save(x.snapshot(),proposal);assert.deepEqual(x.snapshot().bidders,before);
+});
 test('even a no-change proposal refuses a stale map snapshot',async()=>{const x=f(),s=x.snapshot();x.sqlite.exec("DELETE FROM size_maps WHERE publisher_id='test-site'");await assert.rejects(x.save(s,oldConfig),conflict);assert.equal(x.count('audit_log'),0);});
 test('an unrelated site cannot cause or receive this update',async()=>{const x=f(),s=x.snapshot();x.sqlite.exec("INSERT INTO publishers VALUES('other','Other','other.invalid','/123/other/'); INSERT INTO publisher_configs VALUES('other','{}','untouched','untouched'); INSERT INTO size_maps VALUES('other','display','[]')");await x.save(s);assert.deepEqual({...x.sqlite.prepare("SELECT * FROM publisher_configs WHERE publisher_id='other'").get()},{publisher_id:'other',config_json:'{}',config_hash:'untouched',updated_at:'untouched'});});
 test('archived Prebid metadata does not alter the current-build projection',async()=>{const x=f(),s=x.snapshot();x.sqlite.exec("INSERT INTO prebid_builds VALUES('old','test-site','1.0.0','key','[]','archived','2026-01-01')");await x.save(s);assert.equal(x.config().config_json,nextConfig);});

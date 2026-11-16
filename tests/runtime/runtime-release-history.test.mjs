@@ -49,3 +49,13 @@ test('recorded commit must exist and reproduce its declared source checksum',()=
   assert.throws(()=>verifyRuntimeReleaseProvenance([{...release,codeSha256:'e'.repeat(64)}],readSource),/does not match runtime/);
   assert.throws(()=>verifyRuntimeReleaseProvenance([release],()=>{throw Error('Unknown source commit');}),/Unknown source commit/);
 });
+
+
+test('the exact pre-audit TEST 3.22.0 record may be imported only at its historical position',()=>{
+  const current=history(), imported=current.find(r=>r.version==='3.22.0'), previous=current.filter(r=>r!==imported);
+  assert.doesNotThrow(()=>checkRuntimeReleaseHistory(current,previous));
+  assert.throws(()=>checkRuntimeReleaseHistory([imported,...previous],previous),/pre-audit position/);
+  assert.throws(()=>checkRuntimeReleaseHistory(current.map(r=>r===imported?{...r,title:r.title+' changed'}:r),previous),/must remain exact/);
+  const newer={...imported,id:'tessera-3.22.9',version:'3.22.9'};
+  assert.throws(()=>checkRuntimeReleaseHistory([...previous,newer],previous),/New releases go before/);
+});

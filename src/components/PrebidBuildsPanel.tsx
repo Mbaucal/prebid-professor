@@ -1,3 +1,4 @@
+import { adapterModuleForAccount } from '../../shared/bidder-accounts/modules.mjs';
 import ConfirmDeleteButton from './ConfirmDeleteButton';
 import {
   useCallback,
@@ -113,19 +114,6 @@ const MODULE_GROUPS: ModuleGroup[] = [
 
 const DEFAULT_PLATFORM_MODULES = MODULE_GROUPS.flatMap((group) => group.modules);
 
-const BIDDER_MODULE_ALIASES: Record<string, string> = {
-  connectad: 'connectadBidAdapter',
-  criteo: 'criteoBidAdapter',
-  eskimi: 'eskimiBidAdapter',
-  ix: 'ixBidAdapter',
-  magnite: 'magniteBidAdapter',
-  ogury: 'oguryBidAdapter',
-  openx: 'openxBidAdapter',
-  pubmatic: 'pubmaticBidAdapter',
-  richaudience: 'richaudienceBidAdapter',
-  rtbhouse: 'rtbhouseBidAdapter',
-  teads: 'teadsBidAdapter',
-};
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
@@ -137,10 +125,7 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
   return payload;
 }
 
-function adapterModuleForBidder(bidder: string): string {
-  const normalized = bidder.trim().toLowerCase();
-  return BIDDER_MODULE_ALIASES[normalized] ?? `${normalized}BidAdapter`;
-}
+
 
 function uniqueSorted(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) =>
@@ -314,7 +299,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
   );
 
   const requiredAdapters = useMemo(
-    () => uniqueSorted(enabledBidders.map((bidder) => adapterModuleForBidder(bidder.bidder))),
+    () => uniqueSorted(enabledBidders.map((bidder) => adapterModuleForAccount(bidder))),
     [enabledBidders],
   );
 
@@ -530,7 +515,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
               {enabledBidders.map((bidder) => (
                 <div className="required-adapter-chip" key={bidder.id}>
                   <b>{bidder.bidder}</b>
-                  <code>{adapterModuleForBidder(bidder.bidder)}</code>
+                  <code>{adapterModuleForAccount(bidder)}</code>
                 </div>
               ))}
               {!loading && enabledBidders.length === 0 ? (

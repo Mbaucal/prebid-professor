@@ -1,3 +1,4 @@
+import {applyBidderAccountSchema} from '../support/bidder-account-schema.mjs';
 import test from 'node:test';import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync,mkdirSync,mkdtempSync,rmSync,cpSync,readdirSync,existsSync} from 'node:fs';
 import {resolve} from 'node:path';import {tmpdir} from 'node:os';import {spawnSync} from 'node:child_process';
@@ -22,6 +23,7 @@ const encode=v=>new TextEncoder().encode(v),decode=b=>new TextDecoder().decode(b
 const fixtures=[];test.afterEach(()=>{while(fixtures.length)fixtures.pop()();});
 async function workspace({site='first',cleanComments=true}={}){
  const f=workspaceStore();fixtures.push(()=>f.close());f.site=site;f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
+  applyBidderAccountSchema(f.sqlite);
  f.sqlite.prepare("INSERT INTO publishers(id,name,domain,gam_path) VALUES(?,'First','first.invalid','/123/first/')").run(site);
  f.sqlite.prepare("INSERT INTO publisher_configs(id,publisher_id,config_json) VALUES('cfg',?,?)").run(site,JSON.stringify({enablePrebid:false,runtimeControls:{sticky:{bottomAdUnitId:''},floors:{enabled:false},output:{cleanComments}}}));
  f.sqlite.prepare("INSERT INTO ad_units(id,publisher_id,code,type,size_map_key,sort_order) VALUES('unit',?,'Billboard','ATF','display',0)").run(site);

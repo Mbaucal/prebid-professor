@@ -1,3 +1,4 @@
+import {normalizeBidderAccount, normalizeBidderAccounts} from '../shared/bidder-accounts/settings.mjs';
 import { validateAdUnitCode } from '../shared/gam/ad-unit-code.mjs';
 import type {
   CsvImportInput,
@@ -266,10 +267,12 @@ async function buildBidders(db: D1Database, publisherId: string, csv: string): P
   requireColumns(parsed.headers, [['bidder']]);
 
   const existingResult = await db
-    .prepare('SELECT bidder FROM bidders WHERE publisher_id = ?')
+    .prepare('SELECT bidder, account_json FROM bidders WHERE publisher_id = ?')
     .bind(publisherId)
-    .all<{ bidder: string }>();
+    .all<{ bidder: string; account_json: string }>();
   const existing = new Set((existingResult.results ?? []).map((item) => item.bidder));
+  const storedAccounts = new Map((existingResult.results ?? []).map(item => [item.bidder, item.account_json ?? '{}']));
+  const accountColumns = ['baseAdapter','displayName','schainJson'].filter(name => parsed.headers.includes(normalizeHeader(name)));
   const seen = new Set<string>();
   const previewRows: CsvImportPreviewRow[] = [];
   const entities: JsonObject[] = [];
@@ -297,19 +300,37 @@ async function buildBidders(db: D1Database, publisherId: string, csv: string): P
       errors.push(error instanceof Error ? error.message : String(error));
     }
 
-    const data: JsonObject = { bidder, params, enabled };
+    let account: ReturnType<typeof normalizeBidderAccount> | undefined;
+    try {
+      const stored = JSON.parse(storedAccounts.get(bidder) ?? '{}') as Record<string, unknown>;
+      const metadata = {...stored};
+      if (accountColumns.includes('baseAdapter')) metadata.baseAdapter = value(row, 'baseAdapter').trim();
+      if (accountColumns.includes('displayName')) metadata.displayName = value(row, 'displayName').trim();
+      if (accountColumns.includes('schainJson')) metadata.schain = parseObject(value(row, 'schainJson'), 'schainJson');
+      account = normalizeBidderAccount(metadata, {bidder});
+    } catch(error) { errors.push(error instanceof Error ? error.message : String(error)); }
+    const data: JsonObject = { bidder, params, enabled, account, accountPatch: Object.fromEntries(accountColumns.filter(key => key !== 'schainJson').map(key => [key, account?.[key as 'baseAdapter' | 'displayName']])), schainExplicit: accountColumns.includes('schainJson') };
     const status = errors.length ? 'error' : existing.has(bidder) ? 'update' : 'create';
     previewRows.push({
       rowNumber: row.rowNumber,
       key: bidder || '(missing bidder)',
       status,
-      summary: `${Object.keys(params).length} base param(s) · ${enabled ? 'enabled' : 'disabled'}`,
+      summary: `${Object.keys(params).length} base param(s) · ${enabled ? 'enabled' : 'disabled'}${accountColumns.length ? ` · adapter ${account?.baseAdapter ?? 'invalid'} · SChain ${account?.schain.mode ?? 'invalid'}` : ''}`,
       errors,
       data,
     });
     if (!errors.length) entities.push(data);
   });
 
+  if (!previewRows.some(row => row.errors.length)) {
+    try {
+      const replacements = new Set(entities.map(row => row.bidder));
+      normalizeBidderAccounts([...(existingResult.results ?? []).filter(row => !replacements.has(row.bidder)).map(row => normalizeBidderAccount(JSON.parse(row.account_json ?? '{}'), {bidder:row.bidder})), ...entities.map(row => row.account)]);
+    } catch(error) {
+      const message = error instanceof Error ? error.message : String(error);
+      previewRows.forEach(row => {row.errors.push(message); row.status = 'error';}); entities.length = 0;
+    }
+  }
   return { preview: countPreview('bidders', previewRows), entities };
 }
 
@@ -346,6 +367,7 @@ async function buildOverrides(db: D1Database, publisherId: string, csv: string):
   parsed.rows.forEach((row) => {
     const errors: string[] = [];
     const bidder = value(row, 'bidder', 'bidderCode').trim().toLowerCase();
+    try { normalizeBidderAccount({}, {bidder}); } catch(error) { errors.push(error instanceof Error ? error.message : String(error)); }
     const scopeType = value(row, 'scopeType', 'scope').trim().toLowerCase();
     const scopeKey = value(row, 'scopeKey', 'target', 'adUnit').trim();
     let enabled = true;
@@ -582,10 +604,11 @@ export async function applyCsvImport(
       statements.push(
         env.DB!.prepare(
           `INSERT INTO bidders (
-             id, publisher_id, bidder, params_json, enabled, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?)
+             id, publisher_id, bidder, params_json, account_json, enabled, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(publisher_id, bidder) DO UPDATE SET
              params_json = excluded.params_json,
+             account_json = CASE WHEN ? THEN json_set(json_patch(bidders.account_json, ?), '$.schain', json(json_extract(excluded.account_json, '$.schain'))) ELSE json_patch(bidders.account_json, ?) END,
              enabled = excluded.enabled,
              updated_at = excluded.updated_at`,
         ).bind(
@@ -593,9 +616,13 @@ export async function applyCsvImport(
           publisherId,
           entity.bidder,
           JSON.stringify(entity.params ?? {}),
+          JSON.stringify(entity.account),
           entity.enabled ? 1 : 0,
           now,
           now,
+          entity.schainExplicit ? 1 : 0,
+          JSON.stringify(entity.accountPatch),
+          JSON.stringify(entity.accountPatch),
         ),
       );
     });
