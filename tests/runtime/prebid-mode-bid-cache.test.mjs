@@ -8,7 +8,8 @@ import {BID_CACHE_RUNTIME_VERSION, bidCacheEligibleCodes} from '../../shared/bid
 import {CACHE_POSITIONS} from '../../worker/experiments/position-cache-settings.mjs';
 import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
 import {runtimeNotices} from '../../shared/runtime-notices.mjs';
-import {MAX_POSITION_OVERRIDES, bidCacheOverrides, bidCacheSettings, requireEligibleOverrides} from '../../worker/site-runtime/prebid-cache-settings.mjs';
+import {BID_CACHE_GENERATOR_MESSAGE, MAX_POSITION_OVERRIDES, bidCacheOverrides, bidCacheSettings, requireEligibleOverrides} from '../../worker/site-runtime/prebid-cache-settings.mjs';
+import {scriptVersionLabels} from '../../worker/site-runtime/script-version-guidance.mjs';
 
 // A synthetic site that is not Tanjug: its own inventory, its own GAM path.
 const SITE = 'audit-site';
@@ -227,6 +228,16 @@ test('the panels name the newest script with bid caching that has no runtime not
   const f = setup();
   const saved = await put({enabled: true, revision: (await read(f)).revision, bidCache: {enabled: true, maxBidAgeSeconds: 60}}, f);
   assert.equal((await saved.json()).bidCacheScriptVersion, expected, 'the save response names it too');
+});
+
+test('Generate names the same bid caching script as the panels, which read it from the registry', async () => {
+  // The Generate refusal is fixed text. When a new release changes the version the panels name, this fails until the
+  // refusal names it too.
+  const state = await read(setup()), named = state.bidCacheScriptVersion;
+  // The refusal says that version combines bid caching with bidder accounts and bidder rules.
+  assert.equal(scriptVersionLabels(['bid-cache', 'bidder-accounts', 'bidder-rules']).at(-1), named);
+  assert.ok(BID_CACHE_GENERATOR_MESSAGE.includes(`Select ${named} in Script setup and save;`), BID_CACHE_GENERATOR_MESSAGE);
+  assert.deepEqual(BID_CACHE_GENERATOR_MESSAGE.match(/\b\d+\.\d+\.\d+\b/g), [named.replace(' (Preview)', '')]);
 });
 
 test('Tanjug gets the same cache fields; only the named-script library sentence differs', async () => {
