@@ -15,7 +15,7 @@ test('every older bundled runtime rejects enabled rules with an actionable versi
   const cache=runtimeCatalog.filter(row=>row.capabilities.includes('bid-cache')&&!row.capabilities.includes('bidder-rules'));
   assert.deepEqual(cache.map(row=>row.version),['3.23.0']);
   for(const descriptor of cache)assert.throws(()=>previewInput(snapshot,descriptor,TS),error=>error.message===BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE&&error.status===422&&!/or later/.test(error.message));
-  for(const descriptor of runtimeCatalog.filter(row=>!row.capabilities.includes('bidder-rules')&&!cache.includes(row)))assert.throws(()=>previewInput(snapshot,descriptor,TS),/Bidder rules require script 3.22.0/);
+  for(const descriptor of runtimeCatalog.filter(row=>!row.capabilities.includes('bidder-rules')&&!cache.includes(row)))assert.throws(()=>previewInput(snapshot,descriptor,TS),/cannot apply enabled bidder rules\. Select 3\.22\.2 \(Preview\) or 3\.24\.0 \(Preview\) in Script setup and save, or turn off bidder rules\./);
   assert.deepEqual(previewInput(snapshot,current,TS).bidderRules,policy());
   const combined=runtimeCatalog.find(row=>row.version==='3.24.0');
   assert(combined?.capabilities.includes('bid-cache'));assert(combined.capabilities.includes('bidder-rules'));

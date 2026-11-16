@@ -31,7 +31,7 @@ test('all legacy generation and preview paths reject enabled rules instead of si
     const config=f.readConfig();config.runtimeControls.bidderRules={schemaVersion:1,enabled:true,rules:[]};f.writeConfig(config);
     for(const [suffix,method] of [['releases/generate','POST'],['releases/validate','POST'],['builtin-runtime-preview','GET'],['builtin-runtime-preview','POST'],['builtin-runtime-bundle','POST'],['builtin-runtime-prebid-check','GET']]){
       const response=await f.call('/api/publishers/audit-site/'+suffix,{method,headers:{cookie:f.cookie,origin,'content-type':'application/json'},...(method==='POST'?{body:'{}'}:{})});
-      assert.equal(response.status,409,suffix);assert.match((await response.json()).error,/Bidder rules require script 3.22.0/);
+      assert.equal(response.status,409,suffix);assert.equal((await response.json()).error,'This script cannot apply enabled bidder rules. Select 3.22.2 (Preview) or 3.24.0 (Preview) in Script setup and save, or turn off bidder rules. Your saved settings and previous packages are unchanged.',suffix);
     }
   }finally{f.close();}
 });

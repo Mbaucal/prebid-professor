@@ -16,7 +16,7 @@ test('accounts resolve one base-adapter module; no alias-named modules',()=>{
 test('only active new account behavior requires explicit capable version',()=>{
  assert.doesNotThrow(()=>requireBidderAccounts(snapshot([row('openx')]),{capabilities:[]}));
  assert.doesNotThrow(()=>requireBidderAccounts(snapshot([row('adf_ag',{baseAdapter:'adf'},0)]),{capabilities:[]}));
- assert.throws(()=>requireBidderAccounts(snapshot([row('adf_ag',{baseAdapter:'adf'})]),{capabilities:[]}),/3.22.1/);
+ assert.throws(()=>requireBidderAccounts(snapshot([row('adf_ag',{baseAdapter:'adf'})]),{capabilities:[]}),{status:422,message:'This script cannot apply bidder accounts (adf_ag). Select 3.22.2 (Preview) or 3.24.0 (Preview) in Script setup and save. Your saved settings and previous packages are unchanged.'});
  assert.doesNotThrow(()=>requireBidderAccounts(snapshot([row('adf_ag',{baseAdapter:'adf'})]),{capabilities:['bidder-accounts']}));
  const off=snapshot([row('adf_ag',{baseAdapter:'adf'})]);off.config.config_json='{"enablePrebid":false}';assert.deepEqual(bidderAccountsForBuild(off),[]);
 });

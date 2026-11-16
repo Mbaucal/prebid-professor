@@ -26,6 +26,7 @@ import {buildArtifactCandidate as rules322Candidate} from '../runtime-322/artifa
 import {previewInput as rules322Input} from '../runtime-322/snapshot.mjs';
 import {requireBidderRulesRuntime} from '../../shared/bidder-rules/settings.mjs';
 import {requireBidderRulesBesideBidCache} from './bid-cache-messages.mjs';
+import {requireSavedOptionsRuntime} from '../site-runtime/script-version-guidance.mjs';
 import {descriptor as contextual321} from '../../.generated/runtime-321-manifest.mjs';
 import {buildArtifactCandidate as contextual321Candidate} from '../runtime-321/artifact-candidate.mjs';
 import {previewInput as contextual321Input} from '../runtime-321/snapshot.mjs';
@@ -111,6 +112,9 @@ export function previewInput(snapshot,descriptor,time,takeOver){
   requireContextualRuntime(config,descriptor);
   // The historical cache-only script cannot apply rules; name the combined Preview before the shared guard.
   requireBidderRulesBesideBidCache(config,descriptor);
+  // Before the shared rules guard, whose '3.22.0 or later' wording can name a script that refuses another saved
+  // option: name the versions that apply every saved option (bidder rules, bidder accounts, bid caching).
+  requireSavedOptionsRuntime(snapshot,descriptor);
   requireBidderRulesRuntime(config,descriptor);
   requireCountryRules(snapshot,descriptor);
   if(!descriptor.capabilities.includes('conditional-size-maps')){

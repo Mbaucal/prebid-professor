@@ -1,8 +1,19 @@
 /** Only known configuration diagnostics may cross the HTTP boundary. Compiler,
  * database and storage failures retain the generic public message. Historical
  * input adapters throw plain Errors, so keep their allowlist here in admin code. */
+import { BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE } from '../test-workspace/bid-cache-messages.mjs';
 const GENERIC = 'The saved settings are not supported by this built-in runtime. Resolve configuration validation first.';
+// Script version guidance for bidder accounts, bidder rules and bid caching (site-runtime/script-version-guidance.mjs).
+const RELEASE = String.raw`\d{1,3}\.\d{1,3}\.\d{1,3}`, CHOICE = String.raw`${RELEASE}(?: \(Preview\))?`;
+const ACCOUNT = '[a-z][a-z0-9_-]{0,63}', OPTION = '(?:bidder accounts|bidder rules|bid caching)';
+const SCRIPT_GUIDANCE = new RegExp(`^(?:Script ${RELEASE}|This script) cannot apply (?:bidder accounts \\(${ACCOUNT}(?:, ${ACCOUNT}){0,2}(?: and [1-9]\\d{0,3} more)?\\)(?: or enabled bidder rules)?|enabled bidder rules)\\. `
+  + `(?:(?:To keep them with your saved ${OPTION}(?: and ${OPTION})?, select|Select) ${CHOICE}(?:, ${CHOICE}){0,8}(?: or ${CHOICE})? in Script setup and save(?:, or turn off bidder rules)?`
+  + `|No available script version applies ${OPTION}(?:(?:, | and )${OPTION}){0,2} together)\\. Your saved settings and previous packages are unchanged\\.$`, 'u');
+// TEST wording for enabled bidder rules with script 3.23.0 (test-workspace/bid-cache-messages.mjs), checked before
+// the script version guidance; shown only exactly as written.
+const EXACT = [BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE];
 const diagnostics = [
+  SCRIPT_GUIDANCE,
   /^.{1,128}, mapping [1-9]\d*: (?:Enabled must be on or off|priority must be 0–10000|choose ALL or ANY conditions|invalid slot action|selected size map does not exist|choose a size map or a slot action|use 1–12 conditions|invalid key or operator|enter a condition value)\.$/u,
   /^.{1,128}: (?:use up to 100 key-value mappings|country conditions use equals, does not equal, exists or does not exist|enter a two-letter country code such as RS or DE)\.$/u,
   /^.{1,128} (?:needs a saved size map|has no enabled sizes)\.$/u,
@@ -22,5 +33,5 @@ const diagnostics = [
 export function configurationErrorMessage(error) {
   const message = error instanceof Error ? error.message : '';
   if (message.length > 4000 || /[\r\n\u0000-\u001f\u007f]/u.test(message)) return GENERIC;
-  return diagnostics.some(pattern => pattern.test(message)) ? message : GENERIC;
+  return EXACT.includes(message) || diagnostics.some(pattern => pattern.test(message)) ? message : GENERIC;
 }

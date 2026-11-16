@@ -189,3 +189,26 @@ test('the TEST site explicitly selects combined Preview and generates both saved
  assert.match(text(files['ads.min.js']),/createTesseraBidCache/);assert.match(text(files['ads.min.js']),/__AD_BIDDER_RULES/);
  assert.deepEqual(config(f),before,'Generating leaves the explicitly selected configuration unchanged');
 });
+
+test('saved bidder accounts on 3.23.0: TEST Script setup and Releases name the script that applies every saved option',async()=>{
+ const f=await fixture();await enablePrebid(f);
+ // An account alias of the saved bidder, without an upstream SChain: only scripts with bidder accounts apply it.
+ f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,account_json,enabled) VALUES('alias-ox','test-site','ox_ag',?,?,1)")
+  .run(JSON.stringify({unit:'synthetic-unit',delDomain:'synthetic.example.invalid'}),JSON.stringify({baseAdapter:'openx',displayName:'Agency',schain:{mode:'none'}}));
+ const mode=(await f.req(MODE)).data;
+ assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
+ const expected='Script 3.23.0 cannot apply bidder accounts (ox_ag). To keep them with your saved bid caching, select 3.24.0 (Preview) in Script setup and save. Your saved settings and previous packages are unchanged.';
+ const setup=(await f.req('/test-api/site-runtime')).data;
+ assert.equal(setup.validationIssue,expected);
+ // Generate and releases shows the same reason, not the generic configuration text.
+ const packages=(await f.req('/test-api/site-packages')).data;
+ assert.equal(packages.ready,false);assert.equal(packages.error,expected);
+ // Saving 3.23.0 again is refused with it; 3.22.1, which cannot apply bid caching, is not named.
+ const before=config(f),r323=setup.runtimes.find(r=>r.version==='3.23.0');
+ const refused=await f.req('/test-api/site-runtime',{action:'setup',revision:setup.revision,runtime:r323.pin,allowPreview:false,enablePrebid:true});
+ assert.equal(refused.status,422);assert.equal(refused.data.error,expected);assert.deepEqual(config(f),before);
+ // Following it: 3.24.0 is ready.
+ await select(f,'3.24.0',true);
+ const ready=(await f.req('/test-api/site-packages')).data;
+ assert.equal(ready.ready,true,ready.error);assert.equal(ready.runtime.runtimeVersion,'3.24.0');
+});
