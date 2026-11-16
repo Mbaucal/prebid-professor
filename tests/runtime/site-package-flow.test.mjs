@@ -133,6 +133,29 @@ test('built-in Generate stores original package; channels and rollback reuse its
  assert.equal((await packageDownload(f.env,'first',a.id)).status,200);
  assert.match(f.sqlite.prepare('SELECT rule_json FROM unit_rules').get().rule_json,/1700/);
 });
+test('saved package versions come from each generation record, independently of the current script setup',async()=>{
+ const f=await fixture(), expected=new Map();
+ async function select(version){
+  const settings=await siteRuntimeSettings(f.env,'first');
+  const runtime=settings.runtimes.find(item=>item.version===version);assert(runtime);
+  await changeSiteRuntime(f.env,'first','tester',{action:'version',revision:settings.revision,runtime:runtime.pin,allowPreview:false});
+ }
+ for(const version of ['3.16.2','3.21.2']){
+  await select(version);
+  const release=await generate(f,'Saved package');
+  assert.equal(release.runtimeVersion,version);
+  assert.equal((await readPackage(f.env,'first',release.id)).manifest.runtime.runtimeVersion,version);
+  expected.set(release.id,version);
+ }
+ await select('3.19.1');
+ const unknown='builtin-release-'+'0'.repeat(64);
+ f.sqlite.prepare("INSERT INTO releases(id,publisher_id,version,status) VALUES(?,'first',?,'draft')").run(unknown,unknown);
+ f.sqlite.prepare("INSERT INTO audit_log(id,action,publisher_id,entity_type,entity_id,details_json) VALUES('bad-json','builtin_release.generated','first','release',?,'{')").run(unknown);
+ f.env.BUILDS.get=async()=>assert.fail('The release list should not need any saved package objects');
+ const state=await packageState(f.env,'first');
+ assert.equal(state.runtime.runtimeVersion,'3.19.1');
+ assert.deepEqual(new Map(state.releases.map(row=>[row.id,row.runtimeVersion])),new Map([...expected,[unknown,null]]));
+});
 test('package readiness retains a verified old script choice and actionable map error without changing saved data',async()=>{
  const f=await fixture(),settings=await siteRuntimeSettings(f.env,'first');
  const old=settings.runtimes.find(r=>r.version==='3.19.0');assert(old);

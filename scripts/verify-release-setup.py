@@ -1,5 +1,6 @@
 """Reported missing-Prebid state, actual main React components + real services."""
 import base64,json,re,subprocess,zipfile
+import os
 from pathlib import Path
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright
@@ -18,7 +19,7 @@ def route(request):
 try:
  assert json.loads(process.stdout.readline())['ready']
  with sync_playwright() as p:
-    browser=p.chromium.launch()
+    browser=p.chromium.launch(executable_path=os.environ.get('CHROMIUM_EXECUTABLE_PATH'))
     page=browser.new_page(viewport={'width':390,'height':844});page.route('**/*',route)
     page.on('pageerror',lambda e:errors.append(str(e)))
     page.goto('https://tessera.fixture.invalid/setup')
@@ -68,6 +69,7 @@ try:
     page.get_by_role('button',name='Change script setup',exact=True).wait_for()
     page.get_by_role('button',name='Generate and save package',exact=True).click()
     page.get_by_role('status').filter(has_text='Package saved in Releases').wait_for()
+    page.locator('article.runtime-release').get_by_text(f'Script {chosen}',exact=False).wait_for()
     with page.expect_download() as download:
         page.get_by_role('button',name='Download saved ZIP',exact=True).click()
     path=out/'simple-adx.zip';download.value.save_as(path)

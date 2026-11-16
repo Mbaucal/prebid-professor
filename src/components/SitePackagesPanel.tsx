@@ -12,10 +12,14 @@ type Release = {id:string;version:string;notes:string|null;status:'draft'|'stagi
 type PackageState = {
  site:{id:string;name:string};runtime:{runtimeVersion:string}|null;enablePrebid:boolean;
  revision:string;channelRevision:string;ready:boolean;error:string|null;nextStep:string|null;
- testOnly:boolean;releases:Release[];earlierReleases:Release[];
+ testOnly:boolean;releases:SavedRelease[];earlierReleases:SavedRelease[];
  warnings?:string[];
 };
 type Props={publisherId:string;endpoint?:string;settingsEndpoint?:string;onChanged?:()=>void|Promise<void>;onNavigate?:(destination:'prebid'|'versions'|'demand')=>void};
+type SavedRelease = Release & {runtimeVersion:string|null};
+const packageScriptLabel = (release: SavedRelease) => release.runtimeVersion ? `Script ${release.runtimeVersion}` : 'Script version unavailable';
+const packageName = (release: Release) => release.notes || 'Generated package';
+const channelVerb = {staging:'Stage',production:'Publish',rollback:'Restore'};
 export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint,onChanged,onNavigate}:Props){
  const [editingSetup,setEditingSetup]=useState(false);
  const url=endpoint??`/api/publishers/${encodeURIComponent(publisherId)}/builtin-releases`;
@@ -26,14 +30,18 @@ export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint
  async function run(fn:()=>Promise<void>){if(busy)return;setBusy(true);setFailed(false);try{await fn();}catch(e){setMessage(e instanceof Error?e.message:'Package action failed.');setFailed(true);}finally{setBusy(false);}}
  async function generate(){await request({action:'generate',revision:state!.revision,notes});setNotes('');await reload();setMessage('Package saved in Releases. Your settings are unchanged.');await onChanged?.();}
  async function download(id:string){await downloadStoredPackage(id,setMessage,state!.testOnly?{}:{siteId:publisherId});}
- async function restoreEarlier(r:Release){
-  if(!r.canRestore||!window.confirm(`Restore previously published version ${r.version} to Tessera's current channel?`))return;
+ async function restoreEarlier(r:SavedRelease){
+  if(!r.canRestore||!window.confirm(`Restore previously published package “${r.notes||r.version}” (${packageScriptLabel(r)}) to Tessera's current channel?`))return;
   const response=await fetch(`/api/publishers/${encodeURIComponent(publisherId)}/releases/${encodeURIComponent(r.id)}/rollback`,{method:'POST',credentials:'same-origin'});
   if(!response.ok)throw Error((await response.json() as {error?:string}).error||'Could not restore the earlier release.');
   await reload();await onChanged?.();setMessage('Earlier published package restored. Cloudflare site delivery remains a separate action.');
  }
  function deleteButton(r:Release){return <ReleaseDeleteButton publisherId={publisherId} release={{...r,displayName:r.notes||r.version||r.id,manifest:null}} disabled={busy} onError={text=>{setFailed(true);setMessage(text);}} onDeleted={async text=>{await reload();await onChanged?.();setFailed(false);setMessage(text);}}/>;}
- async function channel(id:string,action:string){if(!window.confirm(`${action==='staging'?'Stage':action==='rollback'?'Restore':'Publish'} this complete saved package?`))return;await request({action,releaseId:id,channelRevision:state!.channelRevision,acknowledge:true});await reload();await onChanged?.();setMessage('Release channel updated. Cloudflare site delivery is managed below.');}
+ async function channel(release:SavedRelease,action:keyof typeof channelVerb){
+  const savedAt=new Date(release.createdAt).toLocaleString();
+  if(!window.confirm(`${channelVerb[action]} package “${packageName(release)}” (${packageScriptLabel(release)})?\nSaved ${savedAt}.`))return;
+  await request({action,releaseId:release.id,channelRevision:state!.channelRevision,acknowledge:true});await reload();await onChanged?.();setMessage('Release channel updated. Cloudflare site delivery is managed below.');
+ }
  const earlierBuild=/^3\.16\.0-(?:tessera|revenue)\.preview\.\d+$/.test(state?.runtime?.runtimeVersion??'');
  return <section className="site-runtime-panel" aria-label="Saved packages"><h2>Generate and releases</h2>
  {message?<p role="status" className={failed?'runtime-error':'runtime-message'}>{message}</p>:null}
@@ -54,8 +62,22 @@ export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint
  <label>What changed?<input maxLength={160} value={notes} disabled={busy} onChange={e=>setNotes(e.target.value)} placeholder="Short release note"/></label>
  <div className="runtime-actions"><button disabled={busy||!state.ready||editingSetup} onClick={()=>void run(generate)}>{busy?'Working…':'Generate and save package'}</button><button disabled={busy} onClick={()=>void run(reload)}>Reload releases</button></div>
  {state.testOnly?<p>This is your TEST copy. Preview delivery is available in <a href="/deployments">TEST deployments</a>.</p>:<p>Stage a saved package before publishing. Existing site URLs stay the same.</p>}
- <h3>Saved versions</h3>{state.releases.length===0?<p>No built-in packages saved yet.</p>:state.releases.map((r:Release)=><article key={r.id} className="runtime-release"><strong>{r.notes||'Generated package'}</strong><p>{new Date(r.createdAt).toLocaleString()} · {r.status}</p><details><summary>Package ID</summary><code>{r.id}</code></details><div className="runtime-actions"><button disabled={busy} onClick={()=>void run(()=>download(r.id))}>Download saved ZIP</button><a className="button" href={testPageUrl(publisherId,r.id,state.testOnly)} target="_blank" rel="noopener noreferrer">Open test page</a>{!state.testOnly?<><button disabled={busy||r.status==='production'} onClick={()=>void run(()=>channel(r.id,'staging'))}>Stage package</button>{r.status==='staging'?<button disabled={busy} onClick={()=>void run(()=>channel(r.id,'production'))}>Publish package</button>:null}{r.status==='archived'?<button disabled={busy} onClick={()=>void run(()=>channel(r.id,'rollback'))}>Restore published package</button>:null}{deleteButton(r)}</>:null}</div></article>)}
- {!state.testOnly&&state.earlierReleases?.length?<><h3>Earlier packages</h3><p>Packages created before the built-in generator remain available. Restore a previously published version without changing your current editor settings.</p>{state.earlierReleases.map((r:Release)=><article key={r.id} className="runtime-release"><strong>{r.notes||r.version}</strong><p>{r.version} · {r.status} · {new Date(r.createdAt).toLocaleString()}</p>{r.canRestore?<button disabled={busy} onClick={()=>void run(()=>restoreEarlier(r))}>Restore earlier published package</button>:null}{deleteButton(r)}</article>)}</>:null}
+ <h3>Saved versions</h3>{state.releases.length===0?<p>No built-in packages saved yet.</p>:state.releases.map(r=>(
+  <article key={r.id} className="runtime-release">
+   <strong>{packageName(r)}</strong>
+   <p>{packageScriptLabel(r)} · {new Date(r.createdAt).toLocaleString()} · {r.status}</p>
+   <details><summary>Package ID</summary><code>{r.id}</code></details>
+   <div className="runtime-actions">
+    <button disabled={busy} onClick={()=>void run(()=>download(r.id))}>Download saved ZIP</button>
+    <a className="button" href={testPageUrl(publisherId,r.id,state.testOnly)} target="_blank" rel="noopener noreferrer">Open test page</a>
+    {!state.testOnly?<><button disabled={busy||r.status==='production'} onClick={()=>void run(()=>channel(r,'staging'))}>Stage package</button>
+     {r.status==='staging'?<button disabled={busy} onClick={()=>void run(()=>channel(r,'production'))}>Publish package</button>:null}
+     {r.status==='archived'?<button disabled={busy} onClick={()=>void run(()=>channel(r,'rollback'))}>Restore published package</button>:null}
+     {deleteButton(r)}</>:null}
+   </div>
+  </article>
+ ))}
+ {!state.testOnly&&state.earlierReleases?.length?<><h3>Earlier packages</h3><p>Packages created before the built-in generator remain available. Restore a previously published version without changing your current editor settings.</p>{state.earlierReleases.map(r=><article key={r.id} className="runtime-release"><strong>{r.notes||r.version}</strong><p>{packageScriptLabel(r)} · {r.version} · {r.status} · {new Date(r.createdAt).toLocaleString()}</p>{r.canRestore?<button disabled={busy} onClick={()=>void run(()=>restoreEarlier(r))}>Restore earlier published package</button>:null}{deleteButton(r)}</article>)}</>:null}
  {!state.testOnly?<><ScriptLibraryPanel key={publisherId} publisherId={publisherId} onOpenDemand={onNavigate?()=>onNavigate('demand'):undefined}/><AbExperimentPanel key={'earlier-'+publisherId} publisherId={publisherId} archiveOnly/><ExternalDeploymentsPanel publisherId={publisherId} releases={[...state.releases,...(state.earlierReleases??[])]} /></>:null}
  </>}
  </section>;
