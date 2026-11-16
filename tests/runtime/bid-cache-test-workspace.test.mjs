@@ -225,3 +225,15 @@ test('the TEST Bidder rules view and Prebid editor name the versions for their o
  assert.deepEqual((await f.req('/test-api/bidder-rules')).data.scriptVersions,['3.24.0 (Preview)']);
  assert.deepEqual((await f.req('/test-api/prebid-settings')).data.accountScriptVersions,['3.24.0 (Preview)']);
 });
+
+test('the TEST Bid caching view names the script that applies bid caching, never "or later"',async()=>{
+ const f=await fixture();await enablePrebid(f);
+ // 3.23.0 (selected by the TEST Prebid editor helper) applies bid caching; the panels then say "the selected script".
+ const capable=(await f.req(MODE)).data;
+ assert.equal(capable.runtimeSupportsBidCache,true);assert.equal(capable.bidCacheScriptVersion,'3.24.0 (Preview)');
+ // The first version with bid caching stays as it is (3.23.0, which has a runtime notice).
+ assert.equal(capable.bidCacheRuntimeVersion,'3.23.0');
+ await select(f,'3.21.2',true);
+ const earlier=(await f.req(MODE)).data;
+ assert.equal(earlier.runtimeSupportsBidCache,false);assert.equal(earlier.bidCacheScriptVersion,'3.24.0 (Preview)');
+});
