@@ -10,7 +10,10 @@ import {parsePrebidHeader,sha256} from '../worker/runtime/prebid-artifact-check.
 const origin='https://main-revenue.fixture.invalid',siteId='main-site';
 const setupScenario=process.argv.find(arg=>arg.startsWith('--script-setup='))?.split('=')[1];
 if(setupScenario)assert(['new','legacy','readiness','preview','current'].includes(setupScenario));
-const stable=process.argv.includes('--stable')||Boolean(setupScenario);
+// --bid-cache-blocked: 3.21.2 selected and bid caching saved on, so Generate is blocked until
+// 3.23.0 is selected or bid caching is turned off.
+const cacheBlocked=process.argv.includes('--bid-cache-blocked');
+const stable=process.argv.includes('--stable')||Boolean(setupScenario)||cacheBlocked;
 const f=workspaceStore();
 f.sqlite.exec(readFileSync('migrations/0001_initial.sql','utf8').split('INSERT OR IGNORE INTO publishers')[0]);
   applyBidderAccountSchema(f.sqlite);
@@ -38,7 +41,15 @@ async function api(path,body){const response=await worker.fetch(new Request(orig
 const selection=await api('/api/publishers/'+siteId+'/builtin-site-settings');
 const runtime=selection.runtimes.find(r=>r.version===(stable?'3.16.0':'3.16.0-revenue.preview.3'));assert(runtime,'MAIN catalog must include requested frozen runtime');
 const selectedRuntime=selection.runtimes.find(r=>r.version===(setupScenario==='legacy'?'3.10.0-tessera.preview.1':setupScenario==='readiness'?'3.14.0':setupScenario==='preview'?'3.16.0-revenue.preview.3':runtime.version));
-if(setupScenario!=='new')await api('/api/publishers/'+siteId+'/builtin-site-settings',{action:'version',revision:selection.revision,runtime:selectedRuntime.pin,allowPreview:selectedRuntime.version!=='3.16.0'});
+if(cacheBlocked){
+ const pinned=selection.runtimes.find(r=>r.version==='3.21.2');assert(pinned,'MAIN catalog must include 3.21.2');
+ await api('/api/publishers/'+siteId+'/builtin-site-settings',{action:'version',revision:selection.revision,runtime:pinned.pin,allowPreview:false});
+ const mode=await api('/api/publishers/'+siteId+'/prebid-mode');
+ const saved=await worker.fetch(new Request(origin+'/api/publishers/'+siteId+'/prebid-mode',{method:'PUT',headers:{origin,cookie,'content-type':'application/json'},
+  body:JSON.stringify({enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:60}})}),f.env,ctx);
+ assert.equal(saved.status,200,await saved.text());
+}
+else if(setupScenario!=='new')await api('/api/publishers/'+siteId+'/builtin-site-settings',{action:'version',revision:selection.revision,runtime:selectedRuntime.pin,allowPreview:selectedRuntime.version!=='3.16.0'});
 const bundle=await build({stdin:{contents:`
  import {createRoot} from 'react-dom/client';import {useState} from 'react';
  import ConfigPanel from './src/components/ConfigPanel';
@@ -48,7 +59,7 @@ const bundle=await build({stdin:{contents:`
  <h1>Synthetic MAIN site</h1><nav className="runtime-actions"><button onClick={()=>setView('config')}>Configuration</button><button onClick={()=>setView('packages')}>Generate and releases</button></nav>
  {view==='config'?<ConfigPanel publisherId="main-site" initialSection="${setupScenario?'generator-profiles':'ad-units'}" onOpenPrebid={()=>setView('prebid')}/>:view==='prebid'?<h2>Prebid.js destination</h2>:<SitePackagesPanel publisherId="main-site"/>}</main>}
  createRoot(document.getElementById('root')).render(<Fixture/>);`,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,outdir:'.generated/main-revenue-fixture',jsx:'automatic',format:'iife',minify:true,define:{'process.env.NODE_ENV':'"production"'}});
-console.log(JSON.stringify({ready:true,siteId,runtimeVersion:runtime.version,setupScenario:setupScenario??null}));
+console.log(JSON.stringify({ready:true,siteId,runtimeVersion:cacheBlocked?'3.21.2':runtime.version,setupScenario:setupScenario??null,bidCacheBlocked:cacheBlocked}));
 for await(const line of createInterface({input:process.stdin})){
  try{
   const input=JSON.parse(line);let response;

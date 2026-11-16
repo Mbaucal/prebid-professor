@@ -45,6 +45,8 @@ export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint
  {message?<p role="status" className={failed?'runtime-error':'runtime-message'}>{message}</p>:null}
  {!state?(failed?<button data-release-retry onClick={()=>void run(reload)}>Retry releases</button>:<p data-release-loading>Loading saved packages…</p>):<>
  <p>{state.site.name} · {state.runtime?runtimeLabel(state.runtime.runtimeVersion):'Setup needed'}{earlierBuild?' · Saved earlier build':''}</p>
+ {/* Saved bid cache settings the selected script version cannot apply: say why Generate is blocked. */}
+ {!state.ready && state.nextStep==='demand' && state.error ? <p role="alert" className="runtime-error">{state.error}</p> : null}
  {(!state.ready && state.nextStep) || editingSetup ? <div tabIndex={-1} data-release-target="setup"><ScriptSetupPanel
    publisherId={publisherId} endpoint={settingsEndpoint}
    onOpenPrebid={onNavigate?()=>onNavigate('prebid'):undefined}

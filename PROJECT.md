@@ -1,3 +1,19 @@
+## 2026-11-15 — Bid caching for every site
+
+Marko asked that a feature never be allowed for one publisher and refused for
+others. Bid caching is now an ordinary site setting: every site can turn it on in
+Config → Demand → Prebid and choose per position in Config → Ad units → Bid cache,
+for its own enabled ATF/BTF banner positions. In the TEST workspace the TEST site
+does the same under Bid caching. TakeOver, Outstream, video, native, Draft and
+disabled positions always use the current auction. Built-in packages apply the
+settings only with a script version that has the `bid-cache` capability (3.23.0
+is the first), selected explicitly in Script setup. With an earlier version the
+settings stay saved, Demand says to select 3.23.0, and Generate stops with a
+clear 409 instead of ignoring them. Named scripts (the TEST named-script copy)
+use the same settings for their 19 reviewed positions and refuse overrides for
+any other position. Details: `docs/per-position-bid-cache.md`. This is a
+development change; it deploys nothing and changes no saved package.
+
 ## 2026-09-30 — Central PM coordination and UX acceptance
 
 Marko designated one central PM chat and approved two implementation agents plus

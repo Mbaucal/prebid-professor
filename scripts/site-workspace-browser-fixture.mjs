@@ -6,7 +6,9 @@ import { siteRuntimeResponse } from '../worker/site-runtime/service.mjs';
 import { packageResponse } from '../worker/site-runtime/releases.mjs';
 import { workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD } from '../tests/support/test-workspace-store.mjs';
 const revenueMode=process.argv.includes('--revenue');
-const f=workspaceStore({prebidFiles:revenueMode});
+// --bid-cache: Prebid is on through the TEST Prebid editor, so bid caching can be saved and generated.
+const bidCacheMode=process.argv.includes('--bid-cache');
+const f=workspaceStore({prebidFiles:revenueMode||bidCacheMode});
 if(process.argv.includes('--cleanup')){
  f.env.BUILDS.delete=async keys=>{for(const key of keys)f.objects.delete(key);};
  f.env.BUILDS.head=async key=>f.objects.has(key)?{key}:null;
@@ -18,6 +20,11 @@ else {
 const login=await worker.fetch(new Request(ORIGIN+'/api/auth/login',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:TEST_EMAIL,password:TEST_PASSWORD})}),f.env);
 cookie=login.headers.get('set-cookie').split(';')[0];
 await worker.fetch(new Request(ORIGIN+'/test-api/setup',{method:'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({confirm:'prepare-empty-test-database'})}),f.env);
+if(bidCacheMode){
+ const req=async(path,body)=>{const response=await worker.fetch(new Request(ORIGIN+path,{method:body===undefined?'GET':'POST',headers:{cookie,origin:ORIGIN,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}),f.env);return {status:response.status,data:await response.json()};};
+ const {enableTestPrebid,selectTestRuntime}=await import('../tests/support/test-bid-cache-site.mjs');
+ await enableTestPrebid(f.env,req);await selectTestRuntime(req,'3.21.2',true);
+}
 }
 // Exercise the main Releases wrapper with the same real site services in an
 // ephemeral fixture. These routes and synthetic data are never deployed.
