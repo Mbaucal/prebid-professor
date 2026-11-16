@@ -33,7 +33,7 @@ export function createTesseraBidCache(win, settings, options) {
   var maxAgeMs = settings.maxAgeSeconds * 1000;
   var pb = null, active = false, configured = false;
   var status = 'waiting-prebid', reason = null, prebidVersion = null;
-  var floorAdjustments = Object.create(null);
+  var floorAdjustments = Object.create(null), zeroFloorOwner = null, zeroFloorPrint = null, zeroFloorFields = null;
   var consentReady = false, consentEpoch = 0;
   var known = Object.create(null), auctions = [], latest = Object.create(null);
   var started = Object.create(null), requested = Object.create(null), requestOrder = [];
@@ -149,6 +149,29 @@ export function createTesseraBidCache(win, settings, options) {
     }
     return false;
   }
+  function zeroFloorModel(floors) {
+    if (!options.zeroFloorModel || !floors || typeof floors !== 'object' || floors.floorMin !== 0) return false;
+    if (floors.endpoint && (typeof floors.endpoint !== 'object' || Object.keys(floors.endpoint).length)) return false;
+    var data = floors.data, schema = data && data.schema, values = data && data.values;
+    if (!data || typeof data !== 'object' || Object.keys(data).sort().join(',') !== 'currency,schema,values' ||
+      typeof data.currency !== 'string' || data.currency.toUpperCase() !== options.floorCurrency ||
+      !schema || schema.delimiter !== '|' || !Array.isArray(schema.fields) ||
+      schema.fields.join(',') !== 'mediaType,size,deviceType,dayType,timeOfDay' ||
+      !values || typeof values !== 'object' || Array.isArray(values)) return false;
+    var keys = Object.keys(values);
+    return keys.length >= 4 && ['banner|*|desktop|*|*','banner|*|mobile|*|*','banner|*|tablet|*|*','*|*|*|*|*'].every(function(key) {
+      return Object.prototype.hasOwnProperty.call(values,key) && values[key] === 0;
+    }) && keys.every(function(key) { return values[key] === 0; });
+  }
+  function zeroFloorProof(floors, nativeRequest) {
+    if (floors !== zeroFloorOwner || !zeroFloorModel(floors) || JSON.stringify(floors.data) !== zeroFloorPrint) return false;
+    var fields = floors.additionalSchemaFields || {};
+    if (!zeroFloorFields || ['deviceType','dayType','timeOfDay'].some(function(key) { return fields[key] !== zeroFloorFields[key]; })) return false;
+    var data = nativeRequest && nativeRequest.floorData;
+    if (!data || data.location !== 'setConfig' || data.floorMin !== 0 || nativeRequest.floors != null) return false;
+    var imp = nativeRequest.ortb2Imp, ext = imp && imp.ext, prebid = ext && ext.prebid;
+    return !prebid || prebid.floors == null;
+  }
   /** The current native floor contract, in the original adapter bid currency.
    * getFloor inversely adjusts bidder floors; comparing an already adjusted
    * cached CPM would undercut floors when a bidder multiplier is above one. */
@@ -179,8 +202,11 @@ export function createTesseraBidCache(win, settings, options) {
       var value = nativeRequest.getFloor({currency:row.originalCurrency, mediaType:'banner', size:[row.width,row.height]});
       // A literal null is the module's explicit no-floor rule.
       if (value === null) return null;
-      // Native priceFloors returns {} for a zero or absent matching floor.
-      if (value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) return null;
+      // Native priceFloors also returns {} after deleting an auction's floor
+      // context (3 seconds after completion). That is never permission unless
+      // the saved and still-owned static model proves every floor is zero.
+      if (value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0)
+        return zeroFloorProof(floors,nativeRequest) ? null : 'floor-unavailable';
       if (!value || typeof value !== 'object' || typeof value.floor !== 'number' || !Number.isFinite(value.floor) || value.floor < 0 ||
         typeof value.currency !== 'string' || value.currency.toUpperCase() !== row.originalCurrency) return 'floor-unavailable';
       return row.originalCpm < value.floor ? 'floor' : null;
@@ -240,6 +266,12 @@ export function createTesseraBidCache(win, settings, options) {
       (options.floorOwnedBidders || []).forEach(function(code) {
         floorAdjustments[code] = bidderSettings[code] && bidderSettings[code].bidCpmAdjustment;
       });
+      var ownedFloors = instance.getConfig('floors');
+      if (zeroFloorModel(ownedFloors)) {
+        zeroFloorOwner = ownedFloors; zeroFloorPrint = JSON.stringify(ownedFloors.data);
+        var fields = ownedFloors.additionalSchemaFields || {};
+        zeroFloorFields = {deviceType:fields.deviceType, dayType:fields.dayType, timeOfDay:fields.timeOfDay};
+      }
       var existing = instance.getConfig('bidCacheFilterFunction');
       if (existing !== undefined && existing !== null) { fresh('publisher-filter-present'); return; }
       instance.onEvent('auctionInit', onInit);

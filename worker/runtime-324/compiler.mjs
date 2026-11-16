@@ -33,5 +33,6 @@ export function compileRuntime324(input) {
     patches:[...previous.patches,
       '3.24.0: bidder accounts, per-account SChain, bidder rules and bid caching share one policy on the audited lazy/consent/TakeOver base',
       '3.24.0: reuse requires exact current native-request admission and live bidder/account eligibility on every targeting read, plus unexpired current-size unsent Banner bids in the same consent epoch and current native floors; fresh deals remain preferred',
-      '3.24.0: missing or replaced cache hooks fall back to fresh-only; TakeOver and Outstream never reuse cached bids']};
+      '3.24.0: actual native bidRequested admission prevents Prebid activity denials from being bypassed; ambiguous deleted floor contexts refuse reuse except for a still-owned unchanged saved all-zero static model',
+      '3.24.0: fresh responses retain request-time bidder rules; cached bids additionally meet live target-time eligibility; missing or replaced cache hooks fall back to fresh-only; TakeOver and Outstream never reuse cached bids']};
 }
