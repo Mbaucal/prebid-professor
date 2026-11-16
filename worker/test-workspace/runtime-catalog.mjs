@@ -103,7 +103,7 @@ export function previewInput(snapshot,descriptor,time,takeOver){
     if (extended) throw Error(`Ad unit ${extended} uses a GAM code supported by script 3.19.1 or 3.20.1. Select 3.20.1 in Script setup and save; the exact code and existing packages are kept.`);
   }
 
-  (descriptor.id===cache323.id?requireCache323RevenueRuntime:descriptor.id===accounts3221.id?requireRevenueRuntime:descriptor.id===patch3212.id?requirePatch3212RevenueRuntime:descriptor.id===patch3211.id?requireAuditRevenueRuntime:requireRulesRevenueRuntime)(config,descriptor);
+  (descriptor.id===cache323.id?requireCache323RevenueRuntime:(descriptor.id===accounts3221.id||descriptor.id===lazy3222.id)?requireRevenueRuntime:descriptor.id===patch3212.id?requirePatch3212RevenueRuntime:descriptor.id===patch3211.id?requireAuditRevenueRuntime:requireRulesRevenueRuntime)(config,descriptor);
   requireContextualRuntime(config,descriptor);
   // 3.23.0 has bid caching but no bidder rules: say that no script has both, before the shared 'or later' wording.
   requireBidderRulesBesideBidCache(config,descriptor);

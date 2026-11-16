@@ -85,7 +85,7 @@ test('the new compiler only patches lazy ownership; audited readiness and expiry
 });
 test('3.22.2 is explicitly selected preview with the complete immutable 3.22.1 source closure',async()=>{
   assert.equal(descriptor.channel,'preview');assert.throws(()=>pinRuntime(descriptor),/explicit opt-in/);
-  assert.equal(runtimeReleaseHistory.find(r=>r.channel==='stable').version,'3.21.2');
+  assert.equal(runtimeReleaseHistory.find(r=>r.channel==='stable').version,'3.23.0');
   for(const file of previousFiles)assert(sourceFiles.includes(file),file);
   assert.equal((await runtime3222Source(process.cwd())).codeSha256,descriptor.codeSha256);
 });
