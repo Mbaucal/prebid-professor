@@ -36,7 +36,7 @@ export function createTesseraBidCache(win, settings, options) {
   var consentReady = false, consentEpoch = 0;
   var known = Object.create(null), auctions = [], latest = Object.create(null);
   var started = Object.create(null), requested = Object.create(null), requestOrder = [];
-  var admissions = Object.create(null), admissionOrder = [], extended = Object.create(null);
+  var admissions = Object.create(null), nativeRequests = Object.create(null), admissionOrder = [], extended = Object.create(null);
   var decisions = Object.create(null), reasons = Object.create(null), decisionCount = 0;
   var counters = {auctions:0, cachedWins:0, freshWins:0, noBid:0, filterRejections:Object.create(null)};
   var lastSelection = null;
@@ -67,7 +67,7 @@ export function createTesseraBidCache(win, settings, options) {
   function drop() {
     known = Object.create(null); auctions = []; latest = Object.create(null);
     requested = Object.create(null); requestOrder = [];
-    admissions = Object.create(null); admissionOrder = [];
+    admissions = Object.create(null); nativeRequests = Object.create(null); admissionOrder = [];
     decisions = Object.create(null); reasons = Object.create(null); decisionCount = 0;
   }
   function fresh(why) {
@@ -92,8 +92,10 @@ export function createTesseraBidCache(win, settings, options) {
       codes[unit.code] = bidders;
     });
     if (!Object.prototype.hasOwnProperty.call(admissions, id)) admissionOrder.push(id);
-    admissions[id] = codes;
-    while (admissionOrder.length > MAX_REQUESTS) delete admissions[admissionOrder.shift()];
+    admissions[id] = codes; nativeRequests[id] = Object.create(null);
+    while (admissionOrder.length > MAX_REQUESTS) {
+      var removed = admissionOrder.shift(); delete admissions[removed]; delete nativeRequests[removed];
+    }
   }
   function clearExtended(code, allowed) {
     var previous = extended[code];
@@ -113,6 +115,18 @@ export function createTesseraBidCache(win, settings, options) {
       while (requestOrder.length > MAX_REQUESTS) delete requested[requestOrder.shift()];
     } else if (requested[id] !== print) print = false;
     requested[id] = print;
+    // Native Prebid may remove a bidder through activity controls or validation
+    // after our final request boundary. Only a real exact bidder/position
+    // request may admit that bidder's earlier bids to the current auction.
+    var incoming = nativeRequests[id], admitted = admissions[id], bidder = request.bidderCode;
+    if (incoming && admitted && typeof bidder === 'string' && Array.isArray(request.bids)) {
+      request.bids.forEach(function(bid) {
+        var code = bid && bid.adUnitCode;
+        if (typeof code !== 'string' || !admitted[code] || admitted[code][bidder] !== true) return;
+        if (!incoming[code]) incoming[code] = Object.create(null);
+        incoming[code][bidder] = true;
+      });
+    }
   }
   function onWon(bid) {
     var row = bid && bid.adId !== undefined && bid.adId !== null ? known[String(bid.adId)] : null;
@@ -147,6 +161,8 @@ export function createTesseraBidCache(win, settings, options) {
     if (!current || current.id !== started[code] || row.entry === current) return 'context';
     var admitted = current.admitted && current.admitted[code];
     if (!admitted || admitted[row.bidder] !== true) return 'bidder-not-requested';
+    var native = current.native && current.native[code];
+    if (!native || native[row.bidder] !== true) return 'native-bidder-not-requested';
     try { if (!options.currentAllows(row.bidder, code)) return 'bidder-ineligible'; }
     catch (_) { return 'bidder-ineligible'; }
     if (!consentReady || row.entry.epoch !== consentEpoch || current.epoch !== consentEpoch) return 'consent';
@@ -199,7 +215,7 @@ export function createTesseraBidCache(win, settings, options) {
   function auction(codes, bids, auctionId, epoch) {
     if (!active) return;
     var id = String(auctionId);
-    var entry = {id:id, epoch:epoch, consent:typeof requested[id] === 'string' ? requested[id] : null, deals:Object.create(null), admitted:admissions[id] || Object.create(null)};
+    var entry = {id:id, epoch:epoch, consent:typeof requested[id] === 'string' ? requested[id] : null, deals:Object.create(null), admitted:admissions[id] || Object.create(null), native:nativeRequests[id] || Object.create(null)};
     counters.auctions++;
     (codes || []).forEach(function(code) {
       latest[code] = entry;
