@@ -78,8 +78,8 @@ jobs:
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/contextual-signals-*.test.mjs
       - name: Reproduce and prevent the independent audit failures
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/audit-size-map-selection.test.mjs tests/runtime/consent-storage3211.test.mjs tests/runtime/contextual-rtd-ownership.test.mjs tests/runtime/size-map-references.test.mjs tests/runtime/runtime3211-package-qa.test.mjs tests/runtime/boot3212.test.mjs tests/runtime/runtime3212-package-qa.test.mjs
-      - name: Verify audited 3.22.1 composition and immutable release history
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3221-package-qa.test.mjs tests/runtime/runtime-lineage.test.mjs tests/runtime/runtime-release-history.test.mjs
+      - name: Verify audited 3.22.x composition, lazy auction ownership and immutable history
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3221-package-qa.test.mjs tests/runtime/runtime3222-lazy.test.mjs tests/runtime/runtime-lineage.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/runtime-allow-list-parity.test.mjs
       - name: Verify bidder eligibility and generated request isolation
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/bidder-rules-*.test.mjs
       - name: Verify console SChain evidence and transparent network observation
@@ -126,6 +126,8 @@ jobs:
           python scripts/verify-storage3211-browser.py .generated/storage3212-browser
       - name: 3.21.2 boot at load, held GPT start, TakeOver cap and load-time page targeting against 3.21.0
         run: node scripts/prepare-boot3212-browser.mjs && python scripts/verify-boot3212-browser.py
+      - name: Lazy observer ordering on full readable and minified 3.22.2 scripts
+        run: node --experimental-strip-types scripts/prepare-lazy3222-browser-fixtures.mjs && python scripts/verify-lazy3222-browser.py
       - name: Bidder rule editor and simulator on desktop and narrow screens
         run: python scripts/verify-bidder-rules-ui.py
       - run: python scripts/verify-site-editor.py
@@ -154,6 +156,7 @@ jobs:
             .generated/draft-inventory-ui/
             .generated/contextual-signals-ui-evidence/
             .generated/bidder-rules-ui-evidence/
+            .generated/lazy3222-evidence/
             .generated/site-editor-evidence/
             .generated/position-evidence/
             .generated/site-workspace-evidence/
