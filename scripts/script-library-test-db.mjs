@@ -4,8 +4,8 @@ export async function seedScriptLibrary(db) {
     INSERT INTO publishers VALUES('tanjug','Tanjug','tanjug.rs','/22852026051/Tanjug.rs-Display/');
     CREATE TABLE publisher_configs(id TEXT PRIMARY KEY,publisher_id TEXT,config_json TEXT,updated_at TEXT);
     INSERT INTO publisher_configs VALUES('config-tanjug','tanjug','{"enablePrebid":true,"currency":"EUR","consent":{"cmpApi":"iab"}}',NULL);
-    CREATE TABLE bidders(publisher_id TEXT,enabled INTEGER);
-    INSERT INTO bidders VALUES('tanjug',1);
+    CREATE TABLE bidders(publisher_id TEXT,enabled INTEGER,bidder TEXT,account_json TEXT);
+    INSERT INTO bidders(publisher_id,enabled,bidder) VALUES('tanjug',1,'pubmatic');
     CREATE TABLE bidder_overrides(publisher_id TEXT);
     CREATE TABLE prebid_builds(id TEXT PRIMARY KEY,publisher_id TEXT,version TEXT,file_key TEXT,file_url TEXT,modules_json TEXT,status TEXT,uploaded_by TEXT,uploaded_at TEXT);
     CREATE TABLE ad_units(id TEXT PRIMARY KEY,publisher_id TEXT,code TEXT,type TEXT,media_type TEXT,size_map_key TEXT,enabled INTEGER,sort_order INTEGER,notes TEXT,created_at TEXT,updated_at TEXT);
@@ -27,7 +27,7 @@ export async function seedExampleSite(db,{builtinRuntimeSelection}={}) {
   await db.batch([
     db.prepare("INSERT INTO publishers VALUES(?,'Example site','example.invalid','/123/example/')").bind(EXAMPLE_SITE),
     db.prepare("INSERT INTO publisher_configs VALUES('config-example',?,?,NULL)").bind(EXAMPLE_SITE,JSON.stringify(config)),
-    db.prepare("INSERT INTO bidders VALUES(?,1)").bind(EXAMPLE_SITE),
+    db.prepare("INSERT INTO bidders(publisher_id,enabled,bidder) VALUES(?,1,'pubmatic')").bind(EXAMPLE_SITE),
     ...units.map(([code,type,media,enabled],i)=>db.prepare("INSERT INTO ad_units VALUES(?,?,?,?,?,?,?,?,NULL,'2026-11-01','2026-11-01')").bind('example-'+code,EXAMPLE_SITE,code,type,media,'display',enabled,i)),
   ]);
 }

@@ -6,6 +6,8 @@ import {runtimeCatalog} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {pinRuntime, validateRuntimeDescriptor} from '../../worker/runtime/version-pin.mjs';
 import {BID_CACHE_RUNTIME_VERSION, bidCacheEligibleCodes} from '../../shared/bid-cache/eligibility.mjs';
 import {CACHE_POSITIONS} from '../../worker/experiments/position-cache-settings.mjs';
+import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
+import {runtimeNotices} from '../../shared/runtime-notices.mjs';
 import {MAX_POSITION_OVERRIDES, bidCacheOverrides, bidCacheSettings, requireEligibleOverrides} from '../../worker/site-runtime/prebid-cache-settings.mjs';
 
 // A synthetic site that is not Tanjug: its own inventory, its own GAM path.
@@ -204,6 +206,29 @@ test('the payload says whether the selected script version applies bid caching',
   assert.equal(state.runtimeSupportsBidCache, true);
 });
 
+test('the panels name the newest script with bid caching that has no runtime notice, never "or later"', async () => {
+  // Independent of the server code: numeric registry releases with bid caching, without a runtime notice.
+  const numbers = version => version.split('.').map(Number);
+  const offered = runtimeReleaseHistory.filter(release => /^\d+\.\d+\.\d+$/.test(release.version) && release.capabilities.includes('bid-cache')
+    && !runtimeNotices.some(notice => notice.version === release.version && notice.runtimeSha256 === release.codeSha256))
+    .sort((a, b) => { const x = numbers(a.version), y = numbers(b.version); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; });
+  const newest = offered.at(-1), expected = newest.version + (newest.channel === 'preview' ? ' (Preview)' : '');
+  assert.equal(expected, '3.24.0 (Preview)');
+  const selection = runtime => ({schemaVersion: 1, runtime: pinRuntime(runtime, {allowPreview: true}), prebid: null});
+  const rules = {schemaVersion: 1, enabled: true, rules: []};
+  for (const config of [{}, {prebidBidCache: {enabled: true, maxBidAgeSeconds: 60}},
+    {builtinRuntimeSelection: selection(runtimeCatalog.find(runtime => runtime.version === BID_CACHE_RUNTIME_VERSION))},
+    {runtimeControls: {...runtimeControls, bidderRules: rules}, builtinRuntimeSelection: selection(runtimeCatalog.find(runtime => runtime.version === '3.21.2'))}]) {
+    const state = await read(setup(config));
+    assert.equal(state.bidCacheScriptVersion, expected, JSON.stringify(config));
+    // The first version with bid caching stays as it is (3.23.0, which has a runtime notice).
+    assert.equal(state.bidCacheRuntimeVersion, BID_CACHE_RUNTIME_VERSION);
+  }
+  const f = setup();
+  const saved = await put({enabled: true, revision: (await read(f)).revision, bidCache: {enabled: true, maxBidAgeSeconds: 60}}, f);
+  assert.equal((await saved.json()).bidCacheScriptVersion, expected, 'the save response names it too');
+});
+
 test('Tanjug gets the same cache fields; only the named-script library sentence differs', async () => {
   const f = setup({prebidBidCache: {enabled: true, maxBidAgeSeconds: 60, positionOverrides: {Billboard: false}}});
   addTanjug(f);
@@ -216,7 +241,7 @@ test('Tanjug gets the same cache fields; only the named-script library sentence 
   assert(tanjug.bidCachePositions.includes('Home_Top') && !tanjug.namedScriptPositions.includes('Home_Top'), 'an eligible Tanjug position outside the named-script inventory');
   // Bidder counts and Prebid builds differ between the two fixtures; every cache field is equal.
   const cacheFields = state => ({revision: state.revision, bidCacheAvailable: state.bidCacheAvailable, bidCachePositions: state.bidCachePositions,
-    bidCacheRuntimeVersion: state.bidCacheRuntimeVersion, selectedRuntime: state.selectedRuntime, runtimeSupportsBidCache: state.runtimeSupportsBidCache, prebidMode: state.prebidMode});
+    bidCacheRuntimeVersion: state.bidCacheRuntimeVersion, bidCacheScriptVersion: state.bidCacheScriptVersion, selectedRuntime: state.selectedRuntime, runtimeSupportsBidCache: state.runtimeSupportsBidCache, prebidMode: state.prebidMode});
   assert.deepEqual(cacheFields(tanjug), cacheFields(example));
   assert.deepEqual(Object.keys(tanjug).sort(), Object.keys(example).sort());
   // The same save is accepted or refused the same way for both sites.

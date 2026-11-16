@@ -38,11 +38,13 @@ def route(r):
 def release():forward(held.pop())
 def no_scroll(page):return page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
 def card(page,code):return page.locator('.ad-unit-card').filter(has=page.locator('code',has_text=code))
-SELECT_TEXT='Select a compatible script in Script setup to apply bid caching. Your setting is saved.'
+# The newest registry version with bid caching and no runtime notice, as the server names it.
+CACHE_SCRIPT='3.24.0 (Preview)'
+SELECT_TEXT=f'Select script {CACHE_SCRIPT} in Script setup to apply bid caching. Your setting is saved.'
 # Saved settings would cache, but the form has unsaved changes: nothing claims it is saved.
-SELECT_DIRTY_TEXT='Select a compatible script in Script setup to apply bid caching.'
+SELECT_DIRTY_TEXT=f'Select script {CACHE_SCRIPT} in Script setup to apply bid caching.'
 # Nothing saved would cache yet.
-NEEDS_TEXT='Bid caching needs script 3.23.0 or later.'
+NEEDS_TEXT=f'Bid caching needs script {CACHE_SCRIPT}.'
 GENERATOR_TEXT=('Bid caching needs a compatible script version. Select 3.24.0 (Preview) in Script setup and save; your bid cache settings are kept. '
  + 'This version combines bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
  'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.')
@@ -69,13 +71,13 @@ try:
   release();page.get_by_text('Prebid settings saved. Select a compatible script in Script setup before you generate; your bid cache settings are kept.',exact=False).wait_for()
   status,saved=api('GET','/prebid-mode')
   check('The site default is saved in D1',status==200 and saved['prebidMode']['bidCache']=={'enabled':True,'maxBidAgeSeconds':45})
-  check('Saved, on 3.21.2: the panel asks for 3.23.0 and says the setting is saved',fieldset.get_by_text(SELECT_TEXT,exact=True).is_visible())
+  check('Saved, on 3.21.2: the panel asks for 3.24.0 (Preview) and says the setting is saved',fieldset.get_by_text(SELECT_TEXT,exact=True).is_visible())
   page.screenshot(path=str(out/'demand-saved-desktop.png'),full_page=True)
   # 409: another tab saves first; this form must reload before saving.
   status,_=api('PUT','/prebid-mode',{'enabled':True,'revision':saved['revision'],'bidCache':{'enabled':True,'maxBidAgeSeconds':90}})
   assert status==200
   page.get_by_label('Maximum bid age (seconds)',exact=True).fill('50')
-  check('A saved setting with unsaved changes asks for 3.23.0 without calling the form saved',fieldset.get_by_text(SELECT_DIRTY_TEXT,exact=True).is_visible())
+  check('A saved setting with unsaved changes asks for 3.24.0 (Preview) without calling the form saved',fieldset.get_by_text(SELECT_DIRTY_TEXT,exact=True).is_visible())
   page.get_by_role('button',name='Save Prebid settings',exact=True).click()
   page.get_by_text('Prebid settings changed. Reload before saving.',exact=True).wait_for()
   check('A stale form is refused with 409 and keeps the entered value',any(r['status']==409 for r in requests) and page.get_by_label('Maximum bid age (seconds)',exact=True).input_value()=='50')
@@ -103,7 +105,7 @@ try:
   dialog=page.get_by_role('dialog',name='Bid cache · In_Article',exact=True);dialog.get_by_text('Loading bid cache settings…',exact=True).wait_for()
   check('The position dialog shows its loading state',len(held)==1);release()
   dialog.get_by_label('Bid cache for In_Article',exact=True).wait_for()
-  check('The dialog says it applies to the next package generated with 3.23.0',dialog.get_by_text('Applies to the next package generated with script 3.23.0 or later. Select a compatible script in Script setup to use it.',exact=True).is_visible())
+  check('The dialog names 3.24.0 (Preview) for the next package, never "or later"',dialog.get_by_text(f'Applies to the next package generated with script {CACHE_SCRIPT}. Select that version in Script setup to use it.',exact=True).is_visible())
   dialog.get_by_label('Bid cache for In_Article',exact=True).select_option('off')
   dialog.get_by_role('button',name='Save position setting').click();dialog.get_by_role('status').filter(has_text='Saved. Select a compatible script in Script setup to apply it.').wait_for()
   check('The position override is saved for this site',api('GET','/prebid-mode')[1]['prebidMode']['bidCache'].get('positionOverrides')=={'In_Article':False} and dialog.get_by_text('Effective: Off',exact=True).is_visible())
@@ -154,12 +156,12 @@ try:
   status,mode=api('GET','/prebid-mode')
   check('With 3.23.0 saved, the API reports that it applies bid caching','bid-cache' in pin['capabilities'] and status==200 and mode['runtimeSupportsBidCache'] is True and mode['selectedRuntime']=={'id':'tessera-3.23.0','version':'3.23.0'})
   page.get_by_role('button',name='Ad positions',exact=True).click();page.get_by_role('button',name='Demand → Prebid',exact=True).click()
-  page.get_by_text('Applies to new packages generated with script 3.23.0 or later.',exact=True).wait_for()
+  page.get_by_text('Applies to new packages generated with the selected script.',exact=True).wait_for()
   check('A capable runtime shows the apply line, not the select line',page.get_by_text(SELECT_TEXT,exact=True).count()==0)
   page.screenshot(path=str(out/'demand-capable-desktop.png'),full_page=True)
   page.get_by_role('button',name='Ad positions',exact=True).click();card(page,'Footer').get_by_role('button',name='Bid cache: On',exact=True).click()
   dialog=page.get_by_role('dialog',name='Bid cache · Footer',exact=True)
-  dialog.get_by_text('Applies to the next package generated with script 3.23.0 or later.',exact=True).wait_for()
+  dialog.get_by_text('Applies to the next package generated with the selected script.',exact=True).wait_for()
   dialog.get_by_label('Bid cache for Footer',exact=True).select_option('off');dialog.get_by_role('button',name='Save position setting').click()
   dialog.get_by_role('status').filter(has_text='Saved. Generate a new package to apply this setting.').wait_for()
   page.set_viewport_size({'width':390,'height':844})
