@@ -1,3 +1,4 @@
+import os
 """Reported missing-Prebid state, actual main React components + real services."""
 import base64,json,re,subprocess,zipfile
 from pathlib import Path
@@ -75,7 +76,7 @@ def route(request):
 try:
  assert json.loads(process.stdout.readline())['ready']
  with sync_playwright() as p:
-    browser=p.chromium.launch()
+    browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'))
     page=browser.new_page(viewport={'width':390,'height':844});page.route('**/*',route)
     page.on('pageerror',lambda e:errors.append(str(e)))
     page.goto('https://tessera.fixture.invalid/setup')
