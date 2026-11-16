@@ -9,19 +9,61 @@ process=subprocess.Popen(['node','--experimental-strip-types','--experimental-lo
 requests=[];errors=[]
 # MBA-419: 3.22.0 stays selectable and savable, labeled and explained. The
 # current version is read from the endpoint, never assumed.
-legacy='3.22.0 · No 3.21.1/3.21.2 fixes'
+legacy='3.22.0 · No 3.21.1+ fixes'
 legacy_warning_start='3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for size maps when a key-value rule does not match, contextual signals with existing Prebid RTD providers, and TakeOver frequency and debug storage before CMP consent.'
 def legacy_warning(current):
     return legacy_warning_start+' 3.22.1 (Preview) has bidder rules with these fixes. '+current+' is the current version.'
 def select_fits(select):
-    # Closed-select text width against its content box minus the native arrow,
-    # in this page's font and in the admin font (src/styles.css), whichever is wider.
+    # Closed-select text width against its content box minus the native arrow.
+    # Measured in the rendered font, in the admin stack (src/styles.css) and in
+    # the fonts that stack falls back to where Inter is not installed (DejaVu
+    # Sans on stock Ubuntu, including the CI runner); the widest one counts, so
+    # the result does not depend on the fonts of the machine running the check.
     return select.evaluate("""(el)=>{const s=getComputedStyle(el),c=document.createElement('canvas').getContext('2d');
-      const text=el.options[el.selectedIndex].textContent,admin=s.fontWeight+' '+s.fontSize+' Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-      const width=Math.max(...[s.font,admin].map(font=>{c.font=font;return c.measureText(text).width;}));
-      const room=el.clientWidth-parseFloat(s.paddingLeft)-parseFloat(s.paddingRight)-24;
-      return {text,textWidth:Math.ceil(width),room:Math.floor(room),selectWidth:el.clientWidth,font:s.font,adminFont:admin,fits:width<=room};}""")
+      const text=el.options[el.selectedIndex].textContent,size=s.fontWeight+' '+s.fontSize+' ';
+      const fonts={rendered:s.font,admin:size+'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        dejaVuSans:size+'"DejaVu Sans"',liberationSans:size+'"Liberation Sans"',arial:size+'Arial'};
+      const widths=Object.fromEntries(Object.entries(fonts).map(([name,font])=>{c.font=font;return [name,Math.ceil(c.measureText(text).width)];}));
+      const width=Math.max(...Object.values(widths)),room=el.clientWidth-parseFloat(s.paddingLeft)-parseFloat(s.paddingRight)-24;
+      return {text,textWidth:width,widths,room:Math.floor(room),selectWidth:el.clientWidth,font:s.font,fits:width<=room};}""")
 fits=[]
+def dashboard_fits(browser):
+    # The dashboard-styled admin (main-revenue fixture) is narrower than this
+    # unstyled harness: check the standalone Script setup and the one inside
+    # Releases at 390 px with 3.22.0 selected and saved.
+    origin='https://main-revenue.fixture.invalid'
+    fixture=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/main-revenue-browser-fixture.mjs','--script-setup=new'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+    try:
+        assert json.loads(fixture.stdout.readline())['ready']
+        def dashboard_route(request):
+            url=urlsplit(request.request.url)
+            assert url.netloc=='main-revenue.fixture.invalid'
+            fixture.stdin.write(json.dumps({'path':url.path,'method':request.request.method,'body':request.request.post_data})+'\n');fixture.stdin.flush()
+            result=json.loads(fixture.stdout.readline());assert 'error' not in result,result
+            request.fulfill(status=result['status'],headers=result['headers'],body=base64.b64decode(result['body']))
+        page=browser.new_page(viewport={'width':390,'height':844});page.route('**/*',dashboard_route)
+        page.on('pageerror',lambda e:errors.append(str(e)))
+        page.goto(origin+'/')
+        panel=page.get_by_role('region',name='Script setup',exact=True)
+        version=panel.get_by_role('combobox',name='Script version',exact=True);version.wait_for()
+        options=version.locator('option').evaluate_all('(items)=>items.map(item=>({label:item.textContent.trim(),value:item.value}))')
+        version.select_option(next(item['value'] for item in options if item['label']==legacy))
+        fit=select_fits(version);fits.append({'viewport':390,'context':'Dashboard Script setup','state':'selected',**fit});assert fit['fits'],fit
+        panel.get_by_role('radio',name='GAM / AdX only',exact=False).check()
+        panel.get_by_role('button',name='Save script setup',exact=True).click()
+        panel.get_by_role('status').filter(has_text='Script setup saved').wait_for()
+        page.get_by_role('button',name='Generate and releases',exact=True).click()
+        releases=page.get_by_role('region',name='Saved packages',exact=True)
+        releases.get_by_role('button',name='Change script setup',exact=True).click()
+        inline=releases.get_by_role('combobox',name='Script version',exact=True);inline.wait_for()
+        assert inline.locator('option:checked').text_content().strip()==legacy
+        fit=select_fits(inline);fits.append({'viewport':390,'context':'Dashboard Releases inline setup','state':'saved',**fit});assert fit['fits'],fit
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+        page.screenshot(path=str(out/'runtime-322-dashboard-inline-mobile.png'),full_page=True)
+        inline.screenshot(path=str(out/'runtime-322-dashboard-inline-select.png'))
+        page.close()
+    finally:
+        fixture.stdin.close();fixture.wait(timeout=10)
 def route(request):
     url=urlsplit(request.request.url)
     assert url.netloc=='tessera.fixture.invalid'
@@ -153,9 +195,10 @@ try:
     assert summary.text_content().startswith('GAM / AdX only · '+legacy)
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
     page.screenshot(path=str(out/'runtime-322-saved-mobile-releases.png'),full_page=True)
+    dashboard_fits(browser)
     assert not errors,errors
     browser.close()
     (out/'release-setup-result.json').write_text(json.dumps({'passed':True,'requests':requests,'errors':errors,'runtime322SelectFit':fits},indent=2))
-    print('PASS main Releases missing-Prebid recovery, one-save GAM-only setup, preserved choice and downloaded ZIP without Prebid; 3.22.0 labeled, explained and saved at 390/1280')
+    print('PASS main Releases missing-Prebid recovery, one-save GAM-only setup, preserved choice and downloaded ZIP without Prebid; 3.22.0 labeled, explained and saved at 390/1280, its label fitting every 390 px Script version select in default fonts')
 finally:
  process.stdin.close();process.wait(timeout=10)

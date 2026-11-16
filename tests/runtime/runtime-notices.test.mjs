@@ -12,7 +12,7 @@ import {compileRuntime322} from '../../worker/runtime-322/compiler.mjs';
 import {positionFixture} from '../support/position-runtime-fixture.mjs';
 import {configure, TS} from './artifact-fixture.mjs';
 
-const SUFFIX = ' · No 3.21.1/3.21.2 fixes';
+const SUFFIX = ' · No 3.21.1+ fixes';
 const WARNING = '3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for size maps when a key-value rule does not match, contextual signals with existing Prebid RTD providers, and TakeOver frequency and debug storage before CMP consent.';
 // The same payload shape and recommendation the Script setup endpoint returns.
 const runtimes = runtimeCatalog.map(r => ({version: r.version, channel: r.channel, pin: pinRuntime(r, {allowPreview: true})}));
@@ -43,7 +43,7 @@ test('Script setup labels: 3.22.0 gets the short suffix, order and every other l
   assert.deepEqual([index('3.22.0') - index('3.22.1'), index('3.21.2') - index('3.22.0')], [1, 1]);
   assert.deepEqual(['3.22.1', '3.22.0', '3.21.2'].map(version => labels[index(version)]), ['3.22.1 · Preview', '3.22.0' + SUFFIX, '3.21.2']);
   assert.deepEqual(labels.filter(label => label.includes(SUFFIX)), ['3.22.0' + SUFFIX]);
-  assert.equal(SUFFIX.split(' · ')[1], 'No 3.21.1/3.21.2 fixes', 'Verifiers split labels on the existing separator');
+  assert.equal(SUFFIX.split(' · ')[1], 'No 3.21.1+ fixes', 'Verifiers split labels on the existing separator');
   for (const item of choices) if (item.version !== '3.22.0') assert.equal(runtimeNoticeSuffix(item.pin), '');
 });
 
