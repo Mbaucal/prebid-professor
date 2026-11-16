@@ -37,7 +37,7 @@ jobs:
       - name: Verify contextual taxonomy settings, auction isolation and build integration
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/contextual-signals-*.test.mjs
       - name: Verify audited 3.22.1 composition and immutable release history
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3221-package-qa.test.mjs tests/runtime/script-version-guidance.test.mjs tests/runtime/runtime3222-lazy.test.mjs tests/runtime/runtime-lineage.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/runtime-allow-list-parity.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3221-package-qa.test.mjs tests/runtime/script-version-guidance.test.mjs tests/runtime/group-rule-format-scripts.test.mjs tests/runtime/runtime3222-lazy.test.mjs tests/runtime/runtime-lineage.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/runtime-allow-list-parity.test.mjs
       - name: Verify bidder eligibility and generated request isolation
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/bidder-rules-*.test.mjs
       - name: Reproduce and prevent the independent audit failures

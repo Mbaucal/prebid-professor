@@ -19,6 +19,9 @@ const LISTS = {
   'shared/outstream/selected-settings.mjs': ['outstreamContext'],
   'worker/test-workspace/runtime-catalog.mjs': ['readPinnedSiteRuntime'],
 };
+// Admin files whose runtime version literals are not feature allow-lists. Each is checked against
+// every registered release by its own test instead.
+const CHECKED_ELSEWHERE = {'src/site-workspace/group-rule-scripts.ts': 'tests/runtime/group-rule-format-scripts.test.mjs'};
 const DEAL_LISTS = ['worker/runtime/draft-release-store.mjs:hasDealsPlan', 'worker/site-runtime/releases.mjs:hasDealsPlan', 'worker/site-runtime/deal-settings.mjs:servingAvailable'];
 // Version-owned sources and the registry itself are not admin allow-lists.
 const frozen = path => /^worker\/runtime-[^/]+\//.test(path) || path === 'worker/runtime/runtime-releases.json';
@@ -86,7 +89,8 @@ const withRuntime = (list, release) => ({...list, strings: new Set([...list.stri
 test('every admin file that names a runtime version literal is a checked allow-list', () => {
   const found = execFileSync('git', ['grep', '-l', '-E', "['\"](tessera-)?3\\.21\\.1['\"]", '--', 'worker', 'shared', 'src'], {cwd: root, encoding: 'utf8'})
     .split('\n').filter(Boolean).filter(path => !frozen(path)).sort();
-  assert.deepEqual(found, Object.keys(LISTS).sort(), 'Add a new runtime allow-list to this parity test');
+  assert.deepEqual(found, [...Object.keys(LISTS), ...Object.keys(CHECKED_ELSEWHERE)].sort(), 'Add a new runtime allow-list to this parity test');
+  for (const check of Object.values(CHECKED_ELSEWHERE)) assert(execFileSync('git', ['ls-files', check], {cwd: root, encoding: 'utf8'}).trim() === check, check);
 });
 
 test('allow-lists are located where expected', async () => {
