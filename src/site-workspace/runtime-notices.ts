@@ -1,38 +1,16 @@
 import { runtimeLabel } from './runtime-labels';
+import { runtimeNotices, type RuntimeNotice } from '../../shared/runtime-notices.mjs';
 
-// Operator notices for exact registered releases. Display only: a noticed
-// version stays selectable and savable, and release records, saved pins and
-// generated packages are unchanged. Match by version and source checksum so a
-// notice never moves to another build.
-export type RuntimeNotice = {
-  version: string;
-  runtimeSha256: string;
-  /** Appended to the version in choices and saved-version lines. Keep it short:
-   * the narrowest select is Script setup inside Releases at 390 px, with 244 px
-   * of text room. "3.22.0 · No 3.21.1+ fixes" measures 223 px at 600 16px in
-   * DejaVu Sans, which the admin font stack falls back to on Linux without
-   * Inter (stock Ubuntu and the CI runner), and 184 px in Inter. */
-  optionSuffix: string;
-  /** Plain-language reason shown beside the selected version. */
-  warning: string;
-  /** A release with the same feature and the missing fixes, named only when it is offered. */
-  alternative: { version: string; offers: string };
-};
+// The notice records live in shared/runtime-notices.mjs, which the TEST
+// workspace Script version page also reads.
+export type { RuntimeNotice };
 
 type PinLike = { runtimeVersion?: unknown; runtimeSha256?: unknown } | null | undefined;
 type Choice = { version: string; channel?: string };
 
-const notices: readonly RuntimeNotice[] = Object.freeze([Object.freeze({
-  version: '3.22.0',
-  runtimeSha256: '1aa3c8ad0dcc1c94fddf6d50b0a7b3073a524dee4750563277fd5c6d22525268',
-  optionSuffix: ' · No 3.21.1+ fixes',
-  warning: '3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for page and category size maps when no key-value mapping sets a size map, contextual signals with existing Prebid RTD providers, and the TakeOver frequency cap and debug storage before CMP consent.',
-  alternative: Object.freeze({ version: '3.22.1', offers: 'bidder rules with these fixes' }),
-})]);
-
 export function runtimeNotice(pin: PinLike): RuntimeNotice | undefined {
   if (!pin) return undefined;
-  return notices.find(notice => notice.version === pin.runtimeVersion && notice.runtimeSha256 === pin.runtimeSha256);
+  return runtimeNotices.find(notice => notice.version === pin.runtimeVersion && notice.runtimeSha256 === pin.runtimeSha256);
 }
 
 export function runtimeNoticeSuffix(pin: PinLike) {

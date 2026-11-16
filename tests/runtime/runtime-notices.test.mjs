@@ -13,6 +13,7 @@ import {compileRuntime322} from '../../worker/runtime-322/compiler.mjs';
 import {positionFixture} from '../support/position-runtime-fixture.mjs';
 import {conditionalFixture} from '../support/conditional-maps-fixture.mjs';
 import {configure, TS} from './artifact-fixture.mjs';
+import {runtimeSelectionPage, runtimeSelectionScript} from '../../worker/test-workspace/runtime-selection-page.mjs';
 
 const SUFFIX = ' · No 3.21.1+ fixes';
 const WARNING = '3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for page and category size maps when no key-value mapping sets a size map, contextual signals with existing Prebid RTD providers, and the TakeOver frequency cap and debug storage before CMP consent.';
@@ -120,4 +121,44 @@ test('3.22.0 drops page and category size maps whenever no key-value mapping set
   assert.deepEqual(legacy, run(source('3.21.0', compileRuntime321)));
   assert.deepEqual(legacy, {noMatch: ['base', 'base'], matchWithoutMap: ['base', 'base'], matchWithMap: ['rule', 'rule']});
   assert.deepEqual(run(source('3.21.2', compileRuntime3212)), {noMatch: ['category', 'prebid-category'], matchWithoutMap: ['category', 'prebid-category'], matchWithMap: ['rule', 'rule']});
+});
+
+// The TEST workspace Script version page (/runtime-selection) is a plain
+// script, so run it against a small DOM stub and the payload its endpoint
+// returns (worker/test-workspace/runtime-selection.mjs).
+function selectionPage() {
+  const elements = new Map();
+  const node = id => ({id, children: [], attributes: {}, dataset: {}, listeners: {}, textContent: '', value: '', hidden: false, disabled: false, checked: false,
+    classList: {toggle() {}}, replaceChildren(...children) { this.children = children; }, append(...children) { this.children.push(...children); },
+    addEventListener(type, listener) { this.listeners[type] = listener; }, setAttribute(name, value) { this.attributes[name] = String(value); },
+    removeAttribute(name) { delete this.attributes[name]; }, getAttribute(name) { return this.attributes[name] ?? null; }});
+  const html = runtimeSelectionPage();
+  for (const [, id] of html.matchAll(/ id="([^"]+)"/g)) elements.set(id, node(id));
+  const state = {site: {name: 'Test site', domain: 'example.invalid', gamPath: '/123/test/'}, revision: 'r1', selected: null, validationIssue: null,
+    enablePrebid: false, prebidBuildId: null, releaseHistory: [], runtimes: runtimeCatalog.map(r => ({id: r.id, version: r.version, channel: r.channel, pin: pinRuntime(r, {allowPreview: true})}))};
+  const context = {document: {getElementById: id => elements.get(id) ?? null, createElement: tag => node(tag)}, location: {assign() {}},
+    fetch: async () => ({status: 200, ok: true, json: async () => state}), setTimeout, console};
+  vm.createContext(context);
+  vm.runInContext(runtimeSelectionScript, context);
+  const runtime = elements.get('runtime');
+  return {html, state, runtime, note: elements.get('runtime-notice'), choose(version) { runtime.value = String(state.runtimes.findIndex(r => r.version === version)); runtime.listeners.change(); }};
+}
+test('TEST workspace Script version page labels and explains 3.22.0 without an API change', async () => {
+  const page = selectionPage();
+  await new Promise(resolve => setImmediate(resolve));
+  const labels = page.runtime.children.slice(1).map(option => option.textContent);
+  assert.deepEqual(labels, page.state.runtimes.map(r => `${r.version} · ${r.channel}${r.version === '3.22.0' ? SUFFIX : ''}`));
+  assert(page.note, 'The page has a note for the selected version');
+  assert.match(page.html, /<p id="runtime-notice"[^>]* role="note"[^>]* hidden>/);
+  assert.equal(page.note.hidden, true);
+  page.choose('3.22.0');
+  assert.equal(page.note.hidden, false);
+  assert.equal(page.note.textContent, `${WARNING} 3.22.1 (Preview) has bidder rules with these fixes.`);
+  assert.equal(page.runtime.getAttribute('aria-describedby'), 'runtime-notice');
+  for (const version of ['3.21.2', '3.22.1']) {
+    page.choose(version);
+    assert.equal(page.note.hidden, true, version);
+    assert.equal(page.note.textContent, '', version);
+    assert.equal(page.runtime.getAttribute('aria-describedby'), null, version);
+  }
 });
