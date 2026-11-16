@@ -1,5 +1,48 @@
 [
   {
+    "id": "tessera-3.22.2",
+    "version": "3.22.2",
+    "codeSha256": "4f3c90621dab520b671cb2def75deedc94f22f2b0eed1ef707c799635ae32f06",
+    "configSchemaVersion": 1,
+    "channel": "preview",
+    "capabilities": [
+      "config-preview",
+      "gpt-only",
+      "takeover",
+      "advanced-refresh",
+      "ad-position-takeover",
+      "takeover-prebid",
+      "per-unit-lazy",
+      "gam-request-reporting",
+      "consent-readiness",
+      "send-all-bids",
+      "prebid-deals",
+      "outstream-pilot",
+      "conditional-size-maps",
+      "refresh-wall-clock-gap",
+      "literal-schain",
+      "country-signal",
+      "country-rules",
+      "country-targeting",
+      "interstitial-fallback-rules",
+      "viewport-height-size-maps",
+      "gam-code-compatibility",
+      "contextual-signals",
+      "bidder-rules",
+      "bidder-accounts",
+      "bidder-schain"
+    ],
+    "date": "2026-11-16",
+    "title": "Tessera 3.22.2 — one initial lazy auction",
+    "sourceManifest": "scripts/prepare-runtime3222.mjs",
+    "sourceCommit": "16d502360746eaa4e7b944c16e7f8c902c660b04",
+    "changes": [
+      "Prevents an unused second Prebid auction when an initial lazy display is observed before its prefetch notification. Already queued or repeated observer callbacks cannot restart that initial demand.",
+      "Preserves the audited 3.22.1 bidder accounts, aliases, SChain, country rules, contextual signals and 3.21.2 consent and TakeOver corrections. Prefetch-first display and expired-bid replacement stay unchanged.",
+      "Explicit preview selection only; 3.21.2 remains the stable recommendation. Existing runtime sources, saved choices and package bytes remain unchanged."
+    ]
+  },
+  {
     "id": "tessera-3.22.1",
     "version": "3.22.1",
     "codeSha256": "c1d63d05dbc713ba464c6d21c27b649029d20f81df841a9924515cb85eb64503",
