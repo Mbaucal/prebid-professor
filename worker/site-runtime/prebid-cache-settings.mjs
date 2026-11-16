@@ -64,11 +64,16 @@ export function settingsForScript(config,refreshSeconds) {
 export const BID_CACHE_GENERATOR_MESSAGE = 'Bid caching needs a compatible script version. Select 3.24.0 (Preview) in Script setup and save; your bid cache settings are kept. '
   + 'This version combines bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
   + 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.';
-/** Saved cache settings that would reuse bids (site default on, or a position override on) are
- * applied only by a runtime with the 'bid-cache' capability, never silently ignored. Without a
- * descriptor (older generators) such settings are always refused. An Off override alone needs no
- * capability: without bid caching every position already uses its current auction only. */
-export function requireSupportedCacheGenerator(config, descriptor) {
+/** Saved cache settings that would reuse bids: Prebid on, and the site default or a position override on.
+ * An Off override alone needs no capability: without bid caching every position already uses its current
+ * auction only. */
+export function bidCacheActive(config) {
   const prebid=savedPrebidSettings(config);
-  if(prebid.enabled && hasBidCache(prebid.bidCache) && !runtimeSupportsBidCache(descriptor))throw Object.assign(Error(BID_CACHE_GENERATOR_MESSAGE),{status:409});
+  return prebid.enabled && hasBidCache(prebid.bidCache);
+}
+/** Saved cache settings that would reuse bids are applied only by a runtime with the 'bid-cache'
+ * capability, never silently ignored. Without a descriptor (older generators) such settings are
+ * always refused. */
+export function requireSupportedCacheGenerator(config, descriptor) {
+  if(bidCacheActive(config) && !runtimeSupportsBidCache(descriptor))throw Object.assign(Error(BID_CACHE_GENERATOR_MESSAGE),{status:409});
 }

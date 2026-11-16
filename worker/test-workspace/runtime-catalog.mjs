@@ -22,6 +22,7 @@ import {descriptor as rules322} from '../../.generated/runtime-322-manifest.mjs'
 import {buildArtifactCandidate as rules322Candidate} from '../runtime-322/artifact-candidate.mjs';
 import {previewInput as rules322Input} from '../runtime-322/snapshot.mjs';
 import {requireBidderRulesRuntime} from '../../shared/bidder-rules/settings.mjs';
+import {requireSavedOptionsRuntime} from '../site-runtime/script-version-guidance.mjs';
 import {descriptor as contextual321} from '../../.generated/runtime-321-manifest.mjs';
 import {buildArtifactCandidate as contextual321Candidate} from '../runtime-321/artifact-candidate.mjs';
 import {previewInput as contextual321Input} from '../runtime-321/snapshot.mjs';
@@ -100,6 +101,9 @@ export function previewInput(snapshot,descriptor,time,takeOver){
   assertSizeMapCompatibility(snapshot,descriptor);
   (descriptor.id===combined324.id?requireCombined324RevenueRuntime:descriptor.id===cache323.id?requireCache323RevenueRuntime:descriptor.id===rules322.id?requireRulesRevenueRuntime:requireRevenueRuntime)(config,descriptor);
   requireContextualRuntime(config,descriptor);
+  // Before the shared rules guard, whose 'or later' wording would also point at 3.23.0: name the versions that
+  // apply every saved option (bidder rules, bidder accounts, bid caching).
+  requireSavedOptionsRuntime(snapshot,descriptor);
   requireBidderRulesRuntime(config,descriptor);
   requireCountryRules(snapshot,descriptor);
   if(!descriptor.capabilities.includes('conditional-size-maps')){

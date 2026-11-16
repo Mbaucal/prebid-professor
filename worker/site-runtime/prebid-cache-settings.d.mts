@@ -10,4 +10,5 @@ export function bidCacheSettings(value?: unknown): BidCacheSettings;
 export function supportsNamedScripts(row: unknown): boolean;
 export function savedPrebidSettings(config: Record<string, unknown>): { enabled: boolean; bidCache: BidCacheSettings };
 export function settingsForScript(config: Record<string, unknown>, refreshSeconds: number | null): ScriptSettings;
+export function bidCacheActive(config: Record<string, unknown>): boolean;
 export function requireSupportedCacheGenerator(config: Record<string, unknown>, descriptor?: unknown): void;

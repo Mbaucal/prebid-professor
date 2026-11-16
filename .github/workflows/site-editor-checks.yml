@@ -83,7 +83,7 @@ jobs:
       - name: Combined 3.24.0 admission, package and immutable-source regressions
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime324*.test.mjs tests/runtime/bid-cache324.test.mjs
       - name: Verify audited 3.22.x composition, lazy auction ownership and immutable history
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3221-package-qa.test.mjs tests/runtime/runtime3222-lazy.test.mjs tests/runtime/runtime-lineage.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/runtime-allow-list-parity.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3221-package-qa.test.mjs tests/runtime/script-version-guidance.test.mjs tests/runtime/runtime3222-lazy.test.mjs tests/runtime/runtime-lineage.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/runtime-allow-list-parity.test.mjs
       - name: Verify bidder eligibility and generated request isolation
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/bidder-rules-*.test.mjs
       - name: Verify console SChain evidence and transparent network observation

@@ -48,7 +48,7 @@ test('3.22.1 package carries exact bidder rules while older selected runtimes ke
  assert(text(built.files['README.txt']).includes('Fixed in 3.21.2'));
  assert.deepEqual(snapshot,before);
  const old=runtimeCatalog.find(r=>r.version==='3.21.2');
- assert.throws(()=>previewInput(snapshot,old,TS),/Bidder rules require/);
+ assert.throws(()=>previewInput(snapshot,old,TS),/Script 3\.21\.2 cannot apply enabled bidder rules\. Select 3\.22\.2 \(Preview\) or 3\.24\.0 \(Preview\) in Script setup and save, or turn off bidder rules\./);
 });
 
 async function checkedAccountPrebid(snapshot,version='11.11.0') {
@@ -96,5 +96,5 @@ for (const position of ['P1','m.box_1','__proto__']) test(`two-account package p
  assert(source.includes('__AD_BIDDER_ACCOUNTS'));
  assert(source.includes('request: _adBidderRules.request'));
  assert.deepEqual(snapshot,before);
- for(const old of runtimeCatalog.filter(r=>!r.capabilities.includes('bidder-accounts')))assert.throws(()=>previewInput(snapshot,old,TS),/require script 3.22.1/);
+ for(const old of runtimeCatalog.filter(r=>!r.capabilities.includes('bidder-accounts')))assert.throws(()=>previewInput(snapshot,old,TS),/cannot apply bidder accounts \(adf_ag\)\. Select 3\.22\.2 \(Preview\) or 3\.24\.0 \(Preview\) in Script setup and save\./);
 });
