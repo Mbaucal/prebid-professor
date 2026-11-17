@@ -1,0 +1,22 @@
+{
+  "html_url": "https://github.com/micromatch/picomatch/pull/237",
+  "number": 237,
+  "state": "open",
+  "title": "fix: CVE-2026-112366 prevent ReDoS in single-branch repeated extglobs",
+  "body": "## Summary\r\nFixes [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) / CVE-2026-112366.\r\n\r\n`analyzeRepeatedExtglob` skipped single-branch repeated extglobs such as `+(*)` or `+(*a)`, so they compiled to nested unbounded quantifiers (e.g. `(?:[^/]*?a)+`), causing exponential backtracking on short inputs.\r\n\r\n## Fix\r\nA single branch containing a top-level `*` (with no `/`, groups, alternation, nested extglobs or globstar) absorbs its own repetition, so:\r\n\r\n- `+(P)` \u2192 `(?:P)`\r\n- `*(P)` \u2192 `(?:P)?`\r\n\r\nThese are semantically equivalent and remove the nested quantifier. Other cases keep the existing risky-extglob handling. The rewrite is skipped when `maxExtglobRecursion: false`.\r\n\r\n| Pattern | Before | After |\r\n|---|---|---|\r\n| `+(*a)` | `(?:[^/]*?a)+` | `(?:[^/]*?a)` |\r\n| `*(*a)` | `(?:[^/]*?a)*` | `(?:[^/]*?a)?` |\r\n\r\nBefore the fix, matching `'a'.repeat(24) + 'b'` against `+(*a)` took ~107ms and doubled with each extra char. With the fix it takes ~0ms.\r\n\r\n## Tests\r\nAdded cases in `test/options.maxExtglobRecursion.js` covering:\r\n- no nested quantifiers in the generated regex\r\n- a timing bound on malicious input\r\n- matching semantics preserved (`+(*)c`, `+(*a)`, `+(a*b)`, `*(*.js)`)\r\n\r\nAll 1999 tests pass.",
+  "created_at": "2026-10-22T12:39:58Z",
+  "updated_at": "2026-11-10T20:58:48Z",
+  "merged_at": null,
+  "merged": false,
+  "mergeable": true,
+  "base": {
+    "label": "micromatch:master",
+    "ref": "master",
+    "sha": "9fab7bf61913ea334c4203ed321c426cfde44a42"
+  },
+  "head": {
+    "label": "seeibt:fix/redos-single-branch-extglob",
+    "ref": "fix/redos-single-branch-extglob",
+    "sha": "1bf0d04563cb9ce568cf36efc5f6b7187d9911d5"
+  }
+}

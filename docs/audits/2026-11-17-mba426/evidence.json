@@ -1,0 +1,281 @@
+{
+  "scope": "Evidence only: unresolved MBA-426, no remediation, override, exception or gate change.",
+  "capturedDateUtc": "2026-11-17",
+  "baseCommit": "bf6b7c60a6f7c08673c1cd163c413bb7c6daf81d",
+  "pr216Head": "8df377e54f80c5ae1353b8b34a4a2fd36b196907",
+  "originalArtifact": {
+    "runId": 44151320790,
+    "jobId": 134280130845,
+    "id": 14359116702,
+    "name": "dependency-audit-report",
+    "zipSha256": "f18b64923f368ddddb26167374ea5d57a9d4a5a1022b858a0ffa8607253f7a83",
+    "githubDigestVerified": true,
+    "files": [
+      {
+        "path": "original-audit/active-tools.json",
+        "sha256": "01c317fdf3d86de1c761dffdd73554ea07e65f485129037d0e905a541aa7d828",
+        "bytes": 2691
+      },
+      {
+        "path": "original-audit/active-tools.stderr.txt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      {
+        "path": "original-audit/all.json",
+        "sha256": "634d1b0113f92f6573b8f66e70be0c5fd2a4afe24391156ad98cb9fceda262c3",
+        "bytes": 22822
+      },
+      {
+        "path": "original-audit/all.stderr.txt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      {
+        "path": "original-audit/production.json",
+        "sha256": "4fcb2c3f1854a8b1e4bc8b12ddc564d765736b420b7e956112ce41081911aa5d",
+        "bytes": 364
+      },
+      {
+        "path": "original-audit/production.stderr.txt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      {
+        "path": "original-audit/summary.json",
+        "sha256": "254fc3c04241e049c2985a5244d858f51068270742979cb2aec0c98dbbbdfa3d",
+        "bytes": 1383
+      }
+    ]
+  },
+  "unchangedInputHashes": {
+    "package-lock.json": "7d9787650ad10fcafee21db223ce2bb76b2e9dc6ac6b943404b260e3b7f47280",
+    "tools/package-lock.json": "cdac329a2c94a223ba2f7dce0f6bc34c93869a086b41c1962487d987ae46bb0a"
+  },
+  "sources": [
+    {
+      "path": "sources/GHSA-fc5q-39xc-vjpf.json",
+      "url": "https://api.github.com/advisories/GHSA-fc5q-39xc-vjpf",
+      "sha256": "cc99706e61047047b6690db94abb98b5940d007196775c12902c0f79d8aedbd5",
+      "bytes": 4025
+    },
+    {
+      "path": "sources/registry-picomatch.json",
+      "url": "https://registry.npmjs.org/picomatch",
+      "sha256": "9a8e64f1208fef4d18c27f48267e00c639b65743484cf3f5e788d018195b6fbb",
+      "bytes": 134451
+    },
+    {
+      "path": "sources/registry-vite-latest.json",
+      "url": "https://registry.npmjs.org/vite/latest",
+      "sha256": "bb08dd028e86d7299ed19aae42b95584dd29f451570943eb91aef623eb0c8084",
+      "bytes": 5170
+    },
+    {
+      "path": "sources/registry-tinyglobby-latest.json",
+      "url": "https://registry.npmjs.org/tinyglobby/latest",
+      "sha256": "418710fc9fbf23a1dd44eb53d2ed9a3048a868e0b409ac78d4a036119ebf773a",
+      "bytes": 2568
+    },
+    {
+      "path": "sources/registry-fdir-latest.json",
+      "url": "https://registry.npmjs.org/fdir/latest",
+      "sha256": "1b30d7d350499f021d56e9f6653e723c746d253d482bffa4c7fc6a2a578b0a44",
+      "bytes": 3047
+    },
+    {
+      "path": "sources/registry-secured-picomatch.json",
+      "url": "https://registry.npmjs.org/secured-picomatch",
+      "sha256": "40b20fbb5ae257f8909dd0fe85abdf85be3f28f8b97720809dc46cd6c2fbcebe",
+      "bytes": 347
+    },
+    {
+      "path": "sources/picomatch-recent-pulls.json",
+      "url": "https://api.github.com/repos/micromatch/picomatch/pulls?state=all&per_page=50",
+      "sha256": "8c05a8ee299e97a85816659b69aa86a3b1e75477fff5faf5505200a8966b676e",
+      "bytes": 12807,
+      "note": "Selected fields from the response; raw response hash recorded separately.",
+      "rawResponseSha256": "fdb99b721d06442607e072282f114493f2e99da27f5d07a4f33c9f2e11a49f5b"
+    },
+    {
+      "path": "sources/picomatch-recent-commits.json",
+      "url": "https://api.github.com/repos/micromatch/picomatch/commits?per_page=15",
+      "sha256": "4270ad84f8880dcc7eb072e5acd494364f417d344f5ab05ae4a870cc6bac85a9",
+      "bytes": 2644,
+      "note": "Selected fields from the response; raw response hash recorded separately.",
+      "rawResponseSha256": "f174ddb4d72e740ad36cca86d664452919a5844844c8173ed4c8285f1ae925f3"
+    },
+    {
+      "path": "sources/picomatch-pr194.json",
+      "url": "https://api.github.com/repos/micromatch/picomatch/pulls/194",
+      "sha256": "13fcae03561e50d4b698e3ef4749b9160cabf7904c84a15f0b56ffd06feae182",
+      "bytes": 14272,
+      "note": "Selected fields from the response; raw response hash recorded separately.",
+      "rawResponseSha256": "96f406af81db3cf7d5919122105ca5721463db35d6dd8b45ab40939bb0c25d31"
+    },
+    {
+      "path": "sources/picomatch-pr237.json",
+      "url": "https://api.github.com/repos/micromatch/picomatch/pulls/237",
+      "sha256": "948d087c702143cd1495ff3320d070ad24b49c4012d00d634cb5fb37b21ccd64",
+      "bytes": 1944,
+      "note": "Selected fields from the response; raw response hash recorded separately.",
+      "rawResponseSha256": "35811a4988667a87791254ce1f23c05aac70647d1f0ce49152a8a231dd3c9e3a"
+    },
+    {
+      "path": "sources/picomatch-pr237.diff.json",
+      "url": "https://github.com/micromatch/picomatch/pull/237.diff",
+      "sha256": "b0f2456c562b6c639894a29e06ff9c9ac63ff3d7e5d54f0412331e804e381855",
+      "bytes": 3434,
+      "note": "Exact downloaded diff stored as a JSON string to preserve context-line whitespace; decoded UTF-8 patch SHA-256 is also retained in this file."
+    },
+    {
+      "path": "sources/picomatch-pr238.json",
+      "url": "https://api.github.com/repos/micromatch/picomatch/pulls/238",
+      "sha256": "fae3e3aaa3e223679a8d3636a733273f63add7b18187f0075cfb18ec07a2ba0a",
+      "bytes": 3831,
+      "note": "Selected fields from the response; raw response hash recorded separately.",
+      "rawResponseSha256": "3c1c08ad656dc043109805947386b8329f00036b2db239734f9a77b5d772722d"
+    },
+    {
+      "path": "sources/picomatch-pr238.diff.json",
+      "url": "https://github.com/micromatch/picomatch/pull/238.diff",
+      "sha256": "15cf1996753b304d0214744ba0307c6c9af7e8374e236621edfd870b889f5261",
+      "bytes": 3658,
+      "note": "Exact downloaded diff stored as a JSON string to preserve context-line whitespace; decoded UTF-8 patch SHA-256 is also retained in this file."
+    },
+    {
+      "path": "sources/picomatch-pr240.json",
+      "url": "https://api.github.com/repos/micromatch/picomatch/pulls/240",
+      "sha256": "994963340929bca0041132124743c5c037c99a0eaf2bfb047f1fde460b3dd93f",
+      "bytes": 935,
+      "note": "Selected fields from the response; raw response hash recorded separately.",
+      "rawResponseSha256": "4c593ddf44a207916bb5e4c7a55772bdf46d7fd28749230f3bd4722ae1b5f7e3"
+    },
+    {
+      "path": "sources/picomatch-pr240.diff.json",
+      "url": "https://github.com/micromatch/picomatch/pull/240.diff",
+      "sha256": "e5586b3edeb5d8ea54e99bf3f4cc0c7d69869a1e774882e7c4c26a4e8dd0955a",
+      "bytes": 19541,
+      "note": "Exact downloaded diff stored as a JSON string to preserve context-line whitespace; decoded UTF-8 patch SHA-256 is also retained in this file."
+    },
+    {
+      "path": "sources/picomatch-pr246.json",
+      "url": "https://api.github.com/repos/micromatch/picomatch/pulls/246",
+      "sha256": "ee19f7e64a21b2fd7e2fda7a361f4d559b07854cf3c0fbee2762ad5232afd607",
+      "bytes": 2855,
+      "note": "Selected fields from the response; raw response hash recorded separately.",
+      "rawResponseSha256": "dec2bc1e9365e13e0a5b00fd520ba9ac9553b2a52d17ac3531bb9e3b3b2bd707"
+    },
+    {
+      "path": "sources/picomatch-pr246.diff.json",
+      "url": "https://github.com/micromatch/picomatch/pull/246.diff",
+      "sha256": "eddf96fa20e35f3c713cab8d45c05c008efbd0b3bc1b0252176988abf57d2a60",
+      "bytes": 4958,
+      "note": "Exact downloaded diff stored as a JSON string to preserve context-line whitespace; decoded UTF-8 patch SHA-256 is also retained in this file."
+    },
+    {
+      "path": "sources/picomatch-pr254.json",
+      "url": "https://api.github.com/repos/micromatch/picomatch/pulls/254",
+      "sha256": "dd7ae40e359decd7bbb4fb5c29508d13bcef00a392b4dcc1a7b9695e1002eefa",
+      "bytes": 2116,
+      "note": "Selected fields from the response; raw response hash recorded separately.",
+      "rawResponseSha256": "55d41341bea0ac77ccecfd3182c46ea2acf1cda9ee5c54d491f3af2ee7b08729"
+    },
+    {
+      "path": "sources/picomatch-pr254.diff.json",
+      "url": "https://github.com/micromatch/picomatch/pull/254.diff",
+      "sha256": "3c37fbca6d8ac2ee03ffef1f734e7abc5b233d94748a982564274f1485d0681a",
+      "bytes": 3262,
+      "note": "Exact downloaded diff stored as a JSON string to preserve context-line whitespace; decoded UTF-8 patch SHA-256 is also retained in this file."
+    }
+  ],
+  "upstreamMaster": {
+    "commit": "9fab7bf61913ea334c4203ed321c426cfde44a42",
+    "parseJsSha256": "4c92a8492700bacd183c21abe2fa63dfe3c27544a3641b3804da1f0815beaae1",
+    "url": "https://github.com/micromatch/picomatch/blob/9fab7bf61913ea334c4203ed321c426cfde44a42/lib/parse.js"
+  },
+  "localBaseline": {
+    "node": "24.22.1",
+    "npm": "11.9.0",
+    "platform": "linux-x64",
+    "checkedBootstrap": {
+      "passed": true,
+      "historicalProductionPackages": 16,
+      "toolsInstalledPackages": 65
+    },
+    "strictTargets": [
+      "app",
+      "worker",
+      "tooling"
+    ],
+    "buildPassed": true,
+    "frozenGeneratedOutputsVerified": 63,
+    "auditExpectedFailure": {
+      "historicalFullLock": {
+        "high": 11,
+        "critical": 0
+      },
+      "activeRootProduction": {
+        "total": 0
+      },
+      "activeTools": {
+        "high": 5,
+        "critical": 0
+      }
+    },
+    "broadBrowserParityReplayed": false,
+    "deploymentExecuted": false
+  },
+  "independentReviewerBoundedReproduction": {
+    "node": "24.22.1",
+    "dependency": "picomatch@4.0.7",
+    "pattern": "+(*a)",
+    "subject": "'a'.repeat(n) + '!'",
+    "perProcessDeadlineMs": 1500,
+    "observations": [
+      {
+        "n": 12,
+        "matched": false,
+        "elapsedMs": 0.556
+      },
+      {
+        "n": 20,
+        "matched": false,
+        "elapsedMs": 43.432
+      },
+      {
+        "n": 26,
+        "result": "ETIMEDOUT",
+        "signal": "SIGTERM"
+      }
+    ],
+    "productionInputsUsed": false
+  },
+  "independentReviewerCompiledBundleScan": {
+    "head": "8df377e54f80c5ae1353b8b34a4a2fd36b196907",
+    "scope": "Actual local PR216 production build; not deployed.",
+    "terms": [
+      "node_modules/picomatch",
+      "analyzeRepeatedExtglob",
+      "picomatch",
+      "tinyglobby",
+      "node_modules/fdir",
+      "vite/dist/node"
+    ],
+    "bundles": [
+      {
+        "path": "dist/prebid_professor/index.js",
+        "bytes": 4883072,
+        "sha256": "8e6d3dbd0b97638f3f6c7d32f6d5a31eb7e69e8d1ffd0ce26fd8af1f0df18fc6",
+        "termHits": 0
+      },
+      {
+        "path": "dist/client/assets/index-CFgxwLWa.js",
+        "bytes": 904443,
+        "sha256": "4545cdb2f8ae096c3987f4172e38771a7bbd43d5daffdb0308a150d9ffc2e4a9",
+        "termHits": 0
+      }
+    ],
+    "limit": "String scan and source review do not prove universal non-reachability or zero risk."
+  }
+}

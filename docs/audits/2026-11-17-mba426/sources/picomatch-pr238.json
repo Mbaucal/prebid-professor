@@ -1,0 +1,22 @@
+{
+  "html_url": "https://github.com/micromatch/picomatch/pull/238",
+  "number": 238,
+  "state": "open",
+  "title": "fix: literalize single-branch extglobs with a leading bare quantifier (CVE-2026-112366)",
+  "body": "## Summary\n\nFixes CVE-2026-112366: a ReDoS vulnerability in repeated extglob parsing.\n\n`analyzeRepeatedExtglob` (the function that decides whether a `+(...)`/`*(...)` extglob is safe to compile as-is, or must be literalized) only flagged a pattern as risky when:\n- the body had **multiple** branches (`branches.length > 1`), or\n- a branch was itself a **fully parenthesized** nested extglob (`*(...)`) that it could reduce or whose recursion depth it could count.\n\nA **single-branch** body that starts with a bare (non-parenthesized) `*` or `?` followed by more content \u2014 e.g. the `*a` in `+(*a)` \u2014 fell through both checks. It compiled straight through to a nested-quantifier regex (`(?:[^/]*?a)+`), which is prone to catastrophic backtracking: matching it against a short crafted string (e.g. many `a`s with no trailing `a`) blocks the event loop.\n\n```js\nmakeRe('+(*a)').source\n// before: ^(?:(?=.)(?:[^/]*?a)+)$   <- catastrophic backtracking\n// after:  ^(?:\\+\\(\\*a\\))$           <- literalized, same as other risky extglobs\n```\n\n## Fix\n\nAdds `hasUnsafeLeadingQuantifier` in `lib/parse.js`, called alongside the existing recursion-depth check inside `analyzeRepeatedExtglob`'s per-branch loop. It flags a branch as risky when it *starts* with a run of bare `*`/`?` quantifier characters that is followed by further content, since there's no fixed prefix anchoring where the quantifier ends.\n\nThe check is intentionally scoped narrowly, to avoid regressing existing, already-tested behavior:\n- A bare quantifier with **nothing after it** (`+(*)`) is left alone \u2014 it's not ambiguous in the same way, and is already covered by an existing test (`should preserve non-risky extglobs by default`).\n- A quantifier **anchored by a literal prefix** (`+(a*)`, or a quantifier appearing later in the branch behind other content, as in the existing `*(W*, *)` test in `test/special-characters.js`) is left alone \u2014 the literal prefix removes the ambiguity, and this shape was already relied upon by existing tests.\n- A `*(...)`/`?(...)` nested extglob group opener is not treated as a bare quantifier; its own contents continue to be analyzed separately by the existing recursion/char-class-reduction logic above.\n\n## Testing\n\n- Added two test cases to `test/options.maxExtglobRecursion.js`:\n  - `+(*a)`, `*(*a)`, and `+(a|*a)` are literalized and no longer match a long crafted string that would trigger backtracking.\n  - `+(*)` and `+(a*)` continue to work as normal globs (no regression).\n- Ran the full existing test suite (`npm run mocha`) \u2014 all 1998 pre-existing tests pass, plus the 2 new ones (2000 total).\n\n## Known limitation\n\nA non-reducible nested extglob group followed by trailing content in the same branch (e.g. `+(*(ab)c)`) is a structurally similar shape that is **not** covered by this patch, since it wasn't part of the originally reported CVE and widening the check further risked more false positives without being able to verify the exact backtracking behavior empirically. Flagging it, if desired, would need a separate, carefully-scoped follow-up.\n",
+  "created_at": "2026-10-22T18:38:57Z",
+  "updated_at": "2026-11-17T18:37:00Z",
+  "merged_at": null,
+  "merged": false,
+  "mergeable": true,
+  "base": {
+    "label": "micromatch:master",
+    "ref": "master",
+    "sha": "9fab7bf61913ea334c4203ed321c426cfde44a42"
+  },
+  "head": {
+    "label": "rborlone:fix/redos-leading-extglob-quantifier-cve-2026-112366",
+    "ref": "fix/redos-leading-extglob-quantifier-cve-2026-112366",
+    "sha": "44f192261f312ddf236cb7bdc05d8f22663f98f9"
+  }
+}
