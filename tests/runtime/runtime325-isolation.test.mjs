@@ -82,3 +82,18 @@ test('the compiled ready callback records a new pending gate if consent is revok
   clock=2020;accept({gdprApplies:false},true);assert.equal(nativeCalls,0,'CMP event queues the same existing consent callback');
   timers.shift().fn();assert.equal(nativeCalls,1);assert.equal(page.aq_consent_wait,'timeout');assert.equal(page.aq_first_request,'2000_2999');
 });
+test('a rapid revoke and ready decision before the queued callback remains gated and reports an immediate wait',()=>{
+  const descriptor=runtimeReleaseHistory.find(row=>row.version==='3.24.0');
+  const generated=compileRuntime325(previewInput(runtime324Site(),descriptor,'20261117_010000')).adsJs;
+  const create=vm.runInNewContext('('+helper(generated,'createTesseraReadiness')+')');
+  const timers=[],page={};let clock=0,accept,nativeCalls=0;
+  const win={performance:{now:()=>clock},googletag:{setConfig({targeting}){for(const[key,value]of Object.entries(targeting))if(value===null)delete page[key];else page[key]=value;}},
+    setTimeout(fn,delay){const timer={fn,delay};timers.push(timer);return timer;},clearTimeout(timer){if(timer)timer.dead=true;},
+    __tcfapi(_name,_version,callback){accept=callback;callback({gdprApplies:false},true);}};
+  const metrics=createTesseraRequestMetrics(win,{prebid:()=>false,code:slot=>slot.code,consentDeadline:()=>1000});
+  const ready=create(win,{requestMetrics:metrics,clear(){},apply(){},code:slot=>slot.code,
+    rawDispatch(service,slots){const token=metrics.before(service,slots);nativeCalls++;metrics.commit(token);}});
+  ready.dispatch({},[{code:'P1',setConfig(){}}]);clock=10;accept({gdprApplies:true,cmpStatus:'loading'},true);
+  clock=15;accept({gdprApplies:false},true);assert.equal(nativeCalls,0);
+  clock=20;timers.shift().fn();assert.equal(nativeCalls,1);assert.equal(page.aq_consent_wait,'lt_500');
+});

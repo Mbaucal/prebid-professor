@@ -29,7 +29,7 @@ export function compileRuntime325(input) {
   source=once(source,'  function whenConsent(fn) {\n',
     '  function whenConsent(fn) {\n    try{if(options.requestMetrics)options.requestMetrics.enter(consent.ready,consent.epoch);}catch(_){}\n');
   source=once(source,'    win.setTimeout(function(){if(consent.ready)fn(consent);else waiters.push(fn);},0);',
-    '    win.setTimeout(function(){if(consent.ready)fn(consent);else {try{if(options.requestMetrics)options.requestMetrics.enter(false,consent.epoch);}catch(_){}waiters.push(fn);}},0);');
+    '    win.setTimeout(function(){try{if(options.requestMetrics)options.requestMetrics.enter(consent.ready,consent.epoch);}catch(_){}if(consent.ready)fn(consent);else waiters.push(fn);},0);');
   const accepted='    consent = {ready:!!ready, phase:phase, epoch:consent.epoch + (changed ? 1 : 0)};\n';
   source=once(source,accepted,accepted+'    try{if(options.requestMetrics)options.requestMetrics.consent(consent.ready,consent.epoch);}catch(_){}\n');
   const completed="        var completed = started && consent.ready && consent.epoch === epoch && id === auctionId && bids && typeof bids === 'object' && typeof timedOut === 'boolean';\n";
