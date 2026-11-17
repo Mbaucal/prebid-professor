@@ -49,10 +49,19 @@ test('unknown, wrong alias/code, duplicate and unadmitted historic identities om
     h.send([s]);assert.equal(s.values.aq_bid_origin,undefined,kind);
   }
 });
-test('unknown unfinished fallback and inactive Prebid clear origin instead of claiming none',()=>{
+test('confirmed empty fallback reports none for configured Prebid while inactive Prebid omits',()=>{
   for(const prebid of [true,false]) {
     const h=harness({prebid}),s=h.slot('P1',{aq_bid_origin:'fresh'});h.metrics.consent(true,1);h.metrics.enter(true,1);
-    h.records.P1={epoch:1,completed:false,auctionId:null,allowed:{}};h.send([s]);assert.equal(s.values.aq_bid_origin,undefined);
+    h.records.P1={epoch:1,completed:false,auctionId:null,allowed:{}};h.send([s]);assert.equal(s.values.aq_bid_origin,prebid?'none':undefined);
+  }
+});
+test('a missing or unfinished auction cannot identify nonempty targeting but valid empty targeting still proves none',()=>{
+  for(const incomplete of [true,false]){
+    const h=harness(),s=h.slot('P1',{hb_adid:'unproven',hb_bidder:'pm_ag',aq_bid_origin:'cached'});
+    h.metrics.consent(true,1);
+    if(incomplete)h.records.P1={epoch:1,completed:false,auctionId:null,allowed:{}};
+    h.send([s]);assert.equal(s.values.aq_bid_origin,undefined);
+    delete s.values.hb_adid;delete s.values.hb_bidder;h.send([s]);assert.equal(s.values.aq_bid_origin,'none');
   }
 });
 test('only the documented empty targeting array confirms none; malformed getters omit',()=>{
