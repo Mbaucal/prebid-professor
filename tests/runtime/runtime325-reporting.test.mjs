@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createTesseraRequestMetrics} from '../../worker/runtime-325/browser-request-metrics.mjs';
 
-function harness({prebid=true}={}) {
+function harness({prebid=true,deadline=10000}={}) {
   let time=0;
   const page={}, records=Object.create(null), slots=[];
   const merge=(target,values)=>{for(const[key,value]of Object.entries(values))if(value===null)delete target[key];else target[key]=value;};
   const win={performance:{now:()=>time},googletag:{setConfig:({targeting})=>merge(page,targeting)}};
-  const metrics=createTesseraRequestMetrics(win,{prebid:()=>prebid,code:slot=>slot.code,readiness:code=>records[code]});
+  const metrics=createTesseraRequestMetrics(win,{prebid:()=>prebid,code:slot=>slot.code,readiness:code=>records[code],consentDeadline:()=>deadline});
   function slot(code='P1',targeting={}) {
     const value={code,values:{...targeting},getTargeting(key){const v=this.values[key];return v===undefined?[]:Array.isArray(v)?v:[v];},setConfig({targeting:next}){merge(this.values,next);}};
     slots.push(value);return value;
@@ -55,6 +55,14 @@ test('unknown unfinished fallback and inactive Prebid clear origin instead of cl
     h.records.P1={epoch:1,completed:false,auctionId:null,allowed:{}};h.send([s]);assert.equal(s.values.aq_bid_origin,undefined);
   }
 });
+test('only the documented empty targeting array confirms none; malformed getters omit',()=>{
+  for(const value of [undefined,null,'',0]) {
+    const h=harness(),s=h.slot('P1',{aq_bid_origin:'cached'});h.metrics.consent(true,1);h.complete('a1',[]);
+    s.getTargeting=()=>value;h.send([s]);assert.equal(s.values.aq_bid_origin,undefined,String(value));
+  }
+  const h=harness(),s=h.slot('P1',{aq_bid_origin:'cached'});h.metrics.consent(true,1);h.complete('a1',[]);
+  s.getTargeting=()=>{throw Error('unknown targeting');};h.send([s]);assert.equal(s.values.aq_bid_origin,undefined);
+});
 test('page buckets are set before first dispatch and remain fixed for batch, refresh and late lazy slots',()=>{
   const h=harness({prebid:false}),a=h.slot('A',{aq_first_request:'bad',aq_consent_wait:'bad'}),b=h.slot('B');
   h.time(100);h.metrics.enter(false,0);h.time(1100);h.metrics.consent(true,1);h.time(2250);
@@ -75,6 +83,20 @@ test('decision revocation is remeasured while duplicate ready callbacks do not i
     assert.equal(h.page.aq_consent_wait,revoke?'1500_1999':'lt_500');
   }
 });
+test('timeout observes actual CMP waiting at the configured boundary, never SSP delay after ready',()=>{
+  for(const [decision,expected]of [[1499.99,'1000_1499'],[1500,'timeout'],[4500,'timeout']]){
+    const h=harness({deadline:1500});h.metrics.enter(false,0);h.time(decision);h.metrics.consent(true,1);h.time(10000);h.send([h.slot()]);
+    assert.equal(h.page.aq_consent_wait,expected,String(decision));
+  }
+  const h=harness({deadline:1500});h.metrics.enter(false,0);h.time(100);h.metrics.consent(true,1);h.time(10000);h.send([h.slot()]);
+  assert.equal(h.page.aq_consent_wait,'lt_500');assert.equal(h.page.aq_first_request,'3000_plus');
+});
+test('a larger first-batch budget preserves elapsed buckets and an already-ready late script never times out',()=>{
+  const h=harness({deadline:5000});h.metrics.enter(false,0);h.time(3000);h.metrics.consent(true,1);h.time(8000);h.send([h.slot('P1'),h.slot('P2')]);
+  assert.equal(h.page.aq_consent_wait,'3000_plus');
+  const ready=harness({deadline:1500});ready.time(7000);ready.metrics.consent(true,1);ready.time(10000);ready.metrics.enter(true,1);ready.send([ready.slot()]);
+  assert.equal(ready.page.aq_consent_wait,'lt_500');
+});
 test('all millisecond bucket boundaries are exact and a new document starts over',()=>{
   for(const [ms,value]of [[0,'lt_500'],[499.99,'lt_500'],[500,'500_999'],[999.99,'500_999'],[1000,'1000_1499'],[1499.99,'1000_1499'],[1500,'1500_1999'],[1999.99,'1500_1999'],[2000,'2000_2999'],[2999.99,'2000_2999'],[3000,'3000_plus']]){
     const h=harness();h.metrics.enter(false,0);h.time(ms);h.metrics.consent(true,1);h.send([h.slot()]);
@@ -94,4 +116,12 @@ test('consent epoch change discards earlier bid identities',()=>{
   const h=harness(),s=h.slot('P1',{hb_adid:'id',hb_bidder:'pm_ag'});h.metrics.consent(true,1);h.complete('a1',[h.bid('id')]);
   h.metrics.consent(false,2);h.metrics.consent(true,3);h.records.P1={epoch:3,completed:true,auctionId:'a3',allowed:{id:Date.now()+59000}};
   h.send([s]);assert.equal(s.values.aq_bid_origin,undefined);
+});
+test('long-page identity history is bounded and refuses evicted or expired identities',()=>{
+  const h=harness(),s=h.slot('P1',{hb_adid:'old',hb_bidder:'pm_ag'});h.metrics.consent(true,1);h.complete('a0',[h.bid('old')]);
+  for(let index=1;index<=64;index++)h.complete('a'+index,[]);
+  h.records.P1.allowed.old=Date.now()+59000;h.send([s]);assert.equal(s.values.aq_bid_origin,undefined);
+  const expired=h.bid('expired','pm_ag','P1','last');expired.ttl=1;
+  h.complete('last',[expired]);s.values.hb_adid='expired';h.records.P1.allowed.expired=Date.now()+59000;h.send([s]);
+  assert.equal(s.values.aq_bid_origin,undefined);
 });

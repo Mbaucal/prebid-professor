@@ -34,6 +34,7 @@ export function createTesseraRequestMetrics(win, config) {
       identities[id] = identities[id].filter(function(row) { if (row.expires > now) return true; identityCount--; return false; });
       if (!identities[id].length) delete identities[id];
     });
+    history.forEach(function(entry){entry.rows=entry.rows.filter(function(row){return row.expires > now;});});
     while (history.length > MAX_AUCTIONS || identityCount > MAX_IDS) remove(history.shift());
   }
   function consent(ready, epoch) {
@@ -77,7 +78,7 @@ export function createTesseraRequestMetrics(win, config) {
       var code = config.code(slot), record = config.readiness(code);
       if (!record || !record.completed || record.epoch !== currentEpoch || typeof record.auctionId !== 'string') return null;
       var primary = slot.getTargeting('hb_adid');
-      if (primary === undefined || primary === null || Array.isArray(primary) && !primary.length) return 'none';
+      if (Array.isArray(primary) && !primary.length) return 'none';
       var id = single(primary), bidder = single(slot.getTargeting('hb_bidder'));
       if (!id || !bidder || typeof record.allowed[id] !== 'number' || record.allowed[id] <= Date.now()) return null;
       prune();
@@ -105,7 +106,13 @@ export function createTesseraRequestMetrics(win, config) {
   function before(service, slots) {
     if (!slots.length) return null;
     var created = first === null;
-    if (created) first = {navigation:bucket(navigation()), consent:gateStart === null ? 'na' : decisionAt === null ? null : bucket(Math.max(0, decisionAt - gateStart)), committed:false};
+    if (created) {
+      var wait=decisionAt === null || gateStart === null ? null : Math.max(0, decisionAt - gateStart);
+      var consentValue=gateStart === null ? 'na' : bucket(wait), deadline=null;
+      try { if(config.consentDeadline)deadline=config.consentDeadline(slots.map(config.code)); } catch (_) {}
+      if (wait !== null && typeof deadline === 'number' && Number.isFinite(deadline) && deadline > 0 && wait >= deadline) consentValue='timeout';
+      first = {navigation:bucket(navigation()), consent:consentValue, committed:false};
+    }
     slots.forEach(function(slot){setSlot(slot, {aq_bid_origin:origin(slot), aq_first_request:null, aq_consent_wait:null});});
     setPage(service, {aq_bid_origin:null, aq_first_request:first.navigation, aq_consent_wait:first.consent});
     return {entry:first, created:created};

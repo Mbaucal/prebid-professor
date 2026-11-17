@@ -89,10 +89,15 @@ export function createGamReporting(config) {
         pending.push({slot: slot, state: s}); s.sent++; s.interval = null;
       } catch (_) {}
     });
-    var measurement = metrics.before(service, pending.map(function(item){return item.slot;}));
-    try { var result = original.call(service, list, options); metrics.commit(measurement); return result; }
+    var measurement = null;
+    try { measurement = metrics.before(service, pending.map(function(item){return item.slot;})); } catch (_) {}
+    try {
+      var result = original.call(service, list, options);
+      try { metrics.commit(measurement); } catch (_) {}
+      return result;
+    }
     catch (error) {
-      metrics.rollback(service, measurement);
+      try { metrics.rollback(service, measurement); } catch (_) {}
       pending.forEach(function(item) {
         item.state.sent--;
         var values = clearValues();

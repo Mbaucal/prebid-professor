@@ -21,15 +21,16 @@ export function compileRuntime325(input) {
   let source=replaceHelper(previous.adsJs,'createGamReporting');
   source=once(source,'function createGamReporting(config) {',browserSources.createTesseraRequestMetrics+'\nfunction createGamReporting(config) {');
   source=once(source,'  var _gamReporting=createGamReporting({\n',
-    '  var _gamReporting=createGamReporting({\n    readiness:function(code){return _tesseraReady&&_tesseraReady.reporting(code);},\n');
+    '  var _gamReporting=createGamReporting({\n    readiness:function(code){return _tesseraReady&&_tesseraReady.reporting(code);},\n'+
+    '    consentDeadline:function(codes){return getConsentTimeoutForSlots(codes.map(function(code){return {getSlotElementId:function(){return code;}};}));},\n');
   source=once(source,'  var _tesseraReady=createTesseraReadiness(window,{\n',
     '  var _tesseraReady=createTesseraReadiness(window,{\n    requestMetrics:_gamReporting.metrics,\n');
   source=once(source,'  function whenConsent(fn) {\n',
-    '  function whenConsent(fn) {\n    if(options.requestMetrics)options.requestMetrics.enter(consent.ready,consent.epoch);\n');
+    '  function whenConsent(fn) {\n    try{if(options.requestMetrics)options.requestMetrics.enter(consent.ready,consent.epoch);}catch(_){}\n');
   const accepted='    consent = {ready:!!ready, phase:phase, epoch:consent.epoch + (changed ? 1 : 0)};\n';
-  source=once(source,accepted,accepted+'    if(options.requestMetrics)options.requestMetrics.consent(consent.ready,consent.epoch);\n');
+  source=once(source,accepted,accepted+'    try{if(options.requestMetrics)options.requestMetrics.consent(consent.ready,consent.epoch);}catch(_){}\n');
   const completed="        var completed = started && consent.ready && consent.epoch === epoch && id === auctionId && bids && typeof bids === 'object' && typeof timedOut === 'boolean';\n";
-  source=once(source,completed,completed+'        if(options.requestMetrics)options.requestMetrics.auction(codes,bids,auctionId,epoch,completed);\n');
+  source=once(source,completed,completed+'        try{if(options.requestMetrics)options.requestMetrics.auction(codes,bids,auctionId,epoch,completed);}catch(_){}\n');
   source=once(source,'          targets[code] = {epoch:consent.epoch, values:values, allowed:allowed, hadBids:Object.keys(allowed).length > 0};',
     '          targets[code] = {epoch:consent.epoch, auctionId:completed?auctionId:null, completed:!!completed, values:values, allowed:allowed, hadBids:Object.keys(allowed).length > 0};');
   source=once(source,'    whenConsent:whenConsent, prebid:prebid, request:request, targeting:targeting,',
