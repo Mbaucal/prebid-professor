@@ -114,7 +114,7 @@ SETUP=r'''
      for(const cpm of cpms)payload.push({requestId:bid.bidId,cpm,width:300,height:250,ttl:120,currency:'EUR',netRevenue:true,
       creativeId:'synthetic',ad:'<div>Local reporting QA only</div>',meta:{advertiserDomains:['example.invalid']}});
     }
-    return {method:'GET',url:'%BID%',options:{withCredentials:false},data:{payload:JSON.stringify(payload),codes:JSON.stringify([...new Set(bids.map(bid=>bid.adUnitCode))])}};
+    return {method:'GET',url:'%BID%',options:{withCredentials:false},data:{payload:JSON.stringify(payload),codes:JSON.stringify([...new Set(bids.map(bid=>bid.adUnitCode))]),bidder:request.bidderCode}};
    },interpretResponse:response=>response.body.bids,
   });
  }]};
@@ -151,7 +151,7 @@ def advance(page,ms):
 
 def run(browser,version,options):
     context=browser.new_context(viewport={'width':options['width'],'height':900},timezone_id='UTC',service_workers='block')
-    page=context.new_page();errors=[];blocked=[];gam_wire=[];served=[];held_loader=[]
+    page=context.new_page();errors=[];blocked=[];gam_wire=[];served=[];held_loader=[];http=[]
     page._qa_pending_bids=[]
     page.on('pageerror',lambda error:errors.append(str(error)))
     folder=OUT/version/options['kind']
@@ -185,6 +185,7 @@ def run(browser,version,options):
             else:request.fulfill(content_type='application/javascript',body=(folder/relative).read_bytes())
         elif url.startswith(BID+'?'):
             query=parse_qs(urlsplit(url).query);payload=json.loads(query['payload'][0]);codes=json.loads(query['codes'][0])
+            http.append({'type':'ssp','method':request.request.method,'bidder':query['bidder'][0],'codes':codes})
             # Explicit synthetic response ordering makes the paired comparison
             # deterministic despite independent initial slot auctions. It does
             # not change either generated runtime's scheduler or request count.
@@ -193,7 +194,8 @@ def run(browser,version,options):
             else:request.fulfill(content_type='application/json',body=json.dumps({'bids':payload}))
         elif url in GPT:request.fulfill(content_type='application/javascript',body=GPT[url].read_bytes())
         elif '/gampad/ads?' in url:
-            gam_wire.append(decode_gam(url));request.fulfill(status=204,body='')
+            decoded=decode_gam(url);gam_wire.append(decoded)
+            http.append({'type':'gam','method':request.request.method,'codes':list(decoded['slots'])});request.fulfill(status=204,body='')
         elif url.startswith('https://cdn.jsdelivr.net/gh/prebid/currency-file@1/latest.json'):
             request.fulfill(content_type='application/json',headers={'access-control-allow-origin':'*'},body=json.dumps({'conversions':{'EUR':{'EUR':1,'USD':1},'USD':{'USD':1,'EUR':1}}}))
         else:
@@ -254,7 +256,7 @@ def run(browser,version,options):
       readiness:window.__tesseraReadiness?.snapshot(),gate:window.__qaGate,
       consentRevokedAt:window.__consentRevokedAt,consentUpdatedAt:window.__consentUpdatedAt})''')
     context.close()
-    return {**options,'version':version,**state,'gamWire':gam_wire,'errors':errors,'blocked':blocked,'served':served,
+    return {**options,'version':version,**state,'gamWire':gam_wire,'http':http,'errors':errors,'blocked':blocked,'served':served,
       'runtimeNetworkPassedThrough':0}
 
 def scalar(values):
@@ -336,6 +338,17 @@ def behavior(result):
     return {'sequence':sequence,'slots':[[clean(row) for row in batch['slots']] for batch in result['dispatch']],
       'page':[{key:value for key,value in batch['page'].items() if key not in KEYS} for batch in result['dispatch']]}
 
+def transport_behavior(result):
+    """Actual intercepted RPCs, preserving GAM barriers and transport membership."""
+    sequence=[];pending=[]
+    def flush():
+        if pending:
+            sequence.extend(sorted(pending,key=lambda row:(row['method'],row['bidder'],tuple(row['codes']))));pending.clear()
+    for item in result['http']:
+        if item['type']=='ssp':pending.append(item)
+        else:flush();sequence.append(item)
+    flush();return sequence
+
 def main():
     results=[]
     with sync_playwright() as playwright:
@@ -372,9 +385,12 @@ def main():
                     raise
                 results.append(result);pair.append(result)
                 print('PASS',version,item['gpt'],item['arm'],item['program'],item['width'],item['scenario'],len(result['dispatch']),'dispatch',len(result['gamWire']),'genuine GPT queries',flush=True)
-            if len(pair)==2:assert behavior(pair[0])==behavior(pair[1]),('Reporting changed existing SSP/GAM order/count/targeting',item,behavior(pair[0]),behavior(pair[1]))
+            if len(pair)==2:
+                assert behavior(pair[0])==behavior(pair[1]),('Reporting changed existing SSP/GAM order/count/targeting',item,behavior(pair[0]),behavior(pair[1]))
+                assert transport_behavior(pair[0])==transport_behavior(pair[1]),('Reporting changed actual SSP/GAM HTTP transport order/count',item,pair[0]['http'],pair[1]['http'])
         browser_version=browser.version;browser.close()
     report={'passed':len(results),'failed':0,'genuineGptQueries':sum(len(row['gamWire']) for row in results),'nativePrebid':MANIFEST['prebid']['version'],
+      'syntheticSspRpcRequests':sum(sum(row['type']=='ssp' for row in result['http']) for result in results),
       'browser':browser_version,'fixtureManifestSha256':hashlib.sha256((OUT/'manifest.json').read_bytes()).hexdigest(),
       'runtimeSourceHashes':{version:sorted({row['runtime']['codeSha256'] for row in MANIFEST['packages'] if row['version']==version}) for version in MANIFEST['versions']},
       'scope':'Generated MAIN programs, canonical QA A/B assignment, native Prebid, and real offline GPT. No request is passed to an ad server/SSP. Not server acceptance or revenue.',
