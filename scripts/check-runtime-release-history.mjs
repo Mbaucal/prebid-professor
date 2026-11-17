@@ -37,7 +37,7 @@ export function verifyRuntimeReleaseProvenance(releases,readSource=readGitSource
       for(const value of Object.values(node))if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')visit(value);
     }
     const manifest=release.sourceManifest??'scripts/prepare-builtin-runtime.mjs';
-    assert(['scripts/prepare-builtin-runtime.mjs','scripts/prepare-next-runtime.mjs','scripts/prepare-reporting-runtime.mjs','scripts/prepare-readiness-runtime.mjs','scripts/prepare-revenue-runtime.mjs','scripts/prepare-revenue-v2-runtime.mjs','scripts/prepare-revenue-v3-runtime.mjs','scripts/prepare-runtime316.mjs','scripts/prepare-runtime3161.mjs','scripts/prepare-runtime3162.mjs','scripts/prepare-runtime317.mjs','scripts/prepare-runtime318.mjs','scripts/prepare-runtime319.mjs','scripts/prepare-runtime3191.mjs','scripts/prepare-runtime320.mjs','scripts/prepare-runtime3201.mjs','scripts/prepare-runtime321.mjs','scripts/prepare-runtime3211.mjs','scripts/prepare-runtime3212.mjs','scripts/prepare-runtime322.mjs','scripts/prepare-runtime3221.mjs','scripts/prepare-runtime3222.mjs','scripts/prepare-runtime323.mjs','scripts/prepare-runtime324.mjs'].includes(manifest),'Known source manifest required');
+    assert(['scripts/prepare-builtin-runtime.mjs','scripts/prepare-next-runtime.mjs','scripts/prepare-reporting-runtime.mjs','scripts/prepare-readiness-runtime.mjs','scripts/prepare-revenue-runtime.mjs','scripts/prepare-revenue-v2-runtime.mjs','scripts/prepare-revenue-v3-runtime.mjs','scripts/prepare-runtime316.mjs','scripts/prepare-runtime3161.mjs','scripts/prepare-runtime3162.mjs','scripts/prepare-runtime317.mjs','scripts/prepare-runtime318.mjs','scripts/prepare-runtime319.mjs','scripts/prepare-runtime3191.mjs','scripts/prepare-runtime320.mjs','scripts/prepare-runtime3201.mjs','scripts/prepare-runtime321.mjs','scripts/prepare-runtime3211.mjs','scripts/prepare-runtime3212.mjs','scripts/prepare-runtime322.mjs','scripts/prepare-runtime3221.mjs','scripts/prepare-runtime3222.mjs','scripts/prepare-runtime323.mjs','scripts/prepare-runtime324.mjs','scripts/prepare-runtime325.mjs'].includes(manifest),'Known source manifest required');
     visit(parse(readSource(release.sourceCommit,manifest).toString('utf8'),{ecmaVersion:'latest',sourceType:'module'}));
     const files=declarations.filter(d=>d.id.name==='sourceFiles'),module=declarations.filter(d=>d.id.name==='MODULE_SHA256');
     assert(files.length===1&&files[0].init?.type==='ArrayExpression','Recorded source closure must declare one literal file list');
@@ -48,7 +48,7 @@ export function verifyRuntimeReleaseProvenance(releases,readSource=readGitSource
     });
     // The combined engine retains both historical closures (168 files). Keep
     // the existing bound for every earlier identity rather than loosening it.
-    const sourceLimit=release.id==='tessera-3.24.0'&&release.version==='3.24.0'?168:150;
+    const sourceLimit=release.id==='tessera-3.25.0'&&release.version==='3.25.0'?176:release.id==='tessera-3.24.0'&&release.version==='3.24.0'?168:150;
     assert(paths.length>0&&paths.length<=sourceLimit&&new Set(paths).size===paths.length,'Recorded source file list must be nonempty, bounded and unique');
     const components=[{path:'reference391.mjs',sha256:module[0].init.value},...paths.map(path=>({path,sha256:sha256(readSource(release.sourceCommit,path))}))];
     components.sort((a,b)=>a.path.localeCompare(b.path,'en'));
