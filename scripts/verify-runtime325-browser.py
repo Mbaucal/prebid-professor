@@ -36,6 +36,8 @@ SETUP=r'''
  const options=%OPTIONS%;window.__qaOptions=options;
  let randomSeed=424;Math.random=()=>{randomSeed=(randomSeed*16807)%2147483647;return (randomSeed-1)/2147483646;};
  window.__inflight=0;window.__wire=[];window.__dispatch=[];window.__sequence=[];window.__rounds={};window.__tcListeners=[];
+ const nativeFetch=window.fetch.bind(window);window.fetch=(...args)=>{__inflight++;return nativeFetch(...args).finally(()=>__inflight--);};
+ const xhrSend=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(...args){__inflight++;this.addEventListener('loadend',()=>__inflight--,{once:true});return xhrSend.apply(this,args);};
  window.__country='RS';window.__pageTargeting={};window.__cmpReady=options.delay===0;
  window.__AD_GEO={version:1,getSnapshot:()=>({version:1,status:'known',country:'RS',source:'cloudflare'}),ready:()=>Promise.resolve(__AD_GEO.getSnapshot())};
  window.adsKeywords={publisher_key:'preserved',aq_bid_origin:'forged',aq_first_request:'forged',aq_consent_wait:'forged'};
@@ -53,6 +55,8 @@ SETUP=r'''
   else callback(true);
  };
  window.__releaseConsent=()=>{__cmpReady=true;window.__consentReleasedAt=performance.now();for(const cb of __tcListeners)cb({gdprApplies:false,listenerId:1,eventStatus:'useractioncomplete',cmpStatus:'loaded'},true);};
+ window.__revokeConsent=()=>{__cmpReady=false;window.__consentRevokedAt=performance.now();for(const cb of __tcListeners)cb({gdprApplies:true,listenerId:1,eventStatus:'cmpuishown',cmpStatus:'loaded'},true);};
+ window.__readyUpdate=()=>{window.__consentUpdatedAt=performance.now();for(const cb of __tcListeners)cb({gdprApplies:false,listenerId:1,eventStatus:'useractioncomplete',cmpStatus:'loaded',tcString:'synthetic-new-decision'},true);};
  window.__observers=[];
  const NativeIO=window.IntersectionObserver;
  window.IntersectionObserver=class{
@@ -107,7 +111,7 @@ SETUP=r'''
      for(const cpm of cpms)payload.push({requestId:bid.bidId,cpm,width:300,height:250,ttl:120,currency:'EUR',netRevenue:true,
       creativeId:'synthetic',ad:'<div>Local reporting QA only</div>',meta:{advertiserDomains:['example.invalid']}});
     }
-    return {method:'GET',url:'%BID%',options:{withCredentials:false},data:{payload:JSON.stringify(payload)}};
+    return {method:'GET',url:'%BID%',options:{withCredentials:false},data:{payload:JSON.stringify(payload),codes:JSON.stringify([...new Set(bids.map(bid=>bid.adUnitCode))])}};
    },interpretResponse:response=>response.body.bids,
   });
  }]};
@@ -137,10 +141,14 @@ def advance(page,ms):
                 if now>=due:
                     request.fulfill(content_type='application/json',body=json.dumps({'bids':payload}));pending.remove((due,request,payload))
         page.wait_for_timeout(2)
+        if not getattr(page,'_qa_pending_bids',[]):
+            for _ in range(500):
+                if page.evaluate('window.__inflight||0')==0:break
+                page.wait_for_timeout(2)
 
 def run(browser,version,options):
     context=browser.new_context(viewport={'width':options['width'],'height':900},timezone_id='UTC',service_workers='block')
-    page=context.new_page();errors=[];blocked=[];gam_wire=[];served=[]
+    page=context.new_page();errors=[];blocked=[];gam_wire=[];served=[];held_loader=[]
     page._qa_pending_bids=[]
     page.on('pageerror',lambda error:errors.append(str(error)))
     folder=OUT/version/options['kind']
@@ -170,10 +178,15 @@ def run(browser,version,options):
         elif url==ORIGIN+'/prebid.js':request.fulfill(content_type='application/javascript',body=(folder/'prebid.js').read_bytes())
         elif url.startswith(ORIGIN+'/loader/') or url.startswith(ORIGIN+'/arms/'):
             relative=path.lstrip('/');served.append(relative)
-            request.fulfill(content_type='application/javascript',body=(folder/relative).read_bytes())
+            if options['scenario']=='late-script' and '/loader/' in url:held_loader.append((request,relative))
+            else:request.fulfill(content_type='application/javascript',body=(folder/relative).read_bytes())
         elif url.startswith(BID+'?'):
-            payload=json.loads(parse_qs(urlsplit(url).query)['payload'][0])
-            if options['scenario']=='ssp-slow':page._qa_pending_bids.append((page.evaluate('performance.now()')+500,request,payload))
+            query=parse_qs(urlsplit(url).query);payload=json.loads(query['payload'][0]);codes=json.loads(query['codes'][0])
+            # Explicit synthetic response ordering makes the paired comparison
+            # deterministic despite independent initial slot auctions. It does
+            # not change either generated runtime's scheduler or request count.
+            delay=(200 if 'P1' in codes else 0)+(500 if options['scenario']=='ssp-slow' else 2200 if options['kind']=='revoke-first' else 0)
+            if delay:page._qa_pending_bids.append((page.evaluate('performance.now()')+delay,request,payload))
             else:request.fulfill(content_type='application/json',body=json.dumps({'bids':payload}))
         elif url in GPT:request.fulfill(content_type='application/javascript',body=GPT[url].read_bytes())
         elif '/gampad/ads?' in url:
@@ -186,7 +199,14 @@ def run(browser,version,options):
     page.clock.install(time=NOW);page.clock.pause_at(NOW+timedelta(seconds=1))
     setup=SETUP.replace('%OPTIONS%',json.dumps({**options,'prebidVersion':MANIFEST['prebid']['version']}))
     page.add_init_script((MOCK+'\n' if options['gpt']=='mock' else '')+setup)
-    page.goto(PAGE)
+    page.goto(PAGE,wait_until='commit' if options['scenario']=='late-script' else 'load')
+    if options['scenario']=='late-script':
+        for _ in range(500):
+            if held_loader:break
+            page.wait_for_timeout(2)
+        assert held_loader,'The delayed loader request never arrived'
+        advance(page,2000)
+        for request,relative in held_loader:request.fulfill(content_type='application/javascript',body=(folder/relative).read_bytes())
     # Allow local static scripts/microtasks to finish without advancing virtual time.
     page.wait_for_function('window.AdVariant?.snapshot().status==="loaded"',timeout=15000)
     advance(page,1)
@@ -204,6 +224,18 @@ def run(browser,version,options):
         assert page.evaluate('__dispatch.length')==0,('Pending CMP sent GAM',options)
         assert page.evaluate('__wire.length')==0,('Pending CMP sent SSP',options)
         page.evaluate('__releaseConsent()')
+    if options['kind']=='revoke-first':
+        for _ in range(160):
+            if page.evaluate('__wire.length>0'):break
+            advance(page,25)
+        assert page.evaluate('__wire.length>0'),'Synthetic SSP wait did not start'
+        advance(page,2000)
+        assert page.evaluate('__dispatch.length')==0,'The synthetic response hold must precede the first GAM request'
+        if options['scenario']=='revoke-before-first':
+            page.evaluate('__revokeConsent()');advance(page,100)
+            assert page.evaluate('__dispatch.length')==0,'Revocation let the first GAM request through before a new valid decision'
+            page.evaluate('__releaseConsent()')
+        else:page.evaluate('__readyUpdate()')
     if options['kind']=='lazy':
         advance(page,3001)
         assert page.evaluate('__dispatch.length')==0,'Lazy slot sent while not visible'
@@ -213,10 +245,11 @@ def run(browser,version,options):
         initial=page.evaluate('__dispatch.length');assert initial>0
         advance(page,3000);page.evaluate('__fireLazy()');advance(page,1500)
     if options.get('refresh',True) and options['kind'] not in ['lazy','late-lazy']:
-        advance(page,65000)
+        advance(page,68000)
     state=page.evaluate('''()=>({dispatch:__dispatch,wire:__wire,sequence:__sequence,assignment:AdVariant.snapshot(),
       cache:window.__tesseraBidCache?.snapshot(),consentReleasedAt:window.__consentReleasedAt,
-      readiness:window.__tesseraReadiness?.snapshot(),gate:window.__qaGate})''')
+      readiness:window.__tesseraReadiness?.snapshot(),gate:window.__qaGate,
+      consentRevokedAt:window.__consentRevokedAt,consentUpdatedAt:window.__consentUpdatedAt})''')
     context.close()
     return {**options,'version':version,**state,'gamWire':gam_wire,'errors':errors,'blocked':blocked,'served':served,
       'runtimeNetworkPassedThrough':0}
@@ -242,7 +275,7 @@ def validate(result):
             assert row['keys'].get('Variant')==[result['arm']],row
             assert not row['keys'].get('aq_first_request') and not row['keys'].get('aq_consent_wait'),'Page metrics leaked as slot overrides'
             origin=scalar(row['keys'].get('aq_bid_origin'))
-            if result['kind']=='gam' or result['kind']=='mixed-gam' and row['code']=='P1':assert origin is None,row
+            if result['kind'] in ['gam','empty-bidders'] or result['kind']=='mixed-gam' and row['code']=='P1':assert origin is None,row
             elif not row['keys'].get('hb_adid'):assert origin=='none',row
             else:
                 primary=row['bids']['hb_adid'];assert primary,row
@@ -275,9 +308,20 @@ def validate(result):
 
 def behavior(result):
     def clean(row):
-        keys={key:value for key,value in row['keys'].items() if key not in KEYS and key!='hb_ver' and not key.startswith('hb_adid')}
+        keys={key:value for key,value in row['keys'].items() if key not in KEYS and not key.startswith('hb_adid')}
         return {'code':row['code'],'keys':keys,'bids':row['bids']}
-    return {'sequence':result['sequence'],'slots':[[clean(row) for row in batch['slots']] for batch in result['dispatch']]}
+    # Prebid intentionally randomizes bidders, and real GPT may consume the
+    # shared random source. Compare SSP membership/count within one contiguous
+    # SSP block; retain every GAM barrier, batch order and slot/round identity.
+    sequence=[];pending=[]
+    def flush():
+        if pending:
+            sequence.extend(sorted(pending,key=lambda row:(row['code'],row['round'],row['bidder'])));pending.clear()
+    for item in result['sequence']:
+        if item['type']=='ssp':pending.append(item)
+        else:flush();sequence.append(item)
+    flush()
+    return {'sequence':sequence,'slots':[[clean(row) for row in batch['slots']] for batch in result['dispatch']]}
 
 def main():
     results=[]
@@ -291,8 +335,11 @@ def main():
                     for width in widths:
                         options.append(dict(gpt=gpt,arm=arm,program=program,width=width,kind='standard',scenario='standard',delay=0))
         for arm in ['A','B']:
-            for kind,scenario in [('standard','primary-fresh'),('standard','alias-primary'),('standard','no-bids'),('standard','activity-denied'),('standard','library-unavailable'),('standard','ssp-slow'),('mixed-gam','mixed-batch'),('gam','gam'),('lazy','lazy'),('late-lazy','late-lazy'),('timeout','timeout')]:
+            for kind,scenario in [('standard','primary-fresh'),('standard','alias-primary'),('standard','no-bids'),('standard','activity-denied'),('standard','library-unavailable'),('standard','ssp-slow'),('mixed-gam','mixed-batch'),('gam','gam'),('empty-bidders','empty-bidders'),('lazy','lazy'),('late-lazy','late-lazy'),('timeout','timeout')]:
                 options.append(dict(gpt='real',arm=arm,program='ads.min.js',width=390,kind=kind,scenario=scenario,delay=1500 if kind=='timeout' else 0))
+            options.append(dict(gpt='real',arm=arm,program='ads.js',width=1440,kind='standard',scenario='late-script',delay=0,refresh=False))
+            for scenario in ['revoke-before-first','ready-update-before-first']:
+                options.append(dict(gpt='real',arm=arm,program='ads.min.js',width=390,kind='revoke-first',scenario=scenario,delay=0,refresh=False))
             for delay in [499,500,999,1000,1499,1500,1999,2000,2999,3000]:
                 options.append(dict(gpt='real',arm=arm,program='ads.js',width=1440,kind='standard',scenario='cmp-'+str(delay),delay=delay,refresh=False))
         if os.environ.get('RUNTIME325_QA_SMOKE'):
@@ -309,6 +356,7 @@ def main():
         browser.close()
     report={'passed':len(results),'failed':0,'genuineGptQueries':sum(len(row['gamWire']) for row in results),'nativePrebid':MANIFEST['prebid']['version'],
       'scope':'Generated MAIN programs, canonical QA A/B assignment, native Prebid, and real offline GPT. No request is passed to an ad server/SSP. Not server acceptance or revenue.',
+      'comparison':'Exact GAM barriers/batch order, per-slot rounds, SSP membership/count and preexisting targeting; only randomized SSP permutation inside one contiguous SSP block is normalized.',
       'results':results}
     (OUT/'browser-results.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({key:value for key,value in report.items() if key!='results'}))

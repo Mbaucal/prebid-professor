@@ -8,11 +8,17 @@ export function runtime325BrowserSite({cache=true,kind='standard'}={}) {
   const config=JSON.parse(snapshot.config.config_json);
   config.runtimeControls.contextualSignals.enabled=false;
   config.runtimeControls.bidderRules.enabled=false;
+  config.runtimeControls.bidderRules.rules=[];
   config.runtimeControls.deals.entries=[];
+  if(kind==='empty-bidders') {
+    snapshot.bidders=[];
+    config.runtimeControls.contextualSignals.bidders=[];
+  }
   snapshot.maps=snapshot.maps.filter(row=>row.name==='display');
   snapshot.maps[0].map_json=JSON.stringify([{viewport:[0,0],sizes:[[300,250]]}]);
   snapshot.rules=[{rule_key:'__DEFAULT__',rule_json:JSON.stringify({
-    lazy:{enabled:false,fetchMarginPx:0,renderMarginPx:0},timeout:800,cmpTimeout:kind==='timeout'?1000:10000,
+    lazy:{enabled:false,fetchMarginPx:0,renderMarginPx:0},timeout:kind==='revoke-first'?5000:800,
+    cmpTimeout:['timeout','revoke-first'].includes(kind)?1000:10000,
     refresh:{enabled:true,minSeconds:30,minViewPct:0,requirePreviousViewable:false,checkEveryMs:1000},
   })}];
   if(kind==='lazy') {

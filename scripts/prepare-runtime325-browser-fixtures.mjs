@@ -27,7 +27,7 @@ const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 assert.equal(nativeBuild.sourceCommit,pins[prebid.version]);
 assert.equal(nativeBuild.buildSha256,hash(prebidBytes));
 const versions=(process.env.RUNTIME325_QA_VERSIONS||'3.24.0,3.25.0').split(',');
-const cases=['standard','lazy','late-lazy','mixed-gam','gam','timeout'];
+const cases=['standard','lazy','late-lazy','mixed-gam','gam','empty-bidders','timeout','revoke-first'];
 const files={},packages=[];await mkdir(out,{recursive:true});
 for(const version of versions) {
   const descriptor=runtimeCatalog.find(row=>row.version===version);assert(descriptor,'Register runtime '+version);
