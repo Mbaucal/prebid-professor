@@ -96,10 +96,41 @@ test('already-ready gate measures from gate entry rather than earlier listener i
 test('decision revocation is remeasured while duplicate ready callbacks do not inflate waiting',()=>{
   for(const revoke of [true,false]) {
     const h=harness();h.metrics.enter(false,0);h.time(100);h.metrics.consent(true,1);
-    if(revoke){h.time(200);h.metrics.consent(false,2);}
+    if(revoke){h.time(200);h.metrics.consent(false,2);h.metrics.enter(false,2);}
     h.time(1800);h.metrics.consent(true,revoke?3:1);h.time(2500);h.send([h.slot()]);
     assert.equal(h.page.aq_consent_wait,revoke?'1500_1999':'lt_500');
   }
+});
+test('a new pending gate after revocation excludes the already-resolved SSP interval',()=>{
+  const h=harness({deadline:1000});h.metrics.consent(true,1);h.metrics.enter(true,1);
+  h.time(2000);h.metrics.consent(false,2);h.metrics.enter(false,2);
+  h.time(2100);h.metrics.consent(true,3);h.time(2200);h.send([h.slot()]);
+  assert.equal(h.page.aq_consent_wait,'lt_500');
+});
+test('a revoked gate starts at its new actual entry, or measures immediately if ready before that entry',()=>{
+  for(const alreadyReady of [true,false]){
+    const h=harness({deadline:1000});h.metrics.consent(true,1);h.metrics.enter(true,1);
+    h.time(2000);h.metrics.consent(false,2);
+    if(alreadyReady){h.time(3000);h.metrics.consent(true,3);h.time(5000);h.metrics.enter(true,3);}
+    else {h.time(2450);h.metrics.enter(false,2);h.time(2600);h.metrics.consent(true,3);}
+    h.send([h.slot()]);assert.equal(h.page.aq_consent_wait,'lt_500',String(alreadyReady));
+  }
+});
+test('ready-to-ready consent epochs do not inflate resolved waiting and continuous pending entries do not restart it',()=>{
+  const ready=harness({deadline:2500});ready.metrics.enter(false,0);ready.time(800);ready.metrics.consent(true,1);
+  ready.time(6000);ready.metrics.consent(true,2);ready.time(6200);ready.send([ready.slot()]);assert.equal(ready.page.aq_consent_wait,'500_999');
+  const pending=harness({deadline:1000});pending.metrics.enter(false,0);pending.time(600);pending.metrics.consent(false,1);pending.metrics.enter(false,1);
+  pending.time(1500);pending.metrics.consent(true,2);pending.send([pending.slot()]);assert.equal(pending.page.aq_consent_wait,'timeout');
+});
+test('a later blocking episode replaces an earlier resolved wait rather than adding intervening time',()=>{
+  const h=harness({deadline:2500});h.metrics.enter(false,0);h.time(800);h.metrics.consent(true,1);
+  h.time(1600);h.metrics.consent(false,2);h.time(1800);h.metrics.enter(false,2);h.time(2000);h.metrics.consent(true,3);
+  h.send([h.slot()]);assert.equal(h.page.aq_consent_wait,'lt_500');
+});
+test('a committed first-request value remains immutable through later revocation and ready epochs',()=>{
+  const h=harness({deadline:1000}),s=h.slot();h.metrics.enter(false,0);h.time(600);h.metrics.consent(true,1);h.send([s]);
+  assert.equal(h.page.aq_consent_wait,'500_999');h.time(2000);h.metrics.consent(false,2);h.metrics.enter(false,2);
+  h.time(6000);h.metrics.consent(true,3);h.send([s]);assert.equal(h.page.aq_consent_wait,'500_999');
 });
 test('timeout observes actual CMP waiting at the configured boundary, never SSP delay after ready',()=>{
   for(const [decision,expected]of [[1499.99,'1000_1499'],[1500,'timeout'],[4500,'timeout']]){

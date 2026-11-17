@@ -1,6 +1,6 @@
 /** 3.25: private request-boundary reporting. It never controls ad delivery. */
 export function createTesseraRequestMetrics(win, config) {
-  var first = null, gateStart = null, decisionAt = null, gateEpoch = null;
+  var first = null, gateStart = null, decisionAt = null;
   var currentEpoch = null, history = [], identities = Object.create(null), identityCount = 0;
   var MAX_AUCTIONS = 64, MAX_IDS = 4096;
   function stamp() {
@@ -39,13 +39,18 @@ export function createTesseraRequestMetrics(win, config) {
   }
   function consent(ready, epoch) {
     if (currentEpoch !== epoch) { drop(); currentEpoch = epoch; }
-    if (gateEpoch !== epoch || !ready) decisionAt = null;
-    gateEpoch = epoch;
+    // Identity epochs can change while CMP remains ready. Such a change does
+    // not turn intervening SSP/library work into time spent waiting for CMP.
+    if (!ready && decisionAt !== null) { gateStart = null; decisionAt = null; }
     if (gateStart !== null && ready && decisionAt === null) decisionAt = stamp();
   }
-  function enter(ready, epoch) {
-    if (gateStart !== null) return;
-    gateStart = stamp(); gateEpoch = epoch; decisionAt = ready ? gateStart : null;
+  function enter(ready) {
+    // A resolved gate may later be revoked before the first GAM request.
+    // Start that new waiting episode at its actual serving-gate entry, while
+    // repeated calls during one continuous pending episode retain its start.
+    if (gateStart === null || !ready && decisionAt !== null) {
+      gateStart = stamp(); decisionAt = ready ? gateStart : null;
+    } else if (ready && decisionAt === null) decisionAt = stamp();
   }
   function auction(codes, bids, auctionId, epoch, completed) {
     if (!completed || currentEpoch !== epoch || typeof auctionId !== 'string' || !auctionId) return;
