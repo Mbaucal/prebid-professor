@@ -115,6 +115,7 @@ export function createTesseraRequestMetrics(win, config) {
   }
   function before(service, slots) {
     if (!slots.length) return null;
+    slots.forEach(function(slot){setSlot(slot, {aq_bid_origin:origin(slot), aq_first_request:null, aq_consent_wait:null});});
     var created = first === null;
     if (created) {
       var wait=decisionAt === null || gateStart === null ? null : Math.max(0, decisionAt - gateStart);
@@ -123,7 +124,6 @@ export function createTesseraRequestMetrics(win, config) {
       if (wait !== null && typeof deadline === 'number' && Number.isFinite(deadline) && deadline > 0 && wait >= deadline) consentValue='timeout';
       first = {navigation:bucket(navigation()), consent:consentValue, committed:false};
     }
-    slots.forEach(function(slot){setSlot(slot, {aq_bid_origin:origin(slot), aq_first_request:null, aq_consent_wait:null});});
     setPage(service, {aq_bid_origin:null, aq_first_request:first.navigation, aq_consent_wait:first.consent});
     return {entry:first, created:created};
   }

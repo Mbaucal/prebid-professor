@@ -84,6 +84,11 @@ test('page buckets are set before first dispatch and remain fixed for batch, ref
   assert.equal(a.values.aq_first_request,undefined);assert.equal(a.values.aq_consent_wait,undefined);
   h.time(20000);h.send([h.slot('Late')]);assert.equal(h.page.aq_first_request,'2000_2999');assert.equal(h.page.aq_consent_wait,'1000_1499');
 });
+test('first-request measurement includes reporting work immediately before the native boundary',()=>{
+  const h=harness(),s=h.slot();h.metrics.consent(true,1);h.metrics.enter(true,1);h.time(490);
+  s.getTargeting=()=>{h.time(510);return[];};
+  h.send([s]);assert.equal(h.page.aq_first_request,'500_999');assert.equal(h.page.aq_consent_wait,'lt_500');
+});
 test('already-ready gate measures from gate entry rather than earlier listener installation',()=>{
   const h=harness();h.time(2000);h.metrics.consent(true,1);h.time(5000);h.metrics.enter(true,1);h.time(5500);h.send([h.slot()]);
   assert.equal(h.page.aq_consent_wait,'lt_500');assert.equal(h.page.aq_first_request,'3000_plus');
