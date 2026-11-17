@@ -139,6 +139,7 @@ export class GamTrafficClient {
         service,
         operation,
         payloads.map((p) => element(tag, p)).join(""),
+        { entityCount: payloads.length },
       ),
     );
   }

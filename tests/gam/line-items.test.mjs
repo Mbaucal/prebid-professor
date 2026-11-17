@@ -7,6 +7,8 @@ import {
   prebidNamingPreview,
 } from "../../shared/gam/line-items.mjs";
 import { trafficFixture, prebidPlan } from "./traffic-fixture.mjs";
+import { GamClient } from "../../worker/integrations/gam-client.mjs";
+import { GamTrafficClient } from "../../worker/integrations/gam-traffic-client.mjs";
 const origin = "https://fixture.invalid",
   base = "/api/integrations/gam";
 async function req(
@@ -237,6 +239,46 @@ test("lost response reconciles existing entities without a second mutation; miss
     (await req(g, `/line-items/jobs/${j.id}/cancel`, {})).status,
     409,
   );
+});
+test("an interrupted 100-creative response recovers the same per-price job without duplicates", async t => {
+  t.mock.method(console, "warn", () => {});
+  const f = await setup();
+  const plan = {
+    ...prebidPlan(),
+    ranges: [{ from: "0.01", to: "0.06", step: "0.01" }],
+    creative: { ...prebidPlan().creative, layout: "per-price", copies: 20 },
+  };
+  let j = await start(f, await review(f, plan));
+  while (j.phase !== "Kreativi") j = await act(f, j, "step");
+  const create = f.traffic.create.bind(f.traffic);
+  let interrupt = true;
+  f.traffic.create = async (kind, payloads) => {
+    if (kind !== "creative" || !interrupt) return create(kind, payloads);
+    interrupt = false;
+    const transport = new GamTrafficClient(new GamClient("123456", "synthetic", async () => {
+      await create(kind, payloads); // Google committed, but its body never arrived.
+      return { status: 200, ok: true, text: async () => { throw new TypeError("Synthetic body interruption"); } };
+    }));
+    return transport.create(kind, payloads);
+  };
+  j = await act(f, j, "step");
+  assert(j.awaitingCheck);
+  assert.match(j.error, /prekinuta/);
+  assert.equal(f.db.creative.length, 100);
+  const calls = f.calls.length, cursor = j.cursor, id = j.id;
+  j = await act(f, j, "step");
+  assert.equal(f.calls.length, calls);
+  j = await act(f, j, "check");
+  assert.equal(j.awaitingCheck, false);
+  assert.equal(j.error, "");
+  assert.equal(j.cursor, cursor + 1);
+  assert.equal(j.id, id);
+  assert.equal(f.calls.length, calls); // The check is read-only, even after recovery.
+  await finish(f, j);
+  assert.equal(f.db.creative.length, 120);
+  assert.equal(new Set(f.db.creative.map(c => c.name)).size, 120);
+  assert.equal(f.db.lineItem.length, 6);
+  assert.equal(f.db.association.length, 120);
 });
 test("concurrent step, stale cursor and network lock permit one creation sequence", async () => {
   const f = await setup(),

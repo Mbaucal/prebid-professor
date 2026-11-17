@@ -2,6 +2,10 @@ import { XMLParser } from '../../vendor/gam-xml-parser/parser.mjs';
 import { GamError, numericId, parseSizes } from '../../shared/gam/plan.mjs';
 
 export const API_VERSION = 'v202608';
+// Batch creates can finish in Google after the old 25 s client deadline.
+// Keep the deadline below the line-item job's 90 s cancellation guard.
+const CREATE_TIMEOUT_MS = 60000;
+const READ_TIMEOUT_MS = 25000;
 const encoder = new TextEncoder();
 const base64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
 const b64url = bytes => base64(bytes).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
@@ -61,14 +65,33 @@ export function unitPayload(row, parentId) {
 }
 export class GamClient {
   constructor(networkCode, token, fetcher = runtimeFetch) { this.networkCode=numericId(networkCode);this.token=token;this.fetcher=fetcher; }
-  async call(service,operation,content='') {
+  async call(service,operation,content='',{entityCount=null}={}) {
     const ns = `https://www.google.com/apis/ads/publisher/${API_VERSION}`;
     const body = `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Header><RequestHeader xmlns="${ns}"><networkCode>${this.networkCode}</networkCode><applicationName>Tessera API Integrations</applicationName></RequestHeader></soap:Header><soap:Body><${operation} xmlns="${ns}">${content}</${operation}></soap:Body></soap:Envelope>`;
-    let response;
-    try { response = await this.fetcher(`https://ads.google.com/apis/ads/publisher/${API_VERSION}/${service}`,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(25000),headers:{authorization:`Bearer ${this.token}`,'content-type':'text/xml; charset=utf-8',SOAPAction:''},body}); }
-    catch { throw new GamError(operation.startsWith('create')?'Ishod GAM upisa nije poznat. Ponovite proveru postojećih entiteta pre nastavka.':'GAM trenutno nije dostupan. Pokušajte ponovo.',502); }
+    const creating = operation.startsWith('create');
+    const timeoutMs = creating ? CREATE_TIMEOUT_MS : READ_TIMEOUT_MS;
+    const signal = AbortSignal.timeout(timeoutMs), startedAt = Date.now();
+    let response, source, stage = 'headers';
+    try {
+      response = await this.fetcher(`https://ads.google.com/apis/ads/publisher/${API_VERSION}/${service}`,{method:'POST',redirect:'manual',signal,headers:{authorization:`Bearer ${this.token}`,'content-type':'text/xml; charset=utf-8',SOAPAction:''},body});
+      if (!redirected(response)) {
+        stage = 'body';
+        source = await response.text();
+      }
+    } catch (error) {
+      const timedOut = signal.aborted || error?.name === 'TimeoutError';
+      // Fixed metadata only: never log the exception, token, SOAP or creative tag.
+      console.warn('GAM transport failure', {service,operation,entityCount,stage,
+        reason:timedOut?'timeout':'network',elapsedMs:Date.now()-startedAt,timeoutMs});
+      const reason = timedOut
+        ? `Čekanje GAM odgovora je isteklo posle ${timeoutMs/1000} sekundi.`
+        : 'Veza sa GAM-om je prekinuta tokom čekanja odgovora.';
+      throw new GamError(reason + (creating
+        ? ' Upis možda jeste izvršen. Proverite ishod u GAM-u, pa nastavite isti posao.'
+        : ' Pokušajte ponovo.'),502);
+    }
     if (redirected(response)) throw new GamError('GAM je vratio neočekivano preusmerenje. Zahtev nije prosleđen.',502);
-    const result = parseResponse(await response.text(),operation);
+    const result = parseResponse(source,operation);
     if (!response.ok) throw new GamError('GAM zahtev nije uspeo. Ponovite proveru pre nastavka.',502);
     return result;
   }
@@ -89,7 +112,7 @@ export class GamClient {
   }
   async get(id) { const rows=await this.list(`id = ${numericId(id)}`);if(rows.length!==1)throw new GamError('Parent nije pronađen u ovoj GAM mreži.',404);return rows[0]; }
   children(id) { return this.list(`parentId = ${numericId(id)}`); }
-  async create(rows,parentId) { return array(await this.call('InventoryService','createAdUnits',rows.map(r=>unitPayload(r,parentId)).join(''))).map(normalizeUnit); }
+  async create(rows,parentId) { return array(await this.call('InventoryService','createAdUnits',rows.map(r=>unitPayload(r,parentId)).join(''),{entityCount:rows.length})).map(normalizeUnit); }
 }
 export function gamPath(networkCode, rootId, unit) {
   return '/'+[networkCode,...unit.parentPath.filter(p=>p.id!==rootId).map(p=>p.code),...(unit.id===rootId?[]:[unit.code])].join('/');
