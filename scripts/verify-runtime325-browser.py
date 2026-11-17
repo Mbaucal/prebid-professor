@@ -74,6 +74,9 @@ SETUP=r'''
    service.clearTargeting=key=>{delete __pageTargeting[key];return service;};
    googletag.setConfig=value=>Object.assign(__pageTargeting,value.targeting||{});
   }
+  if(options.scenario==='page-primary'||options.scenario==='page-shadowed'){
+   service.setTargeting('hb_adid','foreign-page-primary');service.setTargeting('hb_bidder','foreign-page-bidder');
+  }
   const refresh=service.refresh;
   service.refresh=function(slots,settings){
    const pageKeys=Object.fromEntries((service.getTargetingKeys?.()||[]).map(key=>[key,service.getTargeting(key)]));
@@ -107,7 +110,7 @@ SETUP=r'''
      if(options.scenario==='primary-fresh'&&round===2&&account==='pubmatic')cpms=[9];
      if(options.scenario==='alias-primary')cpms=round===1?(account==='pm_ag'?[10,4]:account==='pubmatic'?[8,3]:[.5]):[];
      if(options.scenario==='mixed-batch'&&bid.adUnitCode==='P1')cpms=[];
-     if(options.scenario==='no-bids')cpms=[];
+     if(options.scenario==='no-bids'||options.scenario==='page-primary')cpms=[];
      for(const cpm of cpms)payload.push({requestId:bid.bidId,cpm,width:300,height:250,ttl:120,currency:'EUR',netRevenue:true,
       creativeId:'synthetic',ad:'<div>Local reporting QA only</div>',meta:{advertiserDomains:['example.invalid']}});
     }
@@ -260,6 +263,7 @@ def scalar(values):
 def validate(result):
     assert not result['errors'],result['errors']
     assert result['assignment']['variant']==result['arm'] and result['assignment']['runtimeEntries']==1,result['assignment']
+    assert result['assignment']['prebidVersion']==MANIFEST['prebid']['version'],result['assignment']
     assert result['assignment']['targetingFailures']==0,result['assignment']
     expected_path=f'arms/{result["arm"]}/{result["program"]}'
     assert expected_path in result['served'] and not any(f'arms/{"B" if result["arm"]=="A" else "A"}/' in name for name in result['served'])
@@ -276,7 +280,9 @@ def validate(result):
             assert not row['keys'].get('aq_first_request') and not row['keys'].get('aq_consent_wait'),'Page metrics leaked as slot overrides'
             origin=scalar(row['keys'].get('aq_bid_origin'))
             if result['kind'] in ['gam','empty-bidders'] or result['kind']=='mixed-gam' and row['code']=='P1':assert origin is None,row
-            elif not row['keys'].get('hb_adid'):assert origin=='none',row
+            elif not row['keys'].get('hb_adid'):
+                if result['scenario'] in ['page-primary','page-shadowed']:assert origin is None,row
+                else:assert origin=='none',row
             else:
                 primary=row['bids']['hb_adid'];assert primary,row
                 assert origin in ['fresh','cached'],row
@@ -293,6 +299,10 @@ def validate(result):
             assert scalar(rows[1]['keys'].get('aq_bid_origin'))=='fresh',rows[1]
             assert rows[1]['bids']['hb_adid']['bidder']=='pubmatic' and rows[1]['bids'].get('hb_adid_pm_ag'),rows[1]
             assert rows[1]['bids']['hb_adid_pm_ag']['auction']<rows[1]['bids']['hb_adid']['auction'],'Missing cached secondary positive control'
+    if result['scenario']=='page-shadowed':
+        for code in ['Billboard','P1']:
+            rows=[row for batch in sent for row in batch['slots'] if row['code']==code]
+            assert [scalar(row['keys'].get('aq_bid_origin')) for row in rows[:3]]==['fresh','cached' if result['arm']=='B' else None,None],rows
     if result['gpt']=='real':
         assert result['gamWire'],('No genuine outgoing GPT request',result)
         requests=[row for batch in sent for row in batch['slots']]
@@ -305,6 +315,8 @@ def validate(result):
         for wire in result['gamWire']:
             for key in ['aq_first_request','aq_consent_wait']:assert wire['page'].get(key)==page.get(key),(wire,page)
             assert not wire['page'].get('aq_bid_origin'),wire
+            if result['scenario'] in ['page-primary','page-shadowed']:
+                assert wire['page'].get('hb_adid')==['foreign-page-primary'] and wire['page'].get('hb_bidder')==['foreign-page-bidder'],wire
 
 def behavior(result):
     def clean(row):
@@ -321,7 +333,8 @@ def behavior(result):
         if item['type']=='ssp':pending.append(item)
         else:flush();sequence.append(item)
     flush()
-    return {'sequence':sequence,'slots':[[clean(row) for row in batch['slots']] for batch in result['dispatch']]}
+    return {'sequence':sequence,'slots':[[clean(row) for row in batch['slots']] for batch in result['dispatch']],
+      'page':[{key:value for key,value in batch['page'].items() if key not in KEYS} for batch in result['dispatch']]}
 
 def main():
     results=[]
@@ -340,6 +353,8 @@ def main():
             options.append(dict(gpt='real',arm=arm,program='ads.js',width=1440,kind='standard',scenario='late-script',delay=0,refresh=False))
             for scenario in ['revoke-before-first','ready-update-before-first']:
                 options.append(dict(gpt='real',arm=arm,program='ads.min.js',width=390,kind='revoke-first',scenario=scenario,delay=0,refresh=False))
+            for scenario in ['page-primary','page-shadowed']:
+                options.append(dict(gpt='real',arm=arm,program='ads.min.js',width=390,kind='standard',scenario=scenario,delay=0))
             for delay in [499,500,999,1000,1499,1500,1999,2000,2999,3000]:
                 options.append(dict(gpt='real',arm=arm,program='ads.js',width=1440,kind='standard',scenario='cmp-'+str(delay),delay=delay,refresh=False))
         if os.environ.get('RUNTIME325_QA_SMOKE'):
@@ -350,12 +365,20 @@ def main():
             for version in versions:
                 current={**item}
                 if version=='3.24.0' and pair and pair[0].get('consentReleasedAt') is not None:current['forcedReleaseAt']=pair[0]['consentReleasedAt']
-                result=run(browser,version,current);validate(result);results.append(result);pair.append(result)
+                try:
+                    result=run(browser,version,current);validate(result)
+                except Exception as error:
+                    (OUT/'browser-results.json').write_text(json.dumps({'passed':len(results),'failed':1,'failedCase':{**current,'version':version},'error':str(error),'results':results},indent=2)+'\n')
+                    raise
+                results.append(result);pair.append(result)
                 print('PASS',version,item['gpt'],item['arm'],item['program'],item['width'],item['scenario'],len(result['dispatch']),'dispatch',len(result['gamWire']),'genuine GPT queries',flush=True)
             if len(pair)==2:assert behavior(pair[0])==behavior(pair[1]),('Reporting changed existing SSP/GAM order/count/targeting',item,behavior(pair[0]),behavior(pair[1]))
-        browser.close()
+        browser_version=browser.version;browser.close()
     report={'passed':len(results),'failed':0,'genuineGptQueries':sum(len(row['gamWire']) for row in results),'nativePrebid':MANIFEST['prebid']['version'],
+      'browser':browser_version,'fixtureManifestSha256':hashlib.sha256((OUT/'manifest.json').read_bytes()).hexdigest(),
+      'runtimeSourceHashes':{version:sorted({row['runtime']['codeSha256'] for row in MANIFEST['packages'] if row['version']==version}) for version in MANIFEST['versions']},
       'scope':'Generated MAIN programs, canonical QA A/B assignment, native Prebid, and real offline GPT. No request is passed to an ad server/SSP. Not server acceptance or revenue.',
+      'controls':'Synthetic CMP and adapter responses; controlled IntersectionObserver delivery. The real-GPT layer uses exact pinned Google bytes, with every GAM response fulfilled locally as204.',
       'comparison':'Exact GAM barriers/batch order, per-slot rounds, SSP membership/count and preexisting targeting; only randomized SSP permutation inside one contiguous SSP block is normalized.',
       'results':results}
     (OUT/'browser-results.json').write_text(json.dumps(report,indent=2)+'\n')
