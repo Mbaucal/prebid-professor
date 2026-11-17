@@ -70,7 +70,7 @@ with sync_playwright() as playwright:
      expect(panel.locator('select')).to_have_count(1);expect(selector).to_be_visible()
      labels=selector.locator('option').all_text_contents()
      fresh=[label.split(' · ')[0] for label in labels if 'Saved earlier build' not in label]
-     assert fresh==['3.24.0','3.23.0','3.22.2','3.22.1','3.22.0','3.21.2','3.21.1','3.21.0','3.20.1','3.20.0','3.19.1','3.19.0','3.18.0','3.17.0','3.16.2','3.16.1','3.16.0','3.14.0','3.13.0'],labels
+     assert fresh==['3.25.0','3.24.0','3.23.0','3.22.2','3.22.1','3.22.0','3.21.2','3.21.1','3.21.0','3.20.1','3.20.0','3.19.1','3.19.0','3.18.0','3.17.0','3.16.2','3.16.1','3.16.0','3.14.0','3.13.0'],labels
      expect(panel).not_to_contain_text('revenue.preview');expect(panel).not_to_contain_text('tessera-revenue-preview')
     def choose(version):
      expect(selector).to_be_visible()
@@ -138,7 +138,25 @@ with sync_playwright() as playwright:
        manifest=json.loads(archive.read('manifest.json'));config=json.loads(archive.read('config.json'))
        assert manifest['runtime']['runtimeVersion']==current and config['runtime']==manifest['runtime']
        assert archive.read('prebid.js')==(root/'vendor/prebid/tanjug-11.34.0/prebid.js').read_bytes()
-      screen('generated-new-version');page.get_by_role('button',name='Configuration',exact=True).click();prebid.check()
+      screen('generated-new-version');page.get_by_role('button',name='Configuration',exact=True).click()
+      # MBA-424: explicit MAIN selection, persisted Preview and its actual saved reporting ZIP.
+      choose('3.25.0');saved();page.reload();expect(summary).to_contain_text('3.25.0')
+      assert data()['selected']['runtimeVersion']=='3.25.0'
+      screen('reporting-preview-saved')
+      page.get_by_role('button',name='Generate and releases',exact=True).click()
+      page.get_by_label('What changed?',exact=True).fill('New request reporting Preview')
+      page.get_by_role('button',name='Generate and save package',exact=True).click();expect(page.get_by_role('status').filter(has_text='Package saved')).to_be_visible()
+      reporting_release=page.locator('article.runtime-release').filter(has=page.get_by_text('New request reporting Preview',exact=True))
+      expect(reporting_release).to_have_count(1)
+      with page.expect_download() as downloaded:
+       reporting_release.get_by_role('button',name='Download saved ZIP',exact=True).click()
+      with zipfile.ZipFile(downloaded.value.path()) as archive:
+       manifest=json.loads(archive.read('manifest.json'));contract=json.loads(archive.read('gam-reporting.json'))
+       assert manifest['runtime']['runtimeVersion']=='3.25.0'
+       assert contract['keys']['aq_bid_origin']['values']==['fresh','cached','none']
+       assert contract['keys']['aq_first_request']['scope']=='page'
+       assert contract['keys']['aq_consent_wait']['scope']=='page'
+      screen('reporting-preview-package');page.get_by_role('button',name='Configuration',exact=True).click();prebid.check()
       panel.get_by_role('button',name='Open Prebid.js',exact=True).click();expect(page.get_by_role('heading',name='Prebid.js destination',exact=True)).to_be_visible()
      assert not errors,errors
      assert not any(r['path'].startswith('/test-api/') for r in requests)

@@ -1,0 +1,21 @@
+{
+  "kind": "offline-native-gpt-qa-fixture",
+  "files": [
+    {
+      "url": "https://securepubads.g.doubleclick.net/tag/js/gpt.js",
+      "file": "gpt.js",
+      "bytes": 138253,
+      "sha256": "191a966badfa74f0064003bc3949bc949396ebc8c774474286cc1038cb2ac8fb"
+    },
+    {
+      "url": "https://securepubads.g.doubleclick.net/pagead/managed/js/gpt/m202611120201/pubads_impl.js",
+      "file": "pubads_impl.js",
+      "bytes": 732698,
+      "sha256": "9668d31c0c7eea2594ca5c81dba40fe7834299412308a56ccbd6ec499f687c10"
+    }
+  ],
+  "capturedAt": "2026-11-17",
+  "purpose": "QA-only exact Google GPT bytes; never included in generated publisher packages. All runtime HTTP is intercepted; GAM requests receive local204 responses. This fixture proves query serialization, not Google/SSP acceptance or revenue.",
+  "optionalAssets": "The optional dictionary and all other auxiliary network requests are aborted. The dictionary versioned URL returned different bytes across static reads and is not a trusted pin.",
+  "updatePolicy": "Update only as a new reviewed fixture version with new exact SHA-256 values."
+}
