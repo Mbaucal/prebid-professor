@@ -160,14 +160,14 @@ def run(browser,version,options):
         # editing the generated/SRI bytes or pausing execution. Virtual time does
         # not advance while DevTools evaluates this side-effect-only condition.
         source=(folder/'arms'/options['arm']/options['program']).read_text()
-        entries=list(re.finditer(r'function enter\(ready,\s*epoch\)\s*\{',source));assert len(entries)==1
+        entries=list(re.finditer(r'function enter\(ready(?:,\s*epoch)?\)\s*\{',source));assert len(entries)==1
         offset=entries[0].end()
         while source[offset].isspace():offset+=1
         before=source[:offset];line=before.count('\n');column=len(before.rsplit('\n',1)[-1])
         cdp=context.new_cdp_session(page);cdp.send('Debugger.enable')
         cdp.send('Debugger.setBreakpointByUrl',{'url':ORIGIN+f'/arms/{options["arm"]}/{options["program"]}',
           'lineNumber':line,'columnNumber':column,
-          'condition':'window.__qaGate === undefined && (window.__qaGate={at:performance.now(),ready:ready,epoch:epoch}); false'})
+          'condition':'window.__qaGate === undefined && (window.__qaGate={at:performance.now(),ready:ready}); false'})
     def route(request):
         url=request.request.url;path=urlsplit(url).path
         if url==PAGE:
