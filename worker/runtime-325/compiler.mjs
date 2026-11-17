@@ -22,6 +22,7 @@ export function compileRuntime325(input) {
   source=once(source,'function createGamReporting(config) {',browserSources.createTesseraRequestMetrics+'\nfunction createGamReporting(config) {');
   source=once(source,'  var _gamReporting=createGamReporting({\n',
     '  var _gamReporting=createGamReporting({\n    readiness:function(code){return _tesseraReady&&_tesseraReady.reporting(code);},\n'+
+    '    reportingPrebid:function(code){var unit=HAS_PREBID&&BIDDERS&&BIDDERS.length?adUnitFromCode(code):null;return !!(unit&&Array.isArray(unit.bids)&&unit.bids.length);},\n'+
     '    consentDeadline:function(codes){return getConsentTimeoutForSlots(codes.map(function(code){return {getSlotElementId:function(){return code;}};}));},\n');
   source=once(source,'  var _tesseraReady=createTesseraReadiness(window,{\n',
     '  var _tesseraReady=createTesseraReadiness(window,{\n    requestMetrics:_gamReporting.metrics,\n');

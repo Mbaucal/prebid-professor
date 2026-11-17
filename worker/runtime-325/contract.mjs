@@ -9,6 +9,7 @@ export const requestReportingContract = {
   },
   limitations:[
     'These labels describe requests and targeting, not rendered impressions, the demand GAM selected, paid revenue, page RPM or consent permission.',
+    'The origin label requires configured Prebid demand for that logical position and current media sizes. A globally enabled Prebid setting alone does not label fluid-only GAM inventory or positions without bidder parameters as Prebid demand.',
     'timeout is an observational reporting value, never an instruction to release GAM. Pending/unknown decisions keep waiting after the configured budget; a late valid decision can send a request labeled timeout. Slow Prebid, GEO or GPT after an already-ready CMP decision does not extend CMP waiting.',
     'Current 3.25 enters the existing CMP gate on all owned request paths, including GAM-only. na is reserved for a genuinely ungated path and is not emitted by those current paths.',
     'The inherited strict TCF gate also applies to GAM-only. Missing, loading or unknown-scope CMP states never release an ad request. Prebid library/auction deadlines are not CMP deadlines.',

@@ -81,12 +81,14 @@ export function createTesseraRequestMetrics(win, config) {
   function origin(slot) {
     try {
       if (!config.prebid(slot)) return null;
+      var code = config.code(slot);
+      if (config.reportingPrebid && !config.reportingPrebid(code)) return null;
       var primary = slot.getTargeting('hb_adid');
       // A valid empty GPT targeting result confirms no primary even if this
       // configured Prebid path fell back before an auction could complete.
       if (Array.isArray(primary) && !primary.length) return 'none';
       var id = single(primary), bidder = single(slot.getTargeting('hb_bidder'));
-      var code = config.code(slot), record = config.readiness(code);
+      var record = config.readiness(code);
       if (!record || !record.completed || record.epoch !== currentEpoch || typeof record.auctionId !== 'string') return null;
       if (!id || !bidder || typeof record.allowed[id] !== 'number' || record.allowed[id] <= Date.now()) return null;
       prune();

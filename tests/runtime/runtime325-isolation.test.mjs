@@ -36,13 +36,21 @@ test('the emitted deadline adapter preserves the existing maximum/fallback budge
   (function walk(node){if(!node||typeof node!=='object')return;if(node.type==='VariableDeclarator'&&node.id?.name==='_gamReporting')config=node.init.arguments[0];for(const value of Object.values(node))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);})(parse(generated,{ecmaVersion:2015}));
   assert(config);
   const overlay={getSlotElementId:()=> 'adsx-takeover-slot'},rules={P1:{cmpTimeout:800},Overlay:{cmpTimeout:2500}};
-  const context={_takeOverSlot:overlay,_takeOverCodelessGuardSlot:null,TESSERA_OVERLAY:{code:'Overlay'},window:{adSlots:{}},getAdUnitRuntimeRule:code=>rules[code]||{}};
+  const units={P1:{bids:[{bidder:'pm_ag'}]},Overlay:{bids:[{bidder:'pm_ag'}]},Fluid:null,NoParams:{bids:[]}};
+  const context={_takeOverSlot:overlay,_takeOverCodelessGuardSlot:null,TESSERA_OVERLAY:{code:'Overlay',demand:'site'},window:{adSlots:{}},getAdUnitRuntimeRule:code=>rules[code]||{},HAS_PREBID:true,BIDDERS:[{bidder:'pm_ag'}],adUnitFromCode:code=>units[code]};
   const script=helper(generated,'getConsentTimeoutForSlots')+';('+generated.slice(config.start,config.end)+')';
   const emitted=vm.runInNewContext(script,context);
   assert.equal(emitted.code(overlay),'Overlay');
   assert.equal(emitted.consentDeadline(['P1',emitted.code(overlay)]),2500);
   assert.equal(emitted.consentDeadline(['P1']),800);
   assert.equal(emitted.consentDeadline(['Unknown']),1500);
+  assert.equal(emitted.reportingPrebid(emitted.code(overlay)),true);
+  assert.equal(emitted.reportingPrebid('P1'),true);
+  assert.equal(emitted.reportingPrebid('Fluid'),false);
+  assert.equal(emitted.reportingPrebid('NoParams'),false);
+  context.BIDDERS=[];
+  assert.equal(emitted.prebid(overlay),true,'The inherited refresh/reporting predicate remains unchanged');
+  assert.equal(emitted.reportingPrebid('Overlay'),false,'Origin uses its separate configured-demand predicate');
 });
 test('reporter failures before/after native GPT preserve actual calls and original native exceptions',async()=>{
   const source=(await readFile(new URL('../../worker/runtime-325/browser-reporting.mjs',import.meta.url),'utf8')).replace('export function','function');

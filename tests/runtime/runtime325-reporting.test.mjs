@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createTesseraRequestMetrics} from '../../worker/runtime-325/browser-request-metrics.mjs';
 
-function harness({prebid=true,deadline=10000}={}) {
+function harness({prebid=true,deadline=10000,configured=true}={}) {
   let time=0;
   const page={}, records=Object.create(null), slots=[];
   const merge=(target,values)=>{for(const[key,value]of Object.entries(values))if(value===null)delete target[key];else target[key]=value;};
   const win={performance:{now:()=>time},googletag:{setConfig:({targeting})=>merge(page,targeting)}};
-  const metrics=createTesseraRequestMetrics(win,{prebid:()=>prebid,code:slot=>slot.code,readiness:code=>records[code],consentDeadline:()=>deadline});
+  const metrics=createTesseraRequestMetrics(win,{prebid:()=>prebid,reportingPrebid:()=>configured,code:slot=>slot.code,readiness:code=>records[code],consentDeadline:()=>deadline});
   function slot(code='P1',targeting={}) {
     const value={code,values:{...targeting},getTargeting(key){const v=this.values[key];return v===undefined?[]:Array.isArray(v)?v:[v];},setConfig({targeting:next}){merge(this.values,next);}};
     slots.push(value);return value;
@@ -63,6 +63,10 @@ test('a missing or unfinished auction cannot identify nonempty targeting but val
     h.send([s]);assert.equal(s.values.aq_bid_origin,undefined);
     delete s.values.hb_adid;delete s.values.hb_bidder;h.send([s]);assert.equal(s.values.aq_bid_origin,'none');
   }
+});
+test('slots with no configured Prebid demand omit origin even when the global Prebid switch is on',()=>{
+  const h=harness({prebid:true,configured:false}),s=h.slot('P1',{aq_bid_origin:'cached'});h.metrics.consent(true,1);
+  h.send([s]);assert.equal(s.values.aq_bid_origin,undefined);
 });
 test('only the documented empty targeting array confirms none; malformed getters omit',()=>{
   for(const value of [undefined,null,'',0]) {
