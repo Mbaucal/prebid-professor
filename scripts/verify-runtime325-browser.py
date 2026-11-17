@@ -227,7 +227,7 @@ def run(browser,version,options):
         assert page.evaluate('__dispatch.length')==0,('Pending CMP sent GAM',options)
         assert page.evaluate('__wire.length')==0,('Pending CMP sent SSP',options)
         page.evaluate('__releaseConsent()')
-    if options['kind']=='revoke-first':
+    if options['kind']=='revoke-first' and options['scenario']!='ssp-slow':
         for _ in range(160):
             if page.evaluate('__wire.length>0'):break
             advance(page,25)
@@ -348,7 +348,7 @@ def main():
                     for width in widths:
                         options.append(dict(gpt=gpt,arm=arm,program=program,width=width,kind='standard',scenario='standard',delay=0))
         for arm in ['A','B']:
-            for kind,scenario in [('standard','primary-fresh'),('standard','alias-primary'),('standard','no-bids'),('standard','activity-denied'),('standard','library-unavailable'),('standard','ssp-slow'),('mixed-gam','mixed-batch'),('gam','gam'),('empty-bidders','empty-bidders'),('lazy','lazy'),('late-lazy','late-lazy'),('timeout','timeout')]:
+            for kind,scenario in [('standard','primary-fresh'),('standard','alias-primary'),('standard','no-bids'),('standard','activity-denied'),('standard','library-unavailable'),('revoke-first','ssp-slow'),('mixed-gam','mixed-batch'),('gam','gam'),('empty-bidders','empty-bidders'),('lazy','lazy'),('late-lazy','late-lazy'),('timeout','timeout')]:
                 options.append(dict(gpt='real',arm=arm,program='ads.min.js',width=390,kind=kind,scenario=scenario,delay=1500 if kind=='timeout' else 0))
             options.append(dict(gpt='real',arm=arm,program='ads.js',width=1440,kind='standard',scenario='late-script',delay=0,refresh=False))
             for scenario in ['revoke-before-first','ready-update-before-first']:
