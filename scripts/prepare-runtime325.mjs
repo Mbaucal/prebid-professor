@@ -4,7 +4,7 @@ import {resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {runtimeReleaseHistory,assertRuntimeReleaseSource} from '../worker/runtime/runtime-release-history.mjs';
 export const MODULE_SHA256 = '80a5e8259a579891043e0d49bb47e18fb4c3b8319cfd73af49a1461c18447639';
-/** Complete source closure of audited 3.22.2 + 3.23.0 and their new composition. */
+/** Complete audited 3.24 source closure plus request-boundary reporting. */
 export const sourceFiles = [
   'worker/runtime-compiler.ts',
   'worker/runtime/reference-bridge.mjs',
