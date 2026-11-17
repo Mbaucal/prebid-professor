@@ -1,7 +1,7 @@
 export const requestReportingContract = {
   keys: {
     aq_bid_origin: {scope:'slot', values:['fresh','cached','none'],
-      meaning:'Origin of the actual primary unsuffixed hb_adid sent in this GAM request, matched to exact alias, slot and owned current-auction/cache admission. Omitted for inactive Prebid, unknown or ambiguous identity. none means a configured active Prebid slot has a valid empty primary targeting result, including a clean fallback before an auction completes; it does not mean GAM no-fill.'},
+      meaning:'Origin of the actual primary unsuffixed hb_adid sent in this GAM request, matched to exact alias, slot and owned current-auction/cache admission. Omitted for inactive Prebid, unknown or ambiguous identity. none means a configured active Prebid slot has valid empty primary targeting in both slot and page scope, including a clean fallback before an auction completes; it does not mean GAM no-fill. A publisher page-level primary inherited by an empty slot is preserved and keeps origin unknown.'},
     aq_first_request: {scope:'page', values:['lt_500','500_999','1000_1499','1500_1999','2000_2999','3000_plus'],
       meaning:'Milliseconds from document navigation to the first actual owned GAM dispatch. Set before the call and retained for later requests in this document. A new document starts a new measurement.'},
     aq_consent_wait: {scope:'page', values:['lt_500','500_999','1000_1499','1500_1999','2000_2999','3000_plus','na','timeout'],

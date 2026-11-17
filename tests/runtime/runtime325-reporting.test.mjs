@@ -5,6 +5,7 @@ import {createTesseraRequestMetrics} from '../../worker/runtime-325/browser-requ
 function harness({prebid=true,deadline=10000,configured=true}={}) {
   let time=0;
   const page={}, records=Object.create(null), slots=[];
+  const service={getTargeting(key){const value=page[key];return value===undefined?[]:Array.isArray(value)?value:[value];}};
   const merge=(target,values)=>{for(const[key,value]of Object.entries(values))if(value===null)delete target[key];else target[key]=value;};
   const win={performance:{now:()=>time},googletag:{setConfig:({targeting})=>merge(page,targeting)}};
   const metrics=createTesseraRequestMetrics(win,{prebid:()=>prebid,reportingPrebid:()=>configured,code:slot=>slot.code,readiness:code=>records[code],consentDeadline:()=>deadline});
@@ -17,8 +18,8 @@ function harness({prebid=true,deadline=10000,configured=true}={}) {
     metrics.auction([code],{[code]:{bids}},auctionId,1,true);
     records[code]={epoch:1,completed:true,auctionId,allowed:Object.fromEntries(allowed.map(id=>[id,Date.now()+59000]))};
   }
-  const send=list=>{const token=metrics.before({},list);metrics.commit(token);return token;};
-  return{metrics,page,records,slots,slot,bid,complete,send,time:value=>time=value};
+  const send=list=>{const token=metrics.before(service,list);metrics.commit(token);return token;};
+  return{metrics,page,service,records,slots,slot,bid,complete,send,time:value=>time=value};
 }
 
 test('actual primary identity follows fresh → admitted cached → confirmed none and clears stale values',()=>{
@@ -75,6 +76,24 @@ test('only the documented empty targeting array confirms none; malformed getters
   }
   const h=harness(),s=h.slot('P1',{aq_bid_origin:'cached'});h.metrics.consent(true,1);h.complete('a1',[]);
   s.getTargeting=()=>{throw Error('unknown targeting');};h.send([s]);assert.equal(s.values.aq_bid_origin,undefined);
+});
+test('an empty slot primary which inherits publisher page targeting remains unknown and preserves that targeting',()=>{
+  const h=harness(),s=h.slot('P1',{aq_bid_origin:'cached'});h.metrics.consent(true,1);h.page.hb_adid='foreign-page-primary';
+  h.send([s]);assert.equal(s.values.aq_bid_origin,undefined);assert.equal(h.page.hb_adid,'foreign-page-primary');
+  h.complete('a1',[h.bid('owned')]);s.values.hb_adid='owned';s.values.hb_bidder='pm_ag';h.send([s]);
+  assert.equal(s.values.aq_bid_origin,'fresh','A proven nonempty slot primary overrides the page value');
+  assert.equal(h.page.hb_adid,'foreign-page-primary');
+});
+test('missing, malformed or throwing page-primary getters cannot fabricate none',()=>{
+  for(const value of [undefined,null,'',0]){
+    const h=harness(),s=h.slot('P1',{aq_bid_origin:'fresh'});h.metrics.consent(true,1);h.service.getTargeting=()=>value;
+    h.send([s]);assert.equal(s.values.aq_bid_origin,undefined,String(value));
+  }
+  for(const missing of [true,false]){
+    const h=harness(),s=h.slot('P1',{aq_bid_origin:'fresh'});h.metrics.consent(true,1);
+    if(missing)delete h.service.getTargeting;else h.service.getTargeting=()=>{throw Error('page targeting unavailable');};
+    h.send([s]);assert.equal(s.values.aq_bid_origin,undefined,String(missing));
+  }
 });
 test('page buckets are set before first dispatch and remain fixed for batch, refresh and late lazy slots',()=>{
   const h=harness({prebid:false}),a=h.slot('A',{aq_first_request:'bad',aq_consent_wait:'bad'}),b=h.slot('B');

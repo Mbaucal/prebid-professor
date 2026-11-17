@@ -83,15 +83,19 @@ export function createTesseraRequestMetrics(win, config) {
     if (!list.length || !list.every(function(value){return typeof value === 'string' && value.length > 0 && value === list[0];})) return null;
     return list[0];
   }
-  function origin(slot) {
+  function origin(slot, service) {
     try {
       if (!config.prebid(slot)) return null;
       var code = config.code(slot);
       if (config.reportingPrebid && !config.reportingPrebid(code)) return null;
       var primary = slot.getTargeting('hb_adid');
-      // A valid empty GPT targeting result confirms no primary even if this
-      // configured Prebid path fell back before an auction could complete.
-      if (Array.isArray(primary) && !primary.length) return 'none';
+      // An empty slot key can inherit page targeting. Confirm both scopes are
+      // empty before reporting no primary; publisher-owned page bids are not
+      // attributed to this wrapper and their targeting is never changed here.
+      if (Array.isArray(primary) && !primary.length) {
+        var pagePrimary = service && typeof service.getTargeting === 'function' ? service.getTargeting('hb_adid') : null;
+        return Array.isArray(pagePrimary) && !pagePrimary.length ? 'none' : null;
+      }
       var id = single(primary), bidder = single(slot.getTargeting('hb_bidder'));
       var record = config.readiness(code);
       if (!record || !record.completed || record.epoch !== currentEpoch || typeof record.auctionId !== 'string') return null;
@@ -120,7 +124,7 @@ export function createTesseraRequestMetrics(win, config) {
   }
   function before(service, slots) {
     if (!slots.length) return null;
-    slots.forEach(function(slot){setSlot(slot, {aq_bid_origin:origin(slot), aq_first_request:null, aq_consent_wait:null});});
+    slots.forEach(function(slot){setSlot(slot, {aq_bid_origin:origin(slot,service), aq_first_request:null, aq_consent_wait:null});});
     var created = first === null;
     if (created) {
       var wait=decisionAt === null || gateStart === null ? null : Math.max(0, decisionAt - gateStart);
