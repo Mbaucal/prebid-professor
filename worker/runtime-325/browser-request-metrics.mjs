@@ -61,9 +61,15 @@ export function createTesseraRequestMetrics(win, config) {
         if (local[identity]) return; local[identity] = true;
         var item = {id:bid.adId, code:code, bidder:bid.bidderCode, auction:auctionId, epoch:epoch,
           expires:received + Math.max(0, ttl - 1) * 1000};
-        if (!identities[item.id]) identities[item.id] = [];
-        identities[item.id].push(item); identityCount++; entry.rows.push(item);
+        entry.rows.push(item);
       });
+    });
+    // Read every untrusted response field before retaining any of this auction.
+    // If a getter throws, the caller's reporting-only guard can discard it
+    // without leaving rows outside the bounded auction eviction queue.
+    entry.rows.forEach(function(item){
+      if (!identities[item.id]) identities[item.id] = [];
+      identities[item.id].push(item); identityCount++;
     });
     history.push(entry); prune();
   }

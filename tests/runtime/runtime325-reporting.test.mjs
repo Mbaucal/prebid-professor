@@ -125,3 +125,10 @@ test('long-page identity history is bounded and refuses evicted or expired ident
   h.complete('last',[expired]);s.values.hb_adid='expired';h.records.P1.allowed.expired=Date.now()+59000;h.send([s]);
   assert.equal(s.values.aq_bid_origin,undefined);
 });
+test('a malformed response getter cannot leave partially retained auction identities',()=>{
+  const h=harness(),s=h.slot('P1',{hb_adid:'good',hb_bidder:'pm_ag'});h.metrics.consent(true,1);
+  const bad=h.bid('bad');Object.defineProperty(bad,'bidderCode',{get(){throw Error('malformed bidder metadata');}});
+  assert.throws(()=>h.metrics.auction(['P1'],{P1:{bids:[h.bid('good'),bad]}},'a1',1,true),/malformed bidder/);
+  h.records.P1={epoch:1,completed:true,auctionId:'a1',allowed:{good:Date.now()+59000}};
+  h.send([s]);assert.equal(s.values.aq_bid_origin,undefined);
+});
