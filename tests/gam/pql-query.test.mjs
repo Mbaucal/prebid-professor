@@ -5,6 +5,7 @@ import { GamClient } from "../../worker/integrations/gam-client.mjs";
 import { GamTrafficClient } from "../../worker/integrations/gam-traffic-client.mjs";
 import { GamError } from "../../shared/gam/plan.mjs";
 import { trafficFixture } from "./traffic-fixture.mjs";
+import { soapTrafficFixture } from "./soap-traffic-fixture.mjs";
 
 const parser = new XMLParser({ removeNSPrefix: true, ignoreAttributes: true, parseTagValue: false });
 const response = (operation, result = "") => new Response(
@@ -162,4 +163,23 @@ test("synthetic query fixtures honor the validated numeric capacity filter per o
   assert.deepEqual((await f.traffic.query("lineItem", "orderId = 20", {}, { limit: 1, onePage: true })), {
     rows: [{ id: "100", orderId: "20" }], total: 1, more: false,
   });
+});
+
+test("actual SOAP capacity reads count each order independently", async () => {
+  const f = soapTrafficFixture();
+  f.db.lineItem.push(
+    { id: "100", orderId: "20" },
+    { id: "101", orderId: "20" },
+    { id: "102", orderId: "21" },
+  );
+  const client = new GamTrafficClient(new GamClient("123456", "synthetic", (url, init) =>
+    f.respond(init.body, new URL(url).pathname),
+  ));
+  const first = await client.query("lineItem", "orderId = 20", {}, { limit: 1, onePage: true });
+  const second = await client.query("lineItem", "orderId = 21", {}, { limit: 1, onePage: true });
+  const absent = await client.query("lineItem", "orderId = 22", {}, { limit: 1, onePage: true });
+  assert.deepEqual(first, { rows: [{ id: "100", orderId: "20" }], total: 2, more: true });
+  assert.deepEqual(second, { rows: [{ id: "102", orderId: "21" }], total: 1, more: false });
+  assert.deepEqual(absent, { rows: [], total: 0, more: false });
+  assert.equal(f.calls.length, 0);
 });
