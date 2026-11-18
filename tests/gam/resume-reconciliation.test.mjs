@@ -372,11 +372,17 @@ test("a creating read failure before a durable attempt does not advance and safe
   while (job.phase !== "Key-value ključevi") job = await action(f, job, "step");
   const cursor = job.cursor;
   const byNames = f.traffic.byNames;
+  const byIds = f.traffic.byIds;
   let unavailable = true;
   f.traffic.byNames = async (...args) => {
     if (unavailable && args[0] === "key")
       throw new GamError("GAM je odbio zahtev: UNPARSABLE.", 502);
     return byNames(...args);
+  };
+  f.traffic.byIds = async (...args) => {
+    if (unavailable && args[0] === "key")
+      throw new GamError("GAM je odbio zahtev: UNPARSABLE.", 502);
+    return byIds(...args);
   };
   job = await action(f, job, "step");
   assert.equal(job.status, "creating");
@@ -483,6 +489,40 @@ test("a lost create response survives storage restart and is checked before any 
   assert.equal(f.calls.length, creates, "check reads GAM without replaying create");
   await finish(f, job);
   assert.equal(f.calls.filter((call) => call.kind === "creative").length, 1);
+  assert.equal(f.db.creative.length, 2);
+  assert.equal(f.db.association.length, 6);
+});
+
+test("previewing the same active plan reopens its pending attempt without a duplicate job or write", async () => {
+  const f = await setup();
+  seedExternal(f);
+  f.db.creative = f.db.creative.filter((row) => row.id !== "2001");
+  f.db.association = f.db.association.filter((row) => row.creativeId !== "2001");
+  const input = prebidPlan();
+  let job = await start(f, await finishReview(f, await preview(f, input)));
+  while (job.phase !== "Kreativi") job = await action(f, job, "step");
+  f.failNext("creative");
+  job = await action(f, job, "step");
+  assert.equal(job.awaitingCheck, true);
+  const before = new Map([...f.env.BUILDS.data].map(([key, value]) => [key, structuredClone(value)]));
+  const creates = f.calls.length;
+  const same = await request(f, "/line-items/preview", input);
+  assert.equal(same.status, 200);
+  assert.equal(same.data.resumed, true);
+  assert.equal(same.data.id, job.id);
+  assert.equal(same.data.cursor, job.cursor);
+  assert.equal(same.data.awaitingCheck, true);
+  assert.deepEqual(f.env.BUILDS.data, before, "preview reuse preserves the job, lock and durable attempt exactly");
+  assert.equal(f.calls.length, creates);
+  const different = await request(f, "/line-items/preview", { ...input, namePrefix: "Other campaign" });
+  assert.equal(different.status, 409);
+  assert.equal(different.data.activeJobId, job.id);
+  assert.deepEqual(f.env.BUILDS.data, before);
+  assert.equal(f.calls.length, creates);
+  job = await action(f, same.data, "check");
+  assert.equal(job.awaitingCheck, false);
+  assert.equal(f.calls.length, creates);
+  await finish(f, job);
   assert.equal(f.db.creative.length, 2);
   assert.equal(f.db.association.length, 6);
 });
