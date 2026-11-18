@@ -308,10 +308,13 @@ test("five capacity UNPARSABLE errors preserve 1995 verified line items and retr
   f.db.lineItem = f.db.lineItem.filter((row) => !missingIds.has(row.id));
   f.db.association = f.db.association.filter((row) => !missingIds.has(row.lineItemId));
   const query = f.traffic.query;
+  const capacityQueries = [];
   let unavailable = true;
   f.traffic.query = async (...args) => {
-    if (unavailable && args[0] === "lineItem" && args[3]?.limit === 1)
-      throw new GamError("GAM je odbio zahtev: UNPARSABLE.", 502);
+    if (args[0] === "lineItem" && args[3]?.limit === 1) {
+      capacityQueries.push({ where: args[1], bindings: args[2], options: args[3] });
+      if (unavailable) throw new GamError("GAM je odbio zahtev: UNPARSABLE.", 502);
+    }
     return query(...args);
   };
   let job = await finishReview(f, await preview(f, input));
@@ -321,6 +324,11 @@ test("five capacity UNPARSABLE errors preserve 1995 verified line items and retr
   assert.equal(job.counts.lineItem.existing, 1995);
   assert.equal(job.counts.lineItem.new, 5);
   assert.equal(job.counts.lineItem.conflict, 0);
+  assert.deepEqual(capacityQueries, [20, 21, 22, 23, 24].map((id) => ({
+    where: `orderId = ${id}`,
+    bindings: {},
+    options: { limit: 1, onePage: true },
+  })), "handler capacity checks use a validated numeric literal and preserve count-only pagination");
   assert.equal(f.calls.length, 0);
   unavailable = false;
   const id = job.id;
