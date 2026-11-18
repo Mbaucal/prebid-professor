@@ -56,12 +56,14 @@ export function trafficFixture() {
       );
     },
     async query(kind, where, bindings = {}, options = {}) {
+      const orderId = where?.match(/^orderId = ([1-9][0-9]*)$/)?.[1];
       const rows = db[kind].filter(
         (r) =>
           (!bindings.name || r.name === bindings.name) &&
           (!bindings.email || r.email === bindings.email) &&
           (!bindings.advertiser || r.advertiserId === bindings.advertiser) &&
           (!bindings.order || r.orderId === bindings.order) &&
+          (!orderId || String(r.orderId) === orderId) &&
           (!bindings.search ||
             r.name.includes(bindings.search.replaceAll("%", ""))),
       );

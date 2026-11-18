@@ -82,6 +82,16 @@ export function statement(query, bindings = {}) {
     })),
   });
 }
+const pageInteger = (value) =>
+  typeof value === "number"
+    ? value
+    : typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value)
+      ? Number(value)
+      : NaN;
+const validRowId = (value) =>
+  (typeof value === "string" ||
+    (typeof value === "number" && Number.isSafeInteger(value))) &&
+  /^[1-9][0-9]{0,19}$/.test(String(value));
 export class GamTrafficClient {
   constructor(client) {
     this.client = client;
@@ -97,34 +107,69 @@ export class GamTrafficClient {
       timeZone: String(n.timeZone),
     };
   }
-  async query(kind, where = "1 = 1", bindings = {}, options = {}) {
+  async query(kind, where = "", bindings = {}, options = {}) {
     const [service, operation] = SERVICES[kind] || [];
     if (!service) throw new Error("Unknown entity");
     const result = [],
-      limit = options.limit || 500,
-      start = options.offset || 0,
-      maxPages = options.maxPages || 20;
+      limit = options.limit ?? 500,
+      start = options.offset ?? 0,
+      maxPages = options.maxPages ?? 20;
+    if (
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      !Number.isSafeInteger(start) ||
+      start < 0 ||
+      !Number.isSafeInteger(maxPages) ||
+      maxPages < 1
+    )
+      throw new GamError("Neispravna stranica GAM provere.", 422);
+    // PQL predicates have a property on the left. An omitted WHERE is the
+    // documented match-all form, rather than the SQL tautology `1 = 1`.
+    const filter = where.trim() === "1 = 1" ? "" : where.trim();
+    let offset = start;
     for (let page = 0; page < maxPages; page++) {
-      const offset = start + page * limit;
       const value = await this.client.call(
         service,
         operation,
         statement(
-          `WHERE ${where}${kind === "association" ? "" : " ORDER BY id ASC"} LIMIT ${limit} OFFSET ${offset}`,
+          `${filter ? `WHERE ${filter} ` : ""}${kind === "association" ? "" : "ORDER BY id ASC "}LIMIT ${limit} OFFSET ${offset}`,
           bindings,
         ),
       );
-      const rows = list(value?.results);
+      // A failed or malformed read is unknown, never proof that an entity is
+      // absent. Treating a missing count as zero could authorize a duplicate.
+      const total = pageInteger(value?.totalResultSetSize),
+        rows = list(value?.results);
+      if (
+        !Number.isSafeInteger(total) ||
+        total < 0 ||
+        rows.length > limit ||
+        rows.some(
+          (row) =>
+            !row ||
+            typeof row !== "object" ||
+            Array.isArray(row) ||
+            (kind === "association"
+              ? !validRowId(row.lineItemId) || !validRowId(row.creativeId)
+              : !validRowId(row.id)),
+        ) ||
+        (rows.length && offset + rows.length > total) ||
+        (rows.length &&
+          value.startIndex !== undefined &&
+          pageInteger(value.startIndex) !== offset) ||
+        (!rows.length && offset < total)
+      )
+        throw new GamError(
+          "GAM nije vratio pouzdan kompletan rezultat provere. Ponovite proveru pre nastavka.",
+          502,
+        );
       result.push(...rows);
-      const total = Number(value?.totalResultSetSize || 0);
       if (offset + rows.length >= total)
         return { rows: result, total, more: false };
       if (options.onePage) return { rows: result, total, more: true };
-      if (!rows.length)
-        throw new GamError(
-          "GAM nije vratio kompletnu listu. Suzite izbor.",
-          502,
-        );
+      // Some services can return fewer rows than requested. Advancing by the
+      // requested limit would skip uninspected entities on the next page.
+      offset += rows.length;
     }
     throw new GamError(
       "GAM rezultat je prevelik. Suzite pretragu ili order.",
