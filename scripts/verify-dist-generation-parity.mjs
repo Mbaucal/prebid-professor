@@ -300,7 +300,7 @@ try {
   }
   // Exercise account compilation through the actual bundled save/download path,
   // with TakeOver timing as well as inherited, custom and omitted upstream chains.
-  for (const version of ['3.22.1','3.22.2','3.24.0','3.25.0']) {
+  for (const version of ['3.22.1','3.22.2','3.24.0','3.25.0','3.25.1']) {
     const site='parity-accounts-'+version.replaceAll('.','-');
     await createSite(site,'prebid',5);
     for (const [bidder,mid,schain] of [
@@ -309,7 +309,7 @@ try {
     ]) await json(`/api/publishers/${site}/bidders`,{bidder,baseAdapter:'adf',params:{mid},schain},201);
     const config=await readConfig(site);
     config.runtimeControls.schain={enabled:true,version:'1.0',complete:1,nodes:[{asi:'seller.example',sid:'site',hp:1}]};
-    if (version === '3.24.0' || version === '3.25.0') {
+    if (version === '3.24.0' || version === '3.25.0' || version === '3.25.1') {
       config.prebidBidCache={enabled:true,maxBidAgeSeconds:45};
       config.runtimeControls.bidderRules={schemaVersion:1,enabled:true,rules:[{
         id:'account-scope',name:'Agency account eligibility',enabled:true,bidder:'adf_ag',positions:['P1'],
