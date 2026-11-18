@@ -550,6 +550,9 @@ test("a capacity-only exception cannot conceal an unverified upstream advertiser
   assert.equal(job.status, "reviewing");
   assert.equal(job.canStart, false);
   assert.equal(job.counts.lineItem.done, 0, "capacity does not exempt unknown advertiser ownership");
-  assert.equal(job.counts.lineItem.blocked, 3);
+  assert.equal(job.counts.lineItem.blocked, 2, "the two previously verified rows are now blocked");
+  assert.equal(job.counts.lineItem.new, 0, "the old missing result is not reused before a fresh read");
+  assert.equal(job.counts.lineItem.total - job.counts.lineItem.done - job.counts.lineItem.new - job.counts.lineItem.conflict, 3,
+    "all three planned rows are waiting: two blocked plus one not yet re-inspected");
   assert.equal(f.calls.length, 0);
 });
