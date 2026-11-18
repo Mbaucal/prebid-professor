@@ -1487,11 +1487,11 @@ export default function GamLineItemsPanel({
                 <table>
                   <thead>
                     <tr>
-                      <th>Order</th>
-                      <th>Line item</th>
-                      <th>CPM rate</th>
-                      <th>Key-value</th>
-                      <th>Kreativi</th>
+                      <th scope="col">Order</th>
+                      <th scope="col">Line item</th>
+                      <th scope="col">CPM rate</th>
+                      <th scope="col">Key-value</th>
+                      <th scope="col">Kreativi</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1630,12 +1630,12 @@ export default function GamLineItemsPanel({
             <table>
               <thead>
                 <tr>
-                  <th>Entitet</th>
-                  <th>Ukupno</th>
-                  <th>Urađeno</th>
-                  <th>Nedostaje</th>
-                  <th>Čeka proveru</th>
-                  <th>Konflikt</th>
+                  <th scope="col">Entitet</th>
+                  <th scope="col">Ukupno</th>
+                  <th scope="col">Urađeno</th>
+                  <th scope="col">Nedostaje</th>
+                  <th scope="col">Čeka proveru</th>
+                  <th scope="col">Konflikt</th>
                 </tr>
               </thead>
               <tbody>
@@ -1723,16 +1723,16 @@ export default function GamLineItemsPanel({
               <table>
                 <thead>
                   <tr>
-                    <th>Naziv</th>
-                    <th>{job.mode === "prebid" ? "CPM rate" : "Cena"}</th>
+                    <th scope="col">Naziv</th>
+                    <th scope="col">{job.mode === "prebid" ? "CPM rate" : "Cena"}</th>
                     {job.mode === "prebid" && (
                       <>
-                        <th>Key-value</th>
-                        <th>Kreativi</th>
+                        <th scope="col">Key-value</th>
+                        <th scope="col">Kreativi</th>
                       </>
                     )}
-                    <th>GAM ID</th>
-                    <th>Status</th>
+                    <th scope="col">GAM ID</th>
+                    <th scope="col">Status</th>
                   </tr>
                 </thead>
                 <tbody>
