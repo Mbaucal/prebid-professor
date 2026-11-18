@@ -50,3 +50,11 @@ The first live connection attempt exposed two runtime incompatibilities missed b
 `node scripts/verify-gam-workerd.mjs dist/prebid_professor production` additionally exercises the actual production build locally: its login/session boundary, same-origin guard, configured status, OAuth/SOAP transport and encrypted persistence. All credentials and Google responses are synthetic.
 
 Sources consulted: [AdUnit v202608](https://developers.google.com/ad-manager/api/reference/v202608/InventoryService.AdUnit), [InventoryService](https://developers.google.com/ad-manager/api/reference/v202608/InventoryService), [GAM authentication](https://developers.google.com/ad-manager/api/authentication), [service-account OAuth2](https://developers.google.com/identity/protocols/oauth2/service-account).
+
+## Slow or interrupted create responses — MBA-425
+
+Create requests wait up to 60 seconds, including response-body reading; reads retain their 25-second deadline. This is below the line-item job's existing 90-second cancellation guard. The previous 25-second create deadline could abandon a batch already committed by Google. A virtual-clock regression demonstrates a successful 40-second response failing under the old deadline and completing under the new one.
+
+Transport failures distinguish deadline expiration from a connection/body interruption. Sanitized logs contain only service, operation, entity count, response stage, elapsed time and deadline. They do not include raw exceptions, credentials, SOAP bodies or creative snippets. Explicit Google SOAP rejections keep their existing reason handling.
+
+An unconfirmed create is still never replayed automatically. Use **Proveri ishod u GAM-u** to inspect existing entities, then explicitly **Nastavi posao** after successful reconciliation. Existing plans, batch sizes, attempts and saved cursors are unchanged, so interrupted 100-creative jobs remain recoverable. This change does not prove the historical production interruption was specifically a timeout; the previous implementation discarded that distinction.

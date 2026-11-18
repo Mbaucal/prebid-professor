@@ -51,7 +51,8 @@ export function phaseCount(plan, kind) {
     association: plan.counts.associations,
   }[kind];
 }
-const ref = (refs, key) => refs[key]?.id;
+const verified = (state) => ["existing", "created"].includes(state);
+const ref = (refs, key) => verified(refs[key]?.state) ? refs[key].id : undefined;
 const sizePayload = (plan) =>
   parseSizes(plan.sizes).sizes.map((s) => ({ ...s, isAspectRatio: false }));
 export function entities(plan, refs, phase, offset, limit) {
@@ -190,6 +191,12 @@ export function entities(plan, refs, phase, offset, limit) {
       payload,
       depends,
       ready: depends.every((k) => ref(refs, k)),
+      blockedBy: depends.filter((k) =>
+        refs[k] && !verified(refs[k].state) && refs[k].state !== "new",
+      ),
+      ...(refs[key]?.id && (verified(refs[key].state) || refs[key].verifiedId || refs[key].createdByJob)
+        ? { knownId: refs[key].id }
+        : {}),
     });
   }
   return out;
@@ -377,17 +384,66 @@ export function compatible(entity, actual, plan) {
     same(target(actual.targeting), target(p.targeting))
   );
 }
+function incompatibilityReason(entity, actual, plan) {
+  const p = entity.payload, kind = entity.kind;
+  if (flag(actual.isArchived) || actual.status === "ARCHIVED" ||
+      (actual.status === "INACTIVE" && ["key", "value", "association"].includes(kind)))
+    return "Postojeći entitet nije aktivan ili je arhiviran.";
+  if (kind === "advertiser") return "Izabrana kompanija nije advertiser.";
+  if (kind === "order") {
+    if (!scalar(actual.advertiserId, p.advertiserId)) return "Order pripada drugom advertiser-u.";
+    if (p.traffickerId && !scalar(actual.traffickerId, p.traffickerId)) return "Order ima drugog trafficker-a.";
+    return "Order nije dostupan za ovaj plan (programmatic, otkazan ili obrisan).";
+  }
+  if (kind === "key") return "Postojeći key-value ključ nije podržanog tipa.";
+  if (kind === "value") return "Key-value vrednost pripada drugom ključu ili nema EXACT poklapanje.";
+  if (kind === "creative") {
+    if (!scalar(actual.advertiserId, p.advertiserId)) return "Kreativ pripada drugom advertiser-u.";
+    if (entity.id) return "Veličina izabranog kreativa ne odgovara planu.";
+    if (actual.snippet !== p.snippet) return "Postojeći kreativ ima drugačiji kod.";
+    if (!same(sizes(actual.size), sizes(p.size))) return "Postojeći kreativ ima drugu veličinu.";
+    return "Postojeći kreativ ima drugačije SafeFrame podešavanje.";
+  }
+  if (kind === "association") return "Postojeća veza kreativa i line itema ima drugačije veličine ili identitet.";
+  if (!scalar(actual.orderId, p.orderId)) return "Line item pripada drugom order-u.";
+  if (actual.lineItemType !== p.lineItemType) return "Line item ima drugi tip isporuke.";
+  if (actual.costType !== p.costType || actual.costPerUnit?.currencyCode !== p.costPerUnit.currencyCode ||
+      Number(actual.costPerUnit?.microAmount) !== p.costPerUnit.microAmount)
+    return "Line item ima drugačiju cenu, valutu ili način obračuna.";
+  const goal = actual.primaryGoal || {};
+  if (goal.goalType !== p.primaryGoal.goalType || goal.unitType !== p.primaryGoal.unitType ||
+      Number(goal.units || 0) !== Number(p.primaryGoal.units || 0))
+    return "Line item ima drugačiji cilj isporuke.";
+  if (flag(actual.unlimitedEndDateTime) !== p.unlimitedEndDateTime ||
+      (p.endDateTime && !sameDate(actual.endDateTime, p.endDateTime)) ||
+      (p.startDateTime && !sameDate(actual.startDateTime, p.startDateTime)))
+    return "Line item ima drugačiji početak ili završetak isporuke.";
+  if (actual.deliveryRateType !== p.deliveryRateType || actual.creativeRotationType !== p.creativeRotationType ||
+      !["ONE_OR_MORE", "AS_MANY_AS_POSSIBLE"].includes(actual.roadblockingType) ||
+      (actual.environmentType && actual.environmentType !== "BROWSER"))
+    return "Line item ima drugačiji tempo isporuke, rotaciju ili okruženje.";
+  const placeholders = list(actual.creativePlaceholders);
+  if (!same(sizes(placeholders.map((x) => x.size)), sizes(p.creativePlaceholders.map((x) => x.size))))
+    return "Line item ima drugačije veličine kreativa.";
+  if (placeholders.some((x) => x.targetingName || list(x.companions).length || x.creativeTemplateId) ||
+      list(actual.creativeTargetings).length || list(actual.frequencyCaps).length || list(actual.secondaryGoals).length)
+    return "Line item ima dodatna ograničenja kreativa, učestalosti ili ciljeva.";
+  return "Line item ima drugačiji inventory ili custom targeting.";
+}
 export async function inspectEntities(client, batch, plan) {
   const results = new Map(),
     groups = new Map();
   for (const e of batch) {
     if (!e.ready) {
-      results.set(e.key, { state: "new" });
+      results.set(e.key, e.blockedBy?.length
+        ? { state: "blocked", blockedBy: e.blockedBy,
+            message: "Prethodni korak nije pouzdano proveren. Ponovite proveru istog posla." }
+        : { state: "new" });
       continue;
     }
     const k = e.kind,
       p = e.payload;
-    const group = e.id
+    const group = e.id || e.knownId
       ? `${k}:ids`
       : k === "value"
         ? `${k}:${p.customTargetingKeyId}`
@@ -404,11 +460,9 @@ export async function inspectEntities(client, batch, plan) {
       kind = first.kind,
       p = first.payload;
     let rows;
-    if (first.id)
-      rows = await client.byIds(
-        kind,
-        items.map((e) => e.id),
-      );
+    try {
+    if (first.id || first.knownId)
+      rows = await client.byIds(kind, items.map((e) => e.id || e.knownId));
     else if (kind === "association")
       rows = await client.byIds(kind, [
         ...new Set(items.map((e) => e.payload.lineItemId)),
@@ -429,10 +483,17 @@ export async function inspectEntities(client, batch, plan) {
         field ? { parent: p[field] } : {},
       );
     }
+    if (!Array.isArray(rows)) throw new GamError("GAM provera nije vratila pouzdanu listu entiteta.", 502);
+    } catch (error) {
+      const message = error instanceof GamError ? error.message
+        : "GAM provera nije uspela. Ponovite proveru istog posla; upis nije pokrenut.";
+      for (const e of items) results.set(e.key, { state: "unverified", message });
+      continue;
+    }
     for (const e of items) {
       const matches = rows.filter((r) =>
-        e.id
-          ? scalar(r.id, e.id)
+        e.id || e.knownId
+          ? scalar(r.id, e.id || e.knownId)
           : kind === "association"
             ? scalar(r.lineItemId, e.payload.lineItemId) &&
               scalar(r.creativeId, e.payload.creativeId)
@@ -440,8 +501,8 @@ export async function inspectEntities(client, batch, plan) {
       );
       if (matches.length === 0) {
         results.set(e.key, {
-          state: e.id ? "conflict" : "new",
-          message: e.id ? "Izabrani entitet više nije dostupan." : undefined,
+          state: e.id || e.knownId ? "conflict" : "new",
+          message: e.id || e.knownId ? "Ranije potvrđeni entitet više nije dostupan. Nije ponovo kreiran." : undefined,
         });
         continue;
       }
@@ -450,7 +511,8 @@ export async function inspectEntities(client, batch, plan) {
           kind === "association"
             ? `${row.lineItemId}:${row.creativeId}`
             : String(row.id);
-      const ok = matches.length === 1 && compatible(e, row, plan);
+      const renamed = !e.id && e.knownId && kind !== "association" && row.name !== e.payload.name;
+      const ok = matches.length === 1 && !renamed && compatible(e, row, plan);
       results.set(e.key, {
         state: ok ? "existing" : "conflict",
         id,
@@ -458,7 +520,9 @@ export async function inspectEntities(client, batch, plan) {
         status: row.status || "",
         message: ok
           ? undefined
-          : "Postojeći entitet ima druga podešavanja ili naziv nije jedinstven.",
+          : matches.length !== 1 ? "Naziv nije jedinstven u izabranom GAM opsegu."
+            : renamed ? "Ranije potvrđeni entitet sada ima drugi naziv."
+              : incompatibilityReason(e, row, plan),
       });
     }
   }
@@ -466,18 +530,29 @@ export async function inspectEntities(client, batch, plan) {
 }
 export function recordResult(job, batch, states, created = false) {
   for (const e of batch) {
-    const s = states.get(e.key);
+    const s = states.get(e.key), prior = job.refs[e.key];
+    if (!s) throw new Error("Incomplete GAM verification result");
     if (e.kind === "association") {
       job.associationCounts ||= { existing: 0, created: 0 };
       job.associationCounts[s.state] =
         (job.associationCounts[s.state] || 0) + 1;
-    } else if (e.kind === "creative")
+    } else {
+      const confirmedBefore = prior?.id && (verified(prior.state) || prior.verifiedId || prior.createdByJob),
+        createdByJob = prior?.createdByJob || prior?.state === "created" || s.state === "created" || created,
+        state = (created && verified(s.state)) ||
+          (s.state === "existing" && createdByJob && prior?.id === s.id)
+          ? "created" : s.state;
       job.refs[e.key] = {
-        state: created ? "created" : s.state,
-        ...(s.id ? { id: s.id } : {}),
-        ...(s.message ? { message: s.message } : {}),
+        ...(e.kind === "creative" ? {
+          state, ...(s.id ? { id: s.id } : {}),
+          ...(s.message ? { message: s.message } : {}),
+          ...(s.blockedBy ? { blockedBy: s.blockedBy } : {}),
+        } : { ...s, state }),
+        ...(!s.id && confirmedBefore ? { id: prior.id } : {}),
+        ...(!verified(state) && confirmedBefore ? { verifiedId: true } : {}),
+        ...(createdByJob && state !== "created" ? { createdByJob: true } : {}),
       };
-    else job.refs[e.key] = { ...s, ...(created ? { state: "created" } : {}) };
+    }
   }
 }
 export function advance(job, count) {
@@ -498,7 +573,45 @@ export function advance(job, count) {
     } else job.status = "completed";
   }
 }
-export function totals(job) {
+function referenceDependencies(plan, key) {
+  const [kind, index] = key.split(":");
+  if (["order", "creative"].includes(kind)) return ["advertiser:0"];
+  if (kind === "value") return [`key:${index}`];
+  if (kind === "lineItem") {
+    const row = plan.rows[Number(index)];
+    if (!row) return [];
+    return [row.orderRef,
+      ...(plan.mode === "prebid" ? ["key:hb_pb", `value:hb_pb:${row.price}`] : []),
+      ...plan.rules.flatMap((rule) => [
+      `key:${rule.key}`,
+      ...rule.values.map((value) => `value:${rule.key}:${value}`),
+    ])];
+  }
+  return [];
+}
+function referenceStates(job) {
+  const result = new Map(), refs = job.verificationResults
+    ? { ...job.refs, ...job.verificationResults } : job.refs;
+  const resolve = (key) => {
+    if (result.has(key)) return result.get(key);
+    const value = refs[key];
+    if (!value) return undefined;
+    const blockedBy = referenceDependencies(job.plan, key).filter((dependency) => {
+      const parent = resolve(dependency);
+      return !parent || (["unverified", "blocked", "conflict"].includes(parent.state) &&
+        !(parent.state !== "blocked" && parent.verification === "capacity" && parent.verifiedId));
+    });
+    const state = blockedBy.length && (value.state !== "unverified" || value.verification === "capacity")
+      ? { ...value, state: "blocked", blockedBy,
+          message: "Prethodni korak nije pouzdano proveren. Ponovite proveru istog posla." }
+      : value;
+    result.set(key, state);
+    return state;
+  };
+  for (const key of Object.keys(refs)) resolve(key);
+  return result;
+}
+export function totals(job, states = referenceStates(job)) {
   const counts = Object.fromEntries(
     PHASES.map((p) => [
       p,
@@ -507,22 +620,31 @@ export function totals(job) {
         existing: 0,
         created: 0,
         conflict: 0,
+        unverified: 0,
+        blocked: 0,
         total: phaseCount(job.plan, p),
       },
     ]),
   );
-  for (const [key, v] of Object.entries(job.refs)) {
+  for (const [key, v] of states) {
     const kind = key.split(":")[0];
     if (counts[kind] && Object.hasOwn(counts[kind], v.state))
       counts[kind][v.state]++;
   }
   Object.assign(counts.association, job.associationCounts || {});
+  for (const count of Object.values(counts)) count.done = count.existing + count.created;
   return counts;
 }
 export function jobView(job, attempt) {
-  const conflicts = Object.entries(job.refs).filter(
+  const states = referenceStates(job),
+    conflicts = [...states].filter(
     ([, r]) => r.state === "conflict",
-  );
+  ), verificationIssues = [...states].filter(([, r]) => ["unverified", "blocked"].includes(r.state)),
+    counts = totals(job, states),
+    reviewed = PHASES.filter((phase) => phase !== "association").every((phase) =>
+      counts[phase].new + counts[phase].done + counts[phase].conflict +
+      counts[phase].unverified + counts[phase].blocked === counts[phase].total,
+    );
   return {
     id: job.id,
     status: job.status,
@@ -534,7 +656,7 @@ export function jobView(job, attempt) {
     phase: PHASE_LABELS[job.phase] || "",
     offset: job.offset,
     phaseTotal: job.phase ? phaseCount(job.plan, job.phase) : 0,
-    counts: totals(job),
+    counts,
     error: job.error || "",
     awaitingCheck: Boolean(attempt) && job.status === "creating",
     retryAfter: attempt
@@ -542,6 +664,11 @@ export function jobView(job, attempt) {
       : 0,
     conflicts: conflicts.slice(0, 30).map(([ref, r]) => ({ ref, ...r })),
     conflictCount: conflicts.length,
+    verificationIssues: verificationIssues.slice(0, 30).map(([ref, r]) => ({ ref, ...r })),
+    verificationCount: verificationIssues.length,
+    unverifiedCount: verificationIssues.filter(([, r]) => r.state === "unverified").length,
+    blockedCount: verificationIssues.filter(([, r]) => r.state === "blocked").length,
+    canStart: job.status === "ready" && reviewed && conflicts.length === 0 && verificationIssues.length === 0 && job.expiresAt >= Date.now(),
     configuration: {
       advertiser: job.labels.advertiser || job.plan.advertiser.name,
       orders: job.plan.orders.map((o, i) => ({
@@ -575,7 +702,7 @@ export function jobView(job, attempt) {
       name: r.name,
       price: r.price,
       id: job.refs[`lineItem:${i}`]?.id,
-      state: job.refs[`lineItem:${i}`]?.state,
+      state: states.get(`lineItem:${i}`)?.state,
       hbPb: job.plan.mode === "prebid" ? r.price : null,
       orderName:
         job.labels[r.orderRef] ||

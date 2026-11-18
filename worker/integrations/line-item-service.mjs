@@ -36,6 +36,11 @@ const uuid = (id) =>
     ? id
     : fail("Neispravan ID posla.", 422);
 const jobKey = (id) => prefix + "jobs/" + uuid(id) + ".json";
+const canonicalPlan = (value) => JSON.stringify(value, function (_key, item) {
+  return item && typeof item === "object" && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]]))
+    : item;
+});
 const attemptKey = (id, cursor) =>
   prefix + `attempts/${uuid(id)}/${cursor}.json`;
 const lockKey = (network) => prefix + "locks/" + numericId(network) + ".json";
@@ -175,16 +180,21 @@ async function selectionChecks(client, plan) {
   }
   return { network, labels };
 }
+class OrderCapacityConflict extends GamError {}
 async function capacity(client, orderId, pending) {
+  if (!pending) return;
   const result = await client.query(
     "lineItem",
-    "orderId = :order",
-    { order: orderId },
+    `orderId = ${numericId(orderId)}`,
+    {},
     { limit: 1, onePage: true },
   );
+  if (!Number.isSafeInteger(result.total) || result.total < 0)
+    fail("Kapacitet order-a nije pouzdano proveren. Ponovite proveru istog posla.", 502);
   if (result.total + pending > 450)
-    fail(
+    throw new OrderCapacityConflict(
       "Order bi prešao 450 line itema. Izaberite novi order; Prebid će ga automatski podeliti na grupe od 400.",
+      409,
     );
 }
 function rememberLabels(job, batch, states) {
@@ -201,8 +211,10 @@ function checkExisting(job, batch, states) {
   for (const e of batch) {
     const found = states.get(e.key),
       prior = job.refs[e.key];
-    if (found.state === "conflict")
+    if (found?.state === "conflict")
       fail(`${e.payload.name || e.key}: ${found.message}`);
+    if (!found || !["new", "existing"].includes(found.state))
+      fail(found?.message || "Korak nije pouzdano proveren. Ponovite proveru istog posla.");
     if (prior?.id && (found.id !== prior.id || found.state === "new"))
       fail(
         "Entitet iz pregleda je promenjen ili uklonjen. Zaustavite posao i napravite novi pregled.",
@@ -377,6 +389,22 @@ export async function lineItemResponse(
   if (path === "/line-items/preview" && request.method === "POST") {
     const plan = normalizeLinePlan(await body(request)),
       { client, connection } = await clientFor(plan.networkCode);
+    const owner = (await read(bucket, lockKey(plan.networkCode)))?.value.owner;
+    if (owner) {
+      const active = (await read(bucket, jobKey(owner)))?.value;
+      if (!active || !["completed", "cancelled"].includes(active.status)) {
+        if (active?.actor === actor && active.origin === origin) {
+          if (active.status === "creating" && active.connectionRevision === connection.revision &&
+              canonicalPlan(active.plan) === canonicalPlan(plan))
+            return json({ ...jobView(active, await currentAttempt(bucket, active)), resumed: true });
+          return json({
+            error: "Postojeći posao za ovu mrežu nije završen. Otvorite ga i proverite napredak pre novog plana.",
+            activeJobId: active.id,
+          }, 409);
+        }
+        fail("Drugi posao za line iteme je u toku u ovoj mreži. Nije pokrenut novi posao.");
+      }
+    }
     const { network, labels } = await selectionChecks(client, plan),
       now = new Date().toISOString();
     const job = {
@@ -532,8 +560,8 @@ export async function lineItemResponse(
       return json(jobView(job, attempt));
     if (job.status !== "ready" || job.expiresAt < Date.now())
       fail("Pregled nije spreman ili je istekao. Napravite novi pregled.");
-    if (Object.values(job.refs).some((r) => r.state === "conflict"))
-      fail("Ispravite konflikte pre kreiranja.");
+    if (!jobView(job).canStart)
+      fail("Proverite nepotvrđene stavke i stvarne konflikte pre kreiranja.");
     await selectionChecks(client, job.plan);
     await claim(bucket, job);
     job.status = "creating";
@@ -549,6 +577,21 @@ export async function lineItemResponse(
     return json(jobView(job));
   }
   if (action === "review") {
+    if (input.retry === true && (job.status === "ready" ||
+        (job.status === "reviewing" && jobView(job).conflictCount > 0))) {
+      job.status = "reviewing";
+      job.phase = "advertiser";
+      job.offset = 0;
+      job.cursor++;
+      delete job.expiresAt;
+      delete job.verificationResults;
+      for (const [key, value] of Object.entries(job.refs)) {
+        if (!["existing", "created", "unverified"].includes(value.state)) {
+          if (value.verifiedId || value.createdByJob) job.refs[key] = { ...value, state: "unverified" };
+          else delete job.refs[key];
+        }
+      }
+    }
     if (job.status !== "reviewing") return json(jobView(job));
     const batch = entities(
         job.plan,
@@ -560,6 +603,13 @@ export async function lineItemResponse(
       states = await inspectEntities(client, batch, job.plan);
     recordResult(job, batch, states);
     rememberLabels(job, batch, states);
+    if ([...states.values()].some((r) => r.state === "unverified")) {
+      const detail = [...states.values()].find((r) => r.state === "unverified")?.message;
+      job.error = `Provera GAM-a nije završena${detail ? ": " + detail : "."} Sačuvani posao je očuvan; ponovite proveru.`;
+      await save(bucket, job, stored.etag);
+      return json(jobView(job));
+    }
+    job.error = "";
     advance(job, batch.length);
     if (job.status === "ready") {
       for (const order of job.plan.orders) {
@@ -573,11 +623,18 @@ export async function lineItemResponse(
           try {
             await capacity(client, orderId, missing);
           } catch (e) {
+            const before = job.refs[order.ref];
             job.refs[order.ref] = {
-              ...job.refs[order.ref],
-              state: "conflict",
-              message: e.message,
+              ...before,
+              state: e instanceof OrderCapacityConflict ? "conflict" : "unverified",
+              verification: "capacity",
+              ...(before.id ? { verifiedId: true } : {}),
+              ...(before.state === "created" || before.createdByJob ? { createdByJob: true } : {}),
+              message: e instanceof GamError ? e.message : "Kapacitet order-a nije pouzdano proveren. Ponovite proveru istog posla.",
             };
+            job.error = e instanceof OrderCapacityConflict
+              ? "Plan ima konflikt sa kapacitetom order-a. Nije pokrenut upis."
+              : `Provera kapaciteta order-a nije završena: ${job.refs[order.ref].message} Nije pokrenut upis.`;
           }
         }
       }
@@ -598,12 +655,32 @@ export async function lineItemResponse(
     job.offset,
     limitFor(job.phase, false, job.plan),
   );
+  const parentsVerified = async () => {
+    try {
+      await verifyParents(client, job, batch);
+      return true;
+    } catch (error) {
+      const message = error instanceof GamError ? error.message
+        : "Prethodni korak nije pouzdano proveren. Ponovite proveru istog posla.";
+      job.verificationResults = Object.fromEntries(batch.map((e) => [e.key, { state: "unverified", message }]));
+      job.error = message;
+      await save(bucket, job, stored.etag);
+      return false;
+    }
+  };
   if (action === "check") {
     if (!attempt) return json(jobView(job));
-    await verifyParents(client, job, batch);
+    if (!await parentsVerified()) return json(jobView(job, attempt));
     const states = await inspectEntities(client, batch, job.plan);
+    if ([...states.values()].some((r) => ["unverified", "blocked"].includes(r.state))) {
+      job.verificationResults = Object.fromEntries(states);
+      job.error = "Provera GAM-a nije završena. Nepotvrđeni upis nije ponovljen; ponovite proveru istog posla.";
+      await save(bucket, job, stored.etag);
+      return json(jobView(job, attempt));
+    }
     checkExisting(job, batch, states);
     if (batch.every((e) => states.get(e.key)?.state === "existing")) {
+      delete job.verificationResults;
       recordResult(job, batch, states);
       rememberLabels(job, batch, states);
       job.error = "";
@@ -612,6 +689,12 @@ export async function lineItemResponse(
       if (job.status === "completed") await release(bucket, job);
       return json(jobView(job));
     }
+    if (job.phase !== "association")
+      recordResult(job, batch.filter((e) => states.get(e.key)?.state === "existing"), states);
+    job.verificationResults = Object.fromEntries([...states].map(([key, value]) => [key,
+      value.state === "new" ? { state: "unverified", message: "GAM još nije potvrdio ishod ranijeg upisa. Upis nije ponovljen." } : value,
+    ]));
+    await save(bucket, job, stored.etag);
     return json({
       ...jobView(job, attempt),
       error:
@@ -620,9 +703,16 @@ export async function lineItemResponse(
   }
   if (attempt) return json(jobView(job, attempt));
   try {
-    await verifyParents(client, job, batch);
+    if (!await parentsVerified()) return json(jobView(job));
     const states = await inspectEntities(client, batch, job.plan);
+    if ([...states.values()].some((r) => ["unverified", "blocked"].includes(r.state))) {
+      job.verificationResults = Object.fromEntries(states);
+      job.error = "Provera GAM-a nije završena. Nije pokrenut upis; ponovite proveru istog posla.";
+      await save(bucket, job, stored.etag);
+      return json(jobView(job));
+    }
     checkExisting(job, batch, states);
+    delete job.verificationResults;
     const missing = batch.filter((e) => states.get(e.key).state === "new");
     if (job.phase === "lineItem")
       for (const orderId of [...new Set(missing.map((e) => e.payload.orderId))])

@@ -32,7 +32,7 @@ const bindings = {...config.vars, [authPrefix+'ADMIN_EMAIL']:'fixture@example.in
 const events = [], checks = [], failures = [];
 const token = 'synthetic-oauth-access-token';
 const safeMarker = 'SYNTHETIC_UPSTREAM_DETAIL_MUST_STAY_PRIVATE';
-let mode = 'success', cookie = '', mf;
+let mode = 'success', cookie = '', mf, failCapacity = false, rejectedCapacity = 0;
 const checked = (name, condition = true) => { assert(condition, name); checks.push(name); };
 const soap = (operation, value) => new Response(`<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><${operation}Response><rval>${value}</rval></${operation}Response></soap:Body></soap:Envelope>`, {headers:{'content-type':'text/xml'}});
 async function outbound(request) {
@@ -63,6 +63,10 @@ async function outbound(request) {
     if (url.pathname.endsWith('/NetworkService')) {
       assert(body.includes('<getCurrentNetwork '));
       return soap('getCurrentNetwork', '<networkCode>123456</networkCode><displayName>Synthetic GAM</displayName><effectiveRootAdUnitId>1</effectiveRootAdUnitId><currencyCode>EUR</currencyCode><timeZone>Europe/Belgrade</timeZone>');
+    }
+    if (trafficMode && failCapacity && url.pathname.endsWith('/LineItemService') && /LIMIT 1 OFFSET 0/.test(body)) {
+      rejectedCapacity++;
+      return new Response('<Envelope><Body><Fault><detail><ApiExceptionFault><errors><reason>UNPARSABLE</reason></errors></ApiExceptionFault></detail></Fault></Body></Envelope>', {status:500});
     }
     if(trafficMode)return await traffic.respond(body,url.pathname);
     assert(url.pathname.endsWith('/InventoryService'));
@@ -135,6 +139,49 @@ try {
   checked('Native SOAP replay reuses matching entities without new writes',traffic.calls.length===count);
   const single=await trafficJob({...prebidPlan(),mode:'single',name:'Native Standard',lineItemType:'STANDARD',rate:'2.50',costType:'CPM',goal:100000,end:'2099-01-01T12:00',creative:{mode:'none'}});
   checked('Native SOAP ordinary Standard line item preserves goal and end date',single.counts.lineItem.created===1&&single.counts.creative.total===0);
+  const retryPlan = {...prebidPlan(),mode:'single',name:'Native capacity recovery',lineItemType:'PRICE_PRIORITY',rate:'1.00',costType:'CPM',creative:{mode:'none'}};
+  const createsBeforeRecovery = traffic.calls.length;
+  failCapacity = true;
+  let reviewResult = await call('/line-items/preview', retryPlan);
+  assert.equal(reviewResult.status,201,JSON.stringify(reviewResult.data));
+  let retryJob = reviewResult.data;
+  for (let step=0;retryJob.status === 'reviewing' && !retryJob.error && step<30;step++) {
+    reviewResult = await call(`/line-items/jobs/${retryJob.id}/review`,{cursor:retryJob.cursor});
+    assert.equal(reviewResult.status,200,JSON.stringify(reviewResult.data));
+    retryJob = reviewResult.data;
+  }
+  assert.equal(rejectedCapacity,1);
+  assert.equal(retryJob.conflictCount,0);
+  assert.equal(retryJob.unverifiedCount,1);
+  assert.equal(retryJob.canStart,false);
+  assert(retryJob.verificationIssues.some(issue => issue.message.includes('UNPARSABLE')));
+  const rejectedStart = await call(`/line-items/jobs/${retryJob.id}/start`,{confirm:true,confirmNetwork:'123456'});
+  assert.equal(rejectedStart.status,409);
+  checked('Compiled native capacity rejection remains unverified and blocks creation without a false conflict',traffic.calls.length === createsBeforeRecovery);
+  const retryId = retryJob.id;
+  failCapacity = false;
+  reviewResult = await call(`/line-items/jobs/${retryJob.id}/review`,{cursor:retryJob.cursor,retry:true});
+  retryJob = reviewResult.data;
+  for (let step=0;retryJob.status === 'reviewing' && !retryJob.error && step<30;step++) {
+    reviewResult = await call(`/line-items/jobs/${retryJob.id}/review`,{cursor:retryJob.cursor});
+    assert.equal(reviewResult.status,200,JSON.stringify(reviewResult.data));
+    retryJob = reviewResult.data;
+  }
+  checked('Compiled native retry verifies the same saved job without writing',retryJob.id === retryId && retryJob.canStart && retryJob.verificationCount === 0 && traffic.calls.length === createsBeforeRecovery);
+  let startedRetry = await call(`/line-items/jobs/${retryJob.id}/start`,{confirm:true,confirmNetwork:'123456'});
+  retryJob = startedRetry.data;
+  for (let step=0;retryJob.status === 'creating' && step<30;step++) {
+    startedRetry = await call(`/line-items/jobs/${retryJob.id}/step`,{cursor:retryJob.cursor});
+    assert.equal(startedRetry.status,200,JSON.stringify(startedRetry.data));
+    retryJob = startedRetry.data;
+    assert.equal(retryJob.error,'',JSON.stringify(retryJob));
+  }
+  checked('Compiled native continuation creates exactly the one missing line item',retryJob.status === 'completed' && retryJob.counts.lineItem.done === 1 && traffic.calls.length === createsBeforeRecovery+1);
+  const beforeVerifiedReplay = traffic.calls.length, rejectedBeforeReplay = rejectedCapacity;
+  failCapacity = true;
+  await trafficJob(retryPlan);
+  checked('Compiled native fully existing replay skips capacity and creates nothing',traffic.calls.length === beforeVerifiedReplay && rejectedCapacity === rejectedBeforeReplay);
+  failCapacity = false;
   trafficMode=false;
 
   for (const nextMode of ['oauth-redirect', 'soap-redirect', 'oauth-rejected', 'soap-rejected']) {
