@@ -250,7 +250,7 @@ test("an unavailable order lookup is unverified, does not become 2005 conflicts 
   assert.equal(job.unverifiedCount, 5);
   assert.equal(job.counts.lineItem.conflict, 0);
   assert.equal(job.canStart, false);
-  assert.match(job.error, /UNPARSABLE/);
+  assert.match(job.verificationIssues.map((issue) => issue.message).join("\n"), /UNPARSABLE/);
   assert.equal(f.calls.length, 0);
   const denied = await request(f, `/line-items/jobs/${job.id}/start`, { confirm: true, confirmNetwork: "123456" });
   assert.equal(denied.status, 409);
@@ -390,7 +390,7 @@ test("a creating read failure before a durable attempt does not advance and safe
   assert.equal(job.phase, "Key-value ključevi");
   assert.equal(job.awaitingCheck, false);
   assert(job.verificationCount > 0);
-  assert.match(job.error, /UNPARSABLE/);
+  assert.match(job.verificationIssues.map((issue) => issue.message).join("\n"), /UNPARSABLE/);
   assert.equal(f.calls.length, 0);
   unavailable = false;
   job = await action(f, job, "step");
