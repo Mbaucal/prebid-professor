@@ -60,6 +60,9 @@ type Count = {
   existing: number;
   created: number;
   conflict: number;
+  done?: number;
+  unverified?: number;
+  blocked?: number;
 };
 type Job = {
   id: string;
@@ -76,6 +79,12 @@ type Job = {
   retryAfter: number;
   conflictCount: number;
   conflicts: { ref: string; message: string }[];
+  verificationIssues?: { ref: string; message: string; state?: string }[];
+  verificationCount?: number;
+  unverifiedCount?: number;
+  blockedCount?: number;
+  canStart?: boolean;
+  resumed?: boolean;
   configuration: {
     advertiser: string;
     orders: { name: string; id?: string; status?: string }[];
@@ -142,11 +151,47 @@ const statuses: Record<string, string> = {
   cancelled: "Zaustavljeno",
 };
 const stateNames: Record<string, string> = {
-  new: "Novo",
-  existing: "Postoji",
-  created: "Kreirano",
+  new: "Nedostaje — biće kreirano",
+  existing: "✓ Urađeno · postoji u GAM-u",
+  created: "✓ Urađeno · kreirano",
   conflict: "Konflikt",
+  unverified: "Čeka ponovnu proveru",
+  blocked: "Čeka proveru prethodnog koraka",
 };
+const hasVerificationIssues = (job: Job) =>
+  Boolean(
+    job.verificationCount ||
+      job.unverifiedCount ||
+      job.blockedCount ||
+      Object.values(job.counts).some((c) => c.unverified || c.blocked),
+  );
+const canCreate = (job: Job) =>
+  job.status === "ready" &&
+  job.canStart !== false &&
+  !job.conflictCount &&
+  !hasVerificationIssues(job) &&
+  !job.error;
+const waitingForVerification = (count: Count) =>
+  Math.max(
+    0,
+    count.total - count.new - count.existing - count.created - count.conflict,
+  );
+const doneCount = (count: Count) => count.done ?? count.existing + count.created;
+function issueName(job: Job, ref: string) {
+  const [kind, index] = ref.split(":");
+  if (kind === "order")
+    return job.configuration.orders[Number(index)]?.name || "Order";
+  if (kind === "lineItem")
+    return job.examples[Number(index)]?.name || "Line item";
+  return labels[kind] || "Stavka";
+}
+class ActiveJobError extends Error {
+  activeJobId: string;
+  constructor(message: string, activeJobId: string) {
+    super(message);
+    this.activeJobId = activeJobId;
+  }
+}
 function Picker({
   label,
   kind,
@@ -306,6 +351,7 @@ export default function GamLineItemsPanel({
     [confirmed, setConfirmed] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [activeJobId, setActiveJobId] = useState<string | null>(null),
     [defaults, setDefaults] = useState<Defaults | null>(null),
     [loadingDefaults, setLoadingDefaults] = useState(false),
     [defaultsError, setDefaultsError] = useState(""),
@@ -324,6 +370,7 @@ export default function GamLineItemsPanel({
     setJob(null);
     setConfirmed(false);
     setError("");
+    setActiveJobId(null);
   };
   const creative = (v: Partial<Creative>) =>
     patch({ creative: { ...draft.creative, ...v } });
@@ -333,11 +380,16 @@ export default function GamLineItemsPanel({
       headers: body === undefined ? {} : { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    const d = (await r.json()) as T & { error?: string };
-    if (!r.ok)
-      throw Error(
-        d.error || "Zahtev nije uspeo. Otvorite sačuvani posao pre nastavka.",
-      );
+    const d = (await r.json()) as T & {
+      error?: string;
+      activeJobId?: string;
+    };
+    if (!r.ok) {
+      const message =
+        d.error || "Zahtev nije uspeo. Otvorite sačuvani posao pre nastavka.";
+      if (d.activeJobId) throw new ActiveJobError(message, d.activeJobId);
+      throw Error(message);
+    }
     return d;
   }
   async function loadHistory() {
@@ -369,6 +421,7 @@ export default function GamLineItemsPanel({
     setLoadingDefaults(Boolean(network));
     setError("");
     setConfirmed(false);
+    setActiveJobId(null);
     if (network) {
       void loadHistory().catch((e) => {
         if (active) setError(e.message);
@@ -399,10 +452,14 @@ export default function GamLineItemsPanel({
     setBusy(true);
     onRunning(true);
     setError("");
+    setActiveJobId(null);
     try {
       await action();
     } catch (e) {
-      if (alive.current) setError((e as Error).message);
+      if (alive.current) {
+        setError((e as Error).message);
+        if (e instanceof ActiveJobError) setActiveJobId(e.activeJobId);
+      }
     } finally {
       working.current = false;
       if (alive.current) {
@@ -419,6 +476,7 @@ export default function GamLineItemsPanel({
       !stop.current &&
       ["reviewing", "creating"].includes(j.status) &&
       !j.awaitingCheck &&
+      !hasVerificationIssues(j) &&
       !j.error
     ) {
       j = await api<Job>(
@@ -437,6 +495,10 @@ export default function GamLineItemsPanel({
         networkCode: network,
       });
       setConfirmed(false);
+      if (j.resumed) {
+        if (alive.current) setJob(j);
+        return;
+      }
       await walk(j);
     });
   }
@@ -446,18 +508,19 @@ export default function GamLineItemsPanel({
     await run(async () => {
       normalizeLinePlan({ ...draft, networkCode: network });
       setConfirmed(false);
-      let j = await walk(
-        await api<Job>("/line-items/preview", {
-          ...draft,
-          networkCode: network,
-        }),
-      );
+      let j = await api<Job>("/line-items/preview", {
+        ...draft,
+        networkCode: network,
+      });
+      if (j.resumed) {
+        if (alive.current) setJob(j);
+        return;
+      }
+      j = await walk(j);
       if (
         !alive.current ||
         stop.current ||
-        j.status !== "ready" ||
-        j.conflictCount ||
-        j.error
+        !canCreate(j)
       )
         return;
       j = await api<Job>(`/line-items/jobs/${j.id}/start`, {
@@ -495,12 +558,27 @@ export default function GamLineItemsPanel({
     if (!job) return;
     await run(async () => {
       let j = await api<Job>("/line-items/jobs/" + job.id);
-      if (j.error && !j.awaitingCheck) j = { ...j, error: "" };
+      if (j.status === "creating" && !j.awaitingCheck)
+        j = await api<Job>(`/line-items/jobs/${j.id}/step`, {
+          cursor: j.cursor,
+        });
       await walk(j);
     });
   }
+  async function recheck() {
+    if (!job || !["reviewing", "ready"].includes(job.status)) return;
+    await run(async () => {
+      setConfirmed(false);
+      await walk(
+        await api<Job>(`/line-items/jobs/${job.id}/review`, {
+          cursor: job.cursor,
+          retry: true,
+        }),
+      );
+    });
+  }
   async function start() {
-    if (!job || !confirmed) return;
+    if (!job || !confirmed || !canCreate(job)) return;
     await run(async () => {
       await walk(
         await api<Job>(`/line-items/jobs/${job.id}/start`, {
@@ -606,6 +684,17 @@ export default function GamLineItemsPanel({
       {error && (
         <div className="gam-message error" role="alert">
           {error}
+          {activeJobId && (
+            <div className="gam-li-actions">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void open(activeJobId)}
+              >
+                Otvori postojeći posao
+              </button>
+            </div>
+          )}
         </div>
       )}
       <fieldset
@@ -1463,7 +1552,12 @@ export default function GamLineItemsPanel({
       {job && (
         <article className="gam-card gam-li-review">
           <span className="gam-step">05 / PREGLED I REZULTAT</span>
-          <h3>{statuses[job.status]}</h3>
+          <h3>
+            {hasVerificationIssues(job) &&
+            ["reviewing", "ready"].includes(job.status)
+              ? "Provera nije završena"
+              : statuses[job.status]}
+          </h3>
           <div className="gam-review-summary">
             <strong>
               {job.network.name} · {job.network.networkCode}
@@ -1538,9 +1632,9 @@ export default function GamLineItemsPanel({
                 <tr>
                   <th>Entitet</th>
                   <th>Ukupno</th>
-                  <th>Novo</th>
-                  <th>Postoji</th>
-                  <th>Kreirano</th>
+                  <th>Urađeno</th>
+                  <th>Nedostaje</th>
+                  <th>Čeka proveru</th>
                   <th>Konflikt</th>
                 </tr>
               </thead>
@@ -1549,15 +1643,33 @@ export default function GamLineItemsPanel({
                   <tr key={k}>
                     <td>{labels[k]}</td>
                     <td>{v.total}</td>
+                    <td>
+                      <strong>
+                        {doneCount(v) > 0 ? "✓ " : ""}
+                        {doneCount(v)}
+                      </strong>
+                      <small>
+                        {v.existing} postoji · {v.created} kreirano
+                      </small>
+                    </td>
                     <td>{v.new}</td>
-                    <td>{v.existing}</td>
-                    <td>{v.created}</td>
+                    <td>
+                      {waitingForVerification(v)}
+                      {Boolean(v.blocked) && (
+                        <small>{v.blocked} čeka prethodni korak</small>
+                      )}
+                    </td>
                     <td>{v.conflict}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="gam-help">
+            Urađene stavke se koriste ponovo. Kreiraju se samo stavke za koje
+            je provereno da nedostaju. Stavke koje čekaju proveru ne šalju se
+            na kreiranje.
+          </p>
           {job.status === "ready" && (
             <p className="gam-help">
               Veze sa kreativima proveravaju se pojedinačno tokom kreiranja.
@@ -1572,6 +1684,20 @@ export default function GamLineItemsPanel({
               {job.conflicts.map((c) => (
                 <p key={c.ref}>
                   {c.ref}: {c.message}
+                </p>
+              ))}
+            </div>
+          )}
+          {hasVerificationIssues(job) && (
+            <div className="gam-message info gam-li-verification" role="status">
+              <strong>Provera postojećih stavki nije završena.</strong>
+              <p>
+                Potvrđeni GAM ID-jevi su sačuvani. Ponovite proveru istog posla
+                za nastavak od potvrđenog stanja.
+              </p>
+              {job.verificationIssues?.map((issue) => (
+                <p key={issue.ref}>
+                  {issueName(job, issue.ref)}: {issue.message}
                 </p>
               ))}
             </div>
@@ -1647,7 +1773,7 @@ export default function GamLineItemsPanel({
               Preuzmi kompletnu listu i GAM ID-jeve (CSV)
             </a>
           </p>
-          {job.status === "ready" && !job.conflictCount && (
+          {canCreate(job) && (
             <>
               <p className="gam-message info">
                 Novi orderi ostaju DRAFT; odobravanje radite u GAM-u. U
@@ -1668,7 +1794,7 @@ export default function GamLineItemsPanel({
               <button
                 type="button"
                 className="gam-primary"
-                disabled={busy || !confirmed}
+                disabled={busy || !confirmed || !canCreate(job)}
                 onClick={() => void start()}
               >
                 Kreiraj potvrđenu postavku
@@ -1690,9 +1816,20 @@ export default function GamLineItemsPanel({
               </div>
             </div>
           )}
+          {!busy && ["reviewing", "ready"].includes(job.status) && (
+            <button
+              type="button"
+              className="gam-primary"
+              onClick={() => void recheck()}
+            >
+              Ponovi proveru istog posla
+            </button>
+          )}
           {!busy &&
             ["reviewing", "creating"].includes(job.status) &&
-            !job.awaitingCheck && (
+            !job.awaitingCheck &&
+            (job.status === "creating" || !hasVerificationIssues(job)) &&
+            !(job.status === "reviewing" && job.error) && (
               <button
                 type="button"
                 className="gam-primary"
