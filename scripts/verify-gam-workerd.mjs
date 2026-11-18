@@ -145,7 +145,7 @@ try {
   let reviewResult = await call('/line-items/preview', retryPlan);
   assert.equal(reviewResult.status,201,JSON.stringify(reviewResult.data));
   let retryJob = reviewResult.data;
-  while(retryJob.status === 'reviewing' && !retryJob.error) {
+  for (let step=0;retryJob.status === 'reviewing' && !retryJob.error && step<30;step++) {
     reviewResult = await call(`/line-items/jobs/${retryJob.id}/review`,{cursor:retryJob.cursor});
     assert.equal(reviewResult.status,200,JSON.stringify(reviewResult.data));
     retryJob = reviewResult.data;
@@ -162,7 +162,7 @@ try {
   failCapacity = false;
   reviewResult = await call(`/line-items/jobs/${retryJob.id}/review`,{cursor:retryJob.cursor,retry:true});
   retryJob = reviewResult.data;
-  while(retryJob.status === 'reviewing' && !retryJob.error) {
+  for (let step=0;retryJob.status === 'reviewing' && !retryJob.error && step<30;step++) {
     reviewResult = await call(`/line-items/jobs/${retryJob.id}/review`,{cursor:retryJob.cursor});
     assert.equal(reviewResult.status,200,JSON.stringify(reviewResult.data));
     retryJob = reviewResult.data;
@@ -170,7 +170,7 @@ try {
   checked('Compiled native retry verifies the same saved job without writing',retryJob.id === retryId && retryJob.canStart && retryJob.verificationCount === 0 && traffic.calls.length === createsBeforeRecovery);
   let startedRetry = await call(`/line-items/jobs/${retryJob.id}/start`,{confirm:true,confirmNetwork:'123456'});
   retryJob = startedRetry.data;
-  while(retryJob.status === 'creating') {
+  for (let step=0;retryJob.status === 'creating' && step<30;step++) {
     startedRetry = await call(`/line-items/jobs/${retryJob.id}/step`,{cursor:retryJob.cursor});
     assert.equal(startedRetry.status,200,JSON.stringify(startedRetry.data));
     retryJob = startedRetry.data;
