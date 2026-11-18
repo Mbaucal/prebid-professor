@@ -126,7 +126,9 @@ export class GamTrafficClient {
     // PQL predicates have a property on the left. An omitted WHERE is the
     // documented match-all form, rather than the SQL tautology `1 = 1`.
     const filter = where.trim() === "1 = 1" ? "" : where.trim();
-    let offset = start;
+    const seen = new Set();
+    let offset = start,
+      expectedTotal;
     for (let page = 0; page < maxPages; page++) {
       const value = await this.client.call(
         service,
@@ -143,6 +145,7 @@ export class GamTrafficClient {
       if (
         !Number.isSafeInteger(total) ||
         total < 0 ||
+        (expectedTotal !== undefined && total !== expectedTotal) ||
         rows.length > limit ||
         rows.some(
           (row) =>
@@ -163,6 +166,18 @@ export class GamTrafficClient {
           "GAM nije vratio pouzdan kompletan rezultat provere. Ponovite proveru pre nastavka.",
           502,
         );
+      expectedTotal = total;
+      for (const row of rows) {
+        const identity = kind === "association"
+          ? `${row.lineItemId}:${row.creativeId}`
+          : String(row.id);
+        if (seen.has(identity))
+          throw new GamError(
+            "GAM provera je vratila ponovljene rezultate. Ponovite proveru pre nastavka.",
+            502,
+          );
+        seen.add(identity);
+      }
       result.push(...rows);
       if (offset + rows.length >= total)
         return { rows: result, total, more: false };

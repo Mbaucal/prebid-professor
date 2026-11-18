@@ -65,6 +65,44 @@ test("a partial page advances by the number actually read, so existing entities 
   assert.deepEqual(offsets, [0, 1]);
 });
 
+test("a changing total during pagination stays unverified instead of declaring missing entities", async () => {
+  for (const nextTotal of [2, 4]) {
+    let calls = 0;
+    const client = new GamTrafficClient({ async call() {
+      calls++;
+      return { totalResultSetSize: calls === 1 ? 3 : nextTotal, results: { id: String(calls) } };
+    } });
+    await assert.rejects(client.query("order", "name IN (:name0,:name1)", { name0: "One", name1: "Two" }, { limit: 1 }), GamError);
+    assert.equal(calls, 2);
+  }
+});
+
+test("duplicate IDs within a page or across pages never count as a complete read", async () => {
+  for (const limit of [1, 2]) {
+    let calls = 0;
+    const client = new GamTrafficClient({ async call() {
+      calls++;
+      return { totalResultSetSize: 2, results: limit === 1 ? { id: "41" } : [{ id: "41" }, { id: "41" }] };
+    } });
+    await assert.rejects(client.query("order", "id = 41", {}, { limit }), GamError);
+    assert.equal(calls, limit === 1 ? 2 : 1);
+  }
+});
+
+test("association pagination requires unique composite identity, not unique line item or creative separately", async () => {
+  for (const limit of [1, 2]) {
+    const row = { lineItemId: "41", creativeId: "81" };
+    const client = pageClient({ totalResultSetSize: 2, results: limit === 1 ? row : [row, row] });
+    await assert.rejects(client.query("association", "lineItemId IN (41)", {}, { limit }), GamError);
+  }
+  const rows = [
+    { lineItemId: "41", creativeId: "81" },
+    { lineItemId: "41", creativeId: "82" },
+    { lineItemId: "42", creativeId: "81" },
+  ];
+  assert.deepEqual(await pageClient({ totalResultSetSize: 3, results: rows }).query("association", "lineItemId IN (41,42)"), { rows, total: 3, more: false });
+});
+
 test("invalid or incomplete lookup pages never become successful absence", async (t) => {
   const cases = [
     ["missing result", undefined], ["null result", null], ["empty result", ""],
