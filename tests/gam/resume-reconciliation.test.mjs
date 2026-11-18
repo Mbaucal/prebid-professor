@@ -343,14 +343,14 @@ test("five capacity UNPARSABLE errors preserve 1995 verified line items and retr
 
 test("real targeting, CPM, size, ownership and duplicate-name differences still block writes", async (t) => {
   const cases = [
-    ["different CPM", (f) => { f.db.lineItem[0].costPerUnit.microAmount = "999999"; }],
-    ["multiple OR alternatives", (f) => { f.db.lineItem[0].targeting.customTargeting.children.push({ logicalOperator: "AND", children: [{ keyId: "1000", operator: "IS", valueIds: "1002" }] }); }],
-    ["different inventory", (f) => { f.db.lineItem[0].targeting.inventoryTargeting.targetedAdUnits[0].adUnitId = "99"; }],
-    ["different sizes", (f) => { f.db.lineItem[0].creativePlaceholders[0].size.width = "999"; }],
+    ["different CPM", (f) => { f.db.lineItem[0].costPerUnit.microAmount = "999999"; }, /cenu|valutu|obračuna/],
+    ["multiple OR alternatives", (f) => { f.db.lineItem[0].targeting.customTargeting.children.push({ logicalOperator: "AND", children: [{ keyId: "1000", operator: "IS", valueIds: "1002" }] }); }, /inventory|targeting/],
+    ["different inventory", (f) => { f.db.lineItem[0].targeting.inventoryTargeting.targetedAdUnits[0].adUnitId = "99"; }, /inventory|targeting/],
+    ["different sizes", (f) => { f.db.lineItem[0].creativePlaceholders[0].size.width = "999"; }, /veličine/],
     ["changed advertiser ownership", (f) => { f.db.order[0].advertiserId = "99"; }],
-    ["duplicate matching name", (f) => { f.db.lineItem.push({ ...structuredClone(f.db.lineItem[0]), id: "9999" }); }],
+    ["duplicate matching name", (f) => { f.db.lineItem.push({ ...structuredClone(f.db.lineItem[0]), id: "9999" }); }, /jedinstven/],
   ];
-  for (const [name, mutate] of cases)
+  for (const [name, mutate, reason] of cases)
     await t.test(name, async () => {
       const f = await setup();
       seedExternal(f);
@@ -358,10 +358,41 @@ test("real targeting, CPM, size, ownership and duplicate-name differences still 
       const job = await finishReview(f, await preview(f));
       assert(job.conflictCount > 0);
       assert.equal(job.canStart, false);
+      if (reason) assert.match(job.conflicts[0].message, reason);
       const denied = await request(f, `/line-items/jobs/${job.id}/start`, { confirm: true, confirmNetwork: "123456" });
       assert.equal(denied.status, 409);
       assert.equal(f.calls.length, 0);
     });
+});
+
+test("a creating read failure before a durable attempt does not advance and safely retries the same step", async () => {
+  const f = await setup();
+  seedExternal(f);
+  let job = await start(f, await finishReview(f, await preview(f)));
+  while (job.phase !== "Key-value ključevi") job = await action(f, job, "step");
+  const cursor = job.cursor;
+  const byNames = f.traffic.byNames;
+  let unavailable = true;
+  f.traffic.byNames = async (...args) => {
+    if (unavailable && args[0] === "key")
+      throw new GamError("GAM je odbio zahtev: UNPARSABLE.", 502);
+    return byNames(...args);
+  };
+  job = await action(f, job, "step");
+  assert.equal(job.status, "creating");
+  assert.equal(job.cursor, cursor);
+  assert.equal(job.phase, "Key-value ključevi");
+  assert.equal(job.awaitingCheck, false);
+  assert(job.verificationCount > 0);
+  assert.match(job.error, /UNPARSABLE/);
+  assert.equal(f.calls.length, 0);
+  unavailable = false;
+  job = await action(f, job, "step");
+  assert.equal(job.cursor, cursor + 1);
+  assert.equal(job.error, "");
+  assert.equal(job.verificationCount, 0);
+  await finish(f, job);
+  assert.equal(f.calls.length, 0);
 });
 
 test("a corrected actual conflict can be rechecked in the same ready job", async () => {
