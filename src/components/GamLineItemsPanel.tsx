@@ -1679,8 +1679,8 @@ export default function GamLineItemsPanel({
           )}
           {job.conflictCount > 0 && (
             <div className="gam-message error">
-              {job.conflictCount} konflikata. Ispravite izbor ili nazive i
-              ponovite proveru.
+              {job.conflictCount} konflikata. Proverite prikazane razlike i
+              uskladite plan pre ponovne provere.
               {job.conflicts.map((c) => (
                 <p key={c.ref}>
                   {c.ref}: {c.message}

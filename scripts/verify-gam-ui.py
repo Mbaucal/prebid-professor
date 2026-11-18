@@ -208,7 +208,7 @@ try:
         expect(review.get_by_role('columnheader',name='Urađeno',exact=True)).to_be_visible()
         expect(review.get_by_role('columnheader',name='Nedostaje',exact=True)).to_be_visible()
         expect(review.get_by_role('columnheader',name='Čeka proveru',exact=True)).to_be_visible()
-        assert review.get_by_text('konflikata. Ispravite izbor',exact=False).count()==0
+        assert review.get_by_text('konflikata.',exact=False).count()==0
         assert page.get_by_role('button',name='Kreiraj potvrđenu postavku',exact=True).count()==0
         assert page.get_by_role('button',name='Nastavi posao',exact=True).count()==0
         retry=page.get_by_role('button',name='Ponovi proveru istog posla',exact=True)
@@ -241,7 +241,7 @@ try:
         conflict['counts']['lineItem'].update(done=0,existing=0,conflict=1)
         scenario['job']=conflict
         page.get_by_role('button',name='Otvori posao',exact=True).click()
-        expect(review).to_contain_text('1 konflikata.')
+        expect(review).to_contain_text('1 konflikata. Proverite prikazane razlike i uskladite plan pre ponovne provere.')
         assert page.get_by_role('button',name='Kreiraj potvrđenu postavku',exact=True).count()==0
         # A creating job whose pre-write read failed can retry one step
         # explicitly. Another read failure stops again, without an auto loop.
