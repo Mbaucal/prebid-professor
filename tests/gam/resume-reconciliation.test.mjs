@@ -526,3 +526,30 @@ test("previewing the same active plan reopens its pending attempt without a dupl
   assert.equal(f.db.creative.length, 2);
   assert.equal(f.db.association.length, 6);
 });
+
+test("a capacity-only exception cannot conceal an unverified upstream advertiser", async () => {
+  const f = await setup();
+  seedExternal(f);
+  f.db.lineItem = f.db.lineItem.filter((row) => row.id !== "5002");
+  const query = f.traffic.query;
+  f.traffic.query = async (...args) => {
+    if (args[0] === "lineItem" && args[3]?.limit === 1)
+      throw new GamError("Capacity is temporarily unavailable.", 502);
+    return query(...args);
+  };
+  let job = await finishReview(f, await preview(f));
+  assert.equal(job.unverifiedCount, 1);
+  assert.equal(job.counts.lineItem.done, 2, "capacity-only failure preserves completed entities");
+  const byIds = f.traffic.byIds;
+  f.traffic.byIds = async (...args) => {
+    if (args[0] === "advertiser")
+      throw new GamError("Advertiser verification is temporarily unavailable.", 502);
+    return byIds(...args);
+  };
+  job = await action(f, job, "review", { retry: true });
+  assert.equal(job.status, "reviewing");
+  assert.equal(job.canStart, false);
+  assert.equal(job.counts.lineItem.done, 0, "capacity does not exempt unknown advertiser ownership");
+  assert.equal(job.counts.lineItem.blocked, 3);
+  assert.equal(f.calls.length, 0);
+});
