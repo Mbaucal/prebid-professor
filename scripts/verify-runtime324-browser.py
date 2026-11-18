@@ -122,7 +122,7 @@ SETUP=r'''
     const selected=pbjs.getEvents().find(event=>event.eventType==='bidResponse'&&event.args.adId===id);
     if(!selected||selected.args.cpm!==4)throw Error('Expiry fixture did not select the cached bid');
     const before=Date.now();__dateShiftMs=60000;
-    __expiryAudit.push({code,selectedCpm:selected.args.cpm,before,after:Date.now()});
+    __expiryAudit.push({code,selectedCpm:selected.args.cpm,before,after:Date.now(),readsAtSelection:__targetReads[code]});
    }
    return candidate;
   };
@@ -133,6 +133,7 @@ SETUP=r'''
    const keys=Object.fromEntries(slot.getTargetingKeys().filter(key=>key.startsWith('hb_')).map(key=>[key,slot.getTargeting(key)]));
    const events=pbjs&&typeof pbjs.getEvents==='function'?pbjs.getEvents():[];
    const find=id=>{const row=events.find(event=>event.eventType==='bidResponse'&&event.args.adId===id);return row?{id,cpm:row.args.cpm,bidder:row.args.bidderCode,auction:row.args.auctionId,code:row.args.adUnitCode,deal:row.args.dealId||null}:null;};
+   if(scenario==='expiry-race'&&slot.id==='Billboard'&&__expiryAudit.length&&__gam.some(row=>row.code===slot.id)&&__expiryAudit[0].readsAtDispatch===undefined)__expiryAudit[0].readsAtDispatch=__targetReads[slot.id];
    __gam.push({code:slot.id,at:Date.now(),keys,bids:Object.fromEntries(Object.entries(keys).filter(([key])=>key==='hb_adid'||key.startsWith('hb_adid_')).map(([key,value])=>[key,find(value[0])]))});
   }
   return refresh.apply(this,arguments);
@@ -284,7 +285,7 @@ def check(name,width,program,state,errors,escaped):
     if name=='expiry-race':
         assert len(state['expiryAudit'])==1 and state['expiryAudit'][0]['after']-state['expiryAudit'][0]['before']==60000,('Expiry boundary was not crossed',state['expiryAudit'])
         assert cache['counters']['cachedWins']>=2,('Cache did not recover for later requests',cache)
-        assert all(count<=20 for count in state['targetReads'].values()),('Targeting retries were not bounded',state['targetReads'])
+        assert state['expiryAudit'][0]['readsAtDispatch']>state['expiryAudit'][0]['readsAtSelection'],('Native targeting was not reread before dispatch',state['expiryAudit'])
     assert state['auditCalls']>0,'The existing native RTD provider never ran'
     assert any(row.get('pps',{}).get('taxonomies',{}).get('IAB_CONTENT_2_2',{}).get('values')==['483'] for row in state['pps']),('GAM PPS missing',state['pps'])
     assert state.get('context',{}).get('rtd',{}).get('providerObserved') is True,('Context provider was not observed',state.get('context'))
