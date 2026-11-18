@@ -124,6 +124,8 @@ export function soapTrafficFixture() {
         rows = rows.filter(
           (r) => String(r[match[1]]) === String(bindings[match[2]]),
         );
+      const orderId = query.match(/(?:^WHERE |AND )orderId = ([1-9][0-9]*)(?:\s|$)/)?.[1];
+      if (orderId) rows = rows.filter((r) => String(r.orderId) === orderId);
       const names = Object.entries(bindings)
         .filter(([k]) => /^name\d+$/.test(k))
         .map(([, v]) => v);

@@ -1,5 +1,6 @@
 """Local synthetic application test; never uses the user's browser or Google account."""
 import json, os, subprocess, time
+from copy import deepcopy
 from pathlib import Path
 from urllib.request import urlopen
 from playwright.sync_api import sync_playwright, expect
@@ -13,7 +14,7 @@ try:
         process=subprocess.Popen(['node','scripts/gam-ui-fixture.mjs'],cwd=root,stdout=subprocess.PIPE,text=True)
         assert 'ready' in process.stdout.readline()
     with sync_playwright() as p:
-        browser=p.chromium.launch(headless=True,args=['--no-sandbox'])
+        browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox'])
         page=browser.new_page(viewport={'width':1440,'height':1080})
         errors=[];external=[];requests=[]
         def route(r):
@@ -161,6 +162,146 @@ try:
         page.get_by_role('button',name='Kreiraj potvrđenu postavku',exact=True).click()
         page.get_by_role('heading',name='Završeno',exact=True).wait_for()
         assert page.locator('.gam-li-review').get_by_text('Example direct campaign',exact=True).count()==1
+        # Exercise the compiled panel's error/recovery boundary independently of
+        # the handler fixture. Existing normal flows above still use gamResponse.
+        job_url=next(r['url'].removesuffix('/start') for r in reversed(requests) if r['url'].endswith('/start'))
+        completed=page.request.get(job_url).json()
+        verified=deepcopy(completed)
+        verified.update(status='ready',error='',awaitingCheck=False,canStart=True,
+                        verificationCount=0,unverifiedCount=0,blockedCount=0,verificationIssues=[])
+        for count in verified['counts'].values():
+            count.update(existing=count['existing']+count['created'],created=0,new=0,
+                         conflict=0,unverified=0,blocked=0)
+            count['done']=count['existing']
+        for example in verified['examples']:example['state']='existing'
+        unverified=deepcopy(verified)
+        unverified.update(canStart=False,error='GAM provera ordera nije uspela. Ponovite proveru.',
+                          verificationCount=2,unverifiedCount=1,blockedCount=1,
+                          verificationIssues=[{'ref':'order:0','state':'unverified','message':'GAM je odbio zahtev: UNPARSABLE.'},
+                                              {'ref':'lineItem:0','state':'blocked','message':'Čeka potvrđen order.'}])
+        unverified['counts']['order'].update(done=0,existing=0,unverified=1)
+        unverified['counts']['lineItem'].update(done=0,existing=0,blocked=1)
+        unverified['examples'][0]['state']='blocked'
+        scenario={'job':unverified,'retries':0}
+        action_calls=[]
+        def serve_job(r):r.fulfill(json=scenario['job'])
+        def serve_action(r):
+            action=r.request.url.rsplit('/',1)[-1]
+            action_calls.append({'action':action,'body':json.loads(r.request.post_data or '{}')})
+            if action=='review':
+                assert action_calls[-1]['body'].get('retry') is True
+                scenario['retries']+=1
+                if scenario['retries']>1:scenario['job']=verified
+            elif action=='step' and scenario.get('stepSucceeds'):
+                scenario['job']=completed
+            r.fulfill(json=scenario['job'])
+        page.route(job_url,serve_job)
+        page.route(job_url+'/*',serve_action)
+        history_url='http://127.0.0.1:4178/test-api/integrations/gam/line-items/jobs?network=123456'
+        page.route(history_url,lambda r:r.fulfill(json={'jobs':[{'id':completed['id'],'name':'Example direct campaign',
+                   'status':'ready','count':1,'createdAt':completed['createdAt']}]}))
+        page.get_by_role('button',name='Osveži poslove',exact=True).click()
+        expect(page.get_by_role('button',name='Otvori posao',exact=True)).to_have_count(1)
+        page.get_by_role('button',name='Otvori posao',exact=True).click()
+        page.get_by_role('heading',name='Provera nije završena',exact=True).wait_for()
+        review=page.locator('.gam-li-review')
+        expect(review.get_by_role('columnheader',name='Urađeno',exact=True)).to_be_visible()
+        expect(review.get_by_role('columnheader',name='Nedostaje',exact=True)).to_be_visible()
+        expect(review.get_by_role('columnheader',name='Čeka proveru',exact=True)).to_be_visible()
+        assert review.get_by_text('konflikata.',exact=False).count()==0
+        assert page.get_by_role('button',name='Kreiraj potvrđenu postavku',exact=True).count()==0
+        assert page.get_by_role('button',name='Nastavi posao',exact=True).count()==0
+        retry=page.get_by_role('button',name='Ponovi proveru istog posla',exact=True)
+        retry.click()
+        expect(retry).to_be_enabled()
+        assert len(action_calls)==1 and action_calls[0]['action']=='review'
+        page.get_by_role('heading',name='Provera nije završena',exact=True).wait_for()
+        assert page.get_by_label('Naziv line itema',exact=True).input_value()=='Example direct campaign'
+        assert page.get_by_label('GAM mreža za line iteme',exact=True).input_value()=='123456'
+        for width,height,label in [(1440,1080,'desktop'),(390,844,'mobile')]:
+            page.set_viewport_size({'width':width,'height':height})
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+            review.scroll_into_view_if_needed()
+            review.screenshot(path=str(out/f'line-items-verification-{label}.png'))
+            if width==390:
+                table=review.locator('.gam-table-wrap').first
+                table.evaluate('(element) => element.scrollLeft = element.scrollWidth')
+                expect(review.get_by_role('columnheader',name='Čeka proveru',exact=True)).to_be_in_viewport()
+                review.screenshot(path=str(out/'line-items-verification-mobile-counts.png'))
+                table.evaluate('(element) => element.scrollLeft = 0')
+        retry.click()
+        page.get_by_role('heading',name='Spremno za potvrdu',exact=True).wait_for()
+        assert len(action_calls)==2 and all(c['action']=='review' for c in action_calls)
+        assert review.get_by_text('✓ Urađeno · postoji u GAM-u',exact=True).count()==1
+        assert not page.get_by_role('button',name='Kreiraj potvrđenu postavku',exact=True).is_enabled()
+        review.screenshot(path=str(out/'line-items-rechecked-mobile.png'))
+        # A genuine mismatch remains a conflict and cannot authorize creation.
+        conflict=deepcopy(verified)
+        conflict.update(canStart=False,conflictCount=1,conflicts=[{'ref':'lineItem:0','message':'Postojeći line item ima drugačiju cenu.'}])
+        conflict['counts']['lineItem'].update(done=0,existing=0,conflict=1)
+        scenario['job']=conflict
+        page.get_by_role('button',name='Otvori posao',exact=True).click()
+        expect(review).to_contain_text('1 konflikata. Proverite prikazane razlike i uskladite plan pre ponovne provere.')
+        assert page.get_by_role('button',name='Kreiraj potvrđenu postavku',exact=True).count()==0
+        # A creating job whose pre-write read failed can retry one step
+        # explicitly. Another read failure stops again, without an auto loop.
+        creating_unverified=deepcopy(unverified)
+        creating_unverified.update(status='creating')
+        scenario['job']=creating_unverified
+        page.get_by_role('button',name='Otvori posao',exact=True).click()
+        before_steps=len(action_calls)
+        page.get_by_role('button',name='Nastavi posao',exact=True).click()
+        expect(page.get_by_role('button',name='Nastavi posao',exact=True)).to_be_enabled()
+        assert len(action_calls)==before_steps+1 and action_calls[-1]['action']=='step'
+        scenario['stepSucceeds']=True
+        page.get_by_role('button',name='Nastavi posao',exact=True).click()
+        page.get_by_role('heading',name='Završeno',exact=True).wait_for()
+        assert len(action_calls)==before_steps+2 and action_calls[-1]['action']=='step'
+        # Reusing an active plan must only open it; even one-click may not
+        # automatically step/check/start the returned saved job.
+        active=deepcopy(verified)
+        active.update(status='creating',resumed=True,awaitingCheck=False)
+        scenario['job']=active
+        preview_url='http://127.0.0.1:4178/test-api/integrations/gam/line-items/preview'
+        def resumed_preview(r):r.fulfill(json=active)
+        page.route(preview_url,resumed_preview)
+        before_actions=len(action_calls)
+        page.get_by_role('button',name='Proveri postavku u GAM-u',exact=True).click()
+        page.get_by_role('heading',name='U toku / može da se nastavi',exact=True).wait_for()
+        assert len(action_calls)==before_actions
+        pending=deepcopy(active)
+        pending.update(awaitingCheck=True,error='Ishod poslednjeg upisa nije potvrđen.')
+        scenario['job']=pending
+        page.get_by_role('button',name='Otvori posao',exact=True).click()
+        pending_check=page.get_by_role('button',name='Proveri ishod u GAM-u',exact=True)
+        expect(pending_check).to_be_enabled()
+        assert page.get_by_role('button',name='Nastavi posao',exact=True).count()==0
+        assert len(action_calls)==before_actions
+        pending_check.click()
+        expect(pending_check).to_be_enabled()
+        assert len(action_calls)==before_actions+1 and action_calls[-1]['action']=='check'
+        before_actions=len(action_calls)
+        scenario['job']=active
+        page.reload()
+        page.get_by_role('button',name='Line itemi',exact=True).click()
+        page.get_by_role('button',name='Pokreni i napravi',exact=True).click()
+        page.get_by_role('heading',name='U toku / može da se nastavi',exact=True).wait_for()
+        assert len(action_calls)==before_actions
+        page.unroute(preview_url,resumed_preview)
+        # A different active plan offers its saved job without throwing away
+        # the entered draft or silently submitting a second job.
+        def active_conflict(r):r.fulfill(status=409,json={'error':'Drugi posao je već aktivan.','activeJobId':completed['id']})
+        page.route(preview_url,active_conflict)
+        page.reload()
+        page.get_by_role('button',name='Line itemi',exact=True).click()
+        page.get_by_role('button',name='Pokreni i napravi',exact=True).click()
+        page.get_by_role('button',name='Otvori postojeći posao',exact=True).click()
+        page.get_by_role('heading',name='U toku / može da se nastavi',exact=True).wait_for()
+        assert len(action_calls)==before_actions
+        page.unroute(preview_url,active_conflict)
+        page.unroute(job_url,serve_job)
+        page.unroute(job_url+'/*',serve_action)
+        page.unroute(history_url)
         page.reload()
         page.get_by_role('button',name='Line itemi',exact=True).click()
         page.get_by_role('button',name='Otvori posao',exact=True).first.wait_for()
@@ -195,7 +336,10 @@ try:
         assert not errors,errors
         assert not external,external
         browser.close()
-        (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'externalRequests':external,'requests':requests},indent=2))
-        print('PASS untouched script preset, one-click creation, pause before automatic start, Prebid and ordinary line items, per-price creative names and CPM preview, saved jobs, desktop/mobile, presets, saved templates, explicit review/create, paths/history, connection-first navigation, local JSON selection and setup recheck')
+        (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'externalRequests':external,
+            'requests':requests,'manualRecoveryActions':action_calls,
+            'recoveryScope':'Compiled UI with local job-response fixtures; normal flows use the actual local handler.',
+            'browserVersion':browser.version},indent=2))
+        print('PASS untouched script preset, one-click creation, same-job verification retry, completed/missing/unverified/conflict counts, active-job reuse without automatic writes, desktop/mobile recovery, Prebid and ordinary line items, saved jobs, explicit review/create, paths/history, connection-first navigation and setup recheck')
 finally:
     if process:process.terminate();process.wait(timeout=10)
