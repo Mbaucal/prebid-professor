@@ -82,7 +82,7 @@ jobs:
       - name: 3.23.0 bid caching, package QA and the policy in the whole generated ads.min.js (node:vm, synthetic bids)
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime323-package-qa.test.mjs tests/runtime/bid-cache323.test.mjs tests/runtime/bid-cache-eligibility.test.mjs
       - name: Combined admission, request reporting and immutable-source regressions
-        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime324*.test.mjs tests/runtime/bid-cache324.test.mjs tests/runtime/runtime325*.test.mjs
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime324*.test.mjs tests/runtime/bid-cache324.test.mjs tests/runtime/bid-cache3251.test.mjs tests/runtime/runtime325*.test.mjs
       - name: Verify audited 3.22.x composition, lazy auction ownership and immutable history
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3221-package-qa.test.mjs tests/runtime/runtime3222-lazy.test.mjs tests/runtime/runtime-lineage.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/runtime-allow-list-parity.test.mjs
       - name: Verify bidder eligibility and generated request isolation
@@ -214,6 +214,10 @@ jobs:
         run: |
           node scripts/prepare-runtime324-browser-fixtures.mjs --prebid ".generated/runtime324-prebid/${{ matrix.prebid }}" --out ".generated/runtime324-browser-${{ matrix.prebid }}"
           python scripts/verify-runtime324-browser.py ".generated/runtime324-browser-${{ matrix.prebid }}"
+      - name: Cache history rollover and targeting-expiry recovery in the complete new runtime
+        run: |
+          node scripts/prepare-runtime324-browser-fixtures.mjs --runtime tessera-3.25.1 --prebid ".generated/runtime324-prebid/${{ matrix.prebid }}" --out ".generated/runtime3251-browser-${{ matrix.prebid }}"
+          python scripts/verify-runtime324-browser.py ".generated/runtime3251-browser-${{ matrix.prebid }}"
       - name: Primary bid origin and page timing in both arms with native Prebid and pinned real GPT wire
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-runtime325-browser-fixtures.mjs --prebid ".generated/runtime324-prebid/${{ matrix.prebid }}" --out ".generated/runtime325-browser-${{ matrix.prebid }}"
@@ -232,5 +236,7 @@ jobs:
             vendor/gpt/m202611120201/manifest.json
             .generated/runtime325-browser-${{ matrix.prebid }}/manifest.json
             .generated/runtime325-browser-${{ matrix.prebid }}/browser-results.json
+            .generated/runtime3251-browser-${{ matrix.prebid }}/manifest.json
+            .generated/runtime3251-browser-${{ matrix.prebid }}/browser-results.json
           if-no-files-found: ignore
           retention-days: 14
