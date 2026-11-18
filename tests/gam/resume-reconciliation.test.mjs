@@ -414,6 +414,51 @@ test("a corrected actual conflict can be rechecked in the same ready job", async
   assert.equal(f.calls.length, 0);
 });
 
+test("confirmed identity survives conflicts, retry and storage restart instead of creating a replacement", async (t) => {
+  for (const provenance of ["existing", "created"])
+    for (const change of ["renamed", "deleted"])
+      await t.test(`${provenance} entity ${change}`, async () => {
+        let f = await setup();
+        seedExternal(f);
+        let job = await finishReview(f, await preview(f));
+        const key = jobPrefix + job.id + ".json";
+        if (provenance === "created") {
+          // A saved older job may retain confirmed-created provenance. The
+          // retry must retain that identity just as it retains existing IDs.
+          const stored = await (await f.env.BUILDS.get(key)).json();
+          stored.refs["lineItem:0"].state = "created";
+          await f.env.BUILDS.put(key, JSON.stringify(stored));
+          job = (await request(f, `/line-items/jobs/${job.id}`)).data;
+        }
+        const original = structuredClone(f.db.lineItem[0]);
+        if (change === "renamed") f.db.lineItem[0].name = "Externally renamed item";
+        else f.db.lineItem = f.db.lineItem.filter((row) => row.id !== "5000");
+        for (let attempt = 0; attempt < 2; attempt++) {
+          job = await action(f, job, "review", { retry: true });
+          job = await finishReview(f, job);
+          assert.equal(job.conflictCount, 1);
+          assert.equal(job.canStart, false);
+          const stored = await (await f.env.BUILDS.get(key)).json();
+          assert.equal(stored.refs["lineItem:0"].id, "5000");
+          assert.equal(stored.refs["lineItem:0"].verifiedId, true);
+          const denied = await request(f, `/line-items/jobs/${job.id}/start`, { confirm: true, confirmNetwork: "123456" });
+          assert.equal(denied.status, 409);
+          assert.equal(f.calls.length, 0);
+          f = restartStorage(f);
+          job = (await request(f, `/line-items/jobs/${job.id}`)).data;
+        }
+        if (change === "renamed") f.db.lineItem.find((row) => row.id === "5000").name = original.name;
+        else f.db.lineItem.unshift(original);
+        job = await action(f, job, "review", { retry: true });
+        job = await finishReview(f, job);
+        assert.equal(job.conflictCount, 0);
+        assert.equal(job.canStart, true);
+        assert.equal(job.counts.lineItem[provenance], provenance === "created" ? 1 : 3);
+        await finish(f, await start(f, job));
+        assert.equal(f.calls.length, 0);
+      });
+});
+
 test("a lost create response survives storage restart and is checked before any further mutation", async () => {
   let f = await setup();
   seedExternal(f);
