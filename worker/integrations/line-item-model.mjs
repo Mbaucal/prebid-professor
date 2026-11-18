@@ -601,7 +601,7 @@ function referenceStates(job) {
       return !parent || (["unverified", "blocked", "conflict"].includes(parent.state) &&
         !(parent.state !== "blocked" && parent.verification === "capacity" && parent.verifiedId));
     });
-    const state = value.state !== "unverified" && blockedBy.length
+    const state = blockedBy.length && (value.state !== "unverified" || value.verification === "capacity")
       ? { ...value, state: "blocked", blockedBy,
           message: "Prethodni korak nije pouzdano proveren. Ponovite proveru istog posla." }
       : value;
