@@ -324,7 +324,7 @@ test("five capacity UNPARSABLE errors preserve 1995 verified line items and retr
   assert.equal(f.calls.length, 0);
   unavailable = false;
   const id = job.id;
-  job = await action(f, job, "review");
+  job = await action(f, job, "review", { retry: true });
   job = await finishReview(f, job);
   assert.equal(job.id, id);
   assert.equal(job.conflictCount, 0);
@@ -364,7 +364,7 @@ test("a corrected actual conflict can be rechecked in the same ready job", async
   assert.equal(job.conflictCount, 1);
   const id = job.id;
   f.db.lineItem[0].costPerUnit.microAmount = "10000";
-  job = await action(f, job, "review");
+  job = await action(f, job, "review", { retry: true });
   job = await finishReview(f, job);
   assert.equal(job.id, id);
   assert.equal(job.conflictCount, 0);
