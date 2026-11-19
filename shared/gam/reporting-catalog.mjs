@@ -89,11 +89,14 @@ export function reportingSetup(extra, selection) {
 }
 
 /** Key/value-only setup can prepare an existing network without an ad plan. */
-export function reportingOnlyPlan(networkCode, extra, selection) {
+export function reportingOnlyPlan(networkCode, extra, selection, writePolicy) {
+  if(writePolicy!==undefined&&writePolicy!=='add_only')
+    fail('Key-values priprema podržava samo dodavanje nedostajućih ključeva i vrednosti.');
   return {schemaVersion:2,mode:'reporting',networkCode,allowOverbook:false,
     advertiser:{mode:'none',name:''},orders:[],inventory:{kind:'none',ids:[]},
     currency:'',sizes:'',creative:{mode:'none'},rules:[],ranges:[],rows:[],
     namePrefix:'GAM reporting',type:'REPORTING',costType:'',
     goal:{goalType:'NONE',unitType:'IMPRESSIONS',units:0},start:null,end:null,
-    counts:{lineItems:0,orders:0,creatives:0,associations:0},reporting:reportingSetup(extra,selection)};
+    counts:{lineItems:0,orders:0,creatives:0,associations:0},
+    reporting:{...reportingSetup(extra,selection),writePolicy:'add_only'}};
 }

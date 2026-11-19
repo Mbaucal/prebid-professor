@@ -69,6 +69,16 @@ async function ready(f,input) {
   assert.equal(j.canStart,true,JSON.stringify(j));return j;
 }
 const start=(f,j)=>action(f,j,'start',{confirm:true,confirmNetwork:'123456'});
+// Metadata updates are still exercised by ordinary ad plans. Standalone
+// selection is add-only and never borrows this ordinary-ad execution path.
+const ordinaryInput=()=>({...prebidPlan(),mode:'single',name:'Ordinary outcome QA',lineItemType:'PRICE_PRIORITY',
+  rate:'1.00',costType:'CPM',creative:{mode:'none'}});
+async function startAd(f,j){
+  j=await start(f,j);
+  for(let n=0;j.status==='creating'&&j.phase!=='Key-value ključevi'&&n<10;n++)j=await action(f,j,'step');
+  assert.equal(j.phase,'Key-value ključevi');return j;
+}
+
 async function finish(f,j) {
   for(let n=0;j.status==='creating'&&n<150;n++) {
     j=await action(f,j,j.awaitingCheck?'check':'step');assert.equal(j.error,'',JSON.stringify(j));
@@ -199,16 +209,17 @@ test('all-existing subset is completed without writes and reports existing IDs',
   assert.equal(result(done,'aq_bid_origin').values[0].outcome,'existing');assertOutcomes(done);
 });
 
-test('selected OFF key is updated rather than created, while an unselected OFF key remains untouched',async()=>{
+test('selected and unselected OFF keys retain all metadata and existing values without an update',async()=>{
   let f=await setup();const selected=seedKey(f,{reportableType:'OFF'});
-  const unselected=seedKey(f,{name:'aq_first_request',reportableType:'OFF',values:['lt_500'],id:'9100'});
-  const unselectedBefore=structuredClone(unselected),j=await ready(f,selection({key:'aq_bid_origin',values:['cached']}));
-  assert.equal(result(j,'aq_bid_origin').outcome,'update');assert.equal(f.writes.length,0);
-  const done=await finish(f,await start(f,j));assert.equal(result(done,'aq_bid_origin').outcome,'updated');
+  seedKey(f,{name:'aq_first_request',reportableType:'OFF',values:['lt_500'],id:'9100'});
+  const before=structuredClone(f.db),j=await ready(f,selection({key:'aq_bid_origin',values:['cached']}));
+  assert.equal(result(j,'aq_bid_origin').outcome,'existing');assert.equal(j.counts.key.update,0);assert.equal(f.writes.length,0);
+  const done=await finish(f,await start(f,j));assert.equal(result(done,'aq_bid_origin').outcome,'existing');
   assert.equal(result(done,'aq_bid_origin').id,selected.id);assert.equal(result(done,'aq_bid_origin').values[0].outcome,'existing');
-  assert.deepEqual(unselected,unselectedBefore);assert.equal(f.writes.length,1);assert.equal(f.writes[0].method,'update');
+  assert.equal(result(done,'aq_bid_origin').reportableType,'OFF');assert(result(done,'aq_bid_origin').message);
+  assert.deepEqual(f.db,before);assert.equal(f.writes.length,0);
   f=restart(f);const reopened=(await request(f,`/line-items/jobs/${done.id}`)).data;
-  assert.equal(result(reopened,'aq_bid_origin').outcome,'updated');assertOutcomes(reopened);
+  assert.equal(result(reopened,'aq_bid_origin').outcome,'existing');assert.equal(result(reopened,'aq_bid_origin').reportableType,'OFF');assertOutcomes(reopened);
 });
 
 test('mixed outcomes remain truthful after later phases and reopening the saved completed job',async()=>{
@@ -217,7 +228,8 @@ test('mixed outcomes remain truthful after later phases and reopening the saved 
   const input=selection({key:'Variant',values:['A']},{key:'aq_bid_origin',values:['cached']},
     {key:'aq_first_request',values:['lt_500']});
   const done=await finish(f,await start(f,await ready(f,input)));
-  assert.equal(result(done,'Variant').outcome,'existing');assert.equal(result(done,'aq_bid_origin').outcome,'updated');
+  assert.equal(result(done,'Variant').outcome,'existing');assert.equal(result(done,'aq_bid_origin').outcome,'existing');
+  assert.equal(result(done,'aq_bid_origin').reportableType,'OFF');assert.equal(f.writes.filter(write=>write.method==='update').length,0);
   assert.equal(result(done,'aq_first_request').outcome,'created');
   assert.equal(result(done,'aq_first_request').values[0].outcome,'created');assertOutcomes(done);
   const writes=f.writes.length;f=restart(f);const again=(await request(f,`/line-items/jobs/${done.id}`)).data;
@@ -243,7 +255,7 @@ test('uncertain key creation remains honest about attribution and is reconciled 
 
 test('uncertain metadata update survives restart and is reported as updated after read-only reconciliation',async()=>{
   let f=await setup();seedKey(f,{reportableType:'OFF'});seedKey(f,{name:'Variant',values:['A'],id:'9100'});
-  let j=await start(f,await ready(f,selection({key:'aq_bid_origin',values:['cached']},{key:'Variant',values:['A']})));
+  let j=await startAd(f,await ready(f,ordinaryInput()));
   f.failNextUpdate('key');j=await action(f,j,'step');assert.equal(j.status,'creating');assert.equal(j.awaitingCheck,true);
   assert.notEqual(result(j,'aq_bid_origin').outcome,'updated');const writes=f.writes.length,id=j.id;
   f=restart(f);j=(await request(f,`/line-items/jobs/${id}`)).data;j=await action(f,j,'step');assert.equal(f.writes.length,writes);
@@ -263,8 +275,7 @@ test('partial uncertain update keeps acknowledged progress and retries only the 
     if(once){once=false;await update(kind,payloads.slice(0,1));throw new GamError('Synthetic partial update reply lost',502);}
     return update(kind,payloads);
   };
-  let j=await start(f,await ready(f,selection({key:'aq_bid_origin',values:['cached']},
-    {key:'aq_first_request',values:['lt_500']})));
+  let j=await startAd(f,await ready(f,ordinaryInput()));
   j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);assert.equal(first.reportableType,'ON');assert.equal(second.reportableType,'OFF');
   const writes=f.writes.length;j=await action(f,j,'check');assert.equal(j.status,'creating');assert.equal(j.awaitingCheck,true);
   assert.equal(result(j,'aq_bid_origin').outcome,'updated');assert.equal(result(j,'aq_bid_origin').reconciled,true);
@@ -275,11 +286,11 @@ test('partial uncertain update keeps acknowledged progress and retries only the 
   j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);assert.equal(f.writes.length,writes);
   const done=await finish(f,j);assert.equal(result(done,'aq_bid_origin').outcome,'updated');
   assert.equal(result(done,'aq_first_request').outcome,'updated');assert.deepEqual(sends,[[first.id,second.id],[second.id]]);
-  assert.equal(f.writes.filter(write=>write.method==='create').length,0);assertOutcomes(done);
+  assert.equal(f.writes.filter(write=>write.method==='create'&&write.kind==='key').flatMap(write=>write.payloads).some(key=>['aq_bid_origin','aq_first_request'].includes(key.name)),false,'ordinary ad setup must not recreate either existing owned key');assertOutcomes(done);
 });
 
 test('an unpersisted update stays uncertain until the guard and later retries only after another explicit step',async()=>{
-  const f=await setup();seedKey(f,{reportableType:'OFF'});let j=await start(f,await ready(f,selection({key:'aq_bid_origin',values:['cached']})));
+  const f=await setup();seedKey(f,{reportableType:'OFF'});let j=await startAd(f,await ready(f,ordinaryInput()));
   f.failNextUpdate('key',false);j=await action(f,j,'step');const writes=f.writes.length;
   j=await action(f,j,'check');assert.equal(j.awaitingCheck,true);assert.equal(j.status,'creating');
   assert.notEqual(result(j,'aq_bid_origin').outcome,'updated');assert.equal(f.writes.length,writes);
@@ -289,7 +300,7 @@ test('an unpersisted update stays uncertain until the guard and later retries on
   j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);assert.equal(f.writes.length,writes);
   assert.equal(result(j,'aq_bid_origin').outcome,'update');
   const done=await finish(f,j);assert.equal(result(done,'aq_bid_origin').outcome,'updated');
-  assert.equal(f.writes.filter(write=>write.method==='update').length,2);assert.equal(f.db.key.length,1);
+  assert.equal(f.writes.filter(write=>write.method==='update').length,2);assert.equal(f.db.key.filter(key=>key.name==='aq_bid_origin').length,1);assert.equal(result(done,'aq_bid_origin').id,'9000');
 });
 
 test('a pending transport response exposes creating/awaiting-check, never completed',async()=>{
@@ -378,13 +389,14 @@ test('a current inspection overlay preserves good same-ID creation/update proven
   const f=await setup();seedKey(f,{reportableType:'OFF'});
   const other=seedKey(f,{name:'aq_timed_out',values:['yes'],id:'9100'});
   const rewind=seedKey(f,{name:'Variant',values:['A'],id:'9200'});
-  const input=selection({key:'aq_bid_origin',values:['cached']},{key:'aq_first_request',values:['lt_500']},
-    {key:'aq_timed_out',values:['yes']},{key:'Variant',values:['A']});
-  let j=await start(f,await ready(f,input));
+  const input=ordinaryInput();
+  let j=await startAd(f,await ready(f,input));
   for(let n=0;j.phase!=='Key-value vrednosti'&&n<8;n++)j=await action(f,j,'step');
   assert.equal(j.phase,'Key-value vrednosti');assert.equal(result(j,'aq_bid_origin').outcome,'updated');
   assert.equal(result(j,'aq_first_request').outcome,'created');
-  rewind.reportableType='OFF';j=await action(f,j,'step');assert.equal(j.phase,'Key-value ključevi');
+  rewind.reportableType='OFF';
+  for(let n=0;j.phase==='Key-value vrednosti'&&n<10;n++)j=await action(f,j,'step');
+  assert.equal(j.phase,'Key-value ključevi');
   other.status='UNKNOWN';const writes=f.writes.length;j=await action(f,j,'step');
   assert.notEqual(j.status,'completed');assert.equal(f.writes.length,writes);
   const saved=stored(f,j.id);assert.equal(saved.verificationResults['key:aq_bid_origin'].state,'existing');

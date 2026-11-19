@@ -79,9 +79,10 @@ The versioned plan snapshot contains twelve keys and 283 known values:
 | `refresh_interval` | FREEFORM | initial and unscheduled |
 
 New reporting keys use `reportableType=ON`; their values use `matchType=EXACT`.
-An existing ON or CUSTOM_DIMENSION key is reused. An active OFF key is reviewed
-as **Za dopunu**, then updated by its existing ID, preserving its actual name,
-display name and type. The API does not reactivate inactive keys, convert key
+An existing ON or CUSTOM_DIMENSION key is reused. In ordinary ad plans, an
+active OFF key is reviewed as **Za dopunu**, then updated by its existing ID,
+preserving its actual name, display name and type. Standalone Key-values now
+uses the add-only policy below and preserves OFF instead. The API does not reactivate inactive keys, convert key
 types, downgrade custom dimensions, or enable high-cardinality Prebid render IDs
 for reporting. Case-insensitive key/value matching and parent-scoped value
 reads prevent duplicate creation. A failed, malformed or incomplete read cannot
@@ -92,7 +93,8 @@ Reporting requirements are separate from line-item serving criteria. They are
 never added as mandatory targeting rules. Old saved jobs retain their original
 snapshots; reopening an otherwise identical legacy plan resumes the old job
 without silently adding new work. Once that job is complete, a new reporting
-setup can prepare its network.
+setup can prepare its network. Historical standalone reporting snapshots that
+could update metadata are read-only under the new Key-values policy.
 
 The four numeric domains are open. Defining a FREEFORM key does **not** make every
 future value reportable. The preview therefore identifies these domains rather
@@ -151,6 +153,7 @@ network connection. The existing preview endpoint accepts an exact selection:
 {
   "mode": "reporting",
   "networkCode": "123456",
+  "reportingWritePolicy": "add_only",
   "reportingSelection": [
     {"key": "aq_bid_origin", "values": ["fresh", "cached", "none"]},
     {"key": "geo_country", "values": ["RS"]},
@@ -177,16 +180,72 @@ the network confirmation, shared lock and durable attempt protocol.
 Saved responses include `reporting.results`: one row per selected key with its
 verified GAM ID, state, outcome, explanation and selected value rows.
 `reporting.outcomes` counts key and value outcomes separately. Successful create
-responses are reported as created. Existing OFF keys confirmed ON are reported
-as updated, preserving that result through parent checks and reloads. A lost
+responses are reported as created. Historical or ordinary-ad OFF→ON results
+retain their updated provenance; new standalone jobs preserve existing OFF. A lost
 create reply followed by a matching read is existing with `reconciled: true`
 and an explanation: the read cannot prove which concurrent actor created it.
 Read errors, missing confirmations and conflicts are not successful completion.
 
 Compiled TEST/production checks exercise two selected keys and one value, a
-key-only choice, an untouched unselected OFF key, a persisted update with a lost
+key-only choice, untouched selected/unselected OFF keys, a persisted create with a lost
 reply, read-only reconciliation, durable results and zero-write replay.
+Ordinary ad plans retain the separate compiled lost metadata-update reply check,
+including pending replay without another write and read-only reconciliation.
 Independent handler tests and pinned desktop/mobile browser checks cover
 selection, progress, errors and history. All demand and GAM responses stay local.
 The owner's screenshot showed only `hb_pb` and `hb_bidder` in real Direktno
 network `22038436483` at that time; these tests do not modify that network.
+
+## Add-only Key-values and blocked jobs — MBA-433
+
+New standalone plans save `reporting.writePolicy: "add_only"`. The server applies
+this even when a caller omits `reportingWritePolicy`; an explicit unsafe policy
+is rejected. Ordinary ad plans reject that field rather than silently accepting
+an add-only request while running a different kind of operation.
+
+Only verified missing selected keys and values are created. Existing key IDs,
+names, display names, types, status and reportability are preserved. An existing
+active OFF key can receive missing selected values while remaining OFF; the
+preview/result explains that its reporting is still disabled. New keys request
+ON, and an OFF create response is not accepted as a confirmed new reportable
+key. Ambiguous, inactive, unknown or malformed identities still block creation.
+There is no reactivation, type conversion, deletion or metadata update in this
+standalone flow. Existing values are reused without replacement or duplicates.
+
+Old standalone plans without the add-only policy retain their original saved
+snapshots. The server refuses their `start` and `step` actions before constructing
+a Google client. View, review and uncertain-outcome checks remain read-only.
+The UI does not start or resume an old metadata-changing plan even if a stale
+client supplied an optimistic `canStart` field.
+
+A network's unfinished job continues to block a new plan. This protection is
+not bypassed. The authorized actor/origin receives a read-only summary of its
+ID (explicitly labeled `ID posla`), type, saved phase/status, known progress and uncertain-write state. Opening or
+refreshing this summary does not continue, cancel or modify that job. A blocked
+new preparation is explicitly labeled as not started. These are saved progress
+facts, not a new claim that every historical GAM entity was just rechecked.
+
+An explicitly confirmed, never-started preview can be closed through
+`POST /api/integrations/gam/line-items/jobs/{id}/close-preview` with:
+
+```json
+{"confirm": true, "confirmNetwork": "123456", "cursor": 7}
+```
+
+The server requires the owned reviewing/ready job, exact cursor/network, no
+execution marker or write provenance and a complete empty attempt-history
+lookup. Unknown/truncated/failed history reads do not authorize closure. It
+changes only the Tessera job and its own reservation, using the saved-state CAS
+before releasing the lock. It makes no Google request and never overwrites the
+plan or releases another owner's lock. Creating, completed, cancelled or
+uncertain jobs cannot be closed this way. The UI performs a fresh eligibility
+read after confirmation; it preserves the selected keys and requires a new
+preview before any addition. Closing a preview does not automatically start a
+new plan. A genuinely started older ad job remains blocked for separate recovery.
+
+Independent tests make every metadata-update call fail, compare existing rows
+exactly, and exercise lost create replies, old-plan guards, all-cursor history
+proofs and deterministic close/start/review/lock-release races. Compiled Workers
+and the actual MAIN dashboard additionally verify OFF preservation, inline
+read-only blockers, explicit safe preview closure and refusal to close an active
+ad job. All checks use isolated synthetic resources.

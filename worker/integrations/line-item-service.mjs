@@ -18,6 +18,9 @@ import {
   phaseCount,
   sameEntityName,
   reportingReady,
+  addOnlyReporting,
+  reportingExecutionAllowed,
+  canCloseJobPreview,
 } from "./line-item-model.mjs";
 
 const prefix = "api-integrations/gam/line-items/v1/";
@@ -324,7 +327,8 @@ function validateCreated(batch, rows, plan) {
           (e.kind !== "value" || String(r.customTargetingKeyId) === e.payload.customTargetingKeyId),
     );
     if (matched.length !== 1 || !compatible(e, matched[0], plan) ||
-        (e.kind === "key" && e.payload.reportableType && matched[0].type !== e.payload.type))
+        (e.kind === "key" && e.payload.reportableType && matched[0].type !== e.payload.type) ||
+        (e.kind === 'key' && addOnlyReporting(plan) && matched[0].reportableType !== 'ON'))
       fail(
         "GAM odgovor se razlikuje od potvrđenog zahteva. Proverite ishod.",
         502,
@@ -341,6 +345,7 @@ function validateCreated(batch, rows, plan) {
       id,
       name: row.name || id,
       status: row.status || "",
+      ...(e.kind==='key'?{reportableType:row.reportableType||'OFF'}:{}),
     });
   }
   return states;
@@ -374,6 +379,16 @@ export async function lineItemResponse(
   if (!bucket) fail("Skladište integracija nije povezano.", 503);
   const url = new URL(request.url),
     origin = url.origin;
+  const view=async(value,pending)=>{
+    let noWriteAttempts=false;
+    if(canCloseJobPreview(value,pending,true)){
+      try{
+        const attempts=await bucket.list({prefix:prefix+'attempts/'+uuid(value.id)+'/',limit:1});
+        noWriteAttempts=Array.isArray(attempts?.objects)&&attempts.objects.length===0&&attempts.truncated===false;
+      }catch{ /* A missing proof never authorizes closing a preview. */ }
+    }
+    return jobView(value,pending,{noWriteAttempts});
+  };
   const clientFor = async (network) => {
     const connection = await connected(network);
     return {
@@ -442,7 +457,7 @@ export async function lineItemResponse(
   }
   if (path === "/line-items/preview" && request.method === "POST") {
     const previewInput = await body(request), plan = normalizeLinePlan(previewInput),
-      { client, connection } = await clientFor(plan.networkCode);
+      connection = await connected(plan.networkCode);
     const owner = (await read(bucket, lockKey(plan.networkCode)))?.value.owner;
     if (owner) {
       const active = (await read(bucket, jobKey(owner)))?.value;
@@ -450,15 +465,24 @@ export async function lineItemResponse(
         if (active?.actor === actor && active.origin === origin) {
           if (active.status === "creating" && active.connectionRevision === connection.revision &&
               sameActivePlan(active.plan, plan, previewInput))
-            return json({ ...jobView(active, await currentAttempt(bucket, active)), resumed: true });
+            return json({ ...await view(active, await currentAttempt(bucket, active)), resumed: true });
+          const activeView=await view(active,await currentAttempt(bucket,active));
+          const activeJob=Object.fromEntries(['id','cursor','mode','status','phase','network','counts','awaitingCheck','canClosePreview']
+            .map(key=>[key,activeView[key]]));
           return json({
             error: "Postojeći posao za ovu mrežu nije završen. Otvorite ga i proverite napredak pre novog plana.",
             activeJobId: active.id,
+            activeJob,
           }, 409);
         }
         fail("Drugi posao za line iteme je u toku u ovoj mreži. Nije pokrenut novi posao.");
       }
     }
+    // A blocked or resumed saved job is an R2-only operation. Resolve Google
+    // credentials only after the shared network lease permits a new preview.
+    const client = trafficFactory
+      ? await trafficFactory(connection)
+      : new GamTrafficClient(await makeClient(connection));
     const { network, labels } = await selectionChecks(client, plan),
       now = new Date().toISOString();
     const job = {
@@ -479,7 +503,7 @@ export async function lineItemResponse(
     };
     await put(bucket, jobKey(job.id), job, { etagDoesNotMatch: "*" });
     await indexJob(bucket, job);
-    return json(jobView(job), 201);
+    return json(await view(job), 201);
   }
   if (path === "/line-items/jobs" && request.method === "GET") {
     const network = numericId(url.searchParams.get("network"));
@@ -505,7 +529,7 @@ export async function lineItemResponse(
     return json({ jobs, truncated: Boolean(items.truncated) });
   }
   const route = path.match(
-    /^\/line-items\/jobs\/([a-f0-9-]+)(?:\/(review|start|step|check|cancel|export))?$/,
+    /^\/line-items\/jobs\/([a-f0-9-]+)(?:\/(review|start|step|check|cancel|close-preview|export))?$/,
   );
   if (!route)
     return json({ error: "Line item operacija nije pronađena." }, 404);
@@ -516,7 +540,7 @@ export async function lineItemResponse(
     fail("Posao nije pronađen.", 404);
   const job = stored.value,
     attempt = await currentAttempt(bucket, job);
-  if (!action && request.method === "GET") return json(jobView(job, attempt));
+  if (!action && request.method === "GET") return json(await view(job, attempt));
   if (action === "export" && request.method === "GET") {
     const cell = (v) => '"' + String(v ?? "").replaceAll('"', '""') + '"';
     const rows = [
@@ -584,24 +608,44 @@ export async function lineItemResponse(
   if (request.method !== "POST")
     return json({ error: "Method not allowed." }, 405);
   const input = await body(request);
+  if(action==='close-preview'){
+    if(input.confirm!==true||input.confirmNetwork!==job.plan.networkCode)
+      fail('Potvrdite mrežu i zatvaranje neizvršenog pregleda.',422);
+    if(input.cursor!==job.cursor)fail('Pregled je u međuvremenu promenjen. Osvežite ga pre zatvaranja.');
+    if(!canCloseJobPreview(job,attempt,true))
+      fail('Može se zatvoriti samo neizvršen pregled bez ranijih upisa ili aktivnih pokušaja.');
+    const attempts=await bucket.list({prefix:prefix+'attempts/'+uuid(job.id)+'/',limit:1});
+    if(!Array.isArray(attempts?.objects)||attempts.objects.length||attempts.truncated!==false)
+      fail('Postoji raniji pokušaj upisa ili nije potvrđeno da ga nema. Pregled nije zatvoren.');
+    job.status='cancelled';
+    job.closedPreviewAt=new Date().toISOString();
+    job.error='Pregled je zatvoren. Nije izvršen upis u GAM.';
+    await save(bucket,job,stored.etag);
+    await release(bucket,job);
+    return json(await view(job));
+  }
+  if(['start','step'].includes(action)&&!reportingExecutionAllowed(job.plan)){
+    const readOnly=await view(job,attempt);
+    return json({...readOnly,error:readOnly.readOnlyReason},409);
+  }
   if (action === "cancel") {
     if (attempt && Date.now() < attempt.startedAt + 90000)
       fail(
         "GAM zahtev možda još traje. Sačekajte 90 sekundi od početka koraka.",
       );
-    if (job.status === "completed") return json(jobView(job));
+    if (job.status === "completed") return json(await view(job));
     job.status = "cancelled";
     job.error =
       "Posao je zaustavljen. Već kreirani GAM entiteti ostaju sačuvani.";
     await save(bucket, job, stored.etag);
     await release(bucket, job);
-    return json(jobView(job));
+    return json(await view(job));
   }
   if (
     ["step", "review", "check"].includes(action) &&
     input.cursor !== job.cursor
   )
-    return json(jobView(job, attempt));
+    return json(await view(job, attempt));
   const { client, connection } = await clientFor(job.plan.networkCode);
   if (connection.revision !== job.connectionRevision)
     fail(
@@ -611,7 +655,7 @@ export async function lineItemResponse(
     if (input.confirmNetwork !== job.plan.networkCode || input.confirm !== true)
       fail("Potvrdite prikazanu mrežu i plan.", 422);
     if (job.status === "creating" || job.status === "completed")
-      return json(jobView(job, attempt));
+      return json(await view(job, attempt));
     if (job.status !== "ready" || job.expiresAt < Date.now())
       fail("Pregled nije spreman ili je istekao. Napravite novi pregled.");
     if (!jobView(job).canStart)
@@ -619,6 +663,7 @@ export async function lineItemResponse(
     await selectionChecks(client, job.plan);
     await claim(bucket, job);
     job.status = "creating";
+    job.executionStartedAt = new Date().toISOString();
     job.phase = firstPhase(job.plan);
     job.offset = 0;
     job.cursor++;
@@ -628,7 +673,7 @@ export async function lineItemResponse(
     } catch (error) {
       /* Keep the claim for the winner of a concurrent start. */ throw error;
     }
-    return json(jobView(job));
+    return json(await view(job));
   }
   if (action === "review") {
     if (input.retry === true && (job.status === "ready" ||
@@ -646,7 +691,7 @@ export async function lineItemResponse(
         }
       }
     }
-    if (job.status !== "reviewing") return json(jobView(job));
+    if (job.status !== "reviewing") return json(await view(job));
     const batch = entities(
         job.plan,
         job.refs,
@@ -661,7 +706,7 @@ export async function lineItemResponse(
       const detail = [...states.values()].find((r) => r.state === "unverified")?.message;
       job.error = `Provera GAM-a nije završena${detail ? ": " + detail : "."} Sačuvani posao je očuvan; ponovite proveru.`;
       await save(bucket, job, stored.etag);
-      return json(jobView(job));
+      return json(await view(job));
     }
     job.error = "";
     advance(job, batch.length);
@@ -694,11 +739,11 @@ export async function lineItemResponse(
       }
     }
     await save(bucket, job, stored.etag);
-    return json(jobView(job));
+    return json(await view(job));
   }
   if (!["step", "check"].includes(action))
     return json({ error: "Operacija nije pronađena." }, 404);
-  if (job.status !== "creating") return json(jobView(job, attempt));
+  if (job.status !== "creating") return json(await view(job, attempt));
   const lock = await read(bucket, lockKey(job.plan.networkCode));
   if (lock?.value.owner !== job.id)
     fail("Posao nema aktivnu rezervaciju za ovu mrežu.");
@@ -740,16 +785,16 @@ export async function lineItemResponse(
     }
   };
   if (action === "check") {
-    if (!attempt) return json(jobView(job));
-    if (!await parentsVerified()) return json(jobView(job, attempt));
+    if (!attempt) return json(await view(job));
+    if (!await parentsVerified()) return json(await view(job, attempt));
     const states = await inspectEntities(client, batch, job.plan);
     if ([...states.values()].some((r) => ["unverified", "blocked"].includes(r.state))) {
       job.verificationResults = Object.fromEntries(states);
       job.error = "Provera GAM-a nije završena. Nepotvrđeni upis nije ponovljen; ponovite proveru istog posla.";
       await save(bucket, job, stored.etag);
-      return json(jobView(job, attempt));
+      return json(await view(job, attempt));
     }
-    if (!await existingVerified(states)) return json(jobView(job, attempt));
+    if (!await existingVerified(states)) return json(await view(job, attempt));
     if (!Array.isArray(attempt.keys) || !attempt.keys.length ||
         attempt.keys.some((key) => typeof key !== "string") || new Set(attempt.keys).size !== attempt.keys.length)
       fail("Sačuvani pokušaj nema pouzdan spisak entiteta. Upis nije ponovljen.");
@@ -775,7 +820,7 @@ export async function lineItemResponse(
       } else finishBatch(job, batch, states);
       await save(bucket, job, stored.etag);
       if (job.status === "completed") await release(bucket, job);
-      return json(jobView(job));
+      return json(await view(job));
     }
     if (attempt.operation === "update" && Date.now() >= attempt.startedAt + 90000 &&
         attemptedBatch.every((entity) => ["existing", "update"].includes(states.get(entity.key)?.state))) {
@@ -787,7 +832,7 @@ export async function lineItemResponse(
       job.error = "";
       advance(job, 0);
       await save(bucket, job, stored.etag);
-      return json(jobView(job));
+      return json(await view(job));
     }
     if (job.phase !== "association")
       recordResult(job, batch.filter((e) => states.get(e.key)?.state === "existing"), states);
@@ -796,25 +841,27 @@ export async function lineItemResponse(
     ]));
     await save(bucket, job, stored.etag);
     return json({
-      ...jobView(job, attempt),
+      ...await view(job, attempt),
       error:
         "GAM još nije potvrdio sve entitete iz ovog koraka. Nema automatskog ponavljanja upisa. Proverite ponovo ili zaustavite posao, pa napravite nov pregled postojećeg stanja.",
     });
   }
-  if (attempt) return json(jobView(job, attempt));
+  if (attempt) return json(await view(job, attempt));
   try {
-    if (!await parentsVerified()) return json(jobView(job));
+    if (!await parentsVerified()) return json(await view(job));
     const states = await inspectEntities(client, batch, job.plan);
     if ([...states.values()].some((r) => ["unverified", "blocked"].includes(r.state))) {
       job.verificationResults = Object.fromEntries(states);
       job.error = "Provera GAM-a nije završena. Nije pokrenut upis; ponovite proveru istog posla.";
       await save(bucket, job, stored.etag);
-      return json(jobView(job));
+      return json(await view(job));
     }
-    if (!await existingVerified(states)) return json(jobView(job));
+    if (!await existingVerified(states)) return json(await view(job));
     delete job.verificationResults;
     const missing = batch.filter((e) => states.get(e.key).state === "new"),
       updates = batch.filter((e) => states.get(e.key).state === "update");
+    if(addOnlyReporting(job.plan)&&updates.length)
+      fail('Režim samo dodavanja ne dozvoljava izmenu postojećeg ključa.');
     const operation = updates.length ? "update" : "create";
     const writeBatch = updates.length
       ? updates.map((entity) => ({ ...entity, updatePayload: states.get(entity.key).updatePayload }))
@@ -835,7 +882,7 @@ export async function lineItemResponse(
           { etagDoesNotMatch: "*" },
         ))
       )
-        return json(jobView(job, await currentAttempt(bucket, job)));
+        return json(await view(job, await currentAttempt(bucket, job)));
       // Reserve the job ETag as well: cancellation that started before the
       // attempt record must lose its CAS, or this reservation loses and no
       // Google write occurs. This closes the cancel/read/create race.
@@ -851,7 +898,7 @@ export async function lineItemResponse(
     finishBatch(job, batch, states);
     await save(bucket, job, stored.etag);
     if (job.status === "completed") await release(bucket, job);
-    return json(jobView(job));
+    return json(await view(job));
   } catch (error) {
     // The attempt is durable before any Google mutation. Never re-send it blindly.
     const latest = await read(bucket, jobKey(id));
@@ -860,7 +907,7 @@ export async function lineItemResponse(
       latest?.value.status !== "creating"
     )
       return json(
-        jobView(latest.value, await currentAttempt(bucket, latest.value)),
+        await view(latest.value, await currentAttempt(bucket, latest.value)),
       );
     latest.value.error =
       error instanceof GamError
@@ -868,7 +915,7 @@ export async function lineItemResponse(
         : "Korak nije potvrđen. Proverite ishod u GAM-u pre nastavka.";
     await save(bucket, latest.value, latest.etag);
     return json(
-      jobView(latest.value, await currentAttempt(bucket, latest.value)),
+      await view(latest.value, await currentAttempt(bucket, latest.value)),
     );
   }
 }

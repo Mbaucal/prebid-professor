@@ -7,6 +7,92 @@ root=Path(__file__).resolve().parent.parent
 out=root/'.generated/gam-ui-evidence/main';out.mkdir(parents=True,exist_ok=True)
 origin='http://127.0.0.1:4187'
 evidence=[]
+def verify_add_only_safety(browser):
+ cases=[]
+ for blocker_mode in ['preview','creating']:
+  for width,height in [(1440,1080),(390,844)]:
+   server=subprocess.Popen(['node','scripts/gam-main-ui-fixture.mjs'],cwd=root,stdout=subprocess.PIPE,text=True,env={**os.environ,'GAM_MAIN_BLOCKER':blocker_mode,'GAM_MAIN_SEED_OFF':'1'})
+   context=None
+   try:
+    assert 'ready' in server.stdout.readline()
+    context=browser.new_context(viewport={'width':width,'height':height})
+    page=context.new_page();errors=[];external=[];requests=[]
+    page.on('pageerror',lambda error:errors.append(str(error)))
+    def local_only(route):
+     if not route.request.url.startswith(origin+'/'):external.append(route.request.url);route.abort()
+     else:route.continue_()
+    page.route('**/*',local_only)
+    page.on('request',lambda request:requests.append({'method':request.method,'url':request.url}))
+    page.goto(origin+'/?section=integrations')
+    page.get_by_role('button',name='Key-values',exact=True).click()
+    preview=page.get_by_role('button',name='Proveri izabrane key-values u GAM-u',exact=True)
+    expect(preview).to_be_enabled()
+    expect(page.get_by_text('Dodaju se samo nedostajući ključevi i vrednosti; postojeća podešavanja ostaju bez izmene.',exact=True)).to_be_visible()
+    page.get_by_role('button',name='Poništi izbor',exact=True).click()
+    page.get_by_role('checkbox',name='Uključi ključ aq_bid_origin',exact=True).check()
+    page.get_by_role('checkbox',name='Uključi ključ geo_country',exact=True).check()
+    origin_card=page.locator('.gam-kv-key').filter(has=page.get_by_role('checkbox',name='Uključi ključ aq_bid_origin',exact=True))
+    origin_card.locator('summary').click()
+    page.get_by_role('checkbox',name='aq_bid_origin: fresh',exact=True).uncheck()
+    page.get_by_role('checkbox',name='aq_bid_origin: none',exact=True).uncheck()
+    country=page.locator('.gam-kv-key').filter(has=page.get_by_role('checkbox',name='Uključi ključ geo_country',exact=True))
+    country.locator('summary').click()
+    page.get_by_role('button',name='Bez vrednosti za geo_country',exact=True).click()
+    page.get_by_label('Pretraži vrednosti za geo_country',exact=True).fill('RS')
+    page.get_by_role('checkbox',name='geo_country: RS',exact=True).check()
+    baseline=page.request.get(origin+'/__fixture__/state').json()
+    assert baseline['writes']==[]
+    before_requests=len(requests);preview.click()
+    blocker=page.get_by_label('Aktivni posao — samo čitanje',exact=True)
+    expect(blocker).to_be_visible();expect(blocker).to_contain_text('Ova nova priprema nije pokrenuta')
+    expect(blocker).to_contain_text('Prebid postavka')
+    assert page.get_by_role('button',name='Key-values',exact=True).get_attribute('aria-current')=='page'
+    assert not [item for item in requests[before_requests:] if item['method']=='POST' and item['url'].endswith(('/start','/step','/cancel','/close-preview'))]
+    assert page.request.get(origin+'/__fixture__/state').json()['writes']==[]
+    assert page.get_by_role('button',name='Nastavi posao',exact=True).count()==0
+    assert page.get_by_role('button',name='Pokreni pripremu key-values',exact=True).count()==0
+    if blocker_mode=='creating':
+     assert page.get_by_role('button',name='Zatvori nepočeti pregled',exact=True).count()==0
+     page.get_by_role('button',name='Osveži aktivni posao bez izmene',exact=True).click()
+     expect(blocker).to_be_visible()
+     state=page.request.get(origin+'/__fixture__/state').json()
+     assert state==baseline
+    else:
+     close=page.get_by_role('button',name='Zatvori nepočeti pregled',exact=True)
+     expect(close).to_be_disabled()
+     page.get_by_role('checkbox',name='Potvrđujem zatvaranje nepočetog pregleda ',exact=False).check()
+     close.click()
+     expect(page.get_by_text('Nepočeti pregled je zatvoren.',exact=False)).to_be_visible()
+     state=page.request.get(origin+'/__fixture__/state').json()
+     assert state['blocker']['status']=='cancelled'
+     assert state['keys']==baseline['keys'] and state['values']==baseline['values'] and state['writes']==[]
+     expect(page.locator('.gam-kv-selected-count')).to_have_text('2 ključeva · 2 vrednosti')
+     assert len([item for item in requests[before_requests:] if item['method']=='POST' and item['url'].endswith('/line-items/preview')])==1,'Closing cannot silently create another plan'
+     preview.click()
+     status=page.get_by_label('Status key-values posla',exact=True)
+     expect(status.get_by_role('heading',name='Provera je završena — spremno za potvrdu',exact=True)).to_be_visible()
+     expect(page.get_by_label('Rezultat key-values posla',exact=True)).to_contain_text('reporting je OFF i ostaje OFF')
+     page.get_by_role('checkbox',name='Potvrđujem dodavanje nedostajućih stavki iz izbora 2 ključeva i 2 vrednosti u GAM mreži 123456. Postojeća podešavanja ostaju bez izmene.',exact=True).check()
+     page.get_by_role('button',name='Pokreni pripremu key-values',exact=True).click()
+     expect(status.get_by_role('heading',name='Priprema je završena',exact=True)).to_be_visible(timeout=60000)
+     result=page.get_by_label('Rezultat key-values posla',exact=True)
+     expect(result).to_contain_text('Ključevi: 1 kreirano · 1 već postoji — bez izmene')
+     state=page.request.get(origin+'/__fixture__/state').json()
+     for key in baseline['keys']:assert next(item for item in state['keys'] if item['id']==key['id'])==key
+     for value in baseline['values']:assert next(item for item in state['values'] if item['id']==value['id'])==value
+     assert len(state['keys'])==len(baseline['keys'])+1
+     assert len(state['values'])==len(baseline['values'])+2
+     assert all(write['kind'] in ['key','value'] and write.get('operation')!='update' for write in state['writes'])
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+    assert not errors,errors
+    assert not external,external
+    page.screenshot(path=str(out/f'add-only-{blocker_mode}-{width}.png'),full_page=False)
+    cases.append({'case':blocker_mode,'width':width,'passed':True,'pageErrors':errors,'externalRequests':external,'existingMetadataPreserved':True,'automaticExistingJobWrites':0})
+   finally:
+    if context:context.close()
+    server.terminate();server.wait(timeout=10)
+ return cases
+
 with sync_playwright() as p:
  browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox'])
  try:
@@ -62,7 +148,7 @@ with sync_playwright() as p:
     status=page.get_by_label('Status key-values posla',exact=True)
     expect(status).to_be_visible();expect(status).to_have_attribute('aria-busy','true')
     def visible_status():
-     expect(status.get_by_role('heading')).to_be_in_viewport(ratio=1)
+     expect(status.get_by_role('heading',level=3)).to_be_in_viewport(ratio=1)
      page.wait_for_function("""()=>{
        const heading=document.querySelector('[aria-label="Status key-values posla"] h3');
        const bar=document.querySelector('.global-topbar');
@@ -86,7 +172,7 @@ with sync_playwright() as p:
     expect(status.get_by_role('heading',name='Provera je završena — spremno za potvrdu',exact=True)).to_be_visible()
     expect(status).to_have_attribute('aria-busy','false')
     assert page.request.get(origin+'/__fixture__/state').json()['writes']==[]
-    page.get_by_role('checkbox',name='Potvrđujem pripremu 2 ključeva i 2 vrednosti u GAM mreži 123456.',exact=True).check()
+    page.get_by_role('checkbox',name='Potvrđujem dodavanje nedostajućih stavki iz izbora 2 ključeva i 2 vrednosti u GAM mreži 123456. Postojeća podešavanja ostaju bez izmene.',exact=True).check()
     page.get_by_role('button',name='Pokreni pripremu key-values',exact=True).click()
     expect(status).to_have_attribute('aria-busy','true')
     expect(page.get_by_role('progressbar',name='Potvrđeni key-values napredak',exact=True)).to_be_visible()
@@ -122,6 +208,7 @@ with sync_playwright() as p:
    finally:
     if context:context.close()
     server.terminate();server.wait(timeout=10)
+  evidence.extend(verify_add_only_safety(browser))
  finally:browser.close()
 (out/'result.json').write_text(json.dumps({'passed':True,'scope':'Actual MAIN App build, real local GAM handler; synthetic storage and Google only','cases':evidence},indent=2)+'\n')
-print('PASS actual MAIN App: visible Key-values tab, exact subset, live checking/creation progress, result and read-only reopen at desktop/mobile')
+print('PASS actual MAIN App: exact add-only subset, visible progress, saved results, OFF metadata preserved, inline read-only blockers and explicit safe preview closure at desktop/mobile')

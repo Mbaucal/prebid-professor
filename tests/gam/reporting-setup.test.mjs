@@ -56,8 +56,8 @@ async function setup() {
         if(kind==='value') {
           const parent=f.db.key.find(row=>String(row.id)===String(p.customTargetingKeyId));
           assert(parent,'a value may only be created below its verified key ID');
-          if(reportingKeys.has(parent.name.toLowerCase()))assert(['ON','CUSTOM_DIMENSION'].includes(parent.reportableType),
-            'reporting values cannot be written before the parent is reportable');
+          if(reportingKeys.has(parent.name.toLowerCase()))assert(['ON','CUSTOM_DIMENSION','OFF'].includes(parent.reportableType),
+            'reporting values require a verified key with a known reporting mode');
         }
       }
       f.writes.push({method,kind,payloads:structuredClone(payloads)});
@@ -88,6 +88,28 @@ async function finish(f,j) {
     assert.equal(j.error,'',JSON.stringify(j));
   }
   assert.equal(j.status,'completed',JSON.stringify(j));return j;
+}
+// Metadata updates remain supported by ordinary ad setup, while standalone
+// preparation is add-only. Seed that ad through the real handler, then restore
+// the externally supplied key/value state before exercising metadata recovery.
+async function metadataReady(f) {
+  const input={...prebidPlan(),mode:'single',name:'Ordinary metadata QA',lineItemType:'PRICE_PRIORITY',
+    rate:'1.00',costType:'CPM',creative:{mode:'none'}};
+  const keys=[...f.db.key],snapshots=keys.map(key=>structuredClone(key)),values=[...f.db.value];
+  const writes=f.writes.length,calls=f.calls.length;
+  for(const key of keys)key.reportableType='ON';
+  await finish(f,await start(f,await ready(f,input)));
+  for(let i=0;i<keys.length;i++){
+    for(const field of Object.keys(keys[i]))delete keys[i][field];
+    Object.assign(keys[i],snapshots[i]);
+  }
+  f.db.key=keys;f.db.value=values;f.writes.length=writes;f.calls.length=calls;
+  return ready(f,input);
+}
+async function startMetadata(f,j) {
+  j=await start(f,j);
+  for(let n=0;j.status==='creating'&&j.phase!=='Key-value ključevi'&&n<10;n++)j=await action(f,j,'step');
+  assert.equal(j.phase,'Key-value ključevi');return j;
 }
 function storedJob(f,id) {
   const key=`api-integrations/gam/line-items/v1/jobs/${id}.json`,entry=f.env.BUILDS.data.get(key);
@@ -175,10 +197,10 @@ test('case-insensitive reporting reuse preserves original labels, key types and 
 
 test('OFF metadata is a reviewed update, not Done; execution preserves identity/name/displayName/type',async()=>{
   const f=await setup();seedReporting(f,{off:'aq_bid_origin'});
-  const key=f.db.key.find(row=>row.name==='aq_bid_origin'),before=structuredClone(key),j=await ready(f);
+  const key=f.db.key.find(row=>row.name==='aq_bid_origin'),before=structuredClone(key),j=await metadataReady(f);
   assert.equal(j.counts.key.update,1);assert.equal(j.counts.key.done,11);assert.equal(j.counts.value.existing,283);
   assert.equal(j.reporting.needsUpdate,1);assert.equal(f.writes.length,0);assert.deepEqual(key,before);
-  const done=await finish(f,await start(f,j));assert.equal(done.counts.key.update,0);assert.equal(done.counts.key.done,12);
+  const done=await finish(f,await startMetadata(f,j));assert.equal(done.counts.key.update,0);assert.equal(done.counts.key.done,12);
   const writes=f.writes.filter(write=>write.method==='update');assert.equal(writes.length,1);assert.equal(writes[0].kind,'key');
   const payload=writes[0].payloads[0];assert.deepEqual(Object.keys(payload),['id','name','displayName','type','reportableType']);
   assert.deepEqual(payload,{id:before.id,name:before.name,displayName:before.displayName,type:before.type,reportableType:'ON'});
@@ -297,7 +319,7 @@ test('lost reporting metadata update response is reconciled by ID without a seco
   const f=await setup();seedReporting(f,{off:'aq_bid_origin'});assert.equal(typeof f.traffic.update,'function');
   const update=f.traffic.update.bind(f.traffic);let once=true;
   f.traffic.update=async(...args)=>{const result=await update(...args);if(once){once=false;throw new GamError('Synthetic lost update response',502);}return result;};
-  let j=await start(f,await ready(f));j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);
+  let j=await startMetadata(f,await metadataReady(f));j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);
   const writes=f.writes.length;j=await action(f,j,'step');assert.equal(f.writes.length,writes);
   j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);assert.equal(f.writes.length,writes);
   await finish(f,j);assert.equal(f.writes.filter(write=>write.method==='update').length,1);assert.equal(f.db.key.length,12);
@@ -305,7 +327,7 @@ test('lost reporting metadata update response is reconciled by ID without a seco
 
 test('an external OFF change after key verification cannot authorize reporting value writes',async()=>{
   const f=await setup();seedReporting(f,{omitValue:'aq_bid_origin:cached'});
-  let j=await start(f,await ready(f));j=await action(f,j,'step');assert.equal(j.phase,'Key-value vrednosti');
+  let j=await startMetadata(f,await metadataReady(f));j=await action(f,j,'step');assert.equal(j.phase,'Key-value vrednosti');
   const parent=f.db.key.find(row=>row.name==='aq_bid_origin');parent.reportableType='OFF';
   const writes=f.writes.length;j=await action(f,j,'step');
   assert.equal(f.writes.slice(writes).some(write=>write.kind==='value'),false,'parent metadata must be revalidated before value creation');
@@ -367,9 +389,9 @@ test('real traffic lookup proves alphabetic absence through a complete case-fold
 });
 
 test('a reporting key already upgraded after review is reused without another metadata write',async()=>{
-  const f=await setup();seedReporting(f,{off:'aq_bid_origin'});const j=await ready(f);assert.equal(j.counts.key.update,1);
+  const f=await setup();seedReporting(f,{off:'aq_bid_origin'});const j=await metadataReady(f);assert.equal(j.counts.key.update,1);
   f.db.key.find(row=>row.name==='aq_bid_origin').reportableType='ON';
-  await finish(f,await start(f,j));assert.equal(f.writes.length,0);
+  await finish(f,await startMetadata(f,j));assert.equal(f.writes.length,0);
 });
 
 test('a disappeared OFF key keeps its reviewed ID and is never recreated under the same name',async()=>{
@@ -387,8 +409,8 @@ test('a lost update in a mixed update/create batch resumes the remaining creatio
   f.db.value=f.db.value.filter(row=>String(row.customTargetingKeyId)!==missing.id);
   const update=f.traffic.update.bind(f.traffic);let once=true;
   f.traffic.update=async(...args)=>{const rows=await update(...args);if(once){once=false;throw new GamError('Synthetic mixed update response lost',502);}return rows;};
-  let j=await ready(f);assert.equal(j.counts.key.update,1);assert.equal(j.counts.key.new,1);assert.equal(j.counts.value.new,6);
-  j=await start(f,j);const cursor=j.cursor;j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);
+  let j=await metadataReady(f);assert.equal(j.counts.key.update,1);assert.equal(j.counts.key.new,1);assert.equal(j.counts.value.new,6);
+  j=await startMetadata(f,j);const cursor=j.cursor;j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);
   assert.equal(f.db.key.some(row=>row.name==='aq_first_request'),false,'one durable attempt must not hide a second write');
   j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);assert.equal(j.phase,'Key-value ključevi');
   assert(j.cursor>cursor);assert.equal(j.offset,0,'remaining uncreated keys keep this phase unfinished');
@@ -402,7 +424,7 @@ test('malformed update confirmations cannot turn a key into Done before a read v
   for(const corrupt of [row=>({...row,id:'999999'}),row=>({...row,reportableType:'OFF'}),row=>({...row,type:'PREDEFINED'})]) {
     const f=await setup();seedReporting(f,{off:'aq_bid_origin'});const update=f.traffic.update.bind(f.traffic);
     f.traffic.update=async(...args)=>(await update(...args)).map(corrupt);
-    let j=await start(f,await ready(f));j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);
+    let j=await startMetadata(f,await metadataReady(f));j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);
     const count=f.writes.length;j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);assert.equal(f.writes.length,count);
     await finish(f,j);assert.equal(f.writes.filter(write=>write.method==='update').length,1);
   }
@@ -412,7 +434,7 @@ test('an unapplied metadata update waits 90 seconds, then only an explicit step 
   const f=await setup();seedReporting(f,{off:'aq_bid_origin'});
   const parent=f.db.key.find(row=>row.name==='aq_bid_origin'),id=parent.id;
   let now=Date.now();t.mock.method(Date,'now',()=>now);
-  let j=await start(f,await ready(f));f.failNextUpdate('key',false);
+  let j=await startMetadata(f,await metadataReady(f));f.failNextUpdate('key',false);
   j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);assert.equal(parent.reportableType,'OFF');
   assert.equal(f.writes.length,1);const attemptCursor=j.cursor;
   now+=89999;j=await action(f,j,'check');assert.equal(j.awaitingCheck,true);
