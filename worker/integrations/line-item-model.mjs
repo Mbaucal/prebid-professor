@@ -638,6 +638,10 @@ export function recordResult(job, batch, states, created = false) {
         ...(!s.id && confirmedBefore ? { id: prior.id } : {}),
         ...(!verified(state) && confirmedBefore ? { verifiedId: true } : {}),
         ...(createdByJob && state !== "created" ? { createdByJob: true } : {}),
+        ...((s.reportingUpdated || (prior?.reportingUpdated && (!s.id || s.id === prior.id)))
+          ? {reportingUpdated:true} : {}),
+        ...((s.reportingReconciled || (prior?.reportingReconciled && (!s.id || s.id === prior.id)))
+          ? {reportingReconciled:true,reconciliationMessage:s.reconciliationMessage || prior.reconciliationMessage} : {}),
       };
     }
   }
@@ -723,6 +727,40 @@ export function totals(job, states = referenceStates(job)) {
   for (const count of Object.values(counts)) count.done = count.existing + count.created;
   return counts;
 }
+function reportingResults(job, states) {
+  const indexed=new Map();
+  for(const [key,value] of states)if(key.startsWith('key:')||key.startsWith('value:'))
+    indexed.set(key.toLowerCase(),{value,prior:job.refs[key]});
+  const result=(ref)=>{
+    const entry=indexed.get(ref.toLowerCase()),value=entry?.value,prior=entry?.prior;
+    const state=value?.state || 'pending',sameId=Boolean(prior?.id&&prior.id===value?.id);
+    // A transient inspection overlay can omit historical write metadata.
+    // Preserve that outcome only for the same currently verified identity;
+    // current conflict/unknown/blocked states always remain authoritative.
+    const created=state==='created'||(sameId&&(prior.state==='created'||prior.createdByJob));
+    const updated=value?.reportingUpdated||(sameId&&prior.reportingUpdated);
+    const outcome=state==='created'?'created':state==='existing'
+      ? created?'created':updated?'updated':'existing'
+      : ['new','update','unverified','blocked','conflict'].includes(state)?state:'pending';
+    const message=value?.message||value?.reconciliationMessage||(sameId?prior.reconciliationMessage:undefined);
+    return {state,outcome,...(value?.id?{id:value.id}:{}),
+      ...((value?.reportingReconciled||(sameId&&prior.reportingReconciled))?{reconciled:true}:{}),
+      ...(message?{message}:{})};
+  };
+  const results=job.plan.reporting.keys.map(spec=>({key:spec.key,...result(`key:${spec.key}`),
+    values:spec.values.map(name=>({name,...result(`value:${spec.key}:${name}`)}))}));
+  const summarize=items=>{
+    const counts={created:0,existing:0,updated:0,new:0,update:0,unverified:0,blocked:0,conflict:0,pending:0,total:items.length};
+    for(const item of items)counts[item.outcome]++;
+    return counts;
+  };
+  const allValues=results.flatMap(key=>key.values),total=results.length+allValues.length;
+  const processed=job.status==='reviewing'
+    ? job.phase==='key'?job.offset:job.phase==='value'?results.length+job.offset:0
+    : ['ready','creating','completed'].includes(job.status)?total:0;
+  return {results,outcomes:{keys:summarize(results),values:summarize(allValues)},
+    ...(job.plan.mode==='reporting'?{reviewProgress:{processed:Math.min(total,processed),total}}:{})};
+}
 export function jobView(job, attempt) {
   const states = referenceStates(job),
     conflicts = [...states].filter(
@@ -757,6 +795,7 @@ export function jobView(job, attempt) {
       valueCount: job.plan.reporting.keys.reduce((count, key) => count + key.values.length, 0),
       openKeys: job.plan.reporting.keys.filter((key) => key.openDomain).map((key) => key.key),
       needsUpdate: counts.key.update,
+      ...reportingResults(job,states),
     } } : {}),
     error: job.error || "",
     awaitingCheck: Boolean(attempt) && job.status === "creating",

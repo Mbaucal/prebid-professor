@@ -46,7 +46,7 @@ const canonicalPlan = (value) => JSON.stringify(value, function (_key, item) {
 });
 function sameActivePlan(previous, next, input) {
   if (canonicalPlan(previous) === canonicalPlan(next)) return true;
-  if (previous.reporting || Object.hasOwn(input, "reportingValues")) return false;
+  if (previous.reporting || Object.hasOwn(input, "reportingValues") || Object.hasOwn(input,"reportingSelection")) return false;
   const withoutDefault = { ...next };
   delete withoutDefault.reporting;
   return canonicalPlan(previous) === canonicalPlan(withoutDefault);
@@ -757,6 +757,14 @@ export async function lineItemResponse(
     const attemptedBatch = batch.filter((entity) => attempted.has(entity.key));
     if (attemptedBatch.length !== attempted.size)
       fail("Sačuvani pokušaj se ne poklapa sa ovim korakom. Upis nije ponovljen.");
+    for(const entity of attemptedBatch){
+      const state=states.get(entity.key);
+      if(!entity.reporting||state?.state!=='existing')continue;
+      if(attempt.operation==='update')states.set(entity.key,{...state,reportingUpdated:true,
+        reportingReconciled:true,reconciliationMessage:'Reporting je uključen; potvrđeno proverom posle prekinutog odgovora.'});
+      else if(attempt.operation==='create')states.set(entity.key,{...state,reportingReconciled:true,
+        reconciliationMessage:'Potvrđeno u GAM-u posle prekinutog odgovora; odgovor kreiranja nije primljen.'});
+    }
     if (attemptedBatch.every((e) => states.get(e.key)?.state === "existing")) {
       delete job.verificationResults;
       recordResult(job, batch, states);

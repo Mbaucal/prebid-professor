@@ -1,6 +1,7 @@
 import { lineItemResponse } from './line-item-service.mjs';
 import { GamError, numericId, normalizePlan, compareRows, expandGroup, text } from '../../shared/gam/plan.mjs';
 import { GamClient, accessToken, validateCredential, gamPath, API_VERSION } from './gam-client.mjs';
+import { reportingSetup } from '../../shared/gam/reporting-catalog.mjs';
 
 const prefix='api-integrations/gam/v1/';
 const encoder=new TextEncoder();
@@ -52,6 +53,7 @@ export async function gamResponse(request,env,actor,{base='/api/integrations/gam
     if(!['GET','POST'].includes(request.method))return json({error:'Method not allowed.'},405);
     if(request.method==='POST'&&(request.headers.get('origin')!==url.origin||!['same-origin','none',null].includes(request.headers.get('sec-fetch-site'))))return json({error:'Same-origin request required.'},403);
     const bucket=env.BUILDS;
+    if(path==='/key-values/catalog'&&request.method==='GET')return json(reportingSetup());
     const makeClient=async connection=>clientFactory?clientFactory(connection):new GamClient(connection.networkCode,await tokenFactory(await decryptCredential(secret(env),connection.sealed,connection.networkCode)));
     const connected=async network=>{
       if(!bucket)fail('Skladište integracija nije povezano.',503);

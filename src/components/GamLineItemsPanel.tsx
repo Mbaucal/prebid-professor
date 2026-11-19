@@ -354,12 +354,16 @@ export default function GamLineItemsPanel({
   network,
   onNetworkChange,
   onRunning,
+  onOpenKeyValues,
+  initialJobId,
 }: {
   endpoint: string;
   connections: { networkCode: string; name: string }[];
   network: string;
   onNetworkChange: (s: string) => void;
   onRunning: (b: boolean) => void;
+  onOpenKeyValues?: () => void;
+  initialJobId?: string;
 }) {
   const [draft, setDraft] = useState<Draft>(initial),
     [job, setJob] = useState<Job | null>(null),
@@ -461,6 +465,9 @@ export default function GamLineItemsPanel({
       active = false;
     };
   }, [network, endpoint]);
+  useEffect(() => {
+    if (initialJobId) void open(initialJobId);
+  }, [initialJobId]);
   async function run(action: () => Promise<void>) {
     if (working.current) return;
     working.current = true;
@@ -773,7 +780,7 @@ export default function GamLineItemsPanel({
             <button
               type="button"
               disabled={!network}
-              onClick={() => void previewReporting()}
+              onClick={() => onOpenKeyValues ? onOpenKeyValues() : void previewReporting()}
             >
               Pripremi GAM reporting
             </button>
