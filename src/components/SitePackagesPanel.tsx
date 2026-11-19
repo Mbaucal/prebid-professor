@@ -6,6 +6,7 @@ import {downloadStoredPackage} from '../download/saved-package.mjs';
 import ExternalDeploymentsPanel from './ExternalDeploymentsPanel';
 import AbExperimentPanel from './AbExperimentPanel';
 import ScriptLibraryPanel from './ScriptLibraryPanel';
+import AbTestsPanel from './AbTestsPanel';
 import '../site-workspace/runtime.css';
 import { runtimeLabel } from '../site-workspace/runtime-labels';
 import { runtimeNoticeSuffix } from '../site-workspace/runtime-notices';
@@ -19,10 +20,11 @@ type PackageState = {
 type Props={publisherId:string;endpoint?:string;settingsEndpoint?:string;onChanged?:()=>void|Promise<void>;onNavigate?:(destination:'prebid'|'versions'|'demand')=>void};
 export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint,onChanged,onNavigate}:Props){
  const [editingSetup,setEditingSetup]=useState(false);
+ const [abRefresh,setAbRefresh]=useState(0);
  const url=endpoint??`/api/publishers/${encodeURIComponent(publisherId)}/builtin-releases`;
  const [state,setState]=useState<PackageState|null>(null),[notes,setNotes]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[failed,setFailed]=useState(false);
  async function request(body?:unknown){const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});if(!r.ok)throw Error((await r.json() as {error?:string}).error||'Package request failed.');return r;}
- async function reload(){setState(await(await request()).json() as PackageState);}
+ async function reload(){setState(await(await request()).json() as PackageState);setAbRefresh(value=>value+1);}
  useEffect(()=>{let alive=true;setState(null);setMessage('');request().then(r=>r.json() as Promise<PackageState>).then(s=>{if(alive)setState(s);}).catch(e=>{if(alive){setMessage(e.message);setFailed(true);}});return()=>{alive=false;};},[url,publisherId]);
  async function run(fn:()=>Promise<void>){if(busy)return;setBusy(true);setFailed(false);try{await fn();}catch(e){setMessage(e instanceof Error?e.message:'Package action failed.');setFailed(true);}finally{setBusy(false);}}
  async function generate(){await request({action:'generate',revision:state!.revision,notes});setNotes('');await reload();setMessage('Package saved in Releases. Your settings are unchanged.');await onChanged?.();}
@@ -54,10 +56,11 @@ export default function SitePackagesPanel({publisherId,endpoint,settingsEndpoint
  <h3>2. Generate your script</h3>
  {state.warnings?.map(warning=><p role="status" className="script-prebid-note" key={warning}>{warning}</p>)}
  <p>Create a ZIP from your saved ad units and size maps, then download it below.</p>
- <label>What changed?<input maxLength={160} value={notes} disabled={busy} onChange={e=>setNotes(e.target.value)} placeholder="Short release note"/></label>
+ <label>Version name<input maxLength={160} value={notes} disabled={busy} onChange={e=>setNotes(e.target.value)} placeholder="For example: Bid cache on"/></label>
  <div className="runtime-actions"><button disabled={busy||!state.ready||editingSetup} onClick={()=>void run(generate)}>{busy?'Working…':'Generate and save package'}</button><button disabled={busy} onClick={()=>void run(reload)}>Reload releases</button></div>
  {state.testOnly?<p>This is your TEST copy. Preview delivery is available in <a href="/deployments">TEST deployments</a>.</p>:<p>Stage a saved package before publishing. Existing site URLs stay the same.</p>}
  <h3>Saved versions</h3>{state.releases.length===0?<p>No built-in packages saved yet.</p>:state.releases.map((r:Release)=><article key={r.id} className="runtime-release"><strong>{r.notes||'Generated package'}</strong><p>{new Date(r.createdAt).toLocaleString()} · {r.status}</p><details><summary>Package ID</summary><code>{r.id}</code></details><div className="runtime-actions"><button disabled={busy} onClick={()=>void run(()=>download(r.id))}>Download saved ZIP</button><a className="button" href={testPageUrl(publisherId,r.id,state.testOnly)} target="_blank" rel="noopener noreferrer">Open test page</a>{!state.testOnly?<><button disabled={busy||r.status==='production'} onClick={()=>void run(()=>channel(r.id,'staging'))}>Stage package</button>{r.status==='staging'?<button disabled={busy} onClick={()=>void run(()=>channel(r.id,'production'))}>Publish package</button>:null}{r.status==='archived'?<button disabled={busy} onClick={()=>void run(()=>channel(r.id,'rollback'))}>Restore published package</button>:null}{deleteButton(r)}</>:null}</div></article>)}
+ {!state.testOnly?<AbTestsPanel publisherId={publisherId} endpoint={`/api/publishers/${encodeURIComponent(publisherId)}/ab-tests`} refreshKey={abRefresh}/>:null}
  {!state.testOnly&&state.earlierReleases?.length?<><h3>Earlier packages</h3><p>Packages created before the built-in generator remain available. Restore a previously published version without changing your current editor settings.</p>{state.earlierReleases.map((r:Release)=><article key={r.id} className="runtime-release"><strong>{r.notes||r.version}</strong><p>{r.version} · {r.status} · {new Date(r.createdAt).toLocaleString()}</p>{r.canRestore?<button disabled={busy} onClick={()=>void run(()=>restoreEarlier(r))}>Restore earlier published package</button>:null}{deleteButton(r)}</article>)}</>:null}
  {!state.testOnly?<><ScriptLibraryPanel key={publisherId} publisherId={publisherId} onOpenDemand={onNavigate?()=>onNavigate('demand'):undefined}/><AbExperimentPanel key={'earlier-'+publisherId} publisherId={publisherId} archiveOnly/><ExternalDeploymentsPanel publisherId={publisherId} releases={[...state.releases,...(state.earlierReleases??[])]} /></>:null}
  </>}
