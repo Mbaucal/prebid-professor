@@ -776,7 +776,7 @@ export function canCloseJobPreview(job, attempt, noWriteAttempts=false) {
   return !references.some(value=>value.state==='created'||value.createdByJob||value.reportingUpdated||value.reportingReconciled)&&
     !(job.associationCounts?.created>0);
 }
-export function jobView(job, attempt, {noWriteAttempts=false}={}) {
+export function jobView(job, attempt, {noWriteAttempts=false,relatedAdJob}={}) {
   const states = referenceStates(job),
     conflicts = [...states].filter(
     ([, r]) => r.state === "conflict",
@@ -796,6 +796,7 @@ export function jobView(job, attempt, {noWriteAttempts=false}={}) {
     updatedAt: job.updatedAt,
     ...(job.closedPreviewAt?{closedPreviewAt:job.closedPreviewAt}:{}),
     mode: job.plan.mode,
+    ...(relatedAdJob?{relatedAdJob}:{}),
     phase: PHASE_LABELS[job.phase] || "",
     offset: job.offset,
     phaseTotal: job.phase ? phaseCount(job.plan, job.phase) : 0,

@@ -64,6 +64,12 @@ function finishBatch(job, batch, states) {
 const attemptKey = (id, cursor) =>
   prefix + `attempts/${uuid(id)}/${cursor}.json`;
 const lockKey = (network) => prefix + "locks/" + numericId(network) + ".json";
+const reportingLockKey = network => prefix + 'reporting-locks/' + numericId(network) + '.json';
+const targetingLockKey = network => prefix + 'targeting-locks/' + numericId(network) + '.json';
+const independentReporting = job => job.executionLane === 'reporting_add_only_v1' && addOnlyReporting(job.plan);
+const executionLockKey = job => independentReporting(job) ? reportingLockKey(job.plan.networkCode) : lockKey(job.plan.networkCode);
+const postTargetingPhase = phase => ['creative','lineItem','association'].includes(phase);
+const validJobReference = value => typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
 async function read(bucket, key) {
   const o = await bucket.get(key);
   return o ? { value: await o.json(), etag: o.etag } : null;
@@ -118,21 +124,24 @@ async function save(bucket, job, etag) {
   return saved.etag;
 }
 async function release(bucket, job) {
-  const lock = await read(bucket, lockKey(job.plan.networkCode));
+  const key=executionLockKey(job),lock = await read(bucket,key);
   if (lock?.value.owner === job.id)
     await put(
       bucket,
-      lockKey(job.plan.networkCode),
+      key,
       { owner: null },
       { etagMatches: lock.etag },
     );
+  await releaseTargetingIfSafe(bucket,job);
 }
 async function claim(bucket, job) {
-  const key = lockKey(job.plan.networkCode),
+  const key = executionLockKey(job),
     lock = await read(bucket, key);
+  if(lock&&lock.value?.owner!==null&&!validJobReference(lock.value?.owner))
+    fail('Rezervacija posla nije pouzdana. Nije pokrenut upis.');
   if (lock?.value.owner && lock.value.owner !== job.id) {
     const previous = (await read(bucket, jobKey(lock.value.owner)))?.value;
-    if (!previous || !["completed", "cancelled"].includes(previous.status))
+    if (!previous || !["completed", "cancelled"].includes(previous.status) || await targetingRisk(bucket,previous))
       fail(
         "Drugi posao za line iteme je u toku u ovoj mreži. Otvorite istoriju i nastavite ili završite taj posao.",
       );
@@ -227,6 +236,98 @@ function rememberLabels(job, batch, states) {
 }
 async function currentAttempt(bucket, job) {
   return (await read(bucket, attemptKey(job.id, job.cursor)))?.value;
+}
+function disjointAttempt(job,attempt) {
+  if(!attempt)return true;
+  if(!['advertiser','order','creative','lineItem','association'].includes(job.phase)||
+    !Number.isFinite(attempt.startedAt)||attempt.startedAt<0||
+    ![undefined,'create'].includes(attempt.operation)||!Array.isArray(attempt.keys)||!attempt.keys.length||
+    new Set(attempt.keys).size!==attempt.keys.length||attempt.keys.some(key=>typeof key!=='string'))return false;
+  try{
+    const batch=new Set(entities(job.plan,job.refs,job.phase,job.offset,limitFor(job.phase,false,job.plan)).map(entity=>entity.key));
+    return attempt.keys.every(key=>batch.has(key));
+  }catch{return false;}
+}
+async function targetingRisk(bucket,job) {
+  return !disjointAttempt(job,await currentAttempt(bucket,job));
+}
+async function canReleaseTargeting(bucket,job) {
+  return (['completed','cancelled'].includes(job.status)||
+    (job.status==='creating'&&postTargetingPhase(job.phase)))&&!await targetingRisk(bucket,job);
+}
+async function releaseTargetingIfSafe(bucket,job,token=job.targetingToken) {
+  const key=targetingLockKey(job.plan.networkCode),lease=await read(bucket,key);
+  if(lease?.value.owner!==job.id||!validJobReference(lease.value.token)||(token&&lease.value.token!==token))return;
+  const fresh=(await read(bucket,jobKey(job.id)))?.value;
+  if(!fresh||!await canReleaseTargeting(bucket,fresh))return;
+  await put(bucket,key,{owner:null},{etagMatches:lease.etag});
+}
+async function targetingClaim(bucket,job,firstStart=false) {
+  const key=targetingLockKey(job.plan.networkCode),lease=await read(bucket,key);
+  if(lease&&lease.value?.owner!==null&&!validJobReference(lease.value?.owner))
+    fail('Rezervacija key-values nije pouzdana. Nije pokrenut upis.');
+  if(lease?.value.owner){
+    if(!validJobReference(lease.value.token))
+      fail('Rezervacija key-values nema pouzdan identitet. Nije pokrenut upis.');
+    if(lease.value.owner===job.id){
+      // A ready first start is never reentrant: another handler must not turn
+      // a failing admission's unchanged reservation into a live KV segment.
+      if(firstStart||job.status!=='creating')return {blocked:job};
+      if(job.targetingToken&&job.targetingToken!==lease.value.token)
+        fail('Rezervacija key-values je promenjena. Osvežite posao.');
+      job.targetingToken=lease.value.token;
+      return {token:lease.value.token,fresh:false};
+    }
+    let previous;
+    try{previous=(await read(bucket,jobKey(lease.value.owner)))?.value;}catch{}
+    if(!previous||!await canReleaseTargeting(bucket,previous))return {blocked:previous||true};
+  }
+  const token=crypto.randomUUID();
+  if(!await put(bucket,key,{owner:job.id,token,createdAt:Date.now()},
+    lease?{etagMatches:lease.etag}:{etagDoesNotMatch:'*'}))return {blocked:true};
+  job.targetingToken=token;
+  return {token,fresh:true};
+}
+async function targetingOwned(bucket,job) {
+  const lease=await read(bucket,targetingLockKey(job.plan.networkCode));
+  if(lease?.value.owner!==job.id||lease.value.token!==job.targetingToken)
+    fail('Posao više nema rezervaciju za key-values. Nije pokrenut upis.');
+}
+async function failedStartCleanup(bucket,job,reservation) {
+  if(!reservation?.fresh)return;
+  const fresh=(await read(bucket,jobKey(job.id)))?.value;
+  if(!fresh||fresh.status==='creating'||fresh.executionStartedAt||await currentAttempt(bucket,fresh))return;
+  // Only this first-start invocation could use this token while ready. A
+  // successful start is durably creating and retains the reservation instead.
+  const own=await read(bucket,executionLockKey(job));
+  if(own?.value.owner===job.id)
+    await put(bucket,executionLockKey(job),{owner:null},{etagMatches:own.etag});
+  const lease=await read(bucket,targetingLockKey(job.plan.networkCode));
+  if(lease?.value.owner===job.id&&lease.value.token===reservation.token)
+    await put(bucket,targetingLockKey(job.plan.networkCode),{owner:null},{etagMatches:lease.etag});
+}
+async function admission(bucket,job) {
+  const keys=independentReporting(job)
+    ? [reportingLockKey(job.plan.networkCode),lockKey(job.plan.networkCode)]
+    : [lockKey(job.plan.networkCode)];
+  let related;
+  for(const key of keys){
+    const lease=await read(bucket,key);
+    if(!lease||lease.value?.owner===null)continue;
+    const owner=lease.value?.owner;
+    if(!validJobReference(owner))return {blocked:true};
+    if(owner===job.id)continue;
+    let active;
+    try{active=(await read(bucket,jobKey(owner)))?.value;}catch{}
+    if(!active)return {blocked:true};
+    const risk=await targetingRisk(bucket,active);
+    if(['completed','cancelled'].includes(active.status)&&!risk)continue;
+    if(key===lockKey(job.plan.networkCode)&&independentReporting(job)&&
+      ['prebid','single'].includes(active.plan?.mode)&&active.status==='creating'&&
+      postTargetingPhase(active.phase)&&!risk){related=active;continue;}
+    return {blocked:active};
+  }
+  return {related};
 }
 function checkExisting(job, batch, states) {
   for (const e of batch) {
@@ -387,7 +488,26 @@ export async function lineItemResponse(
         noWriteAttempts=Array.isArray(attempts?.objects)&&attempts.objects.length===0&&attempts.truncated===false;
       }catch{ /* A missing proof never authorizes closing a preview. */ }
     }
-    return jobView(value,pending,{noWriteAttempts});
+    let relatedAdJob;
+    if(independentReporting(value)&&value.relatedAdJobId){
+      const related=(await read(bucket,jobKey(value.relatedAdJobId)))?.value;
+      if(related?.actor===actor&&related.origin===origin&&['prebid','single'].includes(related.plan?.mode)){
+        const relatedView=jobView(related,await currentAttempt(bucket,related));
+        relatedAdJob=Object.fromEntries(['id','cursor','mode','status','phase','network','counts','awaitingCheck']
+          .map(key=>[key,relatedView[key]]));
+        relatedAdJob.canClosePreview=false;
+      }
+    }
+    return jobView(value,pending,{noWriteAttempts,relatedAdJob});
+  };
+  const blockedResponse=async(active,message='Drugi posao trenutno koristi key-values. Nije pokrenut novi upis.')=>{
+    if(active!==true&&active?.actor===actor&&active.origin===origin){
+      const activeView=await view(active,await currentAttempt(bucket,active));
+      const activeJob=Object.fromEntries(['id','cursor','mode','status','phase','network','counts','awaitingCheck','canClosePreview']
+        .map(key=>[key,activeView[key]]));
+      return json({error:message,activeJobId:active.id,activeJob},409);
+    }
+    return json({error:message},409);
   };
   const clientFor = async (network) => {
     const connection = await connected(network);
@@ -458,25 +578,14 @@ export async function lineItemResponse(
   if (path === "/line-items/preview" && request.method === "POST") {
     const previewInput = await body(request), plan = normalizeLinePlan(previewInput),
       connection = await connected(plan.networkCode);
-    const owner = (await read(bucket, lockKey(plan.networkCode)))?.value.owner;
-    if (owner) {
-      const active = (await read(bucket, jobKey(owner)))?.value;
-      if (!active || !["completed", "cancelled"].includes(active.status)) {
-        if (active?.actor === actor && active.origin === origin) {
-          if (active.status === "creating" && active.connectionRevision === connection.revision &&
-              sameActivePlan(active.plan, plan, previewInput))
-            return json({ ...await view(active, await currentAttempt(bucket, active)), resumed: true });
-          const activeView=await view(active,await currentAttempt(bucket,active));
-          const activeJob=Object.fromEntries(['id','cursor','mode','status','phase','network','counts','awaitingCheck','canClosePreview']
-            .map(key=>[key,activeView[key]]));
-          return json({
-            error: "Postojeći posao za ovu mrežu nije završen. Otvorite ga i proverite napredak pre novog plana.",
-            activeJobId: active.id,
-            activeJob,
-          }, 409);
-        }
-        fail("Drugi posao za line iteme je u toku u ovoj mreži. Nije pokrenut novi posao.");
-      }
+    const lane=addOnlyReporting(plan)?'reporting_add_only_v1':undefined;
+    const gate=await admission(bucket,{plan,executionLane:lane});
+    if(gate.blocked){
+      const active=gate.blocked;
+      if(active!==true&&active.actor===actor&&active.origin===origin&&active.status==='creating'&&
+        active.connectionRevision===connection.revision&&sameActivePlan(active.plan,plan,previewInput))
+        return json({...await view(active,await currentAttempt(bucket,active)),resumed:true});
+      return blockedResponse(active,'Postojeći posao još koristi ovu oblast GAM mreže. Otvorite ga i proverite napredak pre novog plana.');
     }
     // A blocked or resumed saved job is an R2-only operation. Resolve Google
     // credentials only after the shared network lease permits a new preview.
@@ -492,6 +601,8 @@ export async function lineItemResponse(
       connectionRevision: connection.revision,
       network,
       plan,
+      ...(lane?{executionLane:lane}:{}),
+      ...(gate.related?.actor===actor&&gate.related.origin===origin?{relatedAdJobId:gate.related.id}:{}),
       labels,
       refs: {},
       status: "reviewing",
@@ -629,6 +740,8 @@ export async function lineItemResponse(
     return json({...readOnly,error:readOnly.readOnlyReason},409);
   }
   if (action === "cancel") {
+    if(attempt&&!disjointAttempt(job,attempt))
+      fail('Ishod ranijeg key-values upisa nije potvrđen. Najpre proverite ishod; posao i rezervacija nisu zaustavljeni.');
     if (attempt && Date.now() < attempt.startedAt + 90000)
       fail(
         "GAM zahtev možda još traje. Sačekajte 90 sekundi od početka koraka.",
@@ -646,6 +759,13 @@ export async function lineItemResponse(
     input.cursor !== job.cursor
   )
     return json(await view(job, attempt));
+  if(action==='start'){
+    if(input.confirmNetwork!==job.plan.networkCode||input.confirm!==true)
+      fail('Potvrdite prikazanu mrežu i plan.',422);
+    if(job.status==='creating'||job.status==='completed')return json(await view(job,attempt));
+    const gate=await admission(bucket,job);
+    if(gate.blocked)return blockedResponse(gate.blocked);
+  }
   const { client, connection } = await clientFor(job.plan.networkCode);
   if (connection.revision !== job.connectionRevision)
     fail(
@@ -661,17 +781,26 @@ export async function lineItemResponse(
     if (!jobView(job).canStart)
       fail("Proverite nepotvrđene stavke i stvarne konflikte pre kreiranja.");
     await selectionChecks(client, job.plan);
-    await claim(bucket, job);
-    job.status = "creating";
-    job.executionStartedAt = new Date().toISOString();
-    job.phase = firstPhase(job.plan);
-    job.offset = 0;
-    job.cursor++;
-    job.error = "";
+    let reservation;
     try {
+      reservation=await targetingClaim(bucket,job,true);
+      if(reservation.blocked)return blockedResponse(reservation.blocked);
+      const gate=await admission(bucket,job);
+      if(gate.blocked){
+        await failedStartCleanup(bucket,job,reservation);
+        return blockedResponse(gate.blocked);
+      }
+      await claim(bucket, job);
+      job.status = "creating";
+      job.executionStartedAt = new Date().toISOString();
+      job.phase = firstPhase(job.plan);
+      job.offset = 0;
+      job.cursor++;
+      job.error = "";
       await save(bucket, job, stored.etag);
     } catch (error) {
-      /* Keep the claim for the winner of a concurrent start. */ throw error;
+      await failedStartCleanup(bucket,job,reservation);
+      throw error;
     }
     return json(await view(job));
   }
@@ -744,9 +873,18 @@ export async function lineItemResponse(
   if (!["step", "check"].includes(action))
     return json({ error: "Operacija nije pronađena." }, 404);
   if (job.status !== "creating") return json(await view(job, attempt));
-  const lock = await read(bucket, lockKey(job.plan.networkCode));
+  const lock = await read(bucket, executionLockKey(job));
   if (lock?.value.owner !== job.id)
     fail("Posao nema aktivnu rezervaciju za ovu mrežu.");
+  const targetingPhase=['key','value'].includes(job.phase);
+  if(targetingPhase&&(action!=='check'||attempt)){
+    if(independentReporting(job)){
+      const gate=await admission(bucket,job);
+      if(gate.blocked)return blockedResponse(gate.blocked);
+    }
+    const reservation=await targetingClaim(bucket,job);
+    if(reservation.blocked)return blockedResponse(reservation.blocked);
+  }
   const batch = entities(
     job.plan,
     job.refs,
@@ -820,6 +958,7 @@ export async function lineItemResponse(
       } else finishBatch(job, batch, states);
       await save(bucket, job, stored.etag);
       if (job.status === "completed") await release(bucket, job);
+      else if(targetingPhase)await releaseTargetingIfSafe(bucket,job);
       return json(await view(job));
     }
     if (attempt.operation === "update" && Date.now() >= attempt.startedAt + 90000 &&
@@ -874,6 +1013,7 @@ export async function lineItemResponse(
           missing.filter((e) => e.payload.orderId === orderId).length,
         );
     if (writeBatch.length) {
+      if(targetingPhase)await targetingOwned(bucket,job);
       if (
         !(await put(
           bucket,
@@ -887,6 +1027,7 @@ export async function lineItemResponse(
       // attempt record must lose its CAS, or this reservation loses and no
       // Google write occurs. This closes the cancel/read/create race.
       stored.etag = await save(bucket, job, stored.etag);
+      if(targetingPhase)await targetingOwned(bucket,job);
       const confirmed = operation === "update"
         ? validateUpdated(writeBatch, await client.update("key", writeBatch.map((entity) => entity.updatePayload)), job.plan)
         : validateCreated(writeBatch, await client.create(job.phase, writeBatch.map((entity) => entity.payload)), job.plan);
@@ -898,6 +1039,7 @@ export async function lineItemResponse(
     finishBatch(job, batch, states);
     await save(bucket, job, stored.etag);
     if (job.status === "completed") await release(bucket, job);
+    else if(targetingPhase)await releaseTargetingIfSafe(bucket,job);
     return json(await view(job));
   } catch (error) {
     // The attempt is durable before any Google mutation. Never re-send it blindly.
