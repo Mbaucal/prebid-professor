@@ -1,4 +1,4 @@
-import { GamError, parseSizes } from "../../shared/gam/plan.mjs";
+import { GamError, parseSizes, numericId } from "../../shared/gam/plan.mjs";
 import {
   list,
   flag,
@@ -27,32 +27,69 @@ export const PHASE_LABELS = {
   association: "Povezivanje kreativa",
 };
 export function rules(plan) {
-  return [
+  const serving = [
     ...(plan.mode === "prebid"
       ? [{ key: "hb_pb", values: plan.rows.map((r) => r.price) }]
       : []),
     ...plan.rules,
   ];
+  if (!plan.reporting) return serving;
+  const merged = [], byName = new Map();
+  for (const rule of [...serving, ...plan.reporting.keys]) {
+    const folded = rule.key.toLowerCase(), prior = byName.get(folded);
+    if (!prior) {
+      const names = new Set();
+      const next = { ...rule, values: rule.values.filter((value) => {
+        const name = value.toLowerCase();
+        if (names.has(name)) return false;
+        names.add(name); return true;
+      }) };
+      merged.push(next); byName.set(folded, next);
+    } else {
+      const names = new Set(prior.values.map((value) => value.toLowerCase()));
+      for (const value of rule.values) if (!names.has(value.toLowerCase())) {
+        prior.values.push(value); names.add(value.toLowerCase());
+      }
+      if (rule.reportableType) {
+        prior.reportableType = rule.reportableType;
+        prior.type = rule.type;
+        prior.openDomain = rule.openDomain;
+      }
+    }
+  }
+  return merged;
 }
 export const values = (plan) =>
-  rules(plan).flatMap((r) => r.values.map((value) => ({ key: r.key, value })));
+  rules(plan).flatMap((r) => r.values.map((value) => ({ key: r.key, value,
+    ...(r.reportableType ? { reporting: true } : {}) })));
 export const creativeCount = (plan) => plan.counts.creatives;
 export function phaseCount(plan, kind) {
   return {
-    advertiser: 1,
+    advertiser: plan.mode === "reporting" ? 0 : 1,
     order: plan.orders.length,
-    key: plan.rules.length + (plan.mode === "prebid" ? 1 : 0),
-    value: plan.rules.reduce(
-      (n, r) => n + r.values.length,
-      plan.mode === "prebid" ? plan.rows.length : 0,
-    ),
+    key: rules(plan).length,
+    value: values(plan).length,
     creative: creativeCount(plan),
     lineItem: plan.rows.length,
     association: plan.counts.associations,
   }[kind];
 }
 const verified = (state) => ["existing", "created"].includes(state);
-const ref = (refs, key) => verified(refs[key]?.state) ? refs[key].id : undefined;
+// A planned reportability update still has a verified key identity. Values can
+// be reviewed with that ID; the key itself is not reporting-ready/Done yet.
+const ref = (refs, key) => verified(refs[key]?.state) ||
+  (key.startsWith("key:") && refs[key]?.state === "update" && refs[key].verifiedId)
+  ? refs[key].id : undefined;
+const valueReference = (plan, key, value) => {
+  if (!plan.reporting) return `value:${key}:${value}`;
+  const rule = rules(plan).find((r) => r.key.toLowerCase() === key.toLowerCase());
+  const actual = rule?.values.find((v) => v.toLowerCase() === value.toLowerCase());
+  return `value:${rule?.key || key}:${actual || value}`;
+};
+export const sameEntityName = (kind, actual, expected) =>
+  ["key", "value"].includes(kind)
+    ? typeof actual === "string" && typeof expected === "string" && actual.toLowerCase() === expected.toLowerCase()
+    : actual === expected;
 const sizePayload = (plan) =>
   parseSizes(plan.sizes).sizes.map((s) => ({ ...s, isAspectRatio: false }));
 export function entities(plan, refs, phase, offset, limit) {
@@ -63,6 +100,7 @@ export function entities(plan, refs, phase, offset, limit) {
     let key,
       payload,
       id,
+      reporting = false,
       depends = [];
     const advertiserId = ref(refs, "advertiser:0");
     if (phase === "advertiser") {
@@ -78,9 +116,12 @@ export function entities(plan, refs, phase, offset, limit) {
     } else if (phase === "key") {
       const r = rules(plan)[i];
       key = `key:${r.key}`;
-      payload = { name: r.key, displayName: r.key, type: "FREEFORM" };
+      payload = { name: r.key, displayName: r.key, type: r.type || "FREEFORM",
+        ...(r.reportableType ? { reportableType: r.reportableType } : {}) };
+      reporting = r.reportableType === "ON";
     } else if (phase === "value") {
       const r = phaseValues[i];
+      reporting = r.reporting === true;
       key = `value:${r.key}:${r.value}`;
       depends = [`key:${r.key}`];
       payload = {
@@ -120,11 +161,13 @@ export function entities(plan, refs, phase, offset, limit) {
             rule.key === "hb_pb" && plan.mode === "prebid"
               ? [r.price]
               : rule.values;
-        depends.push(keyRef, ...vs.map((v) => `value:${rule.key}:${v}`));
+        const rawRefs = vs.map((v) => valueReference(plan, rule.key, v));
+        const valueRefs = plan.reporting ? [...new Set(rawRefs)] : rawRefs;
+        depends.push(keyRef, ...valueRefs);
         return {
           _type: "CustomCriteria",
           keyId: ref(refs, keyRef),
-          valueIds: vs.map((v) => ref(refs, `value:${rule.key}:${v}`)),
+          valueIds: valueRefs.map((key) => ref(refs, key)),
           operator: "IS",
         };
       });
@@ -190,9 +233,10 @@ export function entities(plan, refs, phase, offset, limit) {
       id,
       payload,
       depends,
+      ...(reporting ? { reporting: true } : {}),
       ready: depends.every((k) => ref(refs, k)),
       blockedBy: depends.filter((k) =>
-        refs[k] && !verified(refs[k].state) && refs[k].state !== "new",
+        refs[k] && !verified(refs[k].state) && !["new", "update"].includes(refs[k].state),
       ),
       ...(refs[key]?.id && (verified(refs[key].state) || refs[key].verifiedId || refs[key].createdByJob)
         ? { knownId: refs[key].id }
@@ -306,6 +350,19 @@ function sameDate(actual, expected) {
     return false;
   }
 }
+export const reportingReady = (value) => ["ON", "CUSTOM_DIMENSION"].includes(value);
+/** Only a proven active key with a known OFF/default mode is an update plan. */
+export function reportingUpdatePayload(entity, actual) {
+  if (entity.kind !== "key" || entity.payload.reportableType !== "ON" ||
+      ![undefined, null, "", "OFF"].includes(actual.reportableType) ||
+      !["FREEFORM", "PREDEFINED"].includes(actual.type) ||
+      flag(actual.isArchived) || ["INACTIVE", "ARCHIVED"].includes(actual.status)) return null;
+  return {
+    id: String(actual.id), name: actual.name,
+    ...(actual.displayName !== undefined && actual.displayName !== null ? { displayName: actual.displayName } : {}),
+    type: actual.type, reportableType: "ON",
+  };
+}
 export function compatible(entity, actual, plan) {
   const p = entity.payload,
     k = entity.kind;
@@ -324,7 +381,8 @@ export function compatible(entity, actual, plan) {
       !flag(actual.isProgrammatic) &&
       !["CANCELED", "DELETED"].includes(actual.status)
     );
-  if (k === "key") return ["FREEFORM", "PREDEFINED"].includes(actual.type);
+  if (k === "key") return ["FREEFORM", "PREDEFINED"].includes(actual.type) &&
+    (!p.reportableType || reportingReady(actual.reportableType));
   if (k === "value")
     return (
       scalar(actual.customTargetingKeyId, p.customTargetingKeyId) &&
@@ -395,7 +453,9 @@ function incompatibilityReason(entity, actual, plan) {
     if (p.traffickerId && !scalar(actual.traffickerId, p.traffickerId)) return "Order ima drugog trafficker-a.";
     return "Order nije dostupan za ovaj plan (programmatic, otkazan ili obrisan).";
   }
-  if (kind === "key") return "Postojeći key-value ključ nije podržanog tipa.";
+  if (kind === "key") return !["FREEFORM", "PREDEFINED"].includes(actual.type)
+    ? "Postojeći key-value ključ nije podržanog tipa."
+    : "GAM nije vratio poznato podržano reporting podešavanje ključa. Ponovite proveru ili pregledajte ključ u GAM-u.";
   if (kind === "value") return "Key-value vrednost pripada drugom ključu ili nema EXACT poklapanje.";
   if (kind === "creative") {
     if (!scalar(actual.advertiserId, p.advertiserId)) return "Kreativ pripada drugom advertiser-u.";
@@ -444,14 +504,14 @@ export async function inspectEntities(client, batch, plan) {
     const k = e.kind,
       p = e.payload;
     const group = e.id || e.knownId
-      ? `${k}:ids`
+      ? `${k}:ids${k === "value" ? ":" + p.customTargetingKeyId : ""}`
       : k === "value"
         ? `${k}:${p.customTargetingKeyId}`
         : k === "lineItem"
           ? `${k}:${p.orderId}`
           : k === "creative"
             ? `${k}:${p.advertiserId}`
-            : k;
+            : k + (e.reporting ? ":reporting" : "");
     if (!groups.has(group)) groups.set(group, []);
     groups.get(group).push(e);
   }
@@ -462,12 +522,20 @@ export async function inspectEntities(client, batch, plan) {
     let rows;
     try {
     if (first.id || first.knownId)
-      rows = await client.byIds(kind, items.map((e) => e.id || e.knownId));
+      rows = await client.byIds(kind, items.map((e) => e.id || e.knownId),
+        kind === "value" ? { parentId: p.customTargetingKeyId } : {});
     else if (kind === "association")
       rows = await client.byIds(kind, [
         ...new Set(items.map((e) => e.payload.lineItemId)),
       ]);
-    else {
+    else if (first.reporting) {
+      const scope = kind === "value" ? `customTargetingKeyId = ${numericId(String(p.customTargetingKeyId))}` : "";
+      const result = await client.query(kind, scope, {}, { limit: 500, maxPages: 20 });
+      if (!result || !Array.isArray(result.rows) || !Number.isSafeInteger(result.total) ||
+          result.total < 0 || result.more !== false || result.rows.length !== result.total)
+        throw new GamError("GAM reporting provera nije vratila ceo traženi opseg. Ponovite proveru.", 502);
+      rows = result.rows;
+    } else {
       const field =
         kind === "value"
           ? "customTargetingKeyId"
@@ -484,6 +552,11 @@ export async function inspectEntities(client, batch, plan) {
       );
     }
     if (!Array.isArray(rows)) throw new GamError("GAM provera nije vratila pouzdanu listu entiteta.", 502);
+    if (["key", "value"].includes(kind) && rows.some((row) =>
+      !row || typeof row.name !== "string" || !row.name || !/^[1-9][0-9]{0,19}$/.test(String(row.id))))
+      throw new GamError("GAM provera je vratila nepotpun identitet ključa ili vrednosti. Ponovite proveru.", 502);
+    if (kind === "value" && rows.some((row) => !scalar(row?.customTargetingKeyId, p.customTargetingKeyId)))
+      throw new GamError("GAM je vratio vrednosti izvan traženog ključa. Ponovite proveru.", 502);
     } catch (error) {
       const message = error instanceof GamError ? error.message
         : "GAM provera nije uspela. Ponovite proveru istog posla; upis nije pokrenut.";
@@ -497,7 +570,7 @@ export async function inspectEntities(client, batch, plan) {
           : kind === "association"
             ? scalar(r.lineItemId, e.payload.lineItemId) &&
               scalar(r.creativeId, e.payload.creativeId)
-            : r.name === e.payload.name,
+            : sameEntityName(kind, r.name, e.payload.name),
       );
       if (matches.length === 0) {
         results.set(e.key, {
@@ -511,14 +584,23 @@ export async function inspectEntities(client, batch, plan) {
           kind === "association"
             ? `${row.lineItemId}:${row.creativeId}`
             : String(row.id);
-      const renamed = !e.id && e.knownId && kind !== "association" && row.name !== e.payload.name;
+      if ((kind === "key" && (typeof row.type !== "string" || !row.type)) ||
+          (kind === "value" && (typeof row.matchType !== "string" || !row.matchType))) {
+        results.set(e.key, { state: "unverified", id,
+          message: "GAM nije vratio potpuna podešavanja ključa ili vrednosti. Ponovite proveru." });
+        continue;
+      }
+      const renamed = !e.id && e.knownId && kind !== "association" && !sameEntityName(kind, row.name, e.payload.name);
       const ok = matches.length === 1 && !renamed && compatible(e, row, plan);
+      const updatePayload = matches.length === 1 && !renamed ? reportingUpdatePayload(e, row) : null;
       results.set(e.key, {
-        state: ok ? "existing" : "conflict",
+        state: ok ? "existing" : updatePayload ? "update" : "conflict",
         id,
         name: row.name || id,
         status: row.status || "",
-        message: ok
+        ...(kind === "key" ? { reportableType: row.reportableType || "OFF" } : {}),
+        ...(updatePayload ? { updatePayload, verifiedId: true } : {}),
+        message: updatePayload ? "Postojeći ključ treba uključiti u reporting; njegov ID, naziv i tip ostaju sačuvani." : ok
           ? undefined
           : matches.length !== 1 ? "Naziv nije jedinstven u izabranom GAM opsegu."
             : renamed ? "Ranije potvrđeni entitet sada ima drugi naziv."
@@ -584,7 +666,7 @@ function referenceDependencies(plan, key) {
       ...(plan.mode === "prebid" ? ["key:hb_pb", `value:hb_pb:${row.price}`] : []),
       ...plan.rules.flatMap((rule) => [
       `key:${rule.key}`,
-      ...rule.values.map((value) => `value:${rule.key}:${value}`),
+      ...rule.values.map((value) => valueReference(plan, rule.key, value)),
     ])];
   }
   return [];
@@ -622,6 +704,7 @@ export function totals(job, states = referenceStates(job)) {
         conflict: 0,
         unverified: 0,
         blocked: 0,
+        update: 0,
         total: phaseCount(job.plan, p),
       },
     ]),
@@ -642,7 +725,7 @@ export function jobView(job, attempt) {
   ), verificationIssues = [...states].filter(([, r]) => ["unverified", "blocked"].includes(r.state)),
     counts = totals(job, states),
     reviewed = PHASES.filter((phase) => phase !== "association").every((phase) =>
-      counts[phase].new + counts[phase].done + counts[phase].conflict +
+      counts[phase].new + counts[phase].update + counts[phase].done + counts[phase].conflict +
       counts[phase].unverified + counts[phase].blocked === counts[phase].total,
     );
   return {
@@ -657,6 +740,19 @@ export function jobView(job, attempt) {
     offset: job.offset,
     phaseTotal: job.phase ? phaseCount(job.plan, job.phase) : 0,
     counts,
+    pendingUpdateCount: [...states.values()].filter((value) => value.state === "update").length,
+    updates: [...states].filter(([, value]) => value.state === "update").slice(0, 30).map(([ref, value]) => ({
+      ref, id: value.id, name: value.name, message: value.message,
+      reportableType: value.reportableType, requiredReportableType: "ON",
+    })),
+    ...(job.plan.reporting ? { reporting: {
+      profile: job.plan.reporting.profile,
+      keys: job.plan.reporting.keys.map((key) => ({ key: key.key, type: key.type, valueCount: key.values.length, openDomain: key.openDomain === true })),
+      keyCount: job.plan.reporting.keys.length,
+      valueCount: job.plan.reporting.keys.reduce((count, key) => count + key.values.length, 0),
+      openKeys: job.plan.reporting.keys.filter((key) => key.openDomain).map((key) => key.key),
+      needsUpdate: counts.key.update,
+    } } : {}),
     error: job.error || "",
     awaitingCheck: Boolean(attempt) && job.status === "creating",
     retryAfter: attempt
