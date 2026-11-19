@@ -1,4 +1,5 @@
 import { GamError, numericId, text, parseSizes } from "./plan.mjs";
+import {reportingSetup,reportingOnlyPlan} from './reporting-catalog.mjs';
 
 export const MAX_LINE_ITEMS = 5000;
 export const ORDER_BATCH = 400;
@@ -239,6 +240,7 @@ export function customRules(source) {
     });
 }
 export function normalizeLinePlan(input, now = Date.now()) {
+  if(input?.mode==='reporting')return reportingOnlyPlan(numericId(input.networkCode),input.reportingValues);
   if (!input || !["single", "prebid"].includes(input.mode))
     fail("Izaberite pojedinačni line item ili Prebid.");
   const mode = input.mode,
@@ -442,6 +444,7 @@ export function normalizeLinePlan(input, now = Date.now()) {
     sizes: sizes.label,
     creative,
     rules,
+    reporting: reportingSetup(input.reportingValues),
     ranges: rangeRules,
     namePrefix,
     rows,
