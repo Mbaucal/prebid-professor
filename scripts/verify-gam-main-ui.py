@@ -47,7 +47,8 @@ with sync_playwright() as p:
     expect(page.locator('.gam-kv-selected-count')).to_have_text('2 ključeva · 2 vrednosti')
     assert page.request.get(origin+'/__fixture__/state').json()['writes']==[]
 
-    held={'review':[],'step':[],'pauseReview':True,'pauseStep':True}
+    held={'preview':[],'review':[],'step':[],'pauseReview':True,'pauseStep':True}
+    def hold_preview(route):held['preview'].append(route)
     def hold_review(route):
      if held['pauseReview']:held['review'].append(route)
      else:route.continue_()
@@ -56,10 +57,27 @@ with sync_playwright() as p:
      else:route.continue_()
     page.route('**/line-items/jobs/*/review',hold_review)
     page.route('**/line-items/jobs/*/step',hold_step)
+    page.route('**/line-items/preview',hold_preview)
     preview.click()
     status=page.get_by_label('Status key-values posla',exact=True)
     expect(status).to_be_visible();expect(status).to_have_attribute('aria-busy','true')
+    def visible_status():
+     expect(status.get_by_role('heading')).to_be_in_viewport(ratio=1)
+     page.wait_for_function("""()=>{
+       const heading=document.querySelector('[aria-label="Status key-values posla"] h3');
+       const bar=document.querySelector('.global-topbar');
+       if(!heading)return false;
+       const bounds=heading.getBoundingClientRect(),headerBottom=bar?.getBoundingClientRect().bottom??0;
+       return bounds.top>=headerBottom&&bounds.bottom<=innerHeight;
+     }""",timeout=5000)
+    visible_status()
+    assert held['preview'],'Initial preview request must show feedback before a response arrives'
+    assert page.request.get(origin+'/__fixture__/state').json()['writes']==[]
+    page.screenshot(path=str(out/f'request-start-{width}.png'),full_page=False)
+    page.unroute('**/line-items/preview',hold_preview)
+    for route in held['preview']:route.continue_()
     expect(status).to_contain_text('Posao:')
+    visible_status()
     assert held['review'],'The real handler review should be visibly in progress'
     assert status.get_by_role('heading',name='Priprema je završena',exact=True).count()==0
     page.screenshot(path=str(out/f'checking-{width}.png'),full_page=False)
@@ -72,6 +90,7 @@ with sync_playwright() as p:
     page.get_by_role('button',name='Pokreni pripremu key-values',exact=True).click()
     expect(status).to_have_attribute('aria-busy','true')
     expect(page.get_by_role('progressbar',name='Potvrđeni key-values napredak',exact=True)).to_be_visible()
+    visible_status()
     assert held['step'],'The actual write step should remain visible before its response'
     assert status.get_by_role('heading',name='Priprema je završena',exact=True).count()==0
     page.screenshot(path=str(out/f'creating-{width}.png'),full_page=False)
@@ -82,6 +101,7 @@ with sync_playwright() as p:
     results=page.get_by_label('Rezultat key-values posla',exact=True)
     expect(results).to_contain_text('Ključevi: 2 kreirano')
     expect(results).to_contain_text('Vrednosti: 2 kreirano')
+    expect(page.get_by_role('link',name='Otvori key-values u GAM-u',exact=True)).to_have_attribute('href','https://admanager.google.com/123456#inventory/custom_targeting/list')
     state=page.request.get(origin+'/__fixture__/state').json()
     assert {key['name'] for key in state['keys']}=={'aq_bid_origin','geo_country'}
     assert {value['name'] for value in state['values']}=={'cached','RS'}
