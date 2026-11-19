@@ -33,7 +33,7 @@ const bindings = {...config.vars, [authPrefix+'ADMIN_EMAIL']:'fixture@example.in
 const events = [], checks = [], failures = [];
 const token = 'synthetic-oauth-access-token';
 const safeMarker = 'SYNTHETIC_UPSTREAM_DETAIL_MUST_STAY_PRIVATE';
-let mode = 'success', cookie = '', mf, failCapacity = false, rejectedCapacity = 0;
+let mode = 'success', cookie = '', mf, failCapacity = false, rejectedCapacity = 0, loseReportingUpdate = false;
 const checked = (name, condition = true) => { assert(condition, name); checks.push(name); };
 const soap = (operation, value) => new Response(`<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><${operation}Response><rval>${value}</rval></${operation}Response></soap:Body></soap:Envelope>`, {headers:{'content-type':'text/xml'}});
 async function outbound(request) {
@@ -69,7 +69,14 @@ async function outbound(request) {
       rejectedCapacity++;
       return new Response('<Envelope><Body><Fault><detail><ApiExceptionFault><errors><reason>UNPARSABLE</reason></errors></ApiExceptionFault></detail></Fault></Body></Envelope>', {status:500});
     }
-    if(trafficMode)return await traffic.respond(body,url.pathname);
+    if(trafficMode){
+      if(loseReportingUpdate&&body.includes('<updateCustomTargetingKeys ')){
+        loseReportingUpdate=false;
+        await traffic.respond(body,url.pathname);
+        return new Response('Synthetic response lost after the update committed',{status:502,headers:{'content-type':'text/xml'}});
+      }
+      return await traffic.respond(body,url.pathname);
+    }
     assert(url.pathname.endsWith('/InventoryService'));
     assert(body.includes('<getAdUnitsByStatement '));
     assert(!body.includes('createAdUnits'));
@@ -102,6 +109,12 @@ try {
   cookie = login.headers.get('set-cookie').split(';')[0];
   const status = await call('/status');
   checked('Authenticated status reports a configured empty connection store', status.status === 200 && status.data.configured && status.data.connections.length === 0);
+  const catalogEvents=events.length;
+  const catalogResponse=await call('/key-values/catalog');
+  assert.equal(catalogResponse.status,200,JSON.stringify(catalogResponse.data));
+  assert.equal(catalogResponse.data.keys.length,12);
+  assert.equal(catalogResponse.data.keys.reduce((sum,key)=>sum+key.values.length,0),283);
+  checked('Compiled authenticated Key-values catalog needs no connection or Google read',events.length===catalogEvents);
   const crossOrigin = await mf.dispatchFetch(origin + apiPath + '/connect', {method:'POST',
     headers:{cookie, origin:'https://unexpected.invalid', 'content-type':'application/json'}, body:'{}'});
   checked('Cross-origin connection is rejected before Google or storage access', crossOrigin.status === 403 && events.length === 0);
@@ -133,6 +146,68 @@ try {
     for(let i=0;j.status==='creating'&&i<100;i++){r=await call(`/line-items/jobs/${j.id}/step`,{cursor:j.cursor});assert.equal(r.status,200,JSON.stringify(r.data));j=r.data;assert.equal(j.error,'',JSON.stringify(j));}
     assert.equal(j.status,'completed');return j;
   }
+  const unselectedKey={id:'9000001',name:'geo_country',displayName:'Operator country label',type:'PREDEFINED',status:'ACTIVE',reportableType:'OFF'};
+  const selectedKey={id:'9000002',name:'aq_bid_origin',displayName:'Operator bid origin label',type:'PREDEFINED',status:'ACTIVE',reportableType:'OFF'};
+  traffic.db.key.push(unselectedKey,selectedKey);
+  const unselectedBefore=structuredClone(unselectedKey),selectedBefore=structuredClone(selectedKey),adObjectsBefore=structuredClone({orders:traffic.db.order,lineItems:traffic.db.lineItem,creatives:traffic.db.creative,links:traffic.db.association});
+  const subsetPlan={mode:'reporting',networkCode:'123456',reportingSelection:[{key:'aq_bid_origin',values:['cached']},{key:'aq_first_request',values:[]}]};
+  const beforeSubset=traffic.calls.length;
+  let subsetResponse=await call('/line-items/preview',subsetPlan);
+  assert.equal(subsetResponse.status,201,JSON.stringify(subsetResponse.data));
+  let subsetJob=subsetResponse.data;
+  while(subsetJob.status==='reviewing'){
+    subsetResponse=await call(`/line-items/jobs/${subsetJob.id}/review`,{cursor:subsetJob.cursor});
+    assert.equal(subsetResponse.status,200,JSON.stringify(subsetResponse.data));subsetJob=subsetResponse.data;
+  }
+  assert.equal(subsetJob.canStart,true,JSON.stringify(subsetJob));
+  assert.equal(subsetJob.reporting.keyCount,2);assert.equal(subsetJob.reporting.valueCount,1);
+  assert.equal(subsetJob.counts.key.update,1);assert.equal(subsetJob.counts.key.new,1);
+  assert.equal(traffic.calls.length,beforeSubset);assert.deepEqual(selectedKey,selectedBefore);
+  checked('Compiled subset preview selects exactly two keys and one value without writing');
+  subsetResponse=await call(`/line-items/jobs/${subsetJob.id}/start`,{confirm:true,confirmNetwork:'123456'});
+  assert.equal(subsetResponse.status,200,JSON.stringify(subsetResponse.data));subsetJob=subsetResponse.data;
+  assert.equal(subsetJob.status,'creating');loseReportingUpdate=true;
+  subsetResponse=await call(`/line-items/jobs/${subsetJob.id}/step`,{cursor:subsetJob.cursor});
+  assert.equal(subsetResponse.status,200,JSON.stringify(subsetResponse.data));subsetJob=subsetResponse.data;
+  assert.equal(subsetJob.status,'creating');assert.equal(subsetJob.awaitingCheck,true);
+  assert.equal(selectedKey.reportableType,'ON');
+  const uncertainCalls=traffic.calls.length;
+  subsetResponse=await call(`/line-items/jobs/${subsetJob.id}/step`,{cursor:subsetJob.cursor});
+  assert.equal(subsetResponse.status,200,JSON.stringify(subsetResponse.data));subsetJob=subsetResponse.data;
+  assert.equal(traffic.calls.length,uncertainCalls);assert.equal(subsetJob.awaitingCheck,true);
+  subsetResponse=await call(`/line-items/jobs/${subsetJob.id}/check`,{cursor:subsetJob.cursor});
+  assert.equal(subsetResponse.status,200,JSON.stringify(subsetResponse.data));subsetJob=subsetResponse.data;
+  assert.equal(subsetJob.awaitingCheck,false);assert.equal(traffic.calls.length,uncertainCalls);
+  checked('Compiled lost metadata response remains pending until read-only reconciliation without a duplicate update');
+  for(let i=0;subsetJob.status==='creating'&&i<30;i++){
+    subsetResponse=await call(`/line-items/jobs/${subsetJob.id}/step`,{cursor:subsetJob.cursor});
+    assert.equal(subsetResponse.status,200,JSON.stringify(subsetResponse.data));subsetJob=subsetResponse.data;
+    assert.equal(subsetJob.error,'',JSON.stringify(subsetJob));
+  }
+  assert.equal(subsetJob.status,'completed');
+  const subsetResults=subsetJob.reporting.results;
+  assert.equal(subsetResults.length,2);
+  assert.equal(subsetResults.find(row=>row.key==='aq_bid_origin').outcome,'updated');
+  assert.equal(subsetResults.find(row=>row.key==='aq_first_request').outcome,'created');
+  assert.deepEqual(subsetResults.find(row=>row.key==='aq_first_request').values,[]);
+  assert.equal(subsetResults.find(row=>row.key==='aq_bid_origin').values[0].name,'cached');
+  assert.equal(subsetResults.find(row=>row.key==='aq_bid_origin').values[0].outcome,'created');
+  assert(subsetResults.every(row=>/^[1-9][0-9]*$/.test(row.id)));
+  assert.deepEqual(unselectedKey,unselectedBefore);
+  assert.deepEqual({orders:traffic.db.order,lineItems:traffic.db.lineItem,creatives:traffic.db.creative,links:traffic.db.association},adObjectsBefore);
+  assert(traffic.calls.slice(beforeSubset).every(write=>write.kind==='key'||write.kind==='value'));
+  checked('Compiled subset completion reports updated and created keys truthfully and leaves unselected keys and all ad objects unchanged');
+  const reopenedSubset=await call(`/line-items/jobs/${subsetJob.id}`);
+  assert.equal(reopenedSubset.status,200);assert.deepEqual(reopenedSubset.data.reporting.results,subsetResults);
+  const afterSubset=traffic.calls.length;
+  const subsetReplay=await trafficJob(subsetPlan);
+  assert.equal(traffic.calls.length,afterSubset);
+  assert(subsetReplay.reporting.results.every(row=>row.outcome==='existing'));
+  checked('Compiled saved subset results survive reopening and a new identical preparation sends no writes');
+  const beforeInvalidSelection=events.length;
+  assert.equal((await call('/line-items/preview',{...subsetPlan,reportingSelection:[]})).status,422);
+  assert.equal((await call('/line-items/preview',{...subsetPlan,reportingSelection:[{key:'aq_bid_origin',values:['not-a-bid-origin']}]})).status,422);
+  checked('Compiled invalid selections are rejected before Google access',events.length===beforeInvalidSelection);
   const prebid=await trafficJob({...defaults.data.draft,ranges:[{from:'0.01',to:'0.03',step:'0.01'}],creative:{...defaults.data.draft.creative,copies:2}});
   checked('Native SOAP creates advertiser, order, hb_pb values, CPM-named creatives, priced line items and size-override links',prebid.counts.lineItem.created===3&&prebid.counts.creative.created===6&&prebid.counts.association.created===6);
   const catalog=reportingSetup();

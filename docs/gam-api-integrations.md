@@ -62,7 +62,7 @@ An unconfirmed create is still never replayed automatically. Use **Proveri ishod
 ## Automatic ads.js reporting setup — MBA-429
 
 New Prebid and ordinary line-item plans first prepare the current ads.js reporting
-catalog. Existing networks can use **Pripremi GAM reporting** with no advertiser,
+catalog. Existing networks can use the **Key-values** tab with no advertiser,
 order, inventory or creative selection. This uses the same saved review,
 network confirmation, execution and recovery flow. Preview/review only read GAM;
 they never create or update keys. A network's existing unfinished job must be
@@ -133,3 +133,60 @@ Sources: [CustomTargetingKey v202608](https://developers.google.com/ad-manager/a
 [Report on key-values](https://support.google.com/admanager/answer/14528835?hl=en),
 [Make key-values reportable](https://support.google.com/admanager/answer/10018898?hl=en),
 [Key-value matching](https://support.google.com/admanager/answer/10020177?hl=en).
+
+## Choose Key-values and follow the result — MBA-431
+
+**API integracije → Key-values** is a separate operator flow. Select the connected
+network, then choose the suggested keys and values. Select all, clear the
+selection, or choose only the three new auction-reporting labels. The values can
+be narrowed as well: selecting `geo_country` does not require all 250 countries.
+Numeric keys accept explicit additions using the existing bounds. A key with
+no selected values prepares only the key; the preview shows zero values for it.
+
+The authenticated, read-only `GET /api/integrations/gam/key-values/catalog`
+returns the twelve-key preset without contacting Google or requiring an existing
+network connection. The existing preview endpoint accepts an exact selection:
+
+```json
+{
+  "mode": "reporting",
+  "networkCode": "123456",
+  "reportingSelection": [
+    {"key": "aq_bid_origin", "values": ["fresh", "cached", "none"]},
+    {"key": "geo_country", "values": ["RS"]},
+    {"key": "refresh_count", "values": [0, 1, 2, 3]}
+  ]
+}
+```
+
+Omitting a key's `values` list chooses all known values for that key; an empty
+list prepares only the key. Omitting `reportingSelection` preserves the complete
+preset and existing `reportingValues` behavior. Explicit selections require known
+unique keys and valid values; empty selection is rejected. Closed domains accept
+their preset values only. The server canonicalizes names and order before saving
+the immutable plan. Unselected keys are not created or made reportable. Selection
+applies to standalone reporting jobs; ad plans keep their full reporting setup.
+
+Visible status distinguishes checking, ready for confirmation, creating, waiting
+for reconciliation, completed and cancelled. A ready preview is not a completed
+GAM write. The network, phase and saved progress remain visible while requests
+run. Uncertain writes stay pending until a successful read confirms their state.
+Opening history or an active job only reads saved state; writes still require
+the network confirmation, shared lock and durable attempt protocol.
+
+Saved responses include `reporting.results`: one row per selected key with its
+verified GAM ID, state, outcome, explanation and selected value rows.
+`reporting.outcomes` counts key and value outcomes separately. Successful create
+responses are reported as created. Existing OFF keys confirmed ON are reported
+as updated, preserving that result through parent checks and reloads. A lost
+create reply followed by a matching read is existing with `reconciled: true`
+and an explanation: the read cannot prove which concurrent actor created it.
+Read errors, missing confirmations and conflicts are not successful completion.
+
+Compiled TEST/production checks exercise two selected keys and one value, a
+key-only choice, an untouched unselected OFF key, a persisted update with a lost
+reply, read-only reconciliation, durable results and zero-write replay.
+Independent handler tests and pinned desktop/mobile browser checks cover
+selection, progress, errors and history. All demand and GAM responses stay local.
+The owner's screenshot showed only `hb_pb` and `hb_bidder` in real Direktno
+network `22038436483` at that time; these tests do not modify that network.
