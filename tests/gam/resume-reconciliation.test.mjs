@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { gamResponse } from "../../worker/integrations/gam-service.mjs";
 import { GamError } from "../../shared/gam/plan.mjs";
+import { reportingSetup } from "../../shared/gam/reporting-catalog.mjs";
 import { MemoryBucket } from "./fixture.mjs";
 import { trafficFixture, prebidPlan } from "./traffic-fixture.mjs";
 
@@ -106,6 +107,15 @@ function seedExternal(f, { prices = 3, splitOrders = false } = {}) {
     });
   }
   f.db.key.push({ id: "1000", name: "hb_pb", type: "FREEFORM", status: "ACTIVE" });
+  let reportingId = 1000000;
+  for (const spec of reportingSetup().keys) {
+    const parentId = String(reportingId++);
+    f.db.key.push({ id: parentId, name: spec.key, displayName: `GAM operator ${spec.key}`,
+      type: spec.type, status: "ACTIVE", reportableType: "ON" });
+    for (const value of spec.values)
+      f.db.value.push({ id: String(reportingId++), customTargetingKeyId: parentId, name: value,
+        displayName: `GAM operator ${value}`, matchType: "EXACT", status: "ACTIVE" });
+  }
   f.db.creative.push(
     ...[0, 1].map((index) => ({
       id: String(2000 + index),
@@ -196,6 +206,37 @@ test("externally completed GAM-normalized plan is recognized, survives storage r
   assert.equal(replay.id, done.id);
   assert.equal(replay.status, "completed");
   assert.equal(f.calls.length, 0);
+});
+
+test("an existing ad setup receives only missing reporting metadata, then repeats without any writes", async () => {
+  let f = await setup();
+  seedExternal(f);
+  f.db.key = f.db.key.filter((row) => row.name === "hb_pb");
+  f.db.value = f.db.value.filter((row) => row.customTargetingKeyId === "1000");
+  const adKinds = ["advertiser", "order", "creative", "lineItem", "association"];
+  const existingAds = Object.fromEntries(adKinds.map((kind) => [kind, structuredClone(f.db[kind])]));
+  const reviewed = await finishReview(f, await preview(f));
+  assert.equal(reviewed.canStart, true);
+  assert.equal(reviewed.counts.key.existing, 1);
+  assert.equal(reviewed.counts.key.new, 12);
+  assert.equal(reviewed.counts.value.existing, 3);
+  assert.equal(reviewed.counts.value.new, 283);
+  assert.equal(reviewed.counts.lineItem.existing, 3);
+  assert.equal(reviewed.counts.creative.existing, 2);
+  assert.equal(reviewed.counts.association.total, 6);
+  assert.equal(f.calls.length, 0, "preview and review cannot provision reporting or touch existing ads");
+  f = restartStorage(f);
+  const done = await finish(f, await start(f, reviewed));
+  assert.equal(done.counts.association.existing, 6);
+  assert(f.calls.every((call) => ["key", "value"].includes(call.kind)));
+  assert.equal(f.calls.filter((call) => call.kind === "key").flatMap((call) => call.payloads).length, 12);
+  assert.equal(f.calls.filter((call) => call.kind === "value").flatMap((call) => call.payloads).length, 283);
+  assert.deepEqual(Object.fromEntries(adKinds.map((kind) => [kind, f.db[kind]])), existingAds,
+    "all pre-existing ad IDs, targeting and metadata must remain byte-for-byte unchanged");
+  const writes = f.calls.length;
+  f = restartStorage(f);
+  await finish(f, await start(f, await finishReview(f, await preview(f))));
+  assert.equal(f.calls.length, writes, "repeat preparation must reuse the reporting objects too");
 });
 
 test("partly completed external plan creates only the absent creative, line item and links, then reruns without writes", async () => {
