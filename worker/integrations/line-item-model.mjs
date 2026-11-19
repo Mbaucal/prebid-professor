@@ -747,7 +747,12 @@ function reportingResults(job, states) {
     for(const item of items)counts[item.outcome]++;
     return counts;
   };
-  return {results,outcomes:{keys:summarize(results),values:summarize(results.flatMap(key=>key.values))}};
+  const allValues=results.flatMap(key=>key.values),total=results.length+allValues.length;
+  const processed=job.status==='reviewing'
+    ? job.phase==='key'?job.offset:job.phase==='value'?results.length+job.offset:0
+    : ['ready','creating','completed'].includes(job.status)?total:0;
+  return {results,outcomes:{keys:summarize(results),values:summarize(allValues)},
+    ...(job.plan.mode==='reporting'?{reviewProgress:{processed:Math.min(total,processed),total}}:{})};
 }
 export function jobView(job, attempt) {
   const states = referenceStates(job),
