@@ -353,3 +353,43 @@ test('history and selected job reopen are read-only; confirmation/actor/origin r
   assert.equal(reopened.status,200);assert.equal(reopened.data.status,'ready');assert.equal(f.writes.length,0);
   assert.deepEqual(f.env.BUILDS.data,before);
 });
+
+test('review retry progress uses the new pass cursor instead of retained successful references',async()=>{
+  const f=await setup();seedKey(f);seedKey(f,{name:'aq_first_request',values:['lt_500'],id:'9100'});
+  const input=selection({key:'aq_bid_origin',values:['cached']},{key:'aq_first_request',values:['lt_500']});
+  let j=await preview(f,input);assert.deepEqual(j.reporting.reviewProgress,{processed:0,total:4});
+  j=await review(f,j);assert.deepEqual(j.reporting.reviewProgress,{processed:4,total:4});
+  const byIds=f.traffic.byIds.bind(f.traffic);let unavailable=true;
+  f.traffic.byIds=async(kind,...args)=>{
+    if(kind==='key'&&unavailable)throw new GamError('Synthetic retry read unavailable',502);
+    return byIds(kind,...args);
+  };
+  j=await action(f,j,'review',{retry:true});assert.equal(j.status,'reviewing');
+  assert.equal(stored(f,j.id).refs['value:aq_bid_origin:cached'].state,'existing','old successful references remain available');
+  assert.deepEqual(j.reporting.reviewProgress,{processed:0,total:4},'failed first read must not reuse the old 100% count');
+  unavailable=false;j=await action(f,j,'review');assert.equal(j.status,'reviewing');
+  assert.deepEqual(j.reporting.reviewProgress,{processed:2,total:4});
+  j=await action(f,j,'review');assert.equal(j.status,'ready');assert.deepEqual(j.reporting.reviewProgress,{processed:4,total:4});
+  j=await action(f,j,'cancel');assert.equal(j.status,'cancelled');assert.deepEqual(j.reporting.reviewProgress,{processed:0,total:4});
+  assert.equal(f.writes.length,0);
+});
+
+test('a current inspection overlay preserves good same-ID creation/update provenance while another key conflicts',async()=>{
+  const f=await setup();seedKey(f,{reportableType:'OFF'});
+  const other=seedKey(f,{name:'aq_timed_out',values:['yes'],id:'9100'});
+  const rewind=seedKey(f,{name:'Variant',values:['A'],id:'9200'});
+  const input=selection({key:'aq_bid_origin',values:['cached']},{key:'aq_first_request',values:['lt_500']},
+    {key:'aq_timed_out',values:['yes']},{key:'Variant',values:['A']});
+  let j=await start(f,await ready(f,input));
+  for(let n=0;j.phase!=='Key-value vrednosti'&&n<8;n++)j=await action(f,j,'step');
+  assert.equal(j.phase,'Key-value vrednosti');assert.equal(result(j,'aq_bid_origin').outcome,'updated');
+  assert.equal(result(j,'aq_first_request').outcome,'created');
+  rewind.reportableType='OFF';j=await action(f,j,'step');assert.equal(j.phase,'Key-value ključevi');
+  other.status='UNKNOWN';const writes=f.writes.length;j=await action(f,j,'step');
+  assert.notEqual(j.status,'completed');assert.equal(f.writes.length,writes);
+  const saved=stored(f,j.id);assert.equal(saved.verificationResults['key:aq_bid_origin'].state,'existing');
+  assert.equal(saved.verificationResults['key:aq_first_request'].state,'existing');
+  assert.equal(result(j,'aq_bid_origin').outcome,'updated');assert.equal(result(j,'aq_first_request').outcome,'created');
+  assert.equal(result(j,'aq_timed_out').outcome,'conflict');assert.equal(result(j,'Variant').outcome,'update');
+  assertOutcomes(j);
+});
