@@ -393,3 +393,56 @@ test('malformed update confirmations cannot turn a key into Done before a read v
     await finish(f,j);assert.equal(f.writes.filter(write=>write.method==='update').length,1);
   }
 });
+
+test('an unapplied metadata update waits 90 seconds, then only an explicit step retries its original ID using fresh metadata',async t=>{
+  const f=await setup();seedReporting(f,{off:'aq_bid_origin'});
+  const parent=f.db.key.find(row=>row.name==='aq_bid_origin'),id=parent.id;
+  let now=Date.now();t.mock.method(Date,'now',()=>now);
+  let j=await start(f,await ready(f));f.failNextUpdate('key',false);
+  j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);assert.equal(parent.reportableType,'OFF');
+  assert.equal(f.writes.length,1);const attemptCursor=j.cursor;
+  now+=89999;j=await action(f,j,'check');assert.equal(j.awaitingCheck,true);
+  assert.equal(j.cursor,attemptCursor);assert.equal(f.writes.length,1,'an early check cannot replay an uncertain write');
+  parent.displayName='Fresh operator label';parent.type='PREDEFINED';
+  now++;j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);
+  assert(j.cursor>attemptCursor);assert.equal(j.offset,0);assert.equal(parent.reportableType,'OFF');
+  assert.equal(f.writes.length,1,'closing the expired attempt is read-only');
+  j=await action(f,j,'step');assert.equal(parent.reportableType,'ON');
+  const updates=f.writes.filter(write=>write.method==='update');assert.equal(updates.length,2);
+  assert.deepEqual(updates[1].payloads,[{id,name:'aq_bid_origin',displayName:'Fresh operator label',type:'PREDEFINED',reportableType:'ON'}]);
+  await finish(f,j);assert.equal(f.db.key.length,12);assert.equal(f.db.value.length,283);
+  assert.equal(f.writes.some(write=>write.method==='create'),false,'retry must never replace the owned key');
+});
+
+test('malformed scanned key/value names or missing settings remain unverified, then recover without writes',async()=>{
+  for(const [kind,field,value] of [['key','name',''],['key','type',undefined],['value','name',7],['value','matchType',undefined]]) {
+    const f=await setup();seedReporting(f);
+    const parent=f.db.key.find(row=>row.name==='aq_bid_origin');
+    const row=kind==='key'?parent:f.db.value.find(row=>row.customTargetingKeyId===parent.id&&row.name==='cached');
+    const original=row[field];row[field]=value;
+    let j=await review(f,await preview(f));assert.equal(j.canStart,false,`${kind}.${field}`);
+    assert(j.verificationCount>0,JSON.stringify(j));assert.equal(f.writes.length,0);
+    assert.equal(j.counts[kind].new,0,'incomplete identity/settings cannot prove absence');
+    row[field]=original;j=await review(f,await action(f,j,'review',{retry:true}));assert.equal(j.canStart,true,JSON.stringify(j));
+    await finish(f,await start(f,j));assert.equal(f.writes.length,0);
+  }
+});
+
+test('known value IDs are rechecked below their exact parent in the API and real traffic transport',async()=>{
+  const f=await setup();seedReporting(f);const byIds=f.traffic.byIds.bind(f.traffic);let valueReads=0;
+  f.traffic.byIds=async(kind,ids,options)=>{
+    if(kind==='value') {
+      valueReads++;assert(options?.parentId,'known IDs need a parent even after the review found them');
+      for(const id of ids)assert.equal(f.db.value.find(row=>row.id===String(id)).customTargetingKeyId,String(options.parentId));
+    }
+    return byIds(kind,ids,options);
+  };
+  await finish(f,await start(f,await ready(f)));assert(valueReads>0);assert.equal(f.writes.length,0);
+  const traffic=new GamTrafficClient({}),queries=[];
+  traffic.query=async(kind,where)=>{queries.push({kind,where});return {rows:[],total:0,more:false};};
+  await traffic.byIds('value',['19','20'],{parentId:'17'});
+  assert.deepEqual(queries,[{kind:'value',where:'customTargetingKeyId = 17 AND id IN (19,20)'}]);
+  for(const options of [{},{parentId:'17 OR 1=1'},{parentId:'0'}])
+    await assert.rejects(()=>traffic.byIds('value',['19'],options),{status:422});
+  assert.equal(queries.length,1,'unscoped or invalid parent IDs never reach SOAP');
+});
