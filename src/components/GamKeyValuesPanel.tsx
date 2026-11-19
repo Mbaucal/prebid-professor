@@ -5,18 +5,21 @@ type Catalog = {schemaVersion:number;profile:string;keys:CatalogKey[]};
 type Pick = {enabled:boolean;values:string[];extra:string};
 type Outcome = 'created'|'existing'|'updated'|'new'|'update'|'unverified'|'blocked'|'conflict'|'pending';
 type ValueResult = {name:string;id?:string;state:string;outcome:Outcome;message?:string;reconciled?:boolean};
-type KeyResult = {key:string;id?:string;state:string;outcome:Outcome;message?:string;reconciled?:boolean;values:ValueResult[]};
+type KeyResult = {key:string;id?:string;state:string;outcome:Outcome;message?:string;reconciled?:boolean;reportableType?:string;values:ValueResult[]};
 type Counts = {total:number;done?:number;created:number;existing:number;new:number;update?:number;conflict:number;unverified?:number;blocked?:number};
 type OutcomeCounts = Record<Outcome,number>&{total:number};
 type Job = {
   id:string;mode:string;status:string;cursor:number;network:{networkCode:string;name:string};phase:string;
   updatedAt:string;offset:number;phaseTotal:number;counts:Record<string,Counts>;error:string;awaitingCheck:boolean;retryAfter:number;canStart?:boolean;resumed?:boolean;
   conflictCount:number;verificationCount?:number;unverifiedCount?:number;blockedCount?:number;
+  canClosePreview?:boolean;
+  executionAllowed?:boolean;readOnlyReason?:string;
   conflicts:{ref:string;message:string}[];verificationIssues?:{ref:string;message:string}[];
-  reporting?:{keyCount:number;valueCount:number;needsUpdate:number;keys:{key:string;valueCount:number;openDomain:boolean;type:string}[];
+  reporting?:{writePolicy?:string;keyCount:number;valueCount:number;needsUpdate:number;keys:{key:string;valueCount:number;openDomain:boolean;type:string}[];
     results?:KeyResult[];outcomes?:{keys:OutcomeCounts;values:OutcomeCounts};reviewProgress?:{processed:number;total:number}};
 };
 type History = {id:string;mode:string;name:string;status:string;createdAt:string;updatedAt?:string};
+type ActiveJob = {id:string;mode:string;status:string;phase:string;network:{networkCode:string;name:string};counts:Record<string,Counts>;awaitingCheck:boolean;canClosePreview?:boolean;cursor?:number};
 const descriptions:Record<string,string> = {
   aq_bid_origin:'Poreklo glavnog bida poslatog GAM-u: svež, keširan ili bez bida.',
   aq_first_request:'Vreme od otvaranja stranice do prvog GAM zahteva.',
@@ -39,6 +42,7 @@ const statusNames:Record<string,string> = {reviewing:'Provera je u toku',ready:'
 const newLabels = new Set(['aq_bid_origin','aq_first_request','aq_consent_wait']);
 const issues = (j:Job) => Boolean(j.conflictCount||j.verificationCount||j.unverifiedCount||j.blockedCount);
 const completed = (j:Job) => j.status==='completed'&&!j.awaitingCheck&&!j.error&&!issues(j);
+const addOnly = (j:Job) => j.mode==='reporting'&&j.reporting?.writePolicy==='add_only'&&j.executionAllowed===true;
 const freshPicks = (catalog:Catalog, enabled:(key:string)=>boolean=()=>true):Record<string,Pick> =>
   Object.fromEntries(catalog.keys.map(key=>[key.key,{enabled:enabled(key.key),values:[...key.values],extra:''}]));
 
@@ -59,14 +63,15 @@ function valuesFor(key:CatalogKey,pick:Pick):string[] {
   return unique;
 }
 
-export default function GamKeyValuesPanel({endpoint,connections,network,onNetworkChange,onRunning,onOpenLineItems}:{
+export default function GamKeyValuesPanel({endpoint,connections,network,onNetworkChange,onRunning}:{
   endpoint:string;connections:{networkCode:string;name:string}[];network:string;onNetworkChange:(s:string)=>void;
-  onRunning:(b:boolean)=>void;onOpenLineItems:(id?:string)=>void;
+  onRunning:(b:boolean)=>void;
 }) {
   const [catalog,setCatalog]=useState<Catalog|null>(null),[picks,setPicks]=useState<Record<string,Pick>|null>(null);
   const [catalogLoading,setCatalogLoading]=useState(true),[catalogError,setCatalogError]=useState('');
   const [job,setJob]=useState<Job|null>(null),[history,setHistory]=useState<History[]>([]),[historyError,setHistoryError]=useState('');
   const [busy,setBusy]=useState(''),[error,setError]=useState(''),[confirmed,setConfirmed]=useState(false),[activeJobId,setActiveJobId]=useState('');
+  const [activeJob,setActiveJob]=useState<ActiveJob|null>(null),[closeConfirmed,setCloseConfirmed]=useState(false),[notice,setNotice]=useState('');
   const [queries,setQueries]=useState<Record<string,string>>({});
   const alive=useRef(true),working=useRef(false),stop=useRef(false),generation=useRef(0),statusRef=useRef<HTMLElement|null>(null);
   const active=connections.find(connection=>connection.networkCode===network);
@@ -74,9 +79,10 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
 
   async function api<T>(path:string,body?:unknown):Promise<T> {
     const response=await fetch(endpoint+path,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
-    const value=await response.json() as T&{error?:string;activeJobId?:string};
+    const value=await response.json() as T&{error?:string;activeJobId?:string;activeJob?:ActiveJob};
     if(!response.ok){
       if(value.activeJobId&&alive.current)setActiveJobId(value.activeJobId);
+      if(value.activeJob&&alive.current){setActiveJob(value.activeJob);setCloseConfirmed(false);}
       throw Error(value.error||'Zahtev nije uspeo. Proverite sačuvano stanje posla.');
     }
     return value;
@@ -97,7 +103,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
   }
   useEffect(()=>{alive.current=true;void loadCatalog();return()=>{alive.current=false;stop.current=true;};},[endpoint]);
   useEffect(()=>{
-    generation.current++;stop.current=true;setJob(null);setConfirmed(false);setError('');setActiveJobId('');setHistory([]);setHistoryError('');
+    generation.current++;stop.current=true;setJob(null);setConfirmed(false);setError('');setActiveJobId('');setActiveJob(null);setCloseConfirmed(false);setNotice('');setHistory([]);setHistoryError('');
     if(network)void loadHistory().catch(e=>{if(alive.current)setHistoryError((e as Error).message);});
   },[network,endpoint]);
   useEffect(()=>{
@@ -119,17 +125,17 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
   },[catalog,picks]);
   function change(key:string,patch:Partial<Pick>) {
     setPicks(current=>current?{...current,[key]:{...current[key],...patch}}:current);
-    setJob(null);setConfirmed(false);setError('');setActiveJobId('');
+    setJob(null);setConfirmed(false);setError('');setActiveJobId('');setCloseConfirmed(false);setNotice('');
   }
   function selectPreset(kind:'all'|'none'|'new') {
     if(!catalog)return;
     setPicks(kind==='none'?Object.fromEntries(Object.entries(picks??freshPicks(catalog)).map(([key,pick])=>[key,{...pick,enabled:false}])):
       freshPicks(catalog,kind==='new'?key=>newLabels.has(key):()=>true));
-    setJob(null);setConfirmed(false);setError('');setActiveJobId('');
+    setJob(null);setConfirmed(false);setError('');setActiveJobId('');setCloseConfirmed(false);setNotice('');
   }
   async function run(label:string,action:()=>Promise<void>) {
     if(working.current)return;
-    working.current=true;stop.current=false;setBusy(label);onRunning(true);setError('');setActiveJobId('');
+    working.current=true;stop.current=false;setBusy(label);onRunning(true);setError('');setNotice('');
     statusRef.current?.focus({preventScroll:true});
     statusRef.current?.scrollIntoView({behavior:'instant',block:'start'});
     try{await action();}
@@ -141,20 +147,23 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
   }
   async function walk(initial:Job) {
     let next=initial;
-    if(next.mode!=='reporting'){onOpenLineItems(next.id);return next;}
+    if(next.mode!=='reporting'){if(alive.current){setActiveJob(next);setActiveJobId(next.id);setJob(null);}return next;}
     if(alive.current)setJob(next);
+    if(!addOnly(next))return next;
     while(alive.current&&!stop.current&&['reviewing','creating'].includes(next.status)&&!next.awaitingCheck&&!issues(next)&&!next.error){
       next=await api<Job>(`/line-items/jobs/${next.id}/${next.status==='reviewing'?'review':'step'}`,{cursor:next.cursor});
-      if(next.mode!=='reporting'){onOpenLineItems(next.id);return next;}
+      if(next.mode!=='reporting'){if(alive.current){setActiveJob(next);setActiveJobId(next.id);setJob(null);}return next;}
       if(alive.current)setJob(next);
+      if(!addOnly(next))return next;
     }
     return next;
   }
   async function preview() {
     await run('Proveravam izabrane ključeve i vrednosti u GAM-u',async()=>{
       setJob(null);setConfirmed(false);
-      const next=await api<Job>('/line-items/preview',{mode:'reporting',networkCode:network,reportingSelection:selection.rows});
-      if(next.mode!=='reporting'){onOpenLineItems(next.id);return;}
+      setActiveJob(null);setActiveJobId('');setCloseConfirmed(false);
+      const next=await api<Job>('/line-items/preview',{mode:'reporting',networkCode:network,reportingSelection:selection.rows,reportingWritePolicy:'add_only'});
+      if(next.mode!=='reporting'){if(alive.current){setActiveJob(next);setActiveJobId(next.id);}return;}
       if(alive.current){setJob(next);statusRef.current?.scrollIntoView({behavior:'instant',block:'start'});}
       if(!next.resumed)await walk(next);
     });
@@ -163,36 +172,50 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
     await run('Učitavam sačuvani posao',async()=>{
       setJob(null);setConfirmed(false);
       const next=await api<Job>('/line-items/jobs/'+id);
-      if(next.mode!=='reporting'){onOpenLineItems(id);return;}
+      if(next.mode!=='reporting'){if(alive.current){setActiveJob(next);setActiveJobId(next.id);setCloseConfirmed(false);}return;}
       if(alive.current){setJob(next);setConfirmed(false);}
     });
   }
+  async function inspectActive(id:string) {
+    await run('Učitavam aktivni posao bez izmene',async()=>{
+      const current=await api<Job>('/line-items/jobs/'+id);
+      if(alive.current){setActiveJob(current);setActiveJobId(current.id);setCloseConfirmed(false);}
+    });
+  }
   async function recheck() {
-    if(!job||job.mode!=='reporting')return;
+    if(!job||!addOnly(job))return;
     await run('Ponavljam proveru bez upisa u GAM',async()=>{setConfirmed(false);await walk(await api<Job>(`/line-items/jobs/${job.id}/review`,{cursor:job.cursor,retry:true}));});
   }
   async function start() {
-    if(!job||job.mode!=='reporting'||!confirmed||!job.canStart)return;
+    if(!job||!addOnly(job)||!confirmed||!job.canStart)return;
     await run('Pripremam potvrđene ključeve i vrednosti',async()=>{await walk(await api<Job>(`/line-items/jobs/${job.id}/start`,{confirm:true,confirmNetwork:job.network.networkCode}));});
   }
   async function check() {
     if(!job||job.mode!=='reporting')return;
     await run('Proveravam ishod prethodnog upisa u GAM-u',async()=>{
-      const next=await api<Job>(`/line-items/jobs/${job.id}/check`,{cursor:job.cursor});if(alive.current)setJob(next);
+      const next=await api<Job>(`/line-items/jobs/${job.id}/check`,{cursor:job.cursor});if(alive.current){if(next.mode==='reporting')setJob(next);else{setActiveJob(next);setJob(null);}}
     });
   }
   async function resume() {
-    if(!job||job.mode!=='reporting')return;
+    if(!job||!addOnly(job))return;
     await run('Nastavljam sačuvani posao',async()=>{
       const next=await api<Job>('/line-items/jobs/'+job.id);
-      if(next.mode!=='reporting'){onOpenLineItems(next.id);return;}
+      if(next.mode!=='reporting'){if(alive.current){setActiveJob(next);setActiveJobId(next.id);setJob(null);}return;}
       if(alive.current)setJob(next);
-      if(!next.awaitingCheck)await walk(next);
+      if(addOnly(next)&&!next.awaitingCheck)await walk(next);
     });
   }
-  async function cancel() {
-    if(!job||job.mode!=='reporting')return;
-    await run('Zaustavljam posao',async()=>{const next=await api<Job>(`/line-items/jobs/${job.id}/cancel`,{});if(alive.current)setJob(next);});
+  async function closePreview(target:ActiveJob) {
+    if(!closeConfirmed||!target.canClosePreview)return;
+    await run('Zatvaram nepočeti Tessera pregled',async()=>{
+      const current=await api<Job>('/line-items/jobs/'+target.id);
+      if(!current.canClosePreview||current.awaitingCheck||!['reviewing','ready'].includes(current.status)){
+        if(alive.current)setActiveJob(current);
+        throw Error('Ovaj pregled više nije moguće bezbedno zatvoriti. GAM stanje nije menjano.');
+      }
+      await api<Job>(`/line-items/jobs/${current.id}/close-preview`,{confirm:true,confirmNetwork:current.network.networkCode,cursor:current.cursor});
+      if(alive.current){setJob(null);setActiveJob(null);setActiveJobId('');setConfirmed(false);setCloseConfirmed(false);setNotice('Nepočeti pregled je zatvoren. GAM ostaje bez izmene. Tvoj izbor je sačuvan; pokreni novu proveru pre dodavanja.');}
+    });
   }
   const jobKeys=job?.counts.key,jobValues=job?.counts.value;
   const total=job?.reporting?(job.reporting.keyCount+job.reporting.valueCount):0;
@@ -201,12 +224,16 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
   const processed=job?.reporting?.reviewProgress?.processed??0;
   const results=job?.reporting?.results??[];
   const keyOutcomes=job?.reporting?.outcomes?.keys,valueOutcomes=job?.reporting?.outcomes?.values;
-  const displayStatus=catalogLoading?'Učitavam pripremljene ključeve':busy?busy:error||job?.error||job&&issues(job)?'Potrebna je provera — posao nije potvrđen':job?.awaitingCheck?'Čeka se potvrda ishoda u GAM-u':job?.status==='completed'&&!completed(job)?'Posao još nije potvrđen':job?statusNames[job.status]||job.status:'Izaberite ključeve za pripremu';
+  const closeTarget=activeJob??(job?.canClosePreview?job:null);
+  const legacy=Boolean(job&&!addOnly(job));
+  const noNewWrites=Boolean(job&&addOnly(job)&&completed(job)&&keyOutcomes?.created===0&&valueOutcomes?.created===0&&!results.some(key=>key.reconciled||key.values.some(value=>value.reconciled)));
+  const displayStatus=catalogLoading?'Učitavam pripremljene ključeve':busy?busy:activeJob?'Ova nova priprema nije pokrenuta':error||job?.error||job&&issues(job)?'Potrebna je provera — posao nije potvrđen':job?.awaitingCheck?'Čeka se potvrda ishoda u GAM-u':legacy&&job&&!['completed','cancelled'].includes(job.status)?'Sačuvani plan je samo za čitanje':job?.status==='completed'&&!completed(job)?'Posao još nije potvrđen':job?statusNames[job.status]||job.status:'Izaberite ključeve za pripremu';
 
   return <div className="gam-kv" aria-label="Key-values priprema">
     <article className="gam-card gam-kv-intro">
       <span className="gam-step">KEY-VALUES</span><h3>Pripremi ključeve za GAM izveštaje</h3>
       <p>Izaberi pripremljene ključeve i vrednosti koje želiš u ovoj mreži. Pregled proverava postojeće stanje; upis počinje posle tvoje potvrde.</p>
+      <p className="gam-message info gam-kv-add-only"><strong>Dodaju se samo nedostajući ključevi i vrednosti; postojeća podešavanja ostaju bez izmene.</strong></p>
       <label>GAM mreža za key-values<select aria-label="GAM mreža za key-values" disabled={locked} value={network} onChange={event=>onNetworkChange(event.target.value)}>
         <option value="">Izaberite mrežu</option>{connections.map(connection=><option key={connection.networkCode} value={connection.networkCode}>{connection.name} · {connection.networkCode}</option>)}
       </select></label>
@@ -224,25 +251,42 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
           <p>{job.reporting?.keyCount??jobKeys?.total??0} ključeva · {job.reporting?.valueCount??jobValues?.total??0} vrednosti u sačuvanom izboru.</p>}
       </>}
       {(error||job?.error)&&<p className="gam-message error" role="alert">{error||job?.error}</p>}
-      {activeJobId&&<button type="button" disabled={Boolean(busy)} onClick={()=>void open(activeJobId)}>Otvori postojeći posao</button>}
+      {notice&&<p className="gam-message success" role="status">{notice}</p>}
+      {activeJobId&&!activeJob&&<button type="button" disabled={Boolean(busy)} onClick={()=>void inspectActive(activeJobId)}>Prikaži aktivni posao bez izmene</button>}
+      {activeJob&&<article className="gam-kv-blocker" aria-label="Aktivni posao — samo čitanje">
+        <h4>Ova nova priprema nije pokrenuta</h4>
+        <p>U ovoj mreži postoji drugi sačuvani posao. Njegovo stanje je prikazano samo za čitanje.</p>
+        <dl><div><dt>Mreža</dt><dd>{activeJob.network.name} · {activeJob.network.networkCode}</dd></div><div><dt>Posao</dt><dd><code>{activeJob.id}</code></dd></div><div><dt>Vrsta</dt><dd>{activeJob.mode==='reporting'?'Key-values':activeJob.mode==='prebid'?'Prebid postavka':'Line item'}</dd></div><div><dt>Status</dt><dd>{statusNames[activeJob.status]||activeJob.status}</dd></div>{activeJob.phase&&<div><dt>Faza</dt><dd>{activeJob.phase}</dd></div>}</dl>
+        <div className="gam-table-wrap"><table><thead><tr><th scope="col">Stavke</th><th scope="col">Potvrđeno</th><th scope="col">Preostalo</th></tr></thead><tbody>{Object.entries(activeJob.counts).filter(([,count])=>count.total>0).map(([kind,count])=>{
+          const verified=count.done??count.existing+count.created;
+          return <tr key={kind}><td>{{advertiser:'Advertiser',order:'Orderi',key:'Ključevi',value:'Vrednosti',creative:'Kreativi',lineItem:'Line itemi',association:'Veze sa kreativima'}[kind]||kind}</td><td>{verified} / {count.total}</td><td>{Math.max(0,count.total-verified)}</td></tr>;
+        })}</tbody></table></div>
+        {activeJob.awaitingCheck&&<p className="gam-message info">Ishod ranijeg upisa još nije potvrđen. Ovaj posao se ovde ne nastavlja niti zatvara.</p>}
+        {!activeJob.canClosePreview&&!activeJob.awaitingCheck&&<p>Posao se iz ovog prikaza ne nastavlja i ne menja. Zatvaranje je dostupno samo za pregled koji nikada nije pokrenut.</p>}
+        <button type="button" disabled={Boolean(busy)} onClick={()=>void inspectActive(activeJob.id)}>Osveži aktivni posao bez izmene</button>
+      </article>}
       {job?.awaitingCheck&&<p>Odgovor na prethodni upis nije potvrđen. Prvo proveri ishod; upis se ne ponavlja automatski.</p>}
+      {legacy&&<p className="gam-message info">{job?.readOnlyReason||'Ovaj ranije sačuvani plan može menjati postojeća podešavanja i prikazuje se samo za čitanje. Za dodavanje napravi novi pregled sa pravilom „samo dodavanje“.'}</p>}
       {job?.resumed&&<p>Otvoren je ranije sačuvani posao. Prikazani rezultat i potvrda odnose se na njegov sačuvani izbor.</p>}
       {job&&issues(job)&&<div className="gam-kv-issues"><p>Provera nije potpuna: {job.conflictCount} konflikata · {job.verificationCount??0} stavki čeka proveru.</p><ul>{[...job.conflicts,...(job.verificationIssues??[])].slice(0,12).map((issue,index)=><li key={issue.ref+index}><code>{issue.ref}</code>: {issue.message}</li>)}</ul></div>}
       <div className="gam-li-actions">
-        {job&&['reviewing','ready'].includes(job.status)&&<button type="button" disabled={Boolean(busy)} onClick={()=>void recheck()}>Ponovi proveru istog posla</button>}
-        {job?.status==='creating'&&<><button type="button" disabled={Boolean(busy)} onClick={()=>void open(job.id)}>Osveži stanje posla</button>{job.awaitingCheck?<button type="button" disabled={Boolean(busy)} onClick={()=>void check()}>Proveri ishod u GAM-u</button>:<button type="button" disabled={Boolean(busy)} onClick={()=>void resume()}>Nastavi posao</button>}</>}
+        {job&&addOnly(job)&&['reviewing','ready'].includes(job.status)&&<button type="button" disabled={Boolean(busy)} onClick={()=>void recheck()}>Ponovi proveru istog posla</button>}
+        {job?.status==='creating'&&<><button type="button" disabled={Boolean(busy)} onClick={()=>void open(job.id)}>Osveži stanje posla</button>{job.awaitingCheck||!addOnly(job)?<button type="button" disabled={Boolean(busy)} onClick={()=>void check()}>Proveri ishod u GAM-u</button>:<button type="button" disabled={Boolean(busy)} onClick={()=>void resume()}>Nastavi posao</button>}</>}
+        {legacy&&<button type="button" disabled={Boolean(busy)} onClick={()=>{setJob(null);setConfirmed(false);setError('');setNotice('Izbor je sačuvan. Pokreni novi pregled za dodavanje bez izmene postojećih podešavanja.');}}>Pripremi novi pregled samo za dodavanje</button>}
       </div>
-      {job?.status==='ready'&&<div className="gam-kv-confirm">
-        <p>Pregled je završen. {jobKeys?.new??0} novih ključeva, {jobKeys?.update??0} dopuna reportinga i {jobValues?.new??0} novih vrednosti.</p>
-        <label className="gam-confirm"><input type="checkbox" disabled={Boolean(busy)||!job.canStart} checked={confirmed} onChange={event=>setConfirmed(event.target.checked)}/>Potvrđujem pripremu {job.reporting?.keyCount??0} ključeva i {job.reporting?.valueCount??0} vrednosti u GAM mreži {job.network.networkCode}.</label>
+      {job?.status==='ready'&&addOnly(job)&&<div className="gam-kv-confirm">
+        <p>Pregled je završen. Dodaće se {jobKeys?.new??0} novih ključeva i {jobValues?.new??0} novih vrednosti. Postojeće stavke ostaju bez izmene.</p>
+        <label className="gam-confirm"><input type="checkbox" disabled={Boolean(busy)||!job.canStart} checked={confirmed} onChange={event=>setConfirmed(event.target.checked)}/>Potvrđujem dodavanje nedostajućih stavki iz izbora {job.reporting?.keyCount??0} ključeva i {job.reporting?.valueCount??0} vrednosti u GAM mreži {job.network.networkCode}. Postojeća podešavanja ostaju bez izmene.</label>
         <button type="button" className="gam-primary" disabled={Boolean(busy)||!confirmed||!job.canStart} onClick={()=>void start()}>Pokreni pripremu key-values</button>
       </div>}
-      {job&&!['completed','cancelled'].includes(job.status)&&<details><summary>Zaustavljanje posla</summary><p>Već potvrđeni GAM ključevi i vrednosti ostaju sačuvani. Za novi izbor prvo zaustavi ovaj posao.</p><button type="button" disabled={Boolean(busy)} onClick={()=>void cancel()}>Zaustavi key-values posao</button></details>}
+      {closeTarget?.canClosePreview&&<div className="gam-kv-close-preview"><h4>Zatvori nepočeti pregled</h4><p>Zatvara se samo sačuvani Tessera pregled koji nikada nije pokrenut. U GAM-u se ništa ne kreira, menja ili briše.</p><label className="gam-confirm"><input type="checkbox" disabled={Boolean(busy)} checked={closeConfirmed} onChange={event=>setCloseConfirmed(event.target.checked)}/>Potvrđujem zatvaranje nepočetog pregleda {closeTarget.id} za mrežu {closeTarget.network.networkCode}. GAM ostaje bez izmene.</label><button type="button" disabled={Boolean(busy)||!closeConfirmed} onClick={()=>void closePreview(closeTarget)}>Zatvori nepočeti pregled</button></div>}
     </section>
 
     {job&&results.length>0&&<article className="gam-card gam-kv-results" aria-label="Rezultat key-values posla">
       <span className="gam-step">{completed(job)?'ZAVRŠENO / REZULTAT':'PREGLED / TRENUTNO STANJE'}</span><h3>{completed(job)?'Šta je urađeno u GAM-u':'Stanje izabranih ključeva'}</h3>
-      {keyOutcomes&&valueOutcomes&&<div className="gam-kv-totals"><p><strong>Ključevi:</strong> {keyOutcomes.created} kreirano · {keyOutcomes.existing} već postoji · {keyOutcomes.updated} reporting dopunjen</p><p><strong>Vrednosti:</strong> {valueOutcomes.created} kreirano · {valueOutcomes.existing} već postoji</p></div>}
+      {keyOutcomes&&valueOutcomes&&<div className="gam-kv-totals"><p><strong>Ključevi:</strong> {keyOutcomes.created} kreirano · {keyOutcomes.existing} već postoji — bez izmene{keyOutcomes.updated>0&&<> · {keyOutcomes.updated} ranije dopunjen reporting</>}</p><p><strong>Vrednosti:</strong> {valueOutcomes.created} kreirano · {valueOutcomes.existing} već postoji — bez izmene</p></div>}
+      {noNewWrites&&<p className="gam-message success">Sve izabrano već postoji. Nije bilo novih upisa u GAM.</p>}
+      {addOnly(job)&&results.filter(key=>key.reportableType==='OFF').map(key=><p className="gam-message info" key={key.key}><code>{key.key}</code>: reporting je OFF i ostaje OFF. Dodaju se samo nedostajuće izabrane vrednosti.</p>)}
       {completed(job)&&<p><a href={`https://admanager.google.com/${encodeURIComponent(job.network.networkCode)}#inventory/custom_targeting/list`} target="_blank" rel="noopener noreferrer">Otvori key-values u GAM-u</a></p>}
       <div className="gam-kv-result-list">{results.map(key=><details key={key.key} className="gam-kv-result-key"><summary><code>{key.key}</code><span className={'gam-kv-outcome '+key.outcome}>{outcomeNames[key.outcome]}</span><small>{key.values.length} vrednosti{key.id?' · GAM ID '+key.id:''}</small></summary>
         {(key.message||key.reconciled)&&<p>{key.message||(['created','existing','updated'].includes(key.outcome)?'Ishod je naknadno potvrđen proverom u GAM-u.':'Raniji ishod je bio potvrđen; proveri trenutno stanje.')}</p>}
@@ -255,7 +299,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
         {catalogLoading&&<p role="status">Učitavam pripremljene ključeve i vrednosti…</p>}
         {catalogError&&<div className="gam-message error" role="alert">{catalogError}<button type="button" disabled={false} onClick={()=>void loadCatalog()}>Ponovi učitavanje ključeva</button></div>}
         <div className="gam-li-actions gam-kv-presets"><button type="button" onClick={()=>selectPreset('all')}>Izaberi sve</button><button type="button" onClick={()=>selectPreset('none')}>Poništi izbor</button><button type="button" onClick={()=>selectPreset('new')}>Samo tri nove oznake</button></div>
-        <p className="gam-help">Uključi reporting za izabrane ključeve. Postojeći ID-jevi, nazivi i tipovi se čuvaju. Vrednosti moraju biti definisane unapred da bi ulazile u GAM izveštaje; nema retroaktivne dopune podataka.</p>
+        <p className="gam-help">Novi ključevi pripremaju se sa uključenim reportingom. Postojeći ključevi zadržavaju svoja podešavanja, uključujući isključen reporting. Vrednosti moraju biti definisane unapred da bi ulazile u GAM izveštaje; nema retroaktivne dopune podataka.</p>
         <div className="gam-kv-key-list">{catalog?.keys.map(key=>{
           const pick=picks?.[key.key];if(!pick)return null;
           const query=queries[key.key]??'',visible=key.values.filter(value=>value.toLowerCase().includes(query.toLowerCase()));
