@@ -8,7 +8,9 @@ permissions:
 jobs:
   gam:
     runs-on: ubuntu-24.04 # Playwright 1.55 browser dependencies are pinned to this supported OS.
-    timeout-minutes: 10
+    # The full 40k-creative case plus cold Chromium dependency installation need
+    # more than ten minutes; preserve all assertions and a bounded job deadline.
+    timeout-minutes: 20
     env:
       TZ: UTC
       TESSERA_TEST_TOOLCHAIN: isolated

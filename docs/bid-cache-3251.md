@@ -75,3 +75,41 @@ refresh, demand, timeout, consent and reporting scope identical. Compare total
 cohort revenue with valid matching denominators; cached-label impressions
 alone do not measure incremental revenue. The accepted A/A delivery check
 does not need to be repeated.
+
+## Official guidance and additional long-page checks — 19 November 2026
+
+The official [Prebid caching FAQ](https://docs.prebid.org/dev-docs/faq.html#does-prebidjs-cache-bids)
+says that bidders are called again even when their ad unit already has cached
+bids. New responses and still-eligible older bids then compete. The fresh
+auction plus cache strategy follows that guidance. Same ad unit/page/user,
+original TTL and unused-bid checks remain necessary. Tessera's rule that a bid
+already submitted to GAM is never reused is deliberately stricter than native
+Prebid's render-status filtering; it is a local reuse policy, not a universal
+Prebid requirement.
+
+An additional local synthetic run exercised both pinned Prebid 11.11.0 and
+11.34.0 for sixty virtual minutes: 240 GAM requests and 960 bidder requests per
+core, caching active at all thirteen samples, no exceptions, duplicate requests
+or reuse of previously submitted ad IDs. The wrapper stayed within its existing
+64-auction/512-bid bounds. A generated test configuration raised the refresh cap;
+the normal fixture's cap correctly stopped and plateaued. No frozen source or
+publisher configuration was modified.
+
+Six additional TTL/late-render probes passed. Native TTL buffer enforcement
+removed an expired cached candidate and selected fresh demand. A separate
+default native `renderAd` call after TTL emitted `expiredRender` but still
+rendered once; an explicit synthetic `suppressExpiredRender` option prevented
+that. This is inherited native behavior, not a newly enabled production option.
+See [TTL buffer](https://docs.prebid.org/dev-docs/publisher-api-reference/setConfig.html#set-ttl-buffer)
+and [publisher choices with bid-cache TTL](https://docs.prebid.org/dev-docs/publisher-api-reference/setConfig.html#publisher-choices-when-using-bid-cache-ttl).
+
+Native Prebid bid retention and event history continued growing during the
+long-page test. This predates 3.25.1 and is separate from the bounded wrapper.
+The lab heap observations include browser/fixture warmup and are not a production
+memory budget or isolated Prebid footprint. MBA-430 tracks a measured retention
+and late-render policy for a future explicitly selected runtime. Prebid's
+[`minBidCacheTTL`](https://docs.prebid.org/dev-docs/publisher-api-reference/setConfig.html#minimum-bid-cache-ttl)
+controls memory retention; it must not be treated as an extension of an SSP bid's
+auction eligibility. This evidence supports the chosen strategy, but actual
+publisher latency, SSP acceptance and revenue still require the controlled
+cache OFF/ON comparison described above.
