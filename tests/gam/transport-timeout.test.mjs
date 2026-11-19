@@ -65,6 +65,50 @@ test('slow reads remain bounded and a create timeout stays unconfirmed without r
   }
 });
 
+test('reporting key updates allow 60 seconds across headers and body, then remain unconfirmed without replay', async t => {
+  clock(t);
+  const logs = [], secret = 'synthetic-private-reporting-token';
+  t.mock.method(console, 'warn', (...args) => logs.push(args));
+  for (const stage of ['headers', 'body']) {
+    let calls = 0, settled = false, updateSignal;
+    const client = new GamClient('123456', secret, async (_url, init) => {
+      calls++;
+      updateSignal = init.signal;
+      if (stage === 'headers') return delayedResponse(init.signal, 70_000, 'updateCustomTargetingKeys');
+      return {
+        status: 200, ok: true,
+        text: () => delayedResponse(init.signal, 70_000, 'updateCustomTargetingKeys').then(response => response.text()),
+      };
+    });
+    const traffic = new GamTrafficClient(client);
+    const pending = traffic.update('key', [{ id: '123', name: 'aq_bid_origin', type: 'PREDEFINED', reportableType: 'ON' }]);
+    const observed = pending.then(value => { settled = true; return { value }; }, error => { settled = true; return { error }; });
+    await Promise.resolve(); // For body failures, the headers have already arrived.
+    t.mock.timers.tick(25_000);
+    await Promise.resolve();
+    assert.equal(updateSignal.aborted, false, 'the read deadline cannot abort a metadata update');
+    assert.equal(settled, false, 'metadata updates must outlive the 25-second read deadline');
+    t.mock.timers.tick(34_999);
+    await Promise.resolve();
+    assert.equal(updateSignal.aborted, false);
+    assert.equal(settled, false, 'the update deadline must remain 60 seconds');
+    t.mock.timers.tick(1);
+    const result = await observed;
+    assert.equal(updateSignal.aborted, true);
+    assert(result.error instanceof GamError);
+    assert.equal(result.error.status, 502);
+    assert.match(result.error.message, /isteklo posle 60 sekundi/);
+    assert.match(result.error.message, /Upis možda jeste izvršen/);
+    assert.match(result.error.message, /nastavite isti posao/);
+    assert.equal(calls, 1, 'an uncertain update must not be replayed by the transport');
+    assert.deepEqual(logs.at(-1)[1], { service: 'CustomTargetingService', operation: 'updateCustomTargetingKeys', entityCount: 1,
+      stage, reason: 'timeout', elapsedMs: 60_000, timeoutMs: 60_000 });
+    assert(!result.error.message.includes(secret));
+  }
+  assert.equal(logs.length, 2);
+  assert(!JSON.stringify(logs).includes(secret));
+});
+
 test('a response body interruption becomes a safe actionable transport error', async t => {
   const logs = [];
   t.mock.method(console, 'warn', (...args) => logs.push(args));

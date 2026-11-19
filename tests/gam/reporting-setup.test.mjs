@@ -194,6 +194,20 @@ test('inactive or unknown reporting keys remain conflicts without reactivation o
   }
 });
 
+test('explicit UNKNOWN activation status blocks reporting key updates/reuse and value reuse',async()=>{
+  for(const [kind,reportableType] of [['key','OFF'],['key','ON'],['value','ON']]) {
+    const f=await setup();seedReporting(f);
+    const parent=f.db.key.find(row=>row.name==='aq_bid_origin');parent.reportableType=reportableType;
+    const row=kind==='key'?parent:f.db.value.find(row=>row.customTargetingKeyId===parent.id&&row.name==='cached');
+    row.status='UNKNOWN';
+    const j=await review(f,await preview(f));
+    assert.equal(j.canStart,false,`${kind} ${reportableType} cannot be proven active`);
+    assert(j.counts[kind].conflict>0,JSON.stringify(j));assert.equal(f.writes.length,0);
+    const started=await request(f,`/line-items/jobs/${j.id}/start`,{cursor:j.cursor,confirm:true,confirmNetwork:'123456'});
+    assert.notEqual(started.status,200);assert.equal(f.writes.length,0);
+  }
+});
+
 test('duplicate case-folded key identities never authorize a duplicate create',async()=>{
   const f=await setup();seedReporting(f);
   f.db.key.push({...f.db.key.find(row=>row.name==='aq_bid_origin'),id:'900000',name:'AQ_BID_ORIGIN'});
