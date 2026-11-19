@@ -1,7 +1,8 @@
 """CI only: real packaged scripts/Prebid, synthetic GPT/TCF, loopback with external traffic blocked."""
-import json, pathlib, threading, time, urllib.parse, os
+import json, pathlib, threading, time, urllib.parse, os, hashlib
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from playwright.sync_api import sync_playwright
+from cache_verifier_diagnostics import require_request, build_failure_receipt
 
 root=pathlib.Path(os.environ.get('TANJUG_PACKAGE_DIR','.generated/tanjug-cache-fixed/deploy'))
 # Compact releases keep build metadata outside the public deployment directory.
@@ -18,7 +19,7 @@ mock=mock.replace('const observations = { requests:', 'const observations = { re
 mock=mock.replace('sizes: slot.sizes, at: Date.now()', 'sizes: slot.sizes, Variant: slot.getConfig().targeting.Variant, at: Date.now()')
 position_cache=manifest.get('kind')=='saved-script-v2'
 if position_cache:
- mock=mock.replace('Variant: slot.getConfig().targeting.Variant, at: Date.now()', "Variant: slot.getConfig().targeting.Variant, round: window.__fixtureBidRounds?.get('pubmatic:'+slot.id), bid: (()=>{const b=window.pbjs?.getBidResponseByAdId?.(slot.getTargeting('hb_adid')[0]);return b?{cpm:b.cpm,auctionId:b.auctionId,adUnitCode:b.adUnitCode}:null;})(), hbTargeting: Object.fromEntries(slot.getTargetingKeys().filter(k=>k.startsWith('hb_')).map(k=>[k,slot.getTargeting(k)])), latestAuction: [...(window.pbjs?.getEvents?.()||[])].reverse().find(e=>e.eventType==='auctionInit'&&e.args.adUnitCodes?.includes(slot.id))?.args.auctionId, at: Date.now()")
+ mock=mock.replace('Variant: slot.getConfig().targeting.Variant, at: Date.now()', "Variant: slot.getConfig().targeting.Variant, round: window.__fixtureBidRounds?.get('pubmatic:'+slot.id), callbackAuctionId: window.__fixtureCallbackContext?.auctionId||null, callbackCodes: window.__fixtureCallbackContext?.codes||[], bid: (()=>{const b=window.pbjs?.getBidResponseByAdId?.(slot.getTargeting('hb_adid')[0]);return b?{cpm:b.cpm,auctionId:b.auctionId,adUnitCode:b.adUnitCode}:null;})(), hbTargeting: Object.fromEntries(slot.getTargetingKeys().filter(k=>k.startsWith('hb_')).map(k=>[k,slot.getTargeting(k)])), latestAuction: [...(window.pbjs?.getEvents?.()||[])].reverse().find(e=>e.eventType==='auctionInit'&&e.args.adUnitCodes?.includes(slot.id))?.args.auctionId, at: Date.now()")
  mock+=';window.__positionCacheTest=true;'
 mock+='\n'+pathlib.Path('tests/runtime/full-cache-browser-fixture.js').read_text()
 class Handler(BaseHTTPRequestHandler):
@@ -74,13 +75,55 @@ def check(name,ok):
  assert ok,name
  checks.append({'name':name,'passed':True});print('PASS '+name,flush=True)
 
+active_wait=None
 def wait(page,expression,timeout=30000):
+ global active_wait
+ active_wait={'expression':expression,'timeoutMs':timeout,'startedAt':time.time(),'completed':False}
  deadline=time.monotonic()+timeout/1000
  while time.monotonic()<deadline:
-  if page.evaluate(expression):return
+  if page.evaluate(expression):
+   active_wait.update(completed=True,finishedAt=time.time());return
   time.sleep(.05)
+ active_wait.update(timedOut=True,finishedAt=time.time())
  print(json.dumps({'waitingFor':expression,'state':page.evaluate('window.AdVariant?.snapshot()'),'pageErrors':errors}),flush=True)
  raise AssertionError('Timed out: '+expression)
+
+def record_failure(page,scenario,error):
+ observations={'deadline':active_wait,'checksPassed':checks,'pageErrors':errors,
+  'callbackContextScope':'synchronous native callback only; fallback and asynchronous work may have no context'}
+ try:
+  observations.update(page.evaluate("""()=>({
+   requests:window.__testAds?.observations.requests||[],
+   adapterRequests:window.__fixtureBidTrace||[],
+   callbacks:window.__fixtureCallbackTrace||[],
+   roundCounters:[...(window.__fixtureBidRounds||[])],
+   variant:window.AdVariant?.snapshot?.()||null,
+   cache:window.AdBidCache?.snapshot?.()||null,
+   nativeEvents:(window.pbjs?.getEvents?.()||[]).filter(e=>['auctionInit','auctionEnd','bidRequested','bidResponse','noBid','bidTimeout','setTargeting'].includes(e.eventType)).map(e=>({
+    eventType:e.eventType,elapsedTime:e.elapsedTime,auctionId:e.args?.auctionId,
+    adUnitCodes:e.args?.adUnitCodes,adUnitCode:e.args?.adUnitCode,
+    bidder:e.args?.bidderCode||e.args?.bidder,bidderRequestId:e.args?.bidderRequestId,
+    requestId:e.args?.requestId,cpm:e.args?.cpm,
+    bids:e.args?.bids?.map?.(b=>({bidId:b.bidId,auctionId:b.auctionId,adUnitCode:b.adUnitCode}))
+   }))
+  })"""))
+ except Exception as capture_error:
+  observations['captureError']=str(capture_error)
+ files={}
+ for name,expected in manifest.get('files',{}).items():
+  candidate=(root/name).resolve()
+  if root.resolve() not in candidate.parents:
+   files[name]={'error':'Manifest path is outside the synthetic package'};continue
+  try:
+   data=candidate.read_bytes()
+   files[name]={'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),'declared':expected}
+  except OSError as file_error:files[name]={'error':str(file_error)}
+ observations['package']={'kind':manifest.get('kind'),'id':manifest.get('id'),
+  'manifestSha256':hashlib.sha256(manifest_path.read_bytes()).hexdigest(),'files':files}
+ receipt=build_failure_receipt(scenario,error,observations)
+ target=root.parent/f"browser-failure-{scenario['arm']}-{scenario['width']}-{scenario['case']}.json"
+ target.write_text(json.dumps(receipt,indent=2)+'\n')
+ print(json.dumps({'failureReceipt':str(target),'scenario':scenario,'error':str(error)}),flush=True)
 
 server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
 origin='http://127.0.0.1:'+str(server.server_port)
@@ -125,98 +168,105 @@ try:
      errors.append(str(e));print(json.dumps({'case':case,'arm':arm,'pageError':str(e),'stack':e.stack}),flush=True)
     page.on('pageerror',page_error)
     page.on('request',lambda r:requested.append(urllib.parse.urlsplit(r.url).path) if r.url.startswith(origin+'/') else None)
-    page.goto(origin+'/fixture?case='+case)
-    if case in ['wrong','failed','tampered']:
-     wait(page,"window.AdVariant?.snapshot().status==='error'",timeout=35000)
-     state=page.evaluate('AdVariant.snapshot()')
-     check(case+': no runtime/auction after dependency or integrity failure',state['runtimeEntries']==0 and not page.evaluate('Boolean(window.BAD_ARM_RAN)'))
-     # An already-failed async HTML tag cannot replay its error event. The frozen
-     # loader then reaches its bounded dependency timeout; neither path enters an arm.
-     expected={'wrong':['prebid-version-mismatch'],'failed':['prebid-load-error','prebid-timeout'],'tampered':['arm-load-error']}
-     check(case+': specific diagnostic',state['error'] in expected[case])
-    else:
-     wait(page,"window.AdVariant?.snapshot().status==='loaded' && window.AdVariant.snapshot().appliedSlots===19",timeout=35000)
-     state=page.evaluate('AdVariant.snapshot()')
-     label=arm+' '+str(width)+' '+case
-     check(label+': exact packaged runtime once with native Prebid',state['runtimeEntries']==1 and state['variant']==expected_variant and state['prebidVersion']=='11.34.0')
-     check(label+': all 19 positions labeled before requests',len(state['slots'])==19 and all(s['Variant']==expected_variant for s in state['slots']))
-     arm_paths=[x for x in requested if x.endswith(('/A.js','/B.js','/runtime.js'))]
-     check(label+': only selected arm fetched',arm_paths==['/'+chosen['path']])
-     check(label+': one Prebid fetch',len([x for x in requested if x.endswith('/prebid.js')])==1)
-     check(label+': fluid and 1x1 retained',page.evaluate("adSlots.InText_1.sizes.some(s=>s==='fluid') && adSlots.InText_1.sizes.some(s=>Array.isArray(s)&&s[0]===1&&s[1]===1)"))
-     wait(page,'__testAds.observations.requests.length>0',timeout=15000)
-     check(label+': every first request carries Variant',page.evaluate('__testAds.observations.requests.every(r=>r.Variant=='+variant_expression+')'))
-     if saved_profile:
-      check(label+': exact saved script identity and name',state['scriptRelease']==chosen['id'] and state['scriptName']==chosen['name'] and state['scriptSha256']==chosen['sha256'])
-      check(label+': explicit standalone/test mode',state['deliveryMode']==config['deliveryMode'])
-     if saved_profile or manifest.get('kind')=='tanjug-configurable-ab-v1':
-      arm_settings=chosen['settings'] if saved_profile else manifest['settings']['arms'][arm]
-      check(label+': diagnostic matches saved arm settings',state['mode']==arm_settings['mode'] and state['refreshSeconds']==arm_settings['refreshSeconds'])
-      if width==1280 and case=='normal' and arm_settings['refreshSeconds']==10:
+    scenario={'arm':arm,'width':width,'case':case}
+    active_wait=None
+    try:
+     page.goto(origin+'/fixture?case='+case)
+     if case in ['wrong','failed','tampered']:
+      wait(page,"window.AdVariant?.snapshot().status==='error'",timeout=35000)
+      state=page.evaluate('AdVariant.snapshot()')
+      check(case+': no runtime/auction after dependency or integrity failure',state['runtimeEntries']==0 and not page.evaluate('Boolean(window.BAD_ARM_RAN)'))
+      # An already-failed async HTML tag cannot replay its error event. The frozen
+      # loader then reaches its bounded dependency timeout; neither path enters an arm.
+      expected={'wrong':['prebid-version-mismatch'],'failed':['prebid-load-error','prebid-timeout'],'tampered':['arm-load-error']}
+      check(case+': specific diagnostic',state['error'] in expected[case])
+     else:
+      wait(page,"window.AdVariant?.snapshot().status==='loaded' && window.AdVariant.snapshot().appliedSlots===19",timeout=35000)
+      state=page.evaluate('AdVariant.snapshot()')
+      label=arm+' '+str(width)+' '+case
+      check(label+': exact packaged runtime once with native Prebid',state['runtimeEntries']==1 and state['variant']==expected_variant and state['prebidVersion']=='11.34.0')
+      check(label+': all 19 positions labeled before requests',len(state['slots'])==19 and all(s['Variant']==expected_variant for s in state['slots']))
+      arm_paths=[x for x in requested if x.endswith(('/A.js','/B.js','/runtime.js'))]
+      check(label+': only selected arm fetched',arm_paths==['/'+chosen['path']])
+      check(label+': one Prebid fetch',len([x for x in requested if x.endswith('/prebid.js')])==1)
+      check(label+': fluid and 1x1 retained',page.evaluate("adSlots.InText_1.sizes.some(s=>s==='fluid') && adSlots.InText_1.sizes.some(s=>Array.isArray(s)&&s[0]===1&&s[1]===1)"))
+      wait(page,'__testAds.observations.requests.length>0',timeout=15000)
+      check(label+': every first request carries Variant',page.evaluate('__testAds.observations.requests.every(r=>r.Variant=='+variant_expression+')'))
+      if saved_profile:
+       check(label+': exact saved script identity and name',state['scriptRelease']==chosen['id'] and state['scriptName']==chosen['name'] and state['scriptSha256']==chosen['sha256'])
+       check(label+': explicit standalone/test mode',state['deliveryMode']==config['deliveryMode'])
+      if saved_profile or manifest.get('kind')=='tanjug-configurable-ab-v1':
+       arm_settings=chosen['settings'] if saved_profile else manifest['settings']['arms'][arm]
+       check(label+': diagnostic matches saved arm settings',state['mode']==arm_settings['mode'] and state['refreshSeconds']==arm_settings['refreshSeconds'])
+       if width==1280 and case=='normal' and arm_settings['refreshSeconds']==10:
+        page.locator('#Billboard').scroll_into_view_if_needed()
+        page.evaluate("__testAds.emit('slotVisibilityChanged',{slot:adSlots.Billboard,inViewPercentage:100})")
+        wait(page,"__testAds.observations.requests.filter(r=>r.id==='Billboard').length>=2",timeout=25000)
+        gap=page.evaluate("(()=>{const r=__testAds.observations.requests.filter(r=>r.id==='Billboard');return r[1].at-r[0].at;})()")
+        check(label+': ten-second refresh reaches GAM without a hidden thirty-second minimum',10000<=gap<25000)
+      if cmp_fix:
+       check(label+': native TCF module stays enabled',page.evaluate("pbjs.getConfig('consentManagement').gdpr.enabled===true && pbjs.getConfig('consentManagement').gdpr.cmpApi==='iab'"))
+       if case in ['cmp-late','cmp-string']:
+        check(label+': actual native bidder requests receive CMP string',page.evaluate("pbjs.getEvents().some(e=>e.eventType==='bidRequested' && e.args.gdprConsent?.consentString==='synthetic-tcf-consent-fixture' && e.args.gdprConsent.gdprApplies===true)"))
+       if case=='cmp-late':
+        check('CMP late: no bidder request before real API appears',page.evaluate("__cmpInitialBidRequests===0 && AdConsent.snapshot().waitedMs>=1900 && AdConsent.snapshot().status==='available'"))
+       if case=='cmp-absent':
+        check('CMP absent: native consent prevents bidder calls; no disabling bypass',page.evaluate("AdConsent.snapshot().status==='api-timeout' && !pbjs.getEvents().some(e=>e.eventType==='bidRequested')"))
+      if readiness:
+       wait(page,"window.AdBidReadiness?.snapshot().rows.find(r=>r.position==='Billboard')?.counters.received>=2",timeout=15000)
+       check(label+': full-slot readiness observer initialized',page.evaluate('AdBidReadiness.snapshot().rows.length===19 && AdBidReadiness.snapshot().rows.every(r=>r.registered)'))
+       check(label+': actual native losing bid passes screening and targeted winner is excluded',page.evaluate("(() => {const r=AdBidReadiness.snapshot().rows.find(r=>r.position==='Billboard');return r.candidates===1 && r.counters.submitted===1 && r.rejected['already-used']===1;})()"))
+       check(label+': inspection leaves native bids/config and GAM requests unchanged',page.evaluate("(() => {const read=()=>JSON.stringify([pbjs.getBidResponsesForAdUnitCode('Billboard'),pbjs.getConfig(),__testAds.observations.requests]);const before=read();AdBidReadiness.inspect();AdVariant.inspect();return before===read();})()"))
+       check(label+': cache and refresh remain unchanged',page.evaluate("AdBidReadiness.snapshot().cacheEnabled===false && AdBidReadiness.snapshot().mode==='observe-only' && AdVariant.snapshot().bidReadiness.nativeSelectionVerified===false"))
+      if cached and case in ['normal','auto','cmp-string']:
+       wait(page,"AdBidCache.snapshot().policy?.selections.fresh>0",timeout=15000)
+       check(label+': cache policy is active with native fresh targeting',page.evaluate("pbjs.getConfig('useBidCache')===true && AdBidCache.snapshot().policy.selections.errors===0"))
+      if position_cache:
+       check(label+': packaged overrides match selection',state['positionOverrides']=={'Billboard':False,'Sticky':True})
        page.locator('#Billboard').scroll_into_view_if_needed()
        page.evaluate("__testAds.emit('slotVisibilityChanged',{slot:adSlots.Billboard,inViewPercentage:100})")
-       wait(page,"__testAds.observations.requests.filter(r=>r.id==='Billboard').length>=2",timeout=25000)
-       gap=page.evaluate("(()=>{const r=__testAds.observations.requests.filter(r=>r.id==='Billboard');return r[1].at-r[0].at;})()")
-       check(label+': ten-second refresh reaches GAM without a hidden thirty-second minimum',10000<=gap<25000)
-     if cmp_fix:
-      check(label+': native TCF module stays enabled',page.evaluate("pbjs.getConfig('consentManagement').gdpr.enabled===true && pbjs.getConfig('consentManagement').gdpr.cmpApi==='iab'"))
-      if case in ['cmp-late','cmp-string']:
-       check(label+': actual native bidder requests receive CMP string',page.evaluate("pbjs.getEvents().some(e=>e.eventType==='bidRequested' && e.args.gdprConsent?.consentString==='synthetic-tcf-consent-fixture' && e.args.gdprConsent.gdprApplies===true)"))
-      if case=='cmp-late':
-       check('CMP late: no bidder request before real API appears',page.evaluate("__cmpInitialBidRequests===0 && AdConsent.snapshot().waitedMs>=1900 && AdConsent.snapshot().status==='available'"))
-      if case=='cmp-absent':
-       check('CMP absent: native consent prevents bidder calls; no disabling bypass',page.evaluate("AdConsent.snapshot().status==='api-timeout' && !pbjs.getEvents().some(e=>e.eventType==='bidRequested')"))
-     if readiness:
-      wait(page,"window.AdBidReadiness?.snapshot().rows.find(r=>r.position==='Billboard')?.counters.received>=2",timeout=15000)
-      check(label+': full-slot readiness observer initialized',page.evaluate('AdBidReadiness.snapshot().rows.length===19 && AdBidReadiness.snapshot().rows.every(r=>r.registered)'))
-      check(label+': actual native losing bid passes screening and targeted winner is excluded',page.evaluate("(() => {const r=AdBidReadiness.snapshot().rows.find(r=>r.position==='Billboard');return r.candidates===1 && r.counters.submitted===1 && r.rejected['already-used']===1;})()"))
-      check(label+': inspection leaves native bids/config and GAM requests unchanged',page.evaluate("(() => {const read=()=>JSON.stringify([pbjs.getBidResponsesForAdUnitCode('Billboard'),pbjs.getConfig(),__testAds.observations.requests]);const before=read();AdBidReadiness.inspect();AdVariant.inspect();return before===read();})()"))
-      check(label+': cache and refresh remain unchanged',page.evaluate("AdBidReadiness.snapshot().cacheEnabled===false && AdBidReadiness.snapshot().mode==='observe-only' && AdVariant.snapshot().bidReadiness.nativeSelectionVerified===false"))
-     if cached and case in ['normal','auto','cmp-string']:
-      wait(page,"AdBidCache.snapshot().policy?.selections.fresh>0",timeout=15000)
-      check(label+': cache policy is active with native fresh targeting',page.evaluate("pbjs.getConfig('useBidCache')===true && AdBidCache.snapshot().policy.selections.errors===0"))
-     if position_cache:
-      check(label+': packaged overrides match selection',state['positionOverrides']=={'Billboard':False,'Sticky':True})
-      page.locator('#Billboard').scroll_into_view_if_needed()
-      page.evaluate("__testAds.emit('slotVisibilityChanged',{slot:adSlots.Billboard,inViewPercentage:100})")
-      wait(page,"__testAds.observations.requests.some(r=>r.id==='Billboard'&&r.round>=5)&&__testAds.observations.requests.some(r=>r.id==='Sticky'&&r.round>=4)",timeout=45000)
-      rows=page.evaluate("__testAds.observations.requests.filter(r=>['Billboard','Sticky'].includes(r.id))")
-      def request(code,round):return next(r for r in rows if r['id']==code and r.get('round')==round)
-      off=request('Billboard',2);on=request('Sticky',2)
-      check(label+': targeting stays with its own position',all(r['bid'] is None or r['bid']['adUnitCode']==r['id'] for r in rows))
-      for code,last in [('Billboard',5),('Sticky',4)]:
-       selected=[request(code,round) for round in range(1,last+1)]
-       check(label+': every refresh starts a distinct fresh auction for '+code,len({r['latestAuction'] for r in selected})==last and all(r['latestAuction'] for r in selected))
-      check(label+': off uses fresh 1 CPM while on can reuse unused 4 CPM',off['bid']['cpm']==1 and off['bid']['auctionId']==off['latestAuction'] and on['bid']['cpm']==4 and on['bid']['auctionId']!=on['latestAuction'])
-      for code in ['Billboard','Sticky']:
-       third=request(code,4)
-       check(label+': higher fresh CPM wins third refresh for '+code,third['bid']['cpm']==12 and third['bid']['auctionId']==third['latestAuction'])
-      empty=request('Billboard',5)
-      # The wrapper owns hb_ver/hb_version metadata; empty native keys have no effective targeting.
-      stale={key:value for key,value in empty['hbTargeting'].items() if key not in ['hb_ver','hb_version'] and value}
-      check(label+': off with no fresh bid still requests GAM without stale targeting',empty['bid'] is None and not stale)
-      check(label+': per-position policy reports no targeting errors',page.evaluate('AdBidCache.snapshot().policy.selections.errors===0'))
-     page.locator('#InText_1').scroll_into_view_if_needed()
-     wait(page,"__testAds.observations.requests.some(r=>r.id==='InText_1')",timeout=15000)
-     check(label+': lazy request carries Variant',page.evaluate("__testAds.observations.requests.filter(r=>r.id==='InText_1').every(r=>r.Variant=="+variant_expression+')'))
-     if cached and width==1280 and case=='normal':
-      page.locator('#Billboard').scroll_into_view_if_needed()
-      page.evaluate("__testAds.emit('slotVisibilityChanged',{slot:adSlots.Billboard,inViewPercentage:100})")
-      wait(page,"AdBidCache.snapshot().policy.selections.cache>0",timeout=45000)
-      check('B native refresh selects unused cached bid',page.evaluate("AdBidCache.snapshot().policy.selections.cache>0 && AdBidCache.snapshot().policy.selections.errors===0"))
-      check('B actually starts new auctions while allowing cached competition',page.evaluate("AdBidCache.snapshot().totals.auctions>1"))
-     page.evaluate('__testAds.service.refresh(Object.values(adSlots))')
-     check(label+': refresh keeps labels on all slots',page.evaluate('__testAds.observations.requests.every(r=>r.Variant=='+variant_expression+')'))
-     if case=='duplicate':check('duplicate HTML loader blocked',state['blockedDuplicateLoaders']==1)
-     page.evaluate("() => {const s=document.createElement('script');s.src='/ads.js';s.nonce='fixture';document.head.append(s);}")
-     wait(page,'AdVariant.snapshot().blockedDuplicateLoaders>='+str(2 if case=='duplicate' else 1))
-     check(label+': reinsertion does not switch or launch another arm',page.evaluate('AdVariant.snapshot().runtimeEntries===1 && AdVariant.snapshot().variant==='+variant_expression))
-     page.evaluate("() => {const s=document.createElement('script');s.src=AdVariant.snapshot().script;s.nonce='fixture';document.head.append(s);}")
-     wait(page,'AdVariant.snapshot().blockedRuntimeEntries===1')
-     check(label+': direct duplicate arm execution blocked',page.evaluate('AdVariant.snapshot().runtimeEntries===1'))
-     check(label+': debugger agrees with actual slot targeting',page.evaluate('JSON.stringify(AdVariant.inspect().slots)===JSON.stringify(AdVariant.snapshot().slots)'))
-     page_errors.extend({'case':label,'error':e} for e in errors)
-    context.close()
+       wait(page,"__testAds.observations.requests.some(r=>r.id==='Billboard'&&r.round>=5)&&__testAds.observations.requests.some(r=>r.id==='Sticky'&&r.round>=4)",timeout=45000)
+       rows=page.evaluate("__testAds.observations.requests.filter(r=>['Billboard','Sticky'].includes(r.id))")
+       def request(code,round):return require_request(rows,code,round,{'arm':arm,'width':width,'case':case})
+       off=request('Billboard',2);on=request('Sticky',2)
+       check(label+': targeting stays with its own position',all(r['bid'] is None or r['bid']['adUnitCode']==r['id'] for r in rows))
+       for code,last in [('Billboard',5),('Sticky',4)]:
+        selected=[request(code,round) for round in range(1,last+1)]
+        check(label+': every refresh starts a distinct fresh auction for '+code,len({r['latestAuction'] for r in selected})==last and all(r['latestAuction'] for r in selected))
+       check(label+': off uses fresh 1 CPM while on can reuse unused 4 CPM',off['bid']['cpm']==1 and off['bid']['auctionId']==off['latestAuction'] and on['bid']['cpm']==4 and on['bid']['auctionId']!=on['latestAuction'])
+       for code in ['Billboard','Sticky']:
+        third=request(code,4)
+        check(label+': higher fresh CPM wins third refresh for '+code,third['bid']['cpm']==12 and third['bid']['auctionId']==third['latestAuction'])
+       empty=request('Billboard',5)
+       # The wrapper owns hb_ver/hb_version metadata; empty native keys have no effective targeting.
+       stale={key:value for key,value in empty['hbTargeting'].items() if key not in ['hb_ver','hb_version'] and value}
+       check(label+': off with no fresh bid still requests GAM without stale targeting',empty['bid'] is None and not stale)
+       check(label+': per-position policy reports no targeting errors',page.evaluate('AdBidCache.snapshot().policy.selections.errors===0'))
+      page.locator('#InText_1').scroll_into_view_if_needed()
+      wait(page,"__testAds.observations.requests.some(r=>r.id==='InText_1')",timeout=15000)
+      check(label+': lazy request carries Variant',page.evaluate("__testAds.observations.requests.filter(r=>r.id==='InText_1').every(r=>r.Variant=="+variant_expression+')'))
+      if cached and width==1280 and case=='normal':
+       page.locator('#Billboard').scroll_into_view_if_needed()
+       page.evaluate("__testAds.emit('slotVisibilityChanged',{slot:adSlots.Billboard,inViewPercentage:100})")
+       wait(page,"AdBidCache.snapshot().policy.selections.cache>0",timeout=45000)
+       check('B native refresh selects unused cached bid',page.evaluate("AdBidCache.snapshot().policy.selections.cache>0 && AdBidCache.snapshot().policy.selections.errors===0"))
+       check('B actually starts new auctions while allowing cached competition',page.evaluate("AdBidCache.snapshot().totals.auctions>1"))
+      page.evaluate('__testAds.service.refresh(Object.values(adSlots))')
+      check(label+': refresh keeps labels on all slots',page.evaluate('__testAds.observations.requests.every(r=>r.Variant=='+variant_expression+')'))
+      if case=='duplicate':check('duplicate HTML loader blocked',state['blockedDuplicateLoaders']==1)
+      page.evaluate("() => {const s=document.createElement('script');s.src='/ads.js';s.nonce='fixture';document.head.append(s);}")
+      wait(page,'AdVariant.snapshot().blockedDuplicateLoaders>='+str(2 if case=='duplicate' else 1))
+      check(label+': reinsertion does not switch or launch another arm',page.evaluate('AdVariant.snapshot().runtimeEntries===1 && AdVariant.snapshot().variant==='+variant_expression))
+      page.evaluate("() => {const s=document.createElement('script');s.src=AdVariant.snapshot().script;s.nonce='fixture';document.head.append(s);}")
+      wait(page,'AdVariant.snapshot().blockedRuntimeEntries===1')
+      check(label+': direct duplicate arm execution blocked',page.evaluate('AdVariant.snapshot().runtimeEntries===1'))
+      check(label+': debugger agrees with actual slot targeting',page.evaluate('JSON.stringify(AdVariant.inspect().slots)===JSON.stringify(AdVariant.snapshot().slots)'))
+      page_errors.extend({'case':label,'error':e} for e in errors)
+    except Exception as error:
+     try:record_failure(page,scenario,error)
+     except Exception as receipt_error:print(json.dumps({'failureReceiptError':str(receipt_error),'originalError':str(error)}),flush=True)
+     raise
+    finally:context.close()
    check('No unhandled JavaScript error in any successful delivery case',not page_errors)
   finally:browser.close()
 finally:server.shutdown()
