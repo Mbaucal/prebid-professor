@@ -218,8 +218,9 @@ a Google client. View, review and uncertain-outcome checks remain read-only.
 The UI does not start or resume an old metadata-changing plan even if a stale
 client supplied an optimistic `canStart` field.
 
-A network's unfinished job continues to block a new plan. This protection is
-not bypassed. The authorized actor/origin receives a read-only summary of its
+A network's conflicting unfinished job continues to block a new plan. The
+independent add-only lane below permits reporting work beside a known ad job
+that has already passed key/value creation. The authorized actor/origin receives a read-only summary of its
 ID (explicitly labeled `ID posla`), type, saved phase/status, known progress and uncertain-write state. Opening or
 refreshing this summary does not continue, cancel or modify that job. A blocked
 new preparation is explicitly labeled as not started. These are saved progress
@@ -241,7 +242,8 @@ plan or releases another owner's lock. Creating, completed, cancelled or
 uncertain jobs cannot be closed this way. The UI performs a fresh eligibility
 read after confirmation; it preserves the selected keys and requires a new
 preview before any addition. Closing a preview does not automatically start a
-new plan. A genuinely started older ad job remains blocked for separate recovery.
+new plan. Closing never-started previews is separate from adding reporting
+keys beside an older ad job; it never cancels or resumes that job.
 
 Independent tests make every metadata-update call fail, compare existing rows
 exactly, and exercise lost create replies, old-plan guards, all-cursor history
@@ -249,3 +251,44 @@ proofs and deterministic close/start/review/lock-release races. Compiled Workers
 and the actual MAIN dashboard additionally verify OFF preservation, inline
 read-only blockers, explicit safe preview closure and refusal to close an active
 ad job. All checks use isolated synthetic resources.
+
+## Independent reporting beside active creatives — MBA-434
+
+The original global network reservation also blocked standalone Key-values
+while an old Prebid job was creating thousands of creatives. Showing that
+blocker read-only did not satisfy the operator's request to add reporting keys.
+New add-only reporting jobs therefore save a separate execution lane. Existing
+jobs without the lane marker retain their original global ownership protocol.
+The saved marker is server-controlled, not a client override.
+
+An ordinary ad job in a known `creative`, `lineItem` or `association` execution
+phase may coexist with the new standalone lane. Its exact saved snapshot and
+global reservation are preserved. A current uncertain creative write remains
+owned by that ad job and is not retried or confirmed by reporting work.
+Pre-key/value phases, an uncertain targeting write, missing or malformed owner
+data, and historical standalone reporting jobs remain conflicts.
+
+Both ad and reporting key/value execution use the same durable targeting
+reservation before the definitive read that decides whether to create or
+update. This protects read→write ordering across the two lanes and concurrent
+tabs. The reservation remains held through an uncertain write and read-only
+reconciliation; an elapsed timeout or terminal status alone is not permission
+to take another owner's reservation. New ad starts also participate, so a
+finishing old ad job cannot admit a competing targeting writer mid-step.
+Failed first-start cleanup is conditional on its own reservation token and a
+proven never-started job; a concurrent first start cannot reuse that token.
+
+The Key-values UI continues its own preview, confirmation, execution and saved
+result. An optional actor/origin-scoped `relatedAdJob` summary explains the
+independent existing ad job and has no controls for mutating it. A real
+targeting conflict still returns an error; the UI does not bypass a server lock.
+
+The regression now requires complete reporting execution, rather than merely
+an understandable blocker. The actual MAIN App fixture creates a historical
+Prebid plan without reporting materialization, runs the real local handler to
+100 of 200 creatives, then adds the selected missing reporting key/values.
+Before and after comparisons require the exact old serialized job and global
+reservation, all ad objects and all previously existing key/value metadata to
+remain unchanged. Compiled TEST and MAIN repeat the same class of operation
+with native R2/OAuth/SOAP substitutes. No production GAM writes or paid ad
+traffic are used in these checks.

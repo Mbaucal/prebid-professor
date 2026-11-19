@@ -355,6 +355,7 @@ try {
   const legacyStorageKey=`api-integrations/gam/line-items/v1/jobs/${legacyJob.id}.json`;
   const legacySaved=await(await bucket.get(legacyStorageKey)).json();
   delete legacySaved.plan.reporting.writePolicy;
+  delete legacySaved.executionLane;
   const legacyPlanBefore=structuredClone(legacySaved.plan);
   await bucket.put(legacyStorageKey,JSON.stringify(legacySaved));
   // Previews normally do not claim a network. Model a historical held lease
@@ -399,6 +400,46 @@ try {
   assert.equal(traffic.calls.length,beforeBlockedWrites);assert.equal(events.length,beforeBlockedEvents);
   assert.equal((await(await bucket.get('api-integrations/gam/line-items/v1/locks/123456.json')).json()).owner,adJob.id);
   checked('Compiled add-only preparation neither starts nor closes an active ad job and preserves its lock');
+
+  const cancelledBlocker=await call(`/line-items/jobs/${adJob.id}/cancel`,{});
+  assert.equal(cancelledBlocker.status,200);assert.equal(cancelledBlocker.data.status,'cancelled');
+  let historical=await call('/line-items/preview',{...prebidPlan(),namePrefix:'Independent reporting',ranges:[{from:'0.01',to:'0.10',step:'0.01'}],creative:{...prebidPlan().creative,layout:'per-price',copies:20}});
+  assert.equal(historical.status,201,JSON.stringify(historical.data));let historicalJob=historical.data;
+  const historicalKey=`api-integrations/gam/line-items/v1/jobs/${historicalJob.id}.json`;
+  const historicalSaved=await(await bucket.get(historicalKey)).json();
+  delete historicalSaved.plan.reporting;
+  await bucket.put(historicalKey,JSON.stringify(historicalSaved));
+  while(historicalJob.status==='reviewing'){
+    historical=await call(`/line-items/jobs/${historicalJob.id}/review`,{cursor:historicalJob.cursor});
+    assert.equal(historical.status,200,JSON.stringify(historical.data));historicalJob=historical.data;
+  }
+  historical=await call(`/line-items/jobs/${historicalJob.id}/start`,{confirm:true,confirmNetwork:'123456'});
+  assert.equal(historical.status,200,JSON.stringify(historical.data));historicalJob=historical.data;
+  for(let i=0;historicalJob.phase!=='Kreativi'&&i<30;i++){
+    historical=await call(`/line-items/jobs/${historicalJob.id}/step`,{cursor:historicalJob.cursor});
+    assert.equal(historical.status,200,JSON.stringify(historical.data));historicalJob=historical.data;
+  }
+  assert.equal(historicalJob.phase,'Kreativi');
+  historical=await call(`/line-items/jobs/${historicalJob.id}/step`,{cursor:historicalJob.cursor});
+  assert.equal(historical.status,200,JSON.stringify(historical.data));historicalJob=historical.data;
+  assert.equal(historicalJob.phase,'Kreativi');assert(historicalJob.counts.creative.created>0&&historicalJob.counts.creative.created<200);
+  const untouchedJob=await(await bucket.get(historicalKey)).text();
+  const untouchedLock=await(await bucket.get('api-integrations/gam/line-items/v1/locks/123456.json')).text();
+  const untouchedAds=structuredClone(Object.fromEntries(['advertiser','order','creative','lineItem','association'].map(kind=>[kind,traffic.db[kind]])));
+  const untouchedKeys=structuredClone(traffic.db.key),untouchedValues=structuredClone(traffic.db.value),beforeIndependentWrites=traffic.calls.length;
+  const independent=await trafficJob({mode:'reporting',networkCode:'123456',reportingWritePolicy:'add_only',reportingSelection:[{key:'refresh_count',values:['43401']}]});
+  assert.equal(independent.status,'completed');
+  assert.equal(independent.relatedAdJob.id,historicalJob.id);assert.equal(independent.relatedAdJob.phase,'Kreativi');
+  assert.equal(await(await bucket.get(historicalKey)).text(),untouchedJob);
+  assert.equal(await(await bucket.get('api-integrations/gam/line-items/v1/locks/123456.json')).text(),untouchedLock);
+  assert.deepEqual(Object.fromEntries(['advertiser','order','creative','lineItem','association'].map(kind=>[kind,traffic.db[kind]])),untouchedAds);
+  assert.deepEqual(traffic.db.key,untouchedKeys);
+  for(const value of untouchedValues)assert.deepEqual(traffic.db.value.find(row=>row.id===value.id),value);
+  assert.equal(traffic.db.value.length,untouchedValues.length+1);
+  const independentWrites=traffic.calls.slice(beforeIndependentWrites);
+  assert.equal(independentWrites.length,1);assert.equal(independentWrites[0].kind,'value');assert.notEqual(independentWrites[0].operation,'update');
+  assert.equal(independentWrites[0].payloads[0].name,'43401');
+  checked('Compiled standalone additions complete during historical partial creatives with the exact old job, global lock and ad entities unchanged');
   trafficMode=false;
 
   for (const nextMode of ['oauth-redirect', 'soap-redirect', 'oauth-rejected', 'soap-rejected']) {
