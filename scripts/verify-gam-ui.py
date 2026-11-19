@@ -639,6 +639,10 @@ try:
             page.set_viewport_size({'width':width,'height':height})
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
             reporting_review.scroll_into_view_if_needed()
+            expect(blocker_card.get_by_text('ID posla',exact=True)).to_be_in_viewport()
+            expect(blocker_card.locator('.gam-kv-job-id')).to_have_text(blocker['id'])
+            expect(blocker_card.locator('.gam-kv-job-id')).to_be_in_viewport()
+            assert blocker_card.locator('.gam-kv-job-id').evaluate('(element)=>element.scrollWidth<=element.clientWidth+1')
             page.screenshot(path=str(out/f'key-values-blocked-readonly-{label}.png'),full_page=False)
         # An unstarted preview can be explicitly closed, but an intervening
         # start revokes that option before the close POST is sent.
