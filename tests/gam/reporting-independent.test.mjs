@@ -438,3 +438,20 @@ test('a cancel winning before the dispatch CAS leaves no leaked fence for a prov
   const next=await ready(f,report({key:'aq_first_request',values:[]}));
   await finish(f,await start(f,next));assert.equal(f.duplicates,0);unchangedAd(f,before,ad.id);
 });
+
+test('an index failure after the dispatch reservation but before Google requires a read-only check and later fresh step',async()=>{
+  const f=await setup(),kv=await start(f,await ready(f,report({key:'aq_bid_origin',values:[]})));
+  const bucket=f.env.BUILDS,put=bucket.put.bind(bucket);let failed=false;
+  bucket.put=async(key,body,options)=>{
+    if(!failed&&key.startsWith(prefix+'history/')&&JSON.parse(body).id===kv.id&&bucket.data.has(attemptKey(kv.id,kv.cursor))){
+      failed=true;throw Error('Synthetic history write failed after job CAS');
+    }
+    return put(key,body,options);
+  };
+  let j=await action(f,kv,'step');assert.equal(failed,true);assert.equal(j.status,'creating');assert.equal(j.awaitingCheck,true);
+  assert.equal(f.writes.length,0);const cursor=j.cursor;
+  j=await action(f,j,'check');assert.equal(j.status,'creating');assert.equal(j.awaitingCheck,false);
+  assert(j.cursor>cursor);assert.equal(f.writes.length,0,'check cannot turn a proven unsent attempt into an automatic create');
+  j=await action(f,j,'step');assert.equal(j.status,'completed');assert.equal(f.writes.length,1);
+  assert.equal(f.db.key.length,1);assert.equal(f.duplicates,0);
+});
