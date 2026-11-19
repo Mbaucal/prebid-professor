@@ -1685,7 +1685,7 @@ export default function GamLineItemsPanel({
                   ? "Reporting je pripremljen za prikazane ključeve."
                   : "Priprema uključuje reporting (ON); postojeći CUSTOM_DIMENSION se zadržava."}{" "}
                 {job.reporting.needsUpdate > 0 &&
-                  `${job.reporting.needsUpdate} postojećih ključeva čeka uključivanje reportinga. `}
+                  `Za uključivanje reportinga: ${job.reporting.needsUpdate}. `}
                 Dodatne numeričke vrednosti za {job.reporting.openKeys.join(", ")}{" "}
                 moraju biti unapred definisane u GAM-u da bi ulazile u izveštaje.
                 Podaci se ne dopunjavaju retroaktivno.
@@ -1907,6 +1907,15 @@ export default function GamLineItemsPanel({
                     Potvrđujem ovu postavku u mreži {job.network.networkCode}:{" "}
                     {job.counts.lineItem.total} line itema i{" "}
                     {job.counts.creative.total} kreativa.
+                    {job.reporting && (
+                      <>
+                        {" "}Reporting: {job.reporting.keyCount} ključeva,{" "}
+                        {job.reporting.valueCount} vrednosti
+                        {job.pendingUpdateCount
+                          ? `, ${job.pendingUpdateCount} dopuna postojećih ključeva`
+                          : ""}.
+                      </>
+                    )}
                   </>
                 )}
               </label>

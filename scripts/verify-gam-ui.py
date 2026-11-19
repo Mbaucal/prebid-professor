@@ -77,11 +77,17 @@ try:
         page.locator('.gam-li-settings>summary').click()
         page.get_by_label('Naziv novog advertiser-a',exact=True).fill('')
         page.get_by_label('Naziv novog order-a',exact=True).fill('')
+        for item in page.locator('.gam-li-chips button').all():item.click()
+        page.get_by_label('Veličine line itema',exact=True).fill('')
+        page.get_by_text('HTML / JavaScript kreativa',exact=True).click()
+        page.locator('.gam-li-code').fill('')
         reporting_submitted=[]
         def reporting_preview(r):
             data=json.loads(r.request.post_data)
             reporting_submitted.append(data)
             assert data=={'mode':'reporting','networkCode':'123456'}
+            expect(page.get_by_role('button',name='Pripremi GAM reporting',exact=True)).to_be_disabled()
+            expect(page.get_by_label('GAM mreža za line iteme',exact=True)).to_be_disabled()
             r.continue_()
         page.route('**/line-items/preview',reporting_preview)
         before_reporting=len(requests)
@@ -423,14 +429,16 @@ try:
         expect(value_row.locator('td').nth(2)).to_contain_text('283 postoji · 0 kreirano')
         expect(value_row.locator('td').nth(3)).to_have_text('0')
         expect(value_row.locator('td').nth(6)).to_have_text('0')
-        expect(reporting_review).to_contain_text('1 postojećih ključeva čeka uključivanje reportinga.')
+        expect(reporting_review).to_contain_text('Za uključivanje reportinga: 1.')
         for width,height,label in [(1440,1080,'desktop'),(390,844,'mobile')]:
             page.set_viewport_size({'width':width,'height':height})
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
             reporting_review.scroll_into_view_if_needed()
             reporting_review.screenshot(path=str(out/f'reporting-update-{label}.png'))
             if width==390:
-                reporting_review.locator('.gam-li-counts').evaluate('(element) => element.scrollLeft = element.scrollWidth')
+                counts_table=reporting_review.locator('.gam-li-counts')
+                counts_table.scroll_into_view_if_needed()
+                counts_table.evaluate('(element) => element.scrollLeft = element.scrollWidth')
                 expect(reporting_review.get_by_role('columnheader',name='Za dopunu',exact=True)).to_be_in_viewport()
                 reporting_review.screenshot(path=str(out/'reporting-update-mobile-counts.png'))
         reporting_confirm.check()
