@@ -354,9 +354,12 @@ function sameDate(actual, expected) {
   }
 }
 export const reportingReady = (value) => ["ON", "CUSTOM_DIMENSION"].includes(value);
+export const addOnlyReporting = (plan) => plan.mode==='reporting'&&plan.reporting?.writePolicy==='add_only';
+export const reportingExecutionAllowed = (plan) => plan.mode!=='reporting'||addOnlyReporting(plan);
+const knownReportingMode = (value) => [undefined,null,'','OFF','ON','CUSTOM_DIMENSION'].includes(value);
 /** Unknown explicit status cannot authorize a reporting update. */
-export function reportingUpdatePayload(entity, actual) {
-  if (entity.kind !== "key" || entity.payload.reportableType !== "ON" ||
+export function reportingUpdatePayload(entity, actual, plan) {
+  if ((plan&&addOnlyReporting(plan)) || entity.kind !== "key" || entity.payload.reportableType !== "ON" ||
       ![undefined, null, "", "OFF"].includes(actual.reportableType) ||
       !["FREEFORM", "PREDEFINED"].includes(actual.type) ||
       flag(actual.isArchived) || ![undefined, null, "", "ACTIVE"].includes(actual.status)) return null;
@@ -387,7 +390,8 @@ export function compatible(entity, actual, plan) {
       !["CANCELED", "DELETED"].includes(actual.status)
     );
   if (k === "key") return ["FREEFORM", "PREDEFINED"].includes(actual.type) &&
-    (!p.reportableType || reportingReady(actual.reportableType));
+    (!p.reportableType || reportingReady(actual.reportableType) ||
+      (addOnlyReporting(plan)&&knownReportingMode(actual.reportableType)));
   if (k === "value")
     return (
       scalar(actual.customTargetingKeyId, p.customTargetingKeyId) &&
@@ -597,7 +601,7 @@ export async function inspectEntities(client, batch, plan) {
       }
       const renamed = !e.id && e.knownId && kind !== "association" && !sameEntityName(kind, row.name, e.payload.name);
       const ok = matches.length === 1 && !renamed && compatible(e, row, plan);
-      const updatePayload = matches.length === 1 && !renamed ? reportingUpdatePayload(e, row) : null;
+      const updatePayload = matches.length === 1 && !renamed ? reportingUpdatePayload(e, row, plan) : null;
       results.set(e.key, {
         state: ok ? "existing" : updatePayload ? "update" : "conflict",
         id,
@@ -606,7 +610,9 @@ export async function inspectEntities(client, batch, plan) {
         ...(kind === "key" ? { reportableType: row.reportableType || "OFF" } : {}),
         ...(updatePayload ? { updatePayload, verifiedId: true } : {}),
         message: updatePayload ? "Postojeći ključ treba uključiti u reporting; njegov ID, naziv i tip ostaju sačuvani." : ok
-          ? undefined
+          ? kind==='key'&&addOnlyReporting(plan)&&!reportingReady(row.reportableType)
+            ? 'Postojeći ključ ima reporting OFF. Podešavanja ostaju sačuvana; dodaju se samo izabrane vrednosti koje nedostaju.'
+            : undefined
           : matches.length !== 1 ? "Naziv nije jedinstven u izabranom GAM opsegu."
             : renamed ? "Ranije potvrđeni entitet sada ima drugi naziv."
               : incompatibilityReason(e, row, plan),
@@ -743,7 +749,9 @@ function reportingResults(job, states) {
       ? created?'created':updated?'updated':'existing'
       : ['new','update','unverified','blocked','conflict'].includes(state)?state:'pending';
     const message=value?.message||value?.reconciliationMessage||(sameId?prior.reconciliationMessage:undefined);
+    const reportableType=value?.reportableType??(sameId?prior.reportableType:undefined);
     return {state,outcome,...(value?.id?{id:value.id}:{}),
+      ...(reportableType!==undefined?{reportableType}:{}),
       ...((value?.reportingReconciled||(sameId&&prior.reportingReconciled))?{reconciled:true}:{}),
       ...(message?{message}:{})};
   };
@@ -761,12 +769,20 @@ function reportingResults(job, states) {
   return {results,outcomes:{keys:summarize(results),values:summarize(allValues)},
     ...(job.plan.mode==='reporting'?{reviewProgress:{processed:Math.min(total,processed),total}}:{})};
 }
-export function jobView(job, attempt) {
+export function canCloseJobPreview(job, attempt, noWriteAttempts=false) {
+  if(!['reviewing','ready'].includes(job.status)||attempt||!noWriteAttempts||job.executionStartedAt||job.startedAt)
+    return false;
+  const references=[...Object.values(job.refs||{}),...Object.values(job.verificationResults||{})];
+  return !references.some(value=>value.state==='created'||value.createdByJob||value.reportingUpdated||value.reportingReconciled)&&
+    !(job.associationCounts?.created>0);
+}
+export function jobView(job, attempt, {noWriteAttempts=false}={}) {
   const states = referenceStates(job),
     conflicts = [...states].filter(
     ([, r]) => r.state === "conflict",
   ), verificationIssues = [...states].filter(([, r]) => ["unverified", "blocked"].includes(r.state)),
     counts = totals(job, states),
+    executionAllowed=reportingExecutionAllowed(job.plan),
     reviewed = PHASES.filter((phase) => phase !== "association").every((phase) =>
       counts[phase].new + counts[phase].update + counts[phase].done + counts[phase].conflict +
       counts[phase].unverified + counts[phase].blocked === counts[phase].total,
@@ -778,11 +794,15 @@ export function jobView(job, attempt) {
     network: job.network,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
+    ...(job.closedPreviewAt?{closedPreviewAt:job.closedPreviewAt}:{}),
     mode: job.plan.mode,
     phase: PHASE_LABELS[job.phase] || "",
     offset: job.offset,
     phaseTotal: job.phase ? phaseCount(job.plan, job.phase) : 0,
     counts,
+    executionAllowed,
+    readOnlyReason:executionAllowed?'':'Ovaj raniji Key-values posao može menjati postojeća podešavanja. Dostupan je samo za pregled i proveru ishoda; za dodavanje napravite novi pregled.',
+    canClosePreview:canCloseJobPreview(job,attempt,noWriteAttempts),
     pendingUpdateCount: [...states.values()].filter((value) => value.state === "update").length,
     updates: [...states].filter(([, value]) => value.state === "update").slice(0, 30).map(([ref, value]) => ({
       ref, id: value.id, name: value.name, message: value.message,
@@ -795,6 +815,7 @@ export function jobView(job, attempt) {
       valueCount: job.plan.reporting.keys.reduce((count, key) => count + key.values.length, 0),
       openKeys: job.plan.reporting.keys.filter((key) => key.openDomain).map((key) => key.key),
       needsUpdate: counts.key.update,
+      ...(job.plan.reporting.writePolicy?{writePolicy:job.plan.reporting.writePolicy}:{}),
       ...reportingResults(job,states),
     } } : {}),
     error: job.error || "",
@@ -808,7 +829,7 @@ export function jobView(job, attempt) {
     verificationCount: verificationIssues.length,
     unverifiedCount: verificationIssues.filter(([, r]) => r.state === "unverified").length,
     blockedCount: verificationIssues.filter(([, r]) => r.state === "blocked").length,
-    canStart: job.status === "ready" && reviewed && conflicts.length === 0 && verificationIssues.length === 0 && job.expiresAt >= Date.now(),
+    canStart: executionAllowed && job.status === "ready" && reviewed && conflicts.length === 0 && verificationIssues.length === 0 && job.expiresAt >= Date.now(),
     configuration: {
       advertiser: job.labels.advertiser || job.plan.advertiser.name,
       orders: job.plan.orders.map((o, i) => ({
