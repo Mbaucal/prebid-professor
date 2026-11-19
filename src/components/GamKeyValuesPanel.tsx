@@ -210,8 +210,8 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
     if(!closeConfirmed||!closable(target))return;
     await run('Zatvaram nepočeti Tessera pregled',async()=>{
       const current=await api<Job>('/line-items/jobs/'+target.id);
-      if(!closable(current)){
-        if(alive.current)setActiveJob(current);
+      if(current.id!==target.id||current.network.networkCode!==target.network.networkCode||!Number.isSafeInteger(current.cursor)||!closable(current)){
+        if(alive.current){setActiveJob(current);setActiveJobId(current.id);setJob(null);setConfirmed(false);setCloseConfirmed(false);}
         throw Error('Ovaj pregled više nije moguće bezbedno zatvoriti. GAM stanje nije menjano.');
       }
       await api<Job>(`/line-items/jobs/${current.id}/close-preview`,{confirm:true,confirmNetwork:current.network.networkCode,cursor:current.cursor});
