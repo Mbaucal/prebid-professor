@@ -131,7 +131,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
     if(working.current)return;
     working.current=true;stop.current=false;setBusy(label);onRunning(true);setError('');setActiveJobId('');
     statusRef.current?.focus({preventScroll:true});
-    statusRef.current?.scrollIntoView({behavior:'smooth',block:'start'});
+    statusRef.current?.scrollIntoView({behavior:'instant',block:'start'});
     try{await action();}
     catch(e){if(alive.current)setError((e as Error).message);}
     finally{
@@ -155,7 +155,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
       setJob(null);setConfirmed(false);
       const next=await api<Job>('/line-items/preview',{mode:'reporting',networkCode:network,reportingSelection:selection.rows});
       if(next.mode!=='reporting'){onOpenLineItems(next.id);return;}
-      if(alive.current){setJob(next);statusRef.current?.scrollIntoView({behavior:'smooth',block:'start'});}
+      if(alive.current){setJob(next);statusRef.current?.scrollIntoView({behavior:'instant',block:'start'});}
       if(!next.resumed)await walk(next);
     });
   }
@@ -267,7 +267,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
                 {key.values.length>20&&<label>Pretraži vrednosti za {key.key}<input value={query} onChange={event=>setQueries(current=>({...current,[key.key]:event.target.value}))} placeholder="npr. RS"/></label>}
                 <div className="gam-li-actions"><button type="button" onClick={()=>change(key.key,{values:[...key.values]})}>Sve vrednosti za {key.key}</button><button type="button" onClick={()=>change(key.key,{values:[]})}>Bez vrednosti za {key.key}</button></div>
                 <div className="gam-kv-values">{visible.map(value=><label key={value}><input type="checkbox" aria-label={`${key.key}: ${value}`} checked={pick.values.includes(value)} onChange={event=>change(key.key,{values:event.target.checked?[...pick.values,value]:pick.values.filter(item=>item!==value)})}/><code>{value}</code></label>)}</div>
-                {key.openDomain&&<label>Dodatne vrednosti za {key.key}<textarea rows={2} value={pick.extra} onChange={event=>change(key.key,{extra:event.target.value})} placeholder={key.key==='refresh_interval'?'npr. 30, 60':'npr. 1, 2, 3'}/><small>{key.key==='refresh_interval'?'Pozitivne sekunde, do šest decimala.':'Nenegativni celi brojevi.'} Odvoji zarezom ili novim redom.</small></label>}
+                {key.openDomain&&<label>Dodatne vrednosti za {key.key}<textarea aria-label={'Dodatne vrednosti za '+key.key} rows={2} value={pick.extra} onChange={event=>change(key.key,{extra:event.target.value})} placeholder={key.key==='refresh_interval'?'npr. 30, 60':'npr. 1, 2, 3'}/><small>{key.key==='refresh_interval'?'Pozitivne sekunde, do šest decimala.':'Nenegativni celi brojevi.'} Odvoji zarezom ili novim redom.</small></label>}
               </fieldset>
               {!pick.values.length&&!pick.extra.trim()&&<p className="gam-help">Priprema samo ključa. Za reporting je potrebno unapred definisati i vrednosti.</p>}
             </details>
