@@ -393,3 +393,48 @@ test('an old global reporting owner completes in its old lane rather than leavin
   assert.equal((await (await f.env.BUILDS.get(globalLock)).json()).owner,null);
   assert.equal((await saved(f,j.id)).executionLane,undefined);assert.equal(f.duplicates,0);
 });
+
+test('active reporting and ad owners remain visible after more than one hundred newer read-only previews',async()=>{
+  const f=await setup(),ad=await oldCreative(f),first=await ready(f,report({key:'aq_bid_origin',values:[]}));
+  assert.equal((await saved(f,first.id)).executionLane,'reporting_add_only_v1');
+  for(let n=0;n<105;n++)await preview(f,report({key:'aq_first_request',values:[]}));
+  const active=await start(f,first),before=snapshot(f),history=await request(f,'/line-items/jobs?network=123456');
+  assert.equal(history.status,200);assert(history.data.jobs.some(job=>job.id===ad.id),'active global ad owner must remain reachable');
+  assert(history.data.jobs.some(job=>job.id===active.id),'active independent reporting owner must remain reachable');
+  assert.equal(new Set(history.data.jobs.map(job=>job.id)).size,history.data.jobs.length);
+  assert.equal(f.writes.length,0);unchangedAd(f,before,ad.id);
+});
+
+test('present null or primitive legacy attempt records are unknown, not proof that no targeting write exists',async()=>{
+  for(const value of [null,false,0]) {
+    const f=await setup(),kv=await ready(f,report({key:'aq_bid_origin',values:[]})),ad=await oldCreative(f);
+    await f.env.BUILDS.put(attemptKey(ad.id,ad.cursor),JSON.stringify(value));
+    const before=snapshot(f),blocked=await request(f,`/line-items/jobs/${kv.id}/start`,{confirm:true,confirmNetwork:'123456'});
+    assert.equal(blocked.status,409,JSON.stringify(value));assert.equal(f.writes.length,0);unchangedAd(f,before,ad.id);
+  }
+});
+
+test('a cancel winning before the dispatch CAS leaves no leaked fence for a provably unsent attempt',async()=>{
+  const f=await setup(),ad=await oldCreative(f),before=snapshot(f),kv=await start(f,await ready(f,report({key:'aq_bid_origin',values:[]})));
+  const bucket=f.env.BUILDS,get=bucket.get.bind(bucket),put=bucket.put.bind(bucket);
+  let releaseCancel,releaseStep,markCancel,markStep,holdCancel=true;
+  const cancelGate=new Promise(resolve=>releaseCancel=resolve),cancelRead=new Promise(resolve=>markCancel=resolve);
+  const stepGate=new Promise(resolve=>releaseStep=resolve),stepSave=new Promise(resolve=>markStep=resolve);
+  bucket.get=async key=>{
+    const value=await get(key);
+    if(key===attemptKey(kv.id,kv.cursor)&&holdCancel){holdCancel=false;markCancel();await cancelGate;}
+    return value;
+  };
+  bucket.put=async(key,body,options)=>{
+    if(key===jobKey(kv.id)&&JSON.parse(body).status==='creating') {markStep();await stepGate;}
+    return put(key,body,options);
+  };
+  const cancelling=request(f,`/line-items/jobs/${kv.id}/cancel`,{});await cancelRead;
+  const stepping=request(f,`/line-items/jobs/${kv.id}/step`,{cursor:kv.cursor});await stepSave;
+  assert(bucket.data.has(attemptKey(kv.id,kv.cursor)),'step has durably prepared its attempt, but has not won the dispatch CAS');
+  releaseCancel();const cancelled=await cancelling;assert.equal(cancelled.status,200);assert.equal(cancelled.data.status,'cancelled');
+  releaseStep();const stopped=await stepping;assert([200,409].includes(stopped.status));
+  assert.equal(f.writes.length,0,'the cancelled stale step must never call Google');unchangedAd(f,before,ad.id);
+  const next=await ready(f,report({key:'aq_first_request',values:[]}));
+  await finish(f,await start(f,next));assert.equal(f.duplicates,0);unchangedAd(f,before,ad.id);
+});
