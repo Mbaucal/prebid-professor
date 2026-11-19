@@ -119,6 +119,7 @@ try:
             data=json.loads(r.request.post_data)
             reporting_submitted.append(data)
             assert data['mode']=='reporting' and data['networkCode']=='123456'
+            assert data['reportingWritePolicy']=='add_only'
             assert len(data['reportingSelection'])==12
             assert sum(len(key['values']) for key in data['reportingSelection'])==283
             assert all('values' in key for key in data['reportingSelection'])
@@ -154,20 +155,22 @@ try:
         reporting_review=page.locator('.gam-kv-status')
         expect(reporting_review).to_contain_text('12 ključeva · 283 vrednosti u sačuvanom izboru')
         assert page.locator('.gam-kv-results .gam-kv-result-key').count()==12
-        reporting_confirm=page.get_by_role('checkbox',name='Potvrđujem pripremu 12 ključeva i 283 vrednosti u GAM mreži 123456.',exact=True)
+        reporting_confirm=page.get_by_role('checkbox',name='Potvrđujem dodavanje nedostajućih stavki iz izbora 12 ključeva i 283 vrednosti u GAM mreži 123456. Postojeća podešavanja ostaju bez izmene.',exact=True)
         reporting_create=page.get_by_role('button',name='Pokreni pripremu key-values',exact=True)
         expect(reporting_create).to_be_disabled()
         assert 'line itema' not in reporting_confirm.locator('..').inner_text()
         reporting_confirm.check()
         reporting_create.click()
         page.get_by_role('heading',name='Priprema je završena',exact=True).wait_for(timeout=60000)
-        expect(page.locator('.gam-kv-results')).to_contain_text('12 kreirano · 0 već postoji · 0 reporting dopunjen')
+        expect(page.locator('.gam-kv-results')).to_contain_text('12 kreirano · 0 već postoji — bez izmene')
         assert reporting_progress
         assert page.get_by_label('Naziv novog advertiser-a',exact=True).input_value()==''
         assert page.get_by_label('Naziv novog order-a',exact=True).input_value()==''
         reporting_job_url=next(r['url'].removesuffix('/start') for r in reversed(requests) if r['url'].endswith('/start'))
         reporting_completed=page.request.get(reporting_job_url).json()
         assert reporting_completed['mode']=='reporting'
+        assert reporting_completed['reporting']['writePolicy']=='add_only'
+        assert reporting_completed['executionAllowed'] is True
         assert all(reporting_completed['counts'][kind]['total']==0 for kind in ['advertiser','order','creative','lineItem','association'])
         assert reporting_completed['counts']['key']['done']==12
         assert reporting_completed['counts']['value']['done']==283
@@ -425,7 +428,7 @@ try:
         reporting_ready=deepcopy(reporting_completed)
         reporting_ready.update(status='ready',error='',awaitingCheck=False,canStart=True,
             verificationCount=0,unverifiedCount=0,blockedCount=0,verificationIssues=[],
-            pendingUpdateCount=1,resumed=False,updates=[{'ref':'key:aq_bid_origin','state':'update'}])
+            pendingUpdateCount=0,resumed=False,updates=[],canClosePreview=True)
         for count in reporting_ready['counts'].values():
             count.update(existing=count['existing']+count['created'],created=0,new=0,
                          conflict=0,unverified=0,blocked=0,update=0)
@@ -433,25 +436,27 @@ try:
         for key in reporting_ready['reporting']['results']:
             key.update(state='existing',outcome='existing')
             for value in key['values']:value.update(state='existing',outcome='existing')
-        next(key for key in reporting_ready['reporting']['results'] if key['key']=='aq_bid_origin').update(state='update',outcome='update')
-        reporting_ready['counts']['key'].update(existing=11,done=11,update=1)
-        reporting_ready['reporting']['needsUpdate']=1
+        origin_key=next(key for key in reporting_ready['reporting']['results'] if key['key']=='aq_bid_origin')
+        origin_key.update(reportableType='OFF',message='Postojeći reporting je OFF i ostaje bez izmene.')
+        next(value for value in origin_key['values'] if value['name']=='cached').update(state='new',outcome='new',id=None)
+        reporting_ready['counts']['value'].update(existing=282,done=282,new=1)
+        reporting_ready['reporting']['needsUpdate']=0
         outcomes_for(reporting_ready)
         reporting_unverified=deepcopy(reporting_ready)
         reporting_unverified.update(canStart=False,error='GAM provera ključa nije uspela.',
             verificationCount=1,unverifiedCount=1,
             verificationIssues=[{'ref':'key:aq_first_request','state':'unverified','message':'Ponovite proveru ključa.'}])
-        reporting_unverified['counts']['key'].update(existing=10,done=10,unverified=1)
+        reporting_unverified['counts']['key'].update(existing=11,done=11,unverified=1)
         next(key for key in reporting_unverified['reporting']['results'] if key['key']=='aq_first_request').update(state='unverified',outcome='unverified',message='Ponovite proveru ključa.')
         outcomes_for(reporting_unverified)
         reporting_pending=deepcopy(reporting_ready)
-        reporting_pending.update(status='creating',canStart=False,awaitingCheck=True,
+        reporting_pending.update(status='creating',canStart=False,awaitingCheck=True,canClosePreview=False,
             error='Ishod poslednjeg upisa nije potvrđen.')
         reporting_checked=deepcopy(reporting_ready)
-        reporting_checked.update(status='creating',awaitingCheck=False,error='',resumed=False)
-        reporting_checked['counts']['key'].update(existing=12,done=12,update=0)
-        reporting_checked['reporting']['needsUpdate']=0
-        next(key for key in reporting_checked['reporting']['results'] if key['key']=='aq_bid_origin').update(state='existing',outcome='updated',reconciled=True,message='Reporting uključen, potvrđeno proverom.')
+        reporting_checked.update(status='creating',awaitingCheck=False,error='',resumed=False,canClosePreview=False)
+        reporting_checked['counts']['value'].update(existing=283,done=283,new=0)
+        cached_value=next(value for key in reporting_checked['reporting']['results'] if key['key']=='aq_bid_origin' for value in key['values'] if value['name']=='cached')
+        cached_value.update(state='existing',outcome='existing',reconciled=True,message='Vrednost je potvrđena proverom posle prekida.',id='99901')
         outcomes_for(reporting_checked)
         reporting_finished=deepcopy(reporting_checked)
         reporting_finished.update(status='completed',canStart=False)
@@ -471,6 +476,7 @@ try:
                 reporting_scenario['job']=reporting_pending
             elif action=='check':reporting_scenario['job']=reporting_checked
             elif action=='step':reporting_scenario['job']=reporting_finished
+            else:raise AssertionError('Unexpected mutation through Key-values: '+action)
             r.fulfill(json=reporting_scenario['job'])
         def reporting_history(r):
             r.fulfill(json={'jobs':[{'id':reporting_completed['id'],'mode':'reporting','name':'GAM reporting',
@@ -492,16 +498,17 @@ try:
         reporting_retry.click()
         page.get_by_role('heading',name='Provera je završena — spremno za potvrdu',exact=True).wait_for()
         expect(reporting_create).to_be_disabled()
-        expect(reporting_review).to_contain_text('0 novih ključeva, 1 dopuna reportinga i 0 novih vrednosti')
+        expect(reporting_review).to_contain_text('Dodaće se 0 novih ključeva i 1 novih vrednosti')
+        expect(page.locator('.gam-kv-results')).to_contain_text('reporting je OFF i ostaje OFF')
         origin_result=page.locator('.gam-kv-result-key').filter(has=page.locator('summary code').get_by_text('aq_bid_origin',exact=True))
-        expect(origin_result).to_contain_text('Reporting za dopunu')
-        expect(page.locator('.gam-kv-totals')).to_contain_text('11 već postoji · 0 reporting dopunjen')
-        expect(page.locator('.gam-kv-totals')).to_contain_text('283 već postoji')
+        expect(origin_result).to_contain_text('Već postoji')
+        assert 'Reporting za dopunu' not in origin_result.inner_text()
+        expect(page.locator('.gam-kv-totals')).to_contain_text('12 već postoji — bez izmene')
         for width,height,label in [(1440,1080,'desktop'),(390,844,'mobile')]:
             page.set_viewport_size({'width':width,'height':height})
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
             reporting_review.scroll_into_view_if_needed()
-            page.screenshot(path=str(out/f'key-values-update-{label}.png'),full_page=False)
+            page.screenshot(path=str(out/f'key-values-existing-off-{label}.png'),full_page=False)
         reporting_confirm.check()
         reporting_create.click()
         pending_check=page.get_by_role('button',name='Proveri ishod u GAM-u',exact=True)
@@ -512,19 +519,46 @@ try:
         pending_check.click()
         expect(page.get_by_role('button',name='Nastavi posao',exact=True)).to_be_enabled()
         assert [a['action'] for a in reporting_actions]==['review','review','start','check']
-        expect(origin_result).to_contain_text('Reporting dopunjen')
         origin_result.locator('summary').click()
-        expect(origin_result).to_contain_text('Reporting uključen, potvrđeno proverom.')
+        expect(origin_result).to_contain_text('Vrednost je potvrđena proverom posle prekida.')
         page.get_by_role('button',name='Nastavi posao',exact=True).click()
         page.get_by_role('heading',name='Priprema je završena',exact=True).wait_for()
         assert [a['action'] for a in reporting_actions]==['review','review','start','check','step']
-        expect(page.locator('.gam-kv-totals')).to_contain_text('11 već postoji · 1 reporting dopunjen')
-        # A resumed preview shows the saved pending operation without a write.
+        expect(page.locator('.gam-kv-totals')).to_contain_text('12 već postoji — bez izmene')
+        assert page.get_by_text('Sve izabrano već postoji. Nije bilo novih upisa u GAM.',exact=True).count()==0
+        # Legacy standalone history is read-only even if a stale canStart says true.
+        legacy=deepcopy(reporting_ready)
+        legacy['reporting'].pop('writePolicy',None)
+        legacy.update(executionAllowed=False,readOnlyReason='Raniji plan može menjati postojeća podešavanja. Napravi novi pregled samo za dodavanje.',canStart=True,canClosePreview=False)
+        reporting_scenario['job']=legacy
+        page.get_by_role('button',name='Otvori key-values posao',exact=True).click()
+        expect(page.locator('.gam-kv-status')).to_contain_text('Raniji plan može menjati postojeća podešavanja')
+        assert reporting_create.count()==0
+        assert page.get_by_role('button',name='Nastavi posao',exact=True).count()==0
+        assert page.get_by_role('button',name='Ponovi proveru istog posla',exact=True).count()==0
+        assert [a['action'] for a in reporting_actions]==['review','review','start','check','step']
+        legacy_creating=deepcopy(legacy)
+        legacy_creating.update(status='creating',awaitingCheck=True)
+        reporting_scenario['job']=legacy_creating
+        page.get_by_role('button',name='Otvori key-values posao',exact=True).click()
+        expect(pending_check).to_be_enabled()
+        assert page.get_by_role('button',name='Nastavi posao',exact=True).count()==0
+        pending_check.click()
+        assert [a['action'] for a in reporting_actions]==['review','review','start','check','step','check']
+        # All already-existing safe results explicitly state no write was needed.
+        already_existing=deepcopy(reporting_finished)
+        for key in already_existing['reporting']['results']:
+            key.pop('reconciled',None)
+            for value in key['values']:value.pop('reconciled',None)
+        reporting_scenario['job']=already_existing
+        page.get_by_role('button',name='Otvori key-values posao',exact=True).click()
+        expect(page.get_by_text('Sve izabrano već postoji. Nije bilo novih upisa u GAM.',exact=True)).to_be_visible()
+        # A resumed safe preview shows the saved pending operation without a write.
         def reporting_resumed_preview(r):r.fulfill(json={**reporting_pending,'resumed':True})
         page.route(preview_url,reporting_resumed_preview)
         reporting_preview_button.click()
         expect(pending_check).to_be_enabled()
-        assert [a['action'] for a in reporting_actions]==['review','review','start','check','step']
+        assert [a['action'] for a in reporting_actions]==['review','review','start','check','step','check']
         page.unroute(preview_url,reporting_resumed_preview)
         page.unroute(reporting_job_url,reporting_saved_job)
         page.unroute(reporting_job_url+'/*',reporting_action)
@@ -560,25 +594,78 @@ try:
         page.get_by_text('Vrednosti za aq_bid_origin · pripremljena lista',exact=True).click()
         expect(page.get_by_role('checkbox',name='aq_bid_origin: cached',exact=True)).to_be_checked()
         expect(page.get_by_role('checkbox',name='aq_bid_origin: fresh',exact=True)).not_to_be_checked()
-        assert [a['action'] for a in reporting_actions]==['review','review','start','check','step']
+        assert [a['action'] for a in reporting_actions]==['review','review','start','check','step','check']
         page.unroute(catalog_url,hold_catalog)
         page.unroute(reporting_job_url,subset_job)
         page.unroute(history_url,subset_history)
-        # A Key-values conflict may point to an active ad job that also carries
-        # reporting data. Opening it navigates to Line itemi and only reads.
-        scenario['job']=active
-        page.route(preview_url,active_conflict)
-        page.route(job_url,serve_job)
-        page.route(job_url+'/*',serve_action)
-        before_ad_actions=len(action_calls)
+        # An active ad job is shown inline, read-only, without navigating to
+        # ad mutation controls. A stale close eligibility is rechecked by GET.
+        blocker=deepcopy(active)
+        blocker.update(canClosePreview=False,awaitingCheck=True)
+        blocker_state={'job':blocker,'closed':False}
+        blocker_actions=[];blocked_previews=[]
+        def active_readonly_conflict(r):
+            blocked_previews.append(json.loads(r.request.post_data))
+            assert blocked_previews[-1]['reportingWritePolicy']=='add_only'
+            j=blocker_state['job']
+            summary={key:j[key] for key in ['id','cursor','mode','status','phase','network','counts','awaitingCheck','canClosePreview']}
+            r.fulfill(status=409,json={'error':'Drugi posao je već aktivan.','activeJobId':j['id'],'activeJob':summary})
+        def blocker_get(r):
+            assert r.request.method=='GET'
+            r.fulfill(json=blocker_state['job'])
+        def blocker_action(r):
+            action=r.request.url.rsplit('/',1)[-1]
+            blocker_actions.append({'action':action,'body':json.loads(r.request.post_data or '{}')})
+            assert action=='close-preview'
+            assert blocker_actions[-1]['body']=={'confirm':True,'confirmNetwork':'123456','cursor':blocker_state['job']['cursor']}
+            assert blocker_state['job']['canClosePreview'] and blocker_state['job']['status']=='ready'
+            blocker_state['job']={**blocker_state['job'],'status':'cancelled','canClosePreview':False}
+            blocker_state['closed']=True
+            r.fulfill(json=blocker_state['job'])
+        page.route(preview_url,active_readonly_conflict)
+        page.route(job_url,blocker_get)
+        page.route(job_url+'/*',blocker_action)
         reporting_preview_button.click()
-        page.get_by_role('button',name='Otvori postojeći posao',exact=True).click()
-        page.get_by_role('heading',name='U toku / može da se nastavi',exact=True).wait_for()
-        expect(page.get_by_role('button',name='Line itemi',exact=True)).to_have_attribute('aria-current','page')
-        assert len(action_calls)==before_ad_actions
-        page.unroute(preview_url,active_conflict)
-        page.unroute(job_url,serve_job)
-        page.unroute(job_url+'/*',serve_action)
+        expect(page.get_by_role('button',name='Key-values',exact=True)).to_have_attribute('aria-current','page')
+        blocker_card=page.get_by_role('article',name='Aktivni posao — samo čitanje',exact=True)
+        expect(blocker_card).to_contain_text('Ova nova priprema nije pokrenuta')
+        expect(blocker_card).to_contain_text('Ishod ranijeg upisa još nije potvrđen')
+        assert page.get_by_role('button',name='Nastavi posao',exact=True).count()==0
+        assert page.get_by_role('button',name='Zaustavi key-values posao',exact=True).count()==0
+        assert page.get_by_role('button',name='Zatvori nepočeti pregled',exact=True).count()==0
+        page.get_by_role('button',name='Osveži aktivni posao bez izmene',exact=True).click()
+        assert not blocker_actions
+        for width,height,label in [(1440,1080,'desktop'),(390,844,'mobile')]:
+            page.set_viewport_size({'width':width,'height':height})
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+            reporting_review.scroll_into_view_if_needed()
+            page.screenshot(path=str(out/f'key-values-blocked-readonly-{label}.png'),full_page=False)
+        # An unstarted preview can be explicitly closed, but an intervening
+        # start revokes that option before the close POST is sent.
+        blocker_state['job']={**blocker,'status':'ready','awaitingCheck':False,'canClosePreview':True}
+        page.get_by_role('button',name='Osveži aktivni posao bez izmene',exact=True).click()
+        close_button=page.get_by_role('button',name='Zatvori nepočeti pregled',exact=True)
+        expect(close_button).to_be_disabled()
+        close_confirm=page.get_by_role('checkbox',name='Potvrđujem zatvaranje nepočetog pregleda',exact=False)
+        close_confirm.check()
+        blocker_state['job']={**blocker_state['job'],'status':'creating','canClosePreview':False}
+        close_button.click()
+        expect(blocker_card).to_contain_text('Priprema je u toku')
+        assert not blocker_actions
+        assert close_button.count()==0
+        blocker_state['job']={**blocker,'status':'ready','awaitingCheck':False,'canClosePreview':True}
+        page.get_by_role('button',name='Osveži aktivni posao bez izmene',exact=True).click()
+        expect(close_button).to_be_disabled()
+        close_confirm.check()
+        close_button.click()
+        expect(page.locator('.gam-kv-status')).to_contain_text('Nepočeti pregled je zatvoren. GAM ostaje bez izmene.')
+        assert blocker_state['closed'] and [action['action'] for action in blocker_actions]==['close-preview']
+        assert len(blocked_previews)==1
+        expect(page.locator('.gam-kv-selected-count')).to_have_text('1 ključeva · 1 vrednosti')
+        expect(reporting_preview_button).to_be_enabled()
+        page.unroute(preview_url,active_readonly_conflict)
+        page.unroute(job_url,blocker_get)
+        page.unroute(job_url+'/*',blocker_action)
         page.set_viewport_size({'width':1440,'height':1080})
         page.reload()
         page.get_by_role('button',name='Line itemi',exact=True).click()
@@ -615,9 +702,9 @@ try:
         assert not external,external
         browser.close()
         (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'externalRequests':external,
-            'requests':requests,'manualRecoveryActions':action_calls,'reportingRecoveryActions':reporting_actions,
+            'requests':requests,'manualRecoveryActions':action_calls,'reportingRecoveryActions':reporting_actions,'blockerActions':blocker_actions,
             'recoveryScope':'Compiled UI with local job-response fixtures; normal flows use the actual local handler.',
             'browserVersion':browser.version},indent=2))
-        print('PASS dedicated Key-values selection, known values and numeric inputs, visible pending/running/completed status, read-only review, explicit confirmation, metadata outcome results, existing value reuse, uncertain-update check/resume, desktop/mobile reporting and recovery; untouched script preset, one-click creation, same-job verification retry, completed/missing/unverified/conflict counts, active-job reuse without automatic writes, Prebid and ordinary line items, saved jobs, paths/history, connection-first navigation and setup recheck')
+        print('PASS dedicated Key-values selection, known values and numeric inputs, visible pending/running/completed status, read-only review, explicit confirmation, add-only OFF preservation, legacy read-only history, existing value reuse, uncertain-create check/resume, read-only blockers and confirmed close-preview, desktop/mobile reporting and recovery; untouched script preset, one-click creation, same-job verification retry, completed/missing/unverified/conflict counts, active-job reuse without automatic writes, Prebid and ordinary line items, saved jobs, paths/history, connection-first navigation and setup recheck')
 finally:
     if process:process.terminate();process.wait(timeout=10)
