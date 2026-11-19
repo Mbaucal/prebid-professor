@@ -365,3 +365,31 @@ test('a disappeared OFF key keeps its reviewed ID and is never recreated under t
   assert(current.conflictCount>0||current.verificationCount>0,JSON.stringify(current));
   assert.equal(f.writes.length,0);assert.equal(f.db.key.some(row=>row.name==='aq_bid_origin'),false);
 });
+
+test('a lost update in a mixed update/create batch resumes the remaining creation at a new cursor',async()=>{
+  const f=await setup();seedReporting(f,{off:'aq_bid_origin'});
+  const missing=f.db.key.find(row=>row.name==='aq_first_request');
+  f.db.key.splice(f.db.key.indexOf(missing),1);
+  f.db.value=f.db.value.filter(row=>String(row.customTargetingKeyId)!==missing.id);
+  const update=f.traffic.update.bind(f.traffic);let once=true;
+  f.traffic.update=async(...args)=>{const rows=await update(...args);if(once){once=false;throw new GamError('Synthetic mixed update response lost',502);}return rows;};
+  let j=await ready(f);assert.equal(j.counts.key.update,1);assert.equal(j.counts.key.new,1);assert.equal(j.counts.value.new,6);
+  j=await start(f,j);const cursor=j.cursor;j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);
+  assert.equal(f.db.key.some(row=>row.name==='aq_first_request'),false,'one durable attempt must not hide a second write');
+  j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);assert.equal(j.phase,'Key-value ključevi');
+  assert(j.cursor>cursor);assert.equal(j.offset,0,'remaining uncreated keys keep this phase unfinished');
+  const done=await finish(f,j);assert.equal(done.counts.key.done,12);assert.equal(done.counts.value.done,283);
+  assert.equal(f.writes.filter(write=>write.method==='update').length,1);
+  const creates=f.writes.filter(write=>write.method==='create'&&write.kind==='key');assert.equal(creates.length,1);
+  assert.deepEqual(creates[0].payloads.map(row=>row.name),['aq_first_request']);
+});
+
+test('malformed update confirmations cannot turn a key into Done before a read verifies its original ID and metadata',async()=>{
+  for(const corrupt of [row=>({...row,id:'999999'}),row=>({...row,reportableType:'OFF'}),row=>({...row,type:'PREDEFINED'})]) {
+    const f=await setup();seedReporting(f,{off:'aq_bid_origin'});const update=f.traffic.update.bind(f.traffic);
+    f.traffic.update=async(...args)=>(await update(...args)).map(corrupt);
+    let j=await start(f,await ready(f));j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);
+    const count=f.writes.length;j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);assert.equal(f.writes.length,count);
+    await finish(f,j);assert.equal(f.writes.filter(write=>write.method==='update').length,1);
+  }
+});
