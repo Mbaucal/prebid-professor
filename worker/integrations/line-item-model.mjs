@@ -638,6 +638,10 @@ export function recordResult(job, batch, states, created = false) {
         ...(!s.id && confirmedBefore ? { id: prior.id } : {}),
         ...(!verified(state) && confirmedBefore ? { verifiedId: true } : {}),
         ...(createdByJob && state !== "created" ? { createdByJob: true } : {}),
+        ...((s.reportingUpdated || (prior?.reportingUpdated && (!s.id || s.id === prior.id)))
+          ? {reportingUpdated:true} : {}),
+        ...((s.reportingReconciled || (prior?.reportingReconciled && (!s.id || s.id === prior.id)))
+          ? {reportingReconciled:true,reconciliationMessage:s.reconciliationMessage || prior.reconciliationMessage} : {}),
       };
     }
   }
@@ -723,6 +727,28 @@ export function totals(job, states = referenceStates(job)) {
   for (const count of Object.values(counts)) count.done = count.existing + count.created;
   return counts;
 }
+function reportingResults(job, states) {
+  const indexed=new Map();
+  for(const [key,value] of states)if(key.startsWith('key:')||key.startsWith('value:'))
+    indexed.set(key.toLowerCase(),value);
+  const result=(ref)=>{
+    const value=indexed.get(ref.toLowerCase()),state=value?.state || 'pending';
+    const outcome=state==='created'?'created':state==='existing'
+      ? value.reportingUpdated?'updated':'existing'
+      : ['new','update','unverified','blocked','conflict'].includes(state)?state:'pending';
+    return {state,outcome,...(value?.id?{id:value.id}:{}),
+      ...(value?.reportingReconciled?{reconciled:true}:{}),
+      ...((value?.message||value?.reconciliationMessage)?{message:value.message||value.reconciliationMessage}:{})};
+  };
+  const results=job.plan.reporting.keys.map(spec=>({key:spec.key,...result(`key:${spec.key}`),
+    values:spec.values.map(name=>({name,...result(`value:${spec.key}:${name}`)}))}));
+  const summarize=items=>{
+    const counts={created:0,existing:0,updated:0,new:0,update:0,unverified:0,blocked:0,conflict:0,pending:0,total:items.length};
+    for(const item of items)counts[item.outcome]++;
+    return counts;
+  };
+  return {results,outcomes:{keys:summarize(results),values:summarize(results.flatMap(key=>key.values))}};
+}
 export function jobView(job, attempt) {
   const states = referenceStates(job),
     conflicts = [...states].filter(
@@ -757,6 +783,7 @@ export function jobView(job, attempt) {
       valueCount: job.plan.reporting.keys.reduce((count, key) => count + key.values.length, 0),
       openKeys: job.plan.reporting.keys.filter((key) => key.openDomain).map((key) => key.key),
       needsUpdate: counts.key.update,
+      ...reportingResults(job,states),
     } } : {}),
     error: job.error || "",
     awaitingCheck: Boolean(attempt) && job.status === "creating",

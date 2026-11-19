@@ -240,9 +240,11 @@ export function customRules(source) {
     });
 }
 export function normalizeLinePlan(input, now = Date.now()) {
-  if(input?.mode==='reporting')return reportingOnlyPlan(numericId(input.networkCode),input.reportingValues);
+  if(input?.mode==='reporting')return reportingOnlyPlan(numericId(input.networkCode),input.reportingValues,input.reportingSelection);
   if (!input || !["single", "prebid"].includes(input.mode))
     fail("Izaberite pojedinačni line item ili Prebid.");
+  if(Object.hasOwn(input,'reportingSelection'))
+    fail('Izbor reporting ključeva i vrednosti koristite u zasebnoj Key-values pripremi.');
   const mode = input.mode,
     advertiser = selection(input.advertiser, "advertiser"),
     order = selection(input.order, "order");
