@@ -354,12 +354,12 @@ function sameDate(actual, expected) {
   }
 }
 export const reportingReady = (value) => ["ON", "CUSTOM_DIMENSION"].includes(value);
-/** Only a proven active key with a known OFF/default mode is an update plan. */
+/** Unknown explicit status cannot authorize a reporting update. */
 export function reportingUpdatePayload(entity, actual) {
   if (entity.kind !== "key" || entity.payload.reportableType !== "ON" ||
       ![undefined, null, "", "OFF"].includes(actual.reportableType) ||
       !["FREEFORM", "PREDEFINED"].includes(actual.type) ||
-      flag(actual.isArchived) || ["INACTIVE", "ARCHIVED"].includes(actual.status)) return null;
+      flag(actual.isArchived) || ![undefined, null, "", "ACTIVE"].includes(actual.status)) return null;
   return {
     id: String(actual.id), name: actual.name,
     ...(actual.displayName !== undefined && actual.displayName !== null ? { displayName: actual.displayName } : {}),
@@ -371,6 +371,8 @@ export function compatible(entity, actual, plan) {
     k = entity.kind;
   if (
     flag(actual.isArchived) ||
+    (entity.reporting && ["key", "value"].includes(k) &&
+      ![undefined, null, "", "ACTIVE"].includes(actual.status)) ||
     actual.status === "ARCHIVED" ||
     (actual.status === "INACTIVE" &&
       ["key", "value", "association"].includes(k))
