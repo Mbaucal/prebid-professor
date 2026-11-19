@@ -16,7 +16,9 @@ const base='/api/integrations/gam',origin='https://add-only-qa.invalid',actor='a
 const prefix='api-integrations/gam/line-items/v1/';
 const selected=(...rows)=>({mode:'reporting',networkCode:'123456',reportingSelection:rows});
 const jobKey=id=>prefix+'jobs/'+id+'.json';
-const lockKey=prefix+'locks/123456.json';
+const globalLockKey=prefix+'locks/123456.json';
+const lockKey=prefix+'reporting-locks/123456.json';
+const targetingKey=prefix+'targeting-locks/123456.json';
 const attemptKey=(id,cursor)=>prefix+'attempts/'+id+'/'+cursor+'.json';
 
 async function request(f,path,body,{as=actor,host=origin}={}) {
@@ -241,7 +243,7 @@ test('concurrent same-cursor create steps preserve one write sequence',async()=>
 test('legacy standalone start and step are server-blocked even when request body claims add_only',async()=>{
   for(const status of ['ready','creating','completed']) {
     const f=await setup();seedKey(f);const j=await ready(f);
-    await changeJob(f,j.id,job=>{delete job.plan.reporting.writePolicy;job.status=status;});
+    await changeJob(f,j.id,job=>{delete job.plan.reporting.writePolicy;delete job.executionLane;job.status=status;});
     const before=structuredClone(f.env.BUILDS.data),reads=readsNow(f);
     const loaded=await request(f,`/line-items/jobs/${j.id}`);assert.equal(loaded.status,200);
     assert.equal(loaded.data.executionAllowed,false);assert.equal(loaded.data.canStart,false);
@@ -257,7 +259,7 @@ test('legacy standalone start and step are server-blocked even when request body
 
 test('legacy standalone GET, review, check and cancel remain read-only',async()=>{
   const f=await setup();seedKey(f);let j=await ready(f);
-  await changeJob(f,j.id,job=>{delete job.plan.reporting.writePolicy;});
+  await changeJob(f,j.id,job=>{delete job.plan.reporting.writePolicy;delete job.executionLane;});
   j=(await request(f,`/line-items/jobs/${j.id}`)).data;assert.equal(j.executionAllowed,false);
   j=await action(f,j,'review',{retry:true});j=await review(f,j);
   j=await action(f,j,'check');assert.equal(f.writes.length,0);assert.equal(f.updateAttempts,0);
@@ -266,7 +268,9 @@ test('legacy standalone GET, review, check and cancel remain read-only',async()=
 
 test('a legacy uncertain update can be checked but cannot resume its old mutation policy',async()=>{
   const f=await setup(),key=seedKey(f);let j=await start(f,await ready(f));
-  await changeJob(f,j.id,job=>{delete job.plan.reporting.writePolicy;job.refs['key:aq_bid_origin'].state='update';job.refs['key:aq_bid_origin'].verifiedId=true;});
+  await changeJob(f,j.id,job=>{delete job.plan.reporting.writePolicy;delete job.executionLane;delete job.targetingToken;job.refs['key:aq_bid_origin'].state='update';job.refs['key:aq_bid_origin'].verifiedId=true;});
+  f.env.BUILDS.data.delete(lockKey);f.env.BUILDS.data.delete(targetingKey);
+  await f.env.BUILDS.put(globalLockKey,JSON.stringify({owner:j.id,actor}));
   key.reportableType='ON';
   await f.env.BUILDS.put(attemptKey(j.id,j.cursor),JSON.stringify({startedAt:Date.now(),keys:['key:aq_bid_origin'],operation:'update'}));
   const before=structuredClone(f.db);j=(await request(f,`/line-items/jobs/${j.id}`)).data;
@@ -311,9 +315,11 @@ test('close-preview explicitly closes reviewing or ready jobs and releases only 
     const f=await setup();seedKey(f);let j=await preview(f,selected({key:'aq_bid_origin',values:['cached']}));
     if(phase==='ready')j=await review(f,j);
     assert.equal(j.canClosePreview,true);await f.env.BUILDS.put(lockKey,JSON.stringify({owner:j.id,actor}));
+    const globalBefore=structuredClone(f.env.BUILDS.data.get(globalLockKey));
     const before=structuredClone(f.db),reads=readsNow(f),closed=await close(f,j);
     assert.equal(closed.status,200,JSON.stringify(closed.data));assert.equal(closed.data.status,'cancelled');
     assert.equal((await readJob(f,j.id)).status,'cancelled');assert.equal((await (await f.env.BUILDS.get(lockKey)).json()).owner,null);
+    assert.deepEqual(f.env.BUILDS.data.get(globalLockKey),globalBefore,'standalone cleanup must not write the ad lease');
     assert.deepEqual(readsNow(f),reads);assert.deepEqual(f.db,before);assert.equal(f.writes.length,0);assert.equal(f.updateAttempts,0);
     const fresh=await preview(f,selected({key:'Variant',values:['A']}));assert.notEqual(fresh.id,j.id);
   }
@@ -321,8 +327,8 @@ test('close-preview explicitly closes reviewing or ready jobs and releases only 
 
 test('legacy unstarted preview can be closed safely without accepting its unsafe write policy',async()=>{
   const f=await setup();seedKey(f);const j=await ready(f);
-  await changeJob(f,j.id,job=>{delete job.plan.reporting.writePolicy;job.refs['key:aq_bid_origin'].state='update';job.refs['key:aq_bid_origin'].verifiedId=true;});
-  await f.env.BUILDS.put(lockKey,JSON.stringify({owner:j.id,actor}));
+  await changeJob(f,j.id,job=>{delete job.plan.reporting.writePolicy;delete job.executionLane;job.refs['key:aq_bid_origin'].state='update';job.refs['key:aq_bid_origin'].verifiedId=true;});
+  await f.env.BUILDS.put(globalLockKey,JSON.stringify({owner:j.id,actor}));
   const shown=(await request(f,`/line-items/jobs/${j.id}`)).data;
   assert.equal(shown.executionAllowed,false);assert.equal(shown.canClosePreview,true);
   const before=structuredClone(f.db),reads=readsNow(f),closed=await close(f,shown);

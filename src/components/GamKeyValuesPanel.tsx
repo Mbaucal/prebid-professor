@@ -14,6 +14,7 @@ type Job = {
   conflictCount:number;verificationCount?:number;unverifiedCount?:number;blockedCount?:number;
   canClosePreview?:boolean;
   executionAllowed?:boolean;readOnlyReason?:string;
+  relatedAdJob?:ActiveJob;
   conflicts:{ref:string;message:string}[];verificationIssues?:{ref:string;message:string}[];
   reporting?:{writePolicy?:string;keyCount:number;valueCount:number;needsUpdate:number;keys:{key:string;valueCount:number;openDomain:boolean;type:string}[];
     results?:KeyResult[];outcomes?:{keys:OutcomeCounts;values:OutcomeCounts};reviewProgress?:{processed:number;total:number}};
@@ -251,6 +252,16 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
           job.status==='reviewing'?<><progress aria-label="Napredak provere key-values" max={total||1} value={Math.min(processed,total)}/><p>Obrađeno u pregledu: {Math.min(processed,total)} od {total} stavki. Ovo je provera postojećeg stanja, pre upisa.</p></>:
           <p>{job.reporting?.keyCount??jobKeys?.total??0} ključeva · {job.reporting?.valueCount??jobValues?.total??0} vrednosti u sačuvanom izboru.</p>}
       </>}
+      {job?.relatedAdJob&&<aside className="gam-kv-related-job" aria-label="Postojeći oglasni posao — samo čitanje">
+        <h4>Dodavanje key-values ne menja postojeći {job.relatedAdJob.mode==='prebid'?'Prebid':'oglasni'} posao</h4>
+        <p>Priprema izabranih ključeva vodi se odvojeno. Postojeći posao je prikazan samo za čitanje.</p>
+        <dl><div><dt>ID posla</dt><dd className="gam-kv-job-id"><code>{job.relatedAdJob.id}</code></dd></div><div><dt>Status / faza</dt><dd>{statusNames[job.relatedAdJob.status]||job.relatedAdJob.status}{job.relatedAdJob.phase?' · '+job.relatedAdJob.phase:''}</dd></div></dl>
+        <p className="gam-kv-related-counts">{(['creative','lineItem','association'] as const).filter(kind=>job.relatedAdJob!.counts[kind]?.total>0).map(kind=>{
+          const count=job.relatedAdJob!.counts[kind],label={creative:'Kreativi',lineItem:'Line itemi',association:'Veze'}[kind];
+          return <span key={kind}>{label}: {count.done??count.created+count.existing} / {count.total}</span>;
+        })}</p>
+        {job.relatedAdJob.awaitingCheck&&<p>Raniji upis u tom poslu čeka potvrdu ishoda. Dodavanje ključeva ne nastavlja niti zatvara taj posao.</p>}
+      </aside>}
       {(error||job?.error)&&<p className="gam-message error" role="alert">{error||job?.error}</p>}
       {notice&&<p className="gam-message success" role="status">{notice}</p>}
       {activeJobId&&!activeJob&&<button type="button" disabled={Boolean(busy)} onClick={()=>void inspectActive(activeJobId)}>Prikaži aktivni posao bez izmene</button>}

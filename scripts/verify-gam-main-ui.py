@@ -7,6 +7,81 @@ root=Path(__file__).resolve().parent.parent
 out=root/'.generated/gam-ui-evidence/main';out.mkdir(parents=True,exist_ok=True)
 origin='http://127.0.0.1:4187'
 evidence=[]
+def choose_add_only_subset(page):
+ page.get_by_role('button',name='Poništi izbor',exact=True).click()
+ page.get_by_role('checkbox',name='Uključi ključ aq_bid_origin',exact=True).check()
+ page.get_by_role('checkbox',name='Uključi ključ geo_country',exact=True).check()
+ origin_card=page.locator('.gam-kv-key').filter(has=page.get_by_role('checkbox',name='Uključi ključ aq_bid_origin',exact=True))
+ origin_card.locator('summary').click()
+ page.get_by_role('checkbox',name='aq_bid_origin: fresh',exact=True).uncheck()
+ page.get_by_role('checkbox',name='aq_bid_origin: none',exact=True).uncheck()
+ country=page.locator('.gam-kv-key').filter(has=page.get_by_role('checkbox',name='Uključi ključ geo_country',exact=True))
+ country.locator('summary').click()
+ page.get_by_role('button',name='Bez vrednosti za geo_country',exact=True).click()
+ page.get_by_label('Pretraži vrednosti za geo_country',exact=True).fill('RS')
+ page.get_by_role('checkbox',name='geo_country: RS',exact=True).check()
+
+def verify_during_existing_creatives(browser):
+ cases=[]
+ for width,height in [(1440,1080),(390,844)]:
+  server=subprocess.Popen(['node','scripts/gam-main-ui-fixture.mjs'],cwd=root,stdout=subprocess.PIPE,text=True,env={**os.environ,'GAM_MAIN_BLOCKER':'creative','GAM_MAIN_SEED_OFF':'1'})
+  context=None
+  try:
+   assert 'ready' in server.stdout.readline()
+   context=browser.new_context(viewport={'width':width,'height':height})
+   page=context.new_page();errors=[];external=[];requests=[]
+   page.on('pageerror',lambda error:errors.append(str(error)))
+   def local_only(route):
+    if not route.request.url.startswith(origin+'/'):external.append(route.request.url);route.abort()
+    else:route.continue_()
+   page.route('**/*',local_only)
+   page.on('request',lambda request:requests.append({'method':request.method,'url':request.url}))
+   page.goto(origin+'/?section=integrations')
+   page.get_by_role('button',name='Key-values',exact=True).click()
+   preview=page.get_by_role('button',name='Proveri izabrane key-values u GAM-u',exact=True)
+   expect(preview).to_be_enabled();choose_add_only_subset(page)
+   baseline=page.request.get(origin+'/__fixture__/state').json()
+   old=json.loads(baseline['blockerRaw']);old_id=old['id']
+   assert old['status']=='creating' and old['phase']=='creative'
+   assert 'reporting' not in old['plan']
+   assert 0<len(baseline['adObjects']['creative'])<200
+   assert baseline['adObjects']['lineItem']==[] and baseline['adObjects']['association']==[]
+   assert json.loads(baseline['networkLock'])['owner']==old_id
+   first_request=len(requests);preview.click()
+   status=page.get_by_label('Status key-values posla',exact=True)
+   expect(status.get_by_role('heading',name='Provera je završena — spremno za potvrdu',exact=True)).to_be_visible(timeout=30000)
+   related=page.get_by_label('Postojeći oglasni posao — samo čitanje',exact=True)
+   expect(related).to_be_visible();expect(related).to_contain_text(old_id)
+   expect(related).to_contain_text('Dodavanje key-values ne menja postojeći Prebid posao')
+   assert related.get_by_role('button').count()==0
+   expect(page.get_by_label('Rezultat key-values posla',exact=True)).to_contain_text('reporting je OFF i ostaje OFF')
+   assert page.request.get(origin+'/__fixture__/state').json()==baseline,'Preview must not touch GAM or the existing job'
+   page.get_by_role('checkbox',name='Potvrđujem dodavanje nedostajućih stavki iz izbora 2 ključeva i 2 vrednosti u GAM mreži 123456. Postojeća podešavanja ostaju bez izmene.',exact=True).check()
+   page.get_by_role('button',name='Pokreni pripremu key-values',exact=True).click()
+   expect(status.get_by_role('heading',name='Priprema je završena',exact=True)).to_be_visible(timeout=60000)
+   result=page.get_by_label('Rezultat key-values posla',exact=True)
+   expect(result).to_contain_text('Ključevi: 1 kreirano · 1 već postoji — bez izmene')
+   expect(result).to_contain_text('reporting je OFF i ostaje OFF')
+   state=page.request.get(origin+'/__fixture__/state').json()
+   assert state['blockerRaw']==baseline['blockerRaw'],'The exact existing ad snapshot must remain unchanged'
+   assert state['networkLock']==baseline['networkLock'],'The original ad reservation must remain unchanged'
+   assert state['adObjects']==baseline['adObjects'],'No ad entities may be created or changed'
+   for key in baseline['keys']:assert next(item for item in state['keys'] if item['id']==key['id'])==key
+   for value in baseline['values']:assert next(item for item in state['values'] if item['id']==value['id'])==value
+   assert len(state['keys'])==len(baseline['keys'])+1 and len(state['values'])==len(baseline['values'])+2
+   writes=state['writes'][len(baseline['writes']):]
+   assert writes and all(write['kind'] in ['key','value'] and write.get('operation')!='update' for write in writes)
+   assert not [item for item in requests[first_request:] if item['method']=='POST' and f'/line-items/jobs/{old_id}' in item['url']]
+   assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+   assert not errors,errors
+   assert not external,external
+   page.screenshot(path=str(out/f'during-existing-creatives-{width}.png'),full_page=False)
+   cases.append({'case':'complete-additions-during-existing-creatives','width':width,'passed':True,'oldJobAndGlobalReservationExactlyUnchanged':True,'existingMetadataPreserved':True,'adEntitiesChanged':0,'pageErrors':errors,'externalRequests':external})
+  finally:
+   if context:context.close()
+   server.terminate();server.wait(timeout=10)
+ return cases
+
 def verify_add_only_safety(browser):
  cases=[]
  for blocker_mode in ['preview','creating']:
@@ -209,6 +284,7 @@ with sync_playwright() as p:
     if context:context.close()
     server.terminate();server.wait(timeout=10)
   evidence.extend(verify_add_only_safety(browser))
+  evidence.extend(verify_during_existing_creatives(browser))
  finally:browser.close()
 (out/'result.json').write_text(json.dumps({'passed':True,'scope':'Actual MAIN App build, real local GAM handler; synthetic storage and Google only','cases':evidence},indent=2)+'\n')
-print('PASS actual MAIN App: exact add-only subset, visible progress, saved results, OFF metadata preserved, inline read-only blockers and explicit safe preview closure at desktop/mobile')
+print('PASS actual MAIN App: independent add-only completion beside partial legacy creatives, exact old job/lock/ad preservation, OFF metadata, progress, saved results and safe blockers at desktop/mobile')

@@ -115,6 +115,20 @@ try:
         expect(page.locator('.gam-kv-selected-count')).to_have_text('12 ključeva · 34 vrednosti')
         page.get_by_role('button',name='Izaberi sve',exact=True).click()
         reporting_submitted=[];reporting_progress=[]
+        # Context rendering is a display-only DTO addition here. The MAIN shell
+        # verifier separately executes the real handler under a seeded legacy
+        # ad creative job and compares its job/lock/ad rows byte-for-byte.
+        independent_ad_context={'id':'77777777-7777-4777-8777-777777777777','cursor':197,
+            'mode':'prebid','status':'creating','phase':'Kreativi',
+            'network':{'networkCode':'123456','name':'GAM sintetička provera'},
+            'counts':{
+                'creative':{'total':40000,'done':19700,'existing':0,'created':19700,'new':20300,'conflict':0},
+                'lineItem':{'total':2000,'done':0,'existing':0,'created':0,'new':2000,'conflict':0},
+                'association':{'total':40000,'done':0,'existing':0,'created':0,'new':40000,'conflict':0}},
+            'awaitingCheck':False,'canClosePreview':False}
+        def reporting_context_action(r):
+            response=r.fetch()
+            r.fulfill(status=response.status,json={**response.json(),'relatedAdJob':independent_ad_context})
         def reporting_preview(r):
             data=json.loads(r.request.post_data)
             reporting_submitted.append(data)
@@ -129,7 +143,8 @@ try:
             expect(page.locator('.gam-kv-status')).to_contain_text('Proveravam izabrane ključeve')
             assert 'success' not in (page.locator('.gam-kv-status').get_attribute('class') or '')
             page.screenshot(path=str(out/'key-values-slow-preview-desktop.png'),full_page=False)
-            r.continue_()
+            response=r.fetch()
+            r.fulfill(status=response.status,json={**response.json(),'relatedAdJob':independent_ad_context})
         def reporting_step(r):
             response=r.fetch()
             if not reporting_progress:
@@ -138,9 +153,11 @@ try:
                 expect(page.locator('.gam-kv-status')).to_contain_text('Pripremam potvrđene ključeve')
                 expect(page.get_by_role('progressbar',name='Potvrđeni key-values napredak',exact=True)).to_be_visible()
                 page.screenshot(path=str(out/'key-values-running-desktop.png'),full_page=False)
-            r.fulfill(response=response)
+            r.fulfill(status=response.status,json={**response.json(),'relatedAdJob':independent_ad_context})
         page.route('**/line-items/preview',reporting_preview)
         page.route('**/line-items/jobs/*/step',reporting_step)
+        page.route('**/line-items/jobs/*/review',reporting_context_action)
+        page.route('**/line-items/jobs/*/start',reporting_context_action)
         for width,height,label in [(1440,1080,'desktop'),(390,844,'mobile')]:
             page.set_viewport_size({'width':width,'height':height})
             page.evaluate('scrollTo(0,0)')
@@ -154,6 +171,12 @@ try:
         assert all(not r['url'].endswith(('/start','/step','/check')) for r in requests[before_reporting:])
         reporting_review=page.locator('.gam-kv-status')
         expect(reporting_review).to_contain_text('12 ključeva · 283 vrednosti u sačuvanom izboru')
+        related_context=page.get_by_role('complementary',name='Postojeći oglasni posao — samo čitanje',exact=True)
+        expect(related_context).to_contain_text('Dodavanje key-values ne menja postojeći Prebid posao')
+        expect(related_context).to_contain_text(independent_ad_context['id'])
+        expect(related_context).to_contain_text('Kreativi: 19700 / 40000')
+        assert related_context.get_by_role('button').count()==0
+        assert page.locator('.gam-kv-blocker').count()==0
         assert page.locator('.gam-kv-results .gam-kv-result-key').count()==12
         reporting_confirm=page.get_by_role('checkbox',name='Potvrđujem dodavanje nedostajućih stavki iz izbora 12 ključeva i 283 vrednosti u GAM mreži 123456. Postojeća podešavanja ostaju bez izmene.',exact=True)
         reporting_create=page.get_by_role('button',name='Pokreni pripremu key-values',exact=True)
@@ -164,6 +187,10 @@ try:
         page.get_by_role('heading',name='Priprema je završena',exact=True).wait_for(timeout=60000)
         expect(page.locator('.gam-kv-results')).to_contain_text('12 kreirano · 0 već postoji — bez izmene')
         assert reporting_progress
+        expect(related_context).to_contain_text(independent_ad_context['id'])
+        expect(reporting_review).to_have_class('gam-card gam-kv-status success')
+        assert page.locator('.gam-kv-blocker').count()==0
+        assert related_context.get_by_role('button').count()==0
         assert page.get_by_label('Naziv novog advertiser-a',exact=True).input_value()==''
         assert page.get_by_label('Naziv novog order-a',exact=True).input_value()==''
         reporting_job_url=next(r['url'].removesuffix('/start') for r in reversed(requests) if r['url'].endswith('/start'))
@@ -182,6 +209,8 @@ try:
         page.set_viewport_size({'width':1440,'height':1080})
         page.unroute('**/line-items/preview',reporting_preview)
         page.unroute('**/line-items/jobs/*/step',reporting_step)
+        page.unroute('**/line-items/jobs/*/review',reporting_context_action)
+        page.unroute('**/line-items/jobs/*/start',reporting_context_action)
         page.get_by_role('button',name='Line itemi',exact=True).click()
         page.get_by_role('button',name='Vrati podešavanja iz skripte',exact=True).click()
         expect(page.get_by_label('Naziv novog advertiser-a',exact=True)).to_have_value('Prebid')
@@ -708,7 +737,8 @@ try:
         (out/'result.json').write_text(json.dumps({'passed':True,'pageErrors':errors,'externalRequests':external,
             'requests':requests,'manualRecoveryActions':action_calls,'reportingRecoveryActions':reporting_actions,'blockerActions':blocker_actions,
             'recoveryScope':'Compiled UI with local job-response fixtures; normal flows use the actual local handler.',
+            'independentAdContextScope':'Display-only relatedAdJob DTO; real legacy-ad coexistence is verified separately through the MAIN handler fixture.',
             'browserVersion':browser.version},indent=2))
-        print('PASS dedicated Key-values selection, known values and numeric inputs, visible pending/running/completed status, read-only review, explicit confirmation, add-only OFF preservation, legacy read-only history, existing value reuse, uncertain-create check/resume, read-only blockers and confirmed close-preview, desktop/mobile reporting and recovery; untouched script preset, one-click creation, same-job verification retry, completed/missing/unverified/conflict counts, active-job reuse without automatic writes, Prebid and ordinary line items, saved jobs, paths/history, connection-first navigation and setup recheck')
+        print('PASS independent informational ad-job context never blocks confirmed Key-values flow; dedicated Key-values selection, known values and numeric inputs, visible pending/running/completed status, read-only review, explicit confirmation, add-only OFF preservation, legacy read-only history, existing value reuse, uncertain-create check/resume, read-only blockers and confirmed close-preview, desktop/mobile reporting and recovery; untouched script preset, one-click creation, same-job verification retry, completed/missing/unverified/conflict counts, active-job reuse without automatic writes, Prebid and ordinary line items, saved jobs, paths/history, connection-first navigation and setup recheck')
 finally:
     if process:process.terminate();process.wait(timeout=10)
