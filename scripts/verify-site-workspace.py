@@ -59,7 +59,7 @@ try:
     expect(setup.get_by_role('button',name='Use current version',exact=True)).to_have_count(0)
     page.screenshot(path=str(out/'mobile-versions.png'),full_page=True)
     page.get_by_role('button',name='Generate and releases',exact=True).click()
-    page.get_by_label('What changed?',exact=True).fill('Browser package check')
+    page.get_by_label('Version name',exact=True).fill('Browser package check')
     page.get_by_role('button',name='Generate and save package',exact=True).click()
     page.get_by_role('status').filter(has_text='Package saved in Releases').wait_for()
     page.get_by_text('Browser package check',exact=True).wait_for()

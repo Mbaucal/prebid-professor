@@ -130,7 +130,7 @@ with sync_playwright() as playwright:
       choose(current);saved();page.reload();expect(summary).to_contain_text(current);updated=data();assert updated['enablePrebid']==original['enablePrebid'] and updated['positions']==original['positions'];assert updated['prebid']==original['prebid'];screen('selected-current-saved')
       # Continue through the real complete MAIN package writer and browser ZIP downloader.
       page.get_by_role('button',name='Generate and releases',exact=True).click()
-      page.get_by_label('What changed?',exact=True).fill('Existing setup, selected fixed script')
+      page.get_by_label('Version name',exact=True).fill('Existing setup, selected fixed script')
       page.get_by_role('button',name='Generate and save package',exact=True).click();expect(page.get_by_role('status').filter(has_text='Package saved')).to_be_visible()
       with page.expect_download() as downloaded:
        page.get_by_role('button',name='Download saved ZIP',exact=True).click()
@@ -144,7 +144,7 @@ with sync_playwright() as playwright:
       assert data()['selected']['runtimeVersion']=='3.25.1'
       screen('reporting-preview-saved')
       page.get_by_role('button',name='Generate and releases',exact=True).click()
-      page.get_by_label('What changed?',exact=True).fill('New request reporting Preview')
+      page.get_by_label('Version name',exact=True).fill('New request reporting Preview')
       page.get_by_role('button',name='Generate and save package',exact=True).click();expect(page.get_by_role('status').filter(has_text='Package saved')).to_be_visible()
       reporting_release=page.locator('article.runtime-release').filter(has=page.get_by_text('New request reporting Preview',exact=True))
       expect(reporting_release).to_have_count(1)
