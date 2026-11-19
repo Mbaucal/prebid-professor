@@ -267,3 +267,31 @@ test('a fallback GAM observation outside a native callback has unknown callback 
   assert.equal(h.win.__fixtureCallbackTrace[0].auctionId, 'auction-a');
   assert.deepEqual(plain(observe()), {callbackAuctionId: null, callbackCodes: []}, 'Previous callbacks cannot authorize a later fallback observation');
 });
+
+test('strict native requestBids receives undefined, null and primitive receivers unchanged', () => {
+  for (const receiver of [undefined, null, 0, false, 'primitive', Symbol('receiver'), 17n]) {
+    const result = {native: 'return'}, h = harness(() => result);
+    const input = {adUnitCodes: ['Billboard'], bidsBackHandler() {}};
+    assert.equal(h.native.requestBids.call(receiver, input), result);
+    assert.equal(h.calls.length, 1);
+    assert.equal(h.calls[0].receiver, receiver, 'The observer must not box primitives or substitute window');
+    assert.equal(h.win.__fixtureCallbackTrace.length, 0);
+  }
+});
+
+test('strict native callbacks receive undefined, null and primitive receivers unchanged', () => {
+  for (const receiver of [undefined, null, 0, false, 'primitive', Symbol('receiver'), 17n]) {
+    const h = harness(), result = {callback: 'return'};
+    let actualReceiver, called = false;
+    const {forwarded} = invoke(h, {adUnitCodes: ['Billboard'], bidsBackHandler: function () {
+      called = true; actualReceiver = this;
+      return result;
+    }});
+    assert.equal(forwarded.bidsBackHandler.call(receiver, ...responseArguments()), result);
+    assert.equal(called, true);
+    assert.equal(actualReceiver, receiver, 'The observer must preserve a strict callback receiver');
+    assert.equal(h.win.__fixtureCallbackContext, undefined);
+    assert.equal(h.win.__fixtureCallbackTrace.length, 1);
+    assert.equal(h.calls.length, 1);
+  }
+});
