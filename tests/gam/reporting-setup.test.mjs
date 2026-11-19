@@ -210,6 +210,10 @@ test('value discovery is parent-scoped, so the same name under another key is no
     if(kind==='value')assert(/customTargetingKeyId\s*=/.test(where),'CustomTargetingService requires a key-ID AND predicate');
     return query(kind,where,bindings,options);
   };
+  const byNames=f.traffic.byNames.bind(f.traffic);f.traffic.byNames=async(kind,names,where,bindings)=>{
+    if(kind==='value')assert(/customTargetingKeyId\s*=/.test(where),'value names must be looked up below one key');
+    return byNames(kind,names,where,bindings);
+  };
   const j=await ready(f);assert.equal(j.counts.value.new,1);await finish(f,await start(f,j));
   const matches=f.db.value.filter(row=>row.name.toLowerCase()==='cached');assert.equal(matches.length,2);
   assert.equal(matches.filter(row=>String(row.customTargetingKeyId)===parent.id).length,1);
@@ -217,14 +221,16 @@ test('value discovery is parent-scoped, so the same name under another key is no
 
 test('failed or incomplete reporting scans remain unknown and never prove absence',async()=>{
   for(const broken of ['throw','partial']) {
-    const f=await setup(),query=f.traffic.query.bind(f.traffic);let unavailable=true;
+    const f=await setup(),query=f.traffic.query.bind(f.traffic),byNames=f.traffic.byNames.bind(f.traffic);let unavailable=true;
+    const unavailableResult=()=>{
+      if(broken==='throw')throw new GamError('Synthetic incomplete reporting read',502);
+      return {rows:[],total:501,more:true};
+    };
     f.traffic.query=async(kind,...args)=>{
-      if(kind==='key'&&unavailable){
-        if(broken==='throw')throw new GamError('Synthetic incomplete reporting read',502);
-        return {rows:[],total:501,more:true};
-      }
+      if(kind==='key'&&unavailable)return unavailableResult();
       return query(kind,...args);
     };
+    f.traffic.byNames=async(kind,...args)=>kind==='key'&&unavailable?unavailableResult():byNames(kind,...args);
     let j=await review(f,await preview(f));assert.equal(j.canStart,false);assert(j.verificationCount>0,JSON.stringify(j));
     assert.equal(j.counts.key.new,0);assert.equal(f.writes.length,0);
     unavailable=false;j=await review(f,await action(f,j,'review',{retry:true}));assert.equal(j.canStart,true,JSON.stringify(j));
@@ -233,11 +239,15 @@ test('failed or incomplete reporting scans remain unknown and never prove absenc
 });
 
 test('a malformed value response from another parent is unknown, not a missing value',async()=>{
-  const f=await setup();seedReporting(f);const query=f.traffic.query.bind(f.traffic);
+  const f=await setup();seedReporting(f);const query=f.traffic.query.bind(f.traffic),byNames=f.traffic.byNames.bind(f.traffic);
   f.traffic.query=async(kind,...args)=>{
     const result=await query(kind,...args);
     if(kind==='value'&&result.rows.length)return {...result,rows:result.rows.map(row=>({...row,customTargetingKeyId:'999999'}))};
     return result;
+  };
+  f.traffic.byNames=async(kind,...args)=>{
+    const rows=await byNames(kind,...args);
+    return kind==='value'?rows.map(row=>({...row,customTargetingKeyId:'999999'})):rows;
   };
   const j=await review(f,await preview(f));assert.equal(j.canStart,false);assert(j.verificationCount>0,JSON.stringify(j));
   assert.equal(j.counts.value.new,0);assert.equal(f.writes.length,0);
@@ -320,4 +330,38 @@ test('key metadata update SOAP uses the documented operation and field sequence'
   assert.equal(calls.length,1);assert.equal(calls[0].service,'CustomTargetingService');assert.equal(calls[0].operation,'updateCustomTargetingKeys');
   assert.equal(calls[0].xml,'<keys><id>5000</id><name>VARIANT</name><displayName>Operator name</displayName><type>FREEFORM</type><reportableType>ON</reportableType></keys>');
   assert.equal(calls[0].options.entityCount,1);assert(!calls[0].xml.includes('<status>'),'read-only status must not be mutated');
+});
+
+test('real traffic lookup proves alphabetic absence through a complete case-folded scope, with required value parent',async()=>{
+  const traffic=new GamTrafficClient({}),queries=[];
+  traffic.query=async(kind,where='',bindings={})=>{
+    queries.push({kind,where,bindings:structuredClone(bindings)});
+    if(where.includes('name IN'))return {rows:[],total:0,more:false};
+    if(kind==='key')return {rows:[{id:'17',name:'variant'},{id:'18',name:'other'}],total:2,more:false};
+    assert.equal(where,'customTargetingKeyId = 17');
+    return {rows:[{id:'19',name:'CACHED',customTargetingKeyId:'17'}],total:1,more:false};
+  };
+  assert.deepEqual((await traffic.byNames('key',['Variant'])).map(row=>row.id),['17']);
+  assert.equal(queries.at(-1).where,'','a case-sensitive PQL miss is not proof that the key is absent');
+  assert.deepEqual((await traffic.byNames('value',['cached'],'customTargetingKeyId = :parent',{parent:'17'})).map(row=>row.id),['19']);
+  assert.equal(queries.at(-1).where,'customTargetingKeyId = 17');
+  const before=queries.length;
+  await assert.rejects(()=>traffic.byNames('value',['cached']),{status:422});assert.equal(queries.length,before);
+  await traffic.byNames('advertiser',['Prebid']);
+  assert(queries.at(-1).where.includes('name IN'),'ad-object matching must retain its original exact-name query');
+  assert.equal(queries.at(-1).bindings.name0,'Prebid');
+});
+
+test('a reporting key already upgraded after review is reused without another metadata write',async()=>{
+  const f=await setup();seedReporting(f,{off:'aq_bid_origin'});const j=await ready(f);assert.equal(j.counts.key.update,1);
+  f.db.key.find(row=>row.name==='aq_bid_origin').reportableType='ON';
+  await finish(f,await start(f,j));assert.equal(f.writes.length,0);
+});
+
+test('a disappeared OFF key keeps its reviewed ID and is never recreated under the same name',async()=>{
+  const f=await setup();seedReporting(f,{off:'aq_bid_origin'});const j=await ready(f);
+  const old=f.db.key.find(row=>row.name==='aq_bid_origin');f.db.key.splice(f.db.key.indexOf(old),1);
+  let current=await start(f,j);current=await action(f,current,'step');
+  assert(current.conflictCount>0||current.verificationCount>0,JSON.stringify(current));
+  assert.equal(f.writes.length,0);assert.equal(f.db.key.some(row=>row.name==='aq_bid_origin'),false);
 });
