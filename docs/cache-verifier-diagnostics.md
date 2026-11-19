@@ -53,7 +53,7 @@ fields do not replace the existing round or latest-auction assertions.
   49/49 pass with native Prebid and intercepted synthetic demand.
 - Pure diagnostic helpers: 12/12 Python unit tests pass, including strict
   missing/duplicate rejection and independently copied snapshots.
-- Transparent observation: 18/18 Node VM tests pass, including callback
+- Transparent observation: 20/20 Node VM tests pass, including strict primitive receivers, callback
   nesting/errors, hook metadata, original CPM sequences and unknown fallback
   context. Independent mutation probes catch all introduced regressions.
 - A temporary controlled negative lookup removes Billboard round 2 from the

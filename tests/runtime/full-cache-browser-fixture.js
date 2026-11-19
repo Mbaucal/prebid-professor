@@ -1,6 +1,7 @@
 // CI only: queued before the native dependency loads. The packaged Prebid bytes
 // and SRI remain exact. Replace two adapters with synthetic, intercepted responses.
 window.pbjs={que:[function(){
+  'use strict';
   const rounds=new Map();
   window.__fixtureBidRounds=rounds;
   // Observation only: preserve each adapter request's identity at construction.
