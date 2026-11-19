@@ -136,8 +136,12 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
   }
   function selectPreset(kind:'all'|'none'|'new'|'ab') {
     if(!catalog)return;
-    setPicks(kind==='none'||kind==='ab'?Object.fromEntries(Object.entries(picks??freshPicks(catalog)).map(([key,pick])=>[key,{...pick,enabled:kind==='ab'&&['Variant','TestId'].includes(key)}])):
-      freshPicks(catalog,kind==='new'?key=>newLabels.has(key):()=>true));
+    setPicks(current=>{
+      if(kind==='none'||kind==='ab')return Object.fromEntries(Object.entries(current??freshPicks(catalog)).map(([key,pick])=>[key,{...pick,enabled:kind==='ab'&&['Variant','TestId'].includes(key)}]));
+      const next=freshPicks(catalog,kind==='new'?key=>newLabels.has(key):()=>true);
+      if(current?.TestId&&next.TestId)next.TestId={...current.TestId,enabled:next.TestId.enabled};
+      return next;
+    });
     setJob(null);setConfirmed(false);setError('');setActiveJobId('');setCloseConfirmed(false);setNotice('');
   }
   async function run(label:string,action:()=>Promise<void>) {
