@@ -38,15 +38,16 @@ function additionalValues(value) {
 export function reportingSetup(extra, selection) {
   const additional=additionalValues(extra);
   const definitions={...reportingContract.keys,...requestReportingContract.keys,
-    geo_country:{values:COUNTRIES},Variant:{values:['A','B']}};
+    geo_country:{values:COUNTRIES},Variant:{values:['A','B']},TestId:{values:[],valueInput:'test-id'}};
   const catalog={schemaVersion:1,profile:REPORTING_PROFILE,keys:Object.entries(definitions).map(([key,definition])=>{
     const openDomain=OPEN_REPORTING_KEYS.includes(key);
     const values=openDomain?[...new Set([...seeds[key],...(additional[key]??[])])]:[...definition.values];
-    return {key,type:openDomain?'FREEFORM':'PREDEFINED',reportableType:'ON',values,openDomain};
+    return {key,type:openDomain?'FREEFORM':'PREDEFINED',reportableType:'ON',values,openDomain,
+      ...(definition.valueInput?{valueInput:definition.valueInput}:{})};
   })};
   if(selection===undefined)return catalog;
   if(!Array.isArray(selection)||!selection.length||selection.length>catalog.keys.length)
-    fail('Izaberite bar jedan poznati reporting ključ (najviše 12).');
+    fail('Izaberite bar jedan poznati reporting ključ (najviše 13).');
   const selected=new Map();
   let totalOpen=0;
   for(const item of selection){
@@ -59,7 +60,13 @@ export function reportingSetup(extra, selection) {
       fail('Reporting vrednosti moraju biti lista sa najviše 1.000 stavki po ključu.');
     let values=spec.values;
     if(item.values!==undefined){
-      if(spec.openDomain){
+      if(spec.valueInput==='test-id'){
+        values=[...new Set(item.values.map(value=>{
+          if(typeof value!=='string'||!/^[a-z0-9_]{1,24}$/.test(value))
+            fail('TestId zahteva 1–24 mala slova, cifre ili donju crtu. Prekopirajte tačan TestId iz A/B testa.');
+          return value;
+        }))];
+      }else if(spec.openDomain){
         totalOpen+=item.values.length;
         if(totalOpen>4000)fail('Najviše 4.000 dodatnih numeričkih reporting vrednosti ukupno.');
         values=additionalValues({[spec.key]:item.values})[spec.key];

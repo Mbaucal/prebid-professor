@@ -4,6 +4,7 @@ export type ReportingKey = {
   reportableType: 'ON';
   values: string[];
   openDomain: boolean;
+  valueInput?: 'test-id';
 };
 export type ReportingSetup = {
   schemaVersion: 1;

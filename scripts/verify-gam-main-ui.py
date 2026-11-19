@@ -191,8 +191,44 @@ with sync_playwright() as p:
     expect(page.get_by_role('heading',name='Koji ključevi su ti potrebni?',exact=True)).to_be_visible()
     preview=page.get_by_role('button',name='Proveri izabrane key-values u GAM-u',exact=True)
     expect(preview).to_be_enabled()
-    assert page.get_by_role('checkbox',name='Uključi ključ ',exact=False).count()==12
+    assert page.get_by_role('checkbox',name='Uključi ključ ',exact=False).count()==13
     page.screenshot(path=str(out/f'tab-{width}.png'),full_page=False)
+    # Use only the A/B catalog rows, keep pasted IDs across preset/opt-out,
+    # and prove the exact request reaches the real local add-only handler.
+    page.get_by_role('button',name='Samo A/B oznake',exact=True).click()
+    expect(page.locator('.gam-kv-selected-count')).to_have_text('2 ključeva · 2 vrednosti')
+    testid_card=page.locator('.gam-kv-key').filter(has=page.get_by_role('checkbox',name='Uključi ključ TestId',exact=True))
+    testid_card.locator('summary').click()
+    testid_input=page.get_by_label('TestId vrednosti',exact=True)
+    testid_input.fill('Bad-ID');expect(preview).to_be_disabled()
+    testid_input.fill('main_ab_1,\nmain_ab_2, main_ab_1')
+    expect(page.locator('.gam-kv-selected-count')).to_have_text('2 ključeva · 4 vrednosti')
+    page.get_by_role('button',name='Poništi izbor',exact=True).click();expect(preview).to_be_disabled()
+    page.get_by_role('button',name='Samo A/B oznake',exact=True).click()
+    expect(testid_input).to_have_value('main_ab_1,\nmain_ab_2, main_ab_1')
+    page.get_by_role('checkbox',name='Uključi ključ TestId',exact=True).uncheck()
+    expect(page.locator('.gam-kv-selected-count')).to_have_text('1 ključeva · 2 vrednosti')
+    page.get_by_role('checkbox',name='Uključi ključ TestId',exact=True).check()
+    testid_input.scroll_into_view_if_needed()
+    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+    page.screenshot(path=str(out/f'testid-selection-{width}.png'),full_page=False)
+    with page.expect_request(lambda request: request.url.endswith('/line-items/preview') and request.method=='POST') as submitted:
+     preview.click()
+    assert json.loads(submitted.value.post_data)['reportingSelection']==[
+     {'key':'Variant','values':['A','B']},{'key':'TestId','values':['main_ab_1','main_ab_2']}]
+    page.get_by_role('heading',name='Provera je završena — spremno za potvrdu',exact=True).wait_for()
+    before_testid=page.request.get(origin+'/__fixture__/state').json()
+    assert not before_testid['keys'] and not before_testid['values'],'Preview must not write GAM data'
+    page.get_by_role('checkbox',name='Potvrđujem dodavanje nedostajućih stavki iz izbora 2 ključeva i 4 vrednosti u GAM mreži 123456. Postojeća podešavanja ostaju bez izmene.',exact=True).check()
+    page.get_by_role('button',name='Pokreni pripremu key-values',exact=True).click()
+    page.get_by_role('heading',name='Priprema je završena',exact=True).wait_for()
+    testid_state=page.request.get(origin+'/__fixture__/state').json()
+    assert {key['name'] for key in testid_state['keys']}=={'Variant','TestId'}
+    testid_key=next(key for key in testid_state['keys'] if key['name']=='TestId')
+    assert testid_key['type']=='PREDEFINED' and testid_key['reportableType']=='ON'
+    assert {value['name'] for value in testid_state['values'] if value['customTargetingKeyId']==testid_key['id']}=={'main_ab_1','main_ab_2'}
+    evidence.append({'case':'TestId exact A/B selection and explicit add-only confirmation','width':width,'passed':True})
+    page.get_by_role('button',name='Izaberi sve',exact=True).click()
     page.get_by_role('button',name='Poništi izbor',exact=True).click();expect(preview).to_be_disabled()
     page.get_by_role('checkbox',name='Uključi ključ aq_bid_origin',exact=True).check()
     page.get_by_role('checkbox',name='Uključi ključ geo_country',exact=True).check()

@@ -137,8 +137,8 @@ test('all current reporting keys and finite values are materialized independentl
   const p=normalizeLinePlan(prebidPlan()),r=p.reporting;
   assert(r);assert.equal(p.schemaVersion,2);assert.equal(r.schemaVersion,1);assert.equal(r.profile,'ads-js-3.25');
   assert.deepEqual(p.rules,[],'reporting must not add ad targeting predicates');
-  assert.equal(r.keys.length,12);assert.equal(r.keys.reduce((n,key)=>n+key.values.length,0),283);
-  assert.equal(r.keys.some(key=>key.key==='TestId'),false,'planned identifiers are not existing emitters');
+  assert.equal(r.keys.length,13);assert.equal(r.keys.reduce((n,key)=>n+key.values.length,0),283);
+  assert.deepEqual(r.keys.find(key=>key.key==='TestId').values,[],'TestId has no invented/default identifiers');
   for(const [key,values] of Object.entries(closed)) {
     const found=r.keys.find(row=>row.key===key);assert(found,key);assert.deepEqual(found.values,values,key);
     assert.equal(found.type,'PREDEFINED');assert.equal(found.reportableType,'ON');assert.equal(found.openDomain,false);
@@ -169,28 +169,28 @@ test('standalone reporting plan has no advertiser, order, inventory or creative 
   const p=normalizeLinePlan(reportingInput());assert.equal(p.mode,'reporting');assert.equal(p.schemaVersion,2);
   assert.deepEqual(p.orders,[]);assert.deepEqual(p.rows,[]);assert.deepEqual(p.rules,[]);
   assert.equal(p.creative.mode,'none');assert.deepEqual(p.counts,{lineItems:0,orders:0,creatives:0,associations:0});
-  assert.equal(p.reporting.keys.length,12);
+  assert.equal(p.reporting.keys.length,13);
   for(const networkCode of ['',123,'0','bad'])assert.throws(()=>normalizeLinePlan({mode:'reporting',networkCode}),{status:422});
 });
 
 test('standalone preview/history/review are read-only, then only key/value writes run once',async()=>{
   const f=await setup(),j=await ready(f);
-  assert.equal(j.mode,'reporting');assert.equal(j.counts.key.total,12);assert.equal(j.counts.value.total,283);
+  assert.equal(j.mode,'reporting');assert.equal(j.counts.key.total,13);assert.equal(j.counts.value.total,283);
   for(const kind of ['advertiser','order','creative','lineItem','association'])assert.equal(j.counts[kind].total,0);
   assert.equal(f.writes.length,0);assert.equal(f.db.key.length,0);
   const history=await request(f,'/line-items/jobs?network=123456');assert.equal(history.status,200);
   assert(history.data.jobs.some(row=>row.id===j.id),'a key-only job must be reachable through history');
-  const done=await finish(f,await start(f,j));assert.equal(done.counts.key.done,12);assert.equal(done.counts.value.done,283);
-  assert.equal(f.db.key.length,12);assert.equal(f.db.value.length,283);
+  const done=await finish(f,await start(f,j));assert.equal(done.counts.key.done,13);assert.equal(done.counts.value.done,283);
+  assert.equal(f.db.key.length,13);assert.equal(f.db.value.length,283);
   assert(f.writes.every(write=>['key','value'].includes(write.kind)));
-  const writes=f.writes.length,again=await ready(f);assert.equal(again.counts.key.existing,12);assert.equal(again.counts.value.existing,283);
+  const writes=f.writes.length,again=await ready(f);assert.equal(again.counts.key.existing,13);assert.equal(again.counts.value.existing,283);
   await finish(f,await start(f,again));assert.equal(f.writes.length,writes,'repeat preparation must not create or update anything');
 });
 
 test('case-insensitive reporting reuse preserves original labels, key types and custom dimensions',async()=>{
   const f=await setup();seedReporting(f,{fold:true,custom:'Variant'});
   const before=structuredClone({keys:f.db.key,values:f.db.value}),j=await ready(f);
-  assert.equal(j.counts.key.existing,12);assert.equal(j.counts.value.existing,283);assert.equal(j.counts.key.update,0);
+  assert.equal(j.counts.key.existing,13);assert.equal(j.counts.value.existing,283);assert.equal(j.counts.key.update,0);
   await finish(f,await start(f,j));assert.equal(f.writes.length,0);
   assert.deepEqual({keys:f.db.key,values:f.db.value},before);
 });
@@ -198,13 +198,13 @@ test('case-insensitive reporting reuse preserves original labels, key types and 
 test('OFF metadata is a reviewed update, not Done; execution preserves identity/name/displayName/type',async()=>{
   const f=await setup();seedReporting(f,{off:'aq_bid_origin'});
   const key=f.db.key.find(row=>row.name==='aq_bid_origin'),before=structuredClone(key),j=await metadataReady(f);
-  assert.equal(j.counts.key.update,1);assert.equal(j.counts.key.done,11);assert.equal(j.counts.value.existing,283);
+  assert.equal(j.counts.key.update,1);assert.equal(j.counts.key.done,12);assert.equal(j.counts.value.existing,283);
   assert.equal(j.reporting.needsUpdate,1);assert.equal(f.writes.length,0);assert.deepEqual(key,before);
-  const done=await finish(f,await startMetadata(f,j));assert.equal(done.counts.key.update,0);assert.equal(done.counts.key.done,12);
+  const done=await finish(f,await startMetadata(f,j));assert.equal(done.counts.key.update,0);assert.equal(done.counts.key.done,13);
   const writes=f.writes.filter(write=>write.method==='update');assert.equal(writes.length,1);assert.equal(writes[0].kind,'key');
   const payload=writes[0].payloads[0];assert.deepEqual(Object.keys(payload),['id','name','displayName','type','reportableType']);
   assert.deepEqual(payload,{id:before.id,name:before.name,displayName:before.displayName,type:before.type,reportableType:'ON'});
-  assert.equal(key.reportableType,'ON');assert.equal(f.db.key.length,12);assert.equal(f.db.value.length,283);
+  assert.equal(key.reportableType,'ON');assert.equal(f.db.key.length,13);assert.equal(f.db.value.length,283);
   assert.equal(f.writes.filter(write=>write.method==='create').length,0);
 });
 
@@ -270,7 +270,7 @@ test('failed or incomplete reporting scans remain unknown and never prove absenc
     let j=await review(f,await preview(f));assert.equal(j.canStart,false);assert(j.verificationCount>0,JSON.stringify(j));
     assert.equal(j.counts.key.new,0);assert.equal(f.writes.length,0);
     unavailable=false;j=await review(f,await action(f,j,'review',{retry:true}));assert.equal(j.canStart,true,JSON.stringify(j));
-    await finish(f,await start(f,j));assert.equal(f.db.key.length,12);assert.equal(f.db.value.length,283);
+    await finish(f,await start(f,j));assert.equal(f.db.key.length,13);assert.equal(f.db.value.length,283);
   }
 });
 
@@ -292,8 +292,8 @@ test('a malformed value response from another parent is unknown, not a missing v
 test('reporting overlaps merge without extra targeting predicates or deadlocked references',async()=>{
   const f=await setup(),input={...prebidPlan(),customTargeting:'VARIANT=A\nAQ_BID_ORIGIN=FRESH'};
   const j=await ready(f,input);await finish(f,await start(f,j));
-  assert.equal(f.db.key.length,13,'one price key plus the twelve reporting keys');
-  assert.equal(new Set(f.db.key.map(row=>row.name.toLowerCase())).size,13);
+  assert.equal(f.db.key.length,14,'one price key plus the thirteen reporting keys');
+  assert.equal(new Set(f.db.key.map(row=>row.name.toLowerCase())).size,14);
   const byName=name=>f.db.key.find(row=>row.name.toLowerCase()===name.toLowerCase());
   for(const row of f.db.lineItem) {
     const children=row.targeting.customTargeting.children;assert.equal(children.length,3,'price and exactly the two selected targeting predicates');
@@ -308,10 +308,10 @@ test('reporting overlaps merge without extra targeting predicates or deadlocked 
 
 test('lost key create response survives storage restart and is verified without replaying creation',async()=>{
   let f=await setup(),j=await start(f,await ready(f));f.failNext('key');j=await action(f,j,'step');
-  assert.equal(j.awaitingCheck,true);assert.equal(f.db.key.length,12);const writes=f.writes.length,id=j.id;
+  assert.equal(j.awaitingCheck,true);assert.equal(f.db.key.length,13);const writes=f.writes.length,id=j.id;
   f=restart(f);j=(await request(f,`/line-items/jobs/${id}`)).data;j=await action(f,j,'step');assert.equal(f.writes.length,writes);
   j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);assert.equal(f.writes.length,writes);
-  await finish(f,j);assert.equal(f.db.key.length,12);assert.equal(f.db.value.length,283);
+  await finish(f,j);assert.equal(f.db.key.length,13);assert.equal(f.db.value.length,283);
   assert.equal(f.writes.filter(write=>write.method==='create'&&write.kind==='key').length,1);
 });
 
@@ -322,7 +322,7 @@ test('lost reporting metadata update response is reconciled by ID without a seco
   let j=await startMetadata(f,await metadataReady(f));j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);
   const writes=f.writes.length;j=await action(f,j,'step');assert.equal(f.writes.length,writes);
   j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);assert.equal(f.writes.length,writes);
-  await finish(f,j);assert.equal(f.writes.filter(write=>write.method==='update').length,1);assert.equal(f.db.key.length,12);
+  await finish(f,j);assert.equal(f.writes.filter(write=>write.method==='update').length,1);assert.equal(f.db.key.length,13);
 });
 
 test('an external OFF change after key verification cannot authorize reporting value writes',async()=>{
@@ -414,7 +414,7 @@ test('a lost update in a mixed update/create batch resumes the remaining creatio
   assert.equal(f.db.key.some(row=>row.name==='aq_first_request'),false,'one durable attempt must not hide a second write');
   j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);assert.equal(j.phase,'Key-value ključevi');
   assert(j.cursor>cursor);assert.equal(j.offset,0,'remaining uncreated keys keep this phase unfinished');
-  const done=await finish(f,j);assert.equal(done.counts.key.done,12);assert.equal(done.counts.value.done,283);
+  const done=await finish(f,j);assert.equal(done.counts.key.done,13);assert.equal(done.counts.value.done,283);
   assert.equal(f.writes.filter(write=>write.method==='update').length,1);
   const creates=f.writes.filter(write=>write.method==='create'&&write.kind==='key');assert.equal(creates.length,1);
   assert.deepEqual(creates[0].payloads.map(row=>row.name),['aq_first_request']);
@@ -446,7 +446,7 @@ test('an unapplied metadata update waits 90 seconds, then only an explicit step 
   j=await action(f,j,'step');assert.equal(parent.reportableType,'ON');
   const updates=f.writes.filter(write=>write.method==='update');assert.equal(updates.length,2);
   assert.deepEqual(updates[1].payloads,[{id,name:'aq_bid_origin',displayName:'Fresh operator label',type:'PREDEFINED',reportableType:'ON'}]);
-  await finish(f,j);assert.equal(f.db.key.length,12);assert.equal(f.db.value.length,283);
+  await finish(f,j);assert.equal(f.db.key.length,13);assert.equal(f.db.value.length,283);
   assert.equal(f.writes.some(write=>write.method==='create'),false,'retry must never replace the owned key');
 });
 
