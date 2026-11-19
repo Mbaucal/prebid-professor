@@ -145,8 +145,10 @@ function SiteAbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Props){
     setResult({pair,check:await response.json() as CheckResult});
   }
   async function create(){
+    // An uncertain response may follow a committed save. Keep this exact TestId for an idempotent retry.
+    setTestIdEdited(true);
     const response=await request('',{method:'POST',body:{name:name.trim(),testId,a,b,trafficBPercent:trafficValue}});
-    // A failed save may still reserve its TestId: reload, so a TestId the operator did not edit moves to the next free one.
+    // Reload saved state after a refusal while preserving every submitted value.
     if(!response.ok){const problem=await failure(response,'Could not save the A/B test.');await load().catch(()=>{});throw problem;}
     const saved=await response.json() as {created:boolean;deletedAt?:string|null;record:{name:string}};
     // A new test starts from an empty name, the next proposed TestId and a new check.
