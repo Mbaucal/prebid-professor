@@ -57,6 +57,13 @@ class RequestLookupTests(unittest.TestCase):
         )
         self.assertEqual(copied, list(reversed(self.rows)))
 
+    def test_returned_lookup_snapshot_cannot_modify_the_original_trace(self):
+        original = copy.deepcopy(self.rows)
+        selected = DIAGNOSTICS.require_request(self.rows, 'Billboard', 2, self.scenario)
+        selected['bid']['cpm'] = 999
+        selected['hbTargeting']['hb_adid'].append('diagnostic-only')
+        self.assertEqual(self.rows, original)
+
     def test_missing_middle_round_fails_with_context_and_observed_rounds(self):
         rows = [row for row in self.rows if not (row['id'] == 'Billboard' and row['round'] == 2)]
         original = copy.deepcopy(rows)
@@ -148,6 +155,18 @@ class FailureReceiptTests(unittest.TestCase):
         self.assertEqual(restored['observations']['fixtureBidTrace'][0]['round'], 2)
         self.assertEqual([row['round'] for row in restored['observations']['requests']
                           if row['id'] == 'Billboard'], [1, 3])
+
+    def test_failure_receipt_is_a_snapshot_of_nested_observations(self):
+        scenario = {'arm': 'S', 'width': 390, 'case': 'normal'}
+        observations = {'requests': [{'id': 'Billboard', 'round': 1}],
+                        'fixtureBidTrace': [{'auctionId': 'a2', 'round': 2}]}
+        original = copy.deepcopy(observations)
+        receipt = DIAGNOSTICS.build_failure_receipt(scenario, AssertionError('missing'), observations)
+        observations['requests'][0]['round'] = 99
+        observations['fixtureBidTrace'].clear()
+        scenario['width'] = 1440
+        self.assertEqual(receipt['observations'], original)
+        self.assertEqual(receipt['scenario']['width'], 390)
 
     def test_empty_observations_still_record_the_actual_failure(self):
         error = RuntimeError('Native fixture failed before first request')
