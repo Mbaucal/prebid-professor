@@ -254,7 +254,8 @@ function SiteAbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Props){
     </form>
 
     <h3>Saved A/B tests</h3>
-    <p className="ab-tests-help">Download the A/B ZIP and upload all of its files, unchanged, as one Pages deployment at your existing script URL. The page must load the shared prebid.js before ads.js. Saving or downloading a test does not publish it.</p>
+    <p className="ab-tests-help">Download the A/B ZIP and upload all of its files, unchanged, as one Pages deployment at your existing script URL. Saving or downloading a test does not publish it.</p>
+    <p className="ab-tests-help">Follow the saved package's installation instructions and keep the approved CMP and GPT setup. For Prebid-enabled versions, load the bundle's verified shared prebid.js before /ads.js; GAM-only bundles do not need Prebid. An older pilot may have loaded Prebid itself, so check the page setup before replacing it.</p>
     <p className="ab-tests-help">Mark live and Mark stopped only record what you have done on your site; they do not publish or stop delivery.</p>
     <p className="ab-tests-help">{STOP_TEST}</p>
     {noticeAt('list')}
