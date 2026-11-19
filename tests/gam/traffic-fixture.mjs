@@ -31,7 +31,9 @@ export function trafficFixture() {
   });
   let nextId = 100,
     failKind = "",
-    persistFailure = true;
+    persistFailure = true,
+    failUpdateKind = "",
+    persistUpdateFailure = true;
   const traffic = {
     async network() {
       return { ...f.network, currency: "EUR", timeZone: "Europe/Belgrade" };
@@ -50,13 +52,16 @@ export function trafficFixture() {
       return structuredClone(
         db[kind].filter(
           (r) =>
-            wanted.has(r.name) &&
+            (['key','value'].includes(kind)
+              ? [...wanted].some(name => name.toLowerCase() === String(r.name).toLowerCase())
+              : wanted.has(r.name)) &&
             (!field || String(r[field]) === String(bindings.parent)),
         ),
       );
     },
     async query(kind, where, bindings = {}, options = {}) {
       const orderId = where?.match(/^orderId = ([1-9][0-9]*)$/)?.[1];
+      const keyId = where?.match(/customTargetingKeyId = ([1-9][0-9]*)/)?.[1];
       const rows = db[kind].filter(
         (r) =>
           (!bindings.name || r.name === bindings.name) &&
@@ -64,6 +69,8 @@ export function trafficFixture() {
           (!bindings.advertiser || r.advertiserId === bindings.advertiser) &&
           (!bindings.order || r.orderId === bindings.order) &&
           (!orderId || String(r.orderId) === orderId) &&
+          (!keyId || String(r.customTargetingKeyId) === keyId) &&
+          (!bindings.parent || String(r[kind === 'value' ? 'customTargetingKeyId' : 'advertiserId']) === String(bindings.parent)) &&
           (!bindings.search ||
             r.name.includes(bindings.search.replaceAll("%", ""))),
       );
@@ -81,12 +88,28 @@ export function trafficFixture() {
         ...structuredClone(p),
         ...(kind === "association" ? {} : { id: String(nextId++) }),
         ...(kind === "order" ? { status: "DRAFT" } : {}),
+        ...(['key','value'].includes(kind) ? {status:'ACTIVE'} : {}),
+        ...(kind === 'key' && !p.reportableType ? {reportableType:'OFF'} : {}),
       }));
       if (failKind !== kind || persistFailure) db[kind].push(...rows);
       if (failKind === kind) {
         failKind = "";
         throw Error("Synthetic lost response");
       }
+      return structuredClone(rows);
+    },
+    async update(kind, payloads) {
+      if(kind !== 'key')throw Error('Only reporting key metadata can be updated');
+      calls.push({kind,operation:'update',payloads:structuredClone(payloads)});
+      const rows=payloads.map(payload=>{
+        const current=db.key.find(row=>String(row.id)===String(payload.id));
+        if(!current)throw Error('Synthetic key disappeared before update');
+        if(payload.name!==current.name||payload.type!==current.type||payload.displayName!==current.displayName||Object.hasOwn(payload,'status'))throw Error('Reporting update changed unrelated key fields');
+        const result={...current,reportableType:payload.reportableType};
+        if(failUpdateKind!==kind||persistUpdateFailure)Object.assign(current,result);
+        return result;
+      });
+      if(failUpdateKind===kind){failUpdateKind='';throw Error('Synthetic lost update response');}
       return structuredClone(rows);
     },
   };
@@ -98,6 +121,10 @@ export function trafficFixture() {
     failNext: (kind, persist = true) => {
       failKind = kind;
       persistFailure = persist;
+    },
+    failNextUpdate: (kind, persist = true) => {
+      failUpdateKind=kind;
+      persistUpdateFailure=persist;
     },
   };
 }

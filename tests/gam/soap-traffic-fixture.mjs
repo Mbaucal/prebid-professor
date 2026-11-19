@@ -29,7 +29,7 @@ const tag = (name, v) =>
 const sequences = {
   advertiser: ["name", "type"],
   order: ["name", "advertiserId", "traffickerId"],
-  key: ["name", "displayName", "type"],
+  key: ["id", "name", "displayName", "type", "reportableType"],
   value: ["customTargetingKeyId", "name", "displayName", "matchType"],
   creative: [
     "advertiserId",
@@ -67,12 +67,13 @@ export function soapTrafficFixture() {
       [operation] = Object.keys(parsed),
       input = parsed[operation];
     const entry = Object.entries(SERVICES).find(
-      ([, v]) => path.endsWith("/" + v[0]) && [v[1], v[2]].includes(operation),
+      ([kind, v]) => path.endsWith("/" + v[0]) &&
+        ([v[1], v[2]].includes(operation)||(kind==='key'&&operation==='updateCustomTargetingKeys')),
     );
     assert(entry, "Unknown SOAP operation");
     const [kind, [, get, create, arrayTag]] = entry;
     let result;
-    if (operation === create) {
+    if (operation === create || operation === 'updateCustomTargetingKeys') {
       const payloads = list(input[arrayTag]);
       assert(payloads.length > 0);
       for (const payload of payloads) {
@@ -96,12 +97,14 @@ export function soapTrafficFixture() {
           }
         }
       }
-      result = await f.traffic.create(kind, payloads);
+      result = operation === create ? await f.traffic.create(kind,payloads) : await f.traffic.update(kind,payloads);
     } else {
       assert.equal(operation, get);
       const st = input.filterStatement,
         query = st.query;
-      assert(query.startsWith("WHERE "));
+      assert(/^(WHERE |ORDER BY |LIMIT )/.test(query));
+      assert(!query.includes('WHERE 1 = 1'),'PQL match-all must omit WHERE');
+      if(kind==='value')assert(/customTargetingKeyId\s*=\s*([1-9][0-9]*|:[A-Za-z][A-Za-z0-9]*)/.test(query)&&!query.includes(' OR '),'CustomTargetingValue lookup requires an AND-scoped key ID');
       const bindings = Object.fromEntries(
         list(st.values).map((v) => [v.key, v.value.value]),
       );
@@ -126,6 +129,8 @@ export function soapTrafficFixture() {
         );
       const orderId = query.match(/(?:^WHERE |AND )orderId = ([1-9][0-9]*)(?:\s|$)/)?.[1];
       if (orderId) rows = rows.filter((r) => String(r.orderId) === orderId);
+      const keyId = query.match(/(?:^WHERE |AND )customTargetingKeyId = ([1-9][0-9]*)(?:\s|$)/)?.[1];
+      if(keyId)rows=rows.filter(row=>String(row.customTargetingKeyId)===keyId);
       const names = Object.entries(bindings)
         .filter(([k]) => /^name\d+$/.test(k))
         .map(([, v]) => v);
