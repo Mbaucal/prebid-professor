@@ -10,7 +10,7 @@ type Counts = {total:number;done?:number;created:number;existing:number;new:numb
 type OutcomeCounts = Record<Outcome,number>&{total:number};
 type Job = {
   id:string;mode:string;status:string;cursor:number;network:{networkCode:string;name:string};phase:string;
-  updatedAt:string;counts:Record<string,Counts>;error:string;awaitingCheck:boolean;retryAfter:number;canStart?:boolean;resumed?:boolean;
+  updatedAt:string;offset:number;phaseTotal:number;counts:Record<string,Counts>;error:string;awaitingCheck:boolean;retryAfter:number;canStart?:boolean;resumed?:boolean;
   conflictCount:number;verificationCount?:number;unverifiedCount?:number;blockedCount?:number;
   conflicts:{ref:string;message:string}[];verificationIssues?:{ref:string;message:string}[];
   reporting?:{keyCount:number;valueCount:number;needsUpdate:number;keys:{key:string;valueCount:number;openDomain:boolean;type:string}[];
@@ -122,6 +122,8 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
   async function run(label:string,action:()=>Promise<void>) {
     if(working.current)return;
     working.current=true;stop.current=false;setBusy(label);onRunning(true);setError('');setActiveJobId('');
+    statusRef.current?.focus({preventScroll:true});
+    statusRef.current?.scrollIntoView({behavior:'smooth',block:'start'});
     try{await action();}
     catch(e){if(alive.current)setError((e as Error).message);}
     finally{
@@ -142,7 +144,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
   }
   async function preview() {
     await run('Proveravam izabrane ključeve i vrednosti u GAM-u',async()=>{
-      setConfirmed(false);
+      setJob(null);setConfirmed(false);
       const next=await api<Job>('/line-items/preview',{mode:'reporting',networkCode:network,reportingSelection:selection.rows});
       if(next.mode!=='reporting'){onOpenLineItems(next.id);return;}
       if(alive.current){setJob(next);statusRef.current?.scrollIntoView({behavior:'smooth',block:'start'});}
@@ -151,9 +153,17 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
   }
   async function open(id:string) {
     await run('Učitavam sačuvani posao',async()=>{
+      setJob(null);setConfirmed(false);
       const next=await api<Job>('/line-items/jobs/'+id);
       if(next.mode!=='reporting'){onOpenLineItems(id);return;}
-      if(alive.current){setJob(next);setConfirmed(false);statusRef.current?.scrollIntoView({behavior:'smooth',block:'start'});}
+      if(alive.current){
+        setJob(next);setConfirmed(false);
+        if(catalog&&next.reporting?.results)setPicks(Object.fromEntries(catalog.keys.map(key=>{
+          const result=next.reporting?.results?.find(item=>item.key===key.key);
+          const values=result?.values.map(value=>value.name)??[];
+          return [key.key,{enabled:Boolean(result),values:values.filter(value=>key.values.includes(value)),extra:values.filter(value=>!key.values.includes(value)).join(', ')}];
+        })));
+      }
     });
   }
   async function recheck() {
@@ -187,9 +197,10 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
   const total=job?.reporting?(job.reporting.keyCount+job.reporting.valueCount):0;
   const done=(jobKeys?.done??((jobKeys?.created??0)+(jobKeys?.existing??0)))+(jobValues?.done??((jobValues?.created??0)+(jobValues?.existing??0)));
   const percent=total?Math.min(100,Math.round(done/total*100)):0;
+  const processed=[jobKeys,jobValues].reduce((sum,count)=>sum+(count?count.existing+count.created+count.new+(count.update??0)+count.conflict+(count.unverified??0)+(count.blocked??0):0),0);
   const results=job?.reporting?.results??[];
   const keyOutcomes=job?.reporting?.outcomes?.keys,valueOutcomes=job?.reporting?.outcomes?.values;
-  const displayStatus=catalogLoading?'Učitavam pripremljene ključeve':error||job?.error?'Potrebna je provera — posao nije potvrđen':job?.awaitingCheck?'Čeka se potvrda ishoda u GAM-u':job?statusNames[job.status]||job.status:busy||'Izaberite ključeve za pripremu';
+  const displayStatus=catalogLoading?'Učitavam pripremljene ključeve':busy?busy:error||job?.error||job&&issues(job)?'Potrebna je provera — posao nije potvrđen':job?.awaitingCheck?'Čeka se potvrda ishoda u GAM-u':job?.status==='completed'&&!completed(job)?'Posao još nije potvrđen':job?statusNames[job.status]||job.status:'Izaberite ključeve za pripremu';
 
   return <div className="gam-kv" aria-label="Key-values priprema">
     <article className="gam-card gam-kv-intro">
@@ -201,13 +212,14 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
       {!active&&<p className="gam-message info">Poveži mrežu u kartici GAM povezivanje da proveriš i pripremiš izabrane ključeve.</p>}
     </article>
 
-    <section ref={statusRef} className={'gam-card gam-kv-status '+(job&&completed(job)?'success':error||job?.error||job?.awaitingCheck?'attention':'')} aria-label="Status key-values posla" aria-busy={Boolean(busy)||catalogLoading}>
+    <section ref={statusRef} tabIndex={-1} className={'gam-card gam-kv-status '+(!busy&&!error&&job&&completed(job)?'success':error||job?.error||job?.awaitingCheck||job&&issues(job)?'attention':'')} aria-label="Status key-values posla" aria-busy={Boolean(busy)||catalogLoading}>
       <div className="gam-kv-status-heading"><span className={'gam-kv-dot '+(busy||catalogLoading?'working':'')} aria-hidden="true"/><h3 aria-live="polite">{displayStatus}</h3></div>
       {busy&&<p role="status">{busy}… {job?.phase&&<strong>{job.phase}</strong>} Sačekaj završetak ovog koraka.</p>}
       {job&&<>
         <p><strong>{job.network.name} · {job.network.networkCode}</strong><br/><small>Posao: <code>{job.id}</code> · Poslednja potvrda: {new Date(job.updatedAt).toLocaleString('sr-Latn')}</small></p>
         {job.phase&&<p>Trenutna faza: <strong>{job.phase}</strong></p>}
         {job.status==='creating'||completed(job)?<><progress aria-label="Potvrđeni key-values napredak" max={total||1} value={completed(job)?total:done}/><p>{done} od {total} stavki potvrđeno · {completed(job)?100:percent}%</p></>:
+          job.status==='reviewing'?<><progress aria-label="Napredak provere key-values" max={total||1} value={Math.min(processed,total)}/><p>Obrađeno u pregledu: {Math.min(processed,total)} od {total} stavki. Ovo je provera postojećeg stanja, pre upisa.</p></>:
           <p>{job.reporting?.keyCount??jobKeys?.total??0} ključeva · {job.reporting?.valueCount??jobValues?.total??0} vrednosti u sačuvanom izboru.</p>}
       </>}
       {(error||job?.error)&&<p className="gam-message error" role="alert">{error||job?.error}</p>}
@@ -245,8 +257,9 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
         <div className="gam-kv-key-list">{catalog?.keys.map(key=>{
           const pick=picks?.[key.key];if(!pick)return null;
           const query=queries[key.key]??'',visible=key.values.filter(value=>value.toLowerCase().includes(query.toLowerCase()));
+          let pickedCount:string;try{pickedCount=valuesFor(key,pick).length+' izabrano';}catch{pickedCount='Proveri unos';}
           return <div className={'gam-kv-key '+(pick.enabled?'selected':'')} key={key.key}>
-            <label className="gam-kv-key-toggle"><input type="checkbox" aria-label={'Uključi ključ '+key.key} checked={pick.enabled} onChange={event=>change(key.key,{enabled:event.target.checked})}/><span><code>{key.key}</code><small>{descriptions[key.key]||'Reporting ključ za ads.js.'}</small></span><span className="gam-kv-key-count">{pick.values.length} izabrano</span></label>
+            <label className="gam-kv-key-toggle"><input type="checkbox" aria-label={'Uključi ključ '+key.key} checked={pick.enabled} onChange={event=>change(key.key,{enabled:event.target.checked})}/><span><code>{key.key}</code><small>{descriptions[key.key]||'Reporting ključ za ads.js.'}</small></span><span className="gam-kv-key-count">{pickedCount}</span></label>
             <details><summary>Vrednosti za {key.key} · {key.openDomain?'numeričke vrednosti':'pripremljena lista'}</summary>
               <fieldset className="gam-fields" disabled={!pick.enabled}>
                 {key.values.length>20&&<label>Pretraži vrednosti za {key.key}<input value={query} onChange={event=>setQueries(current=>({...current,[key.key]:event.target.value}))} placeholder="npr. RS"/></label>}
