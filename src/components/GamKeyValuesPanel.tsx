@@ -43,6 +43,7 @@ const newLabels = new Set(['aq_bid_origin','aq_first_request','aq_consent_wait']
 const issues = (j:Job) => Boolean(j.conflictCount||j.verificationCount||j.unverifiedCount||j.blockedCount);
 const completed = (j:Job) => j.status==='completed'&&!j.awaitingCheck&&!j.error&&!issues(j);
 const addOnly = (j:Job) => j.mode==='reporting'&&j.reporting?.writePolicy==='add_only'&&j.executionAllowed===true;
+const closable = (j:ActiveJob) => j.canClosePreview===true&&!j.awaitingCheck&&['reviewing','ready'].includes(j.status)&&Object.values(j.counts).every(count=>count.created===0);
 const freshPicks = (catalog:Catalog, enabled:(key:string)=>boolean=()=>true):Record<string,Pick> =>
   Object.fromEntries(catalog.keys.map(key=>[key.key,{enabled:enabled(key.key),values:[...key.values],extra:''}]));
 
@@ -173,7 +174,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
       setJob(null);setConfirmed(false);
       const next=await api<Job>('/line-items/jobs/'+id);
       if(next.mode!=='reporting'){if(alive.current){setActiveJob(next);setActiveJobId(next.id);setCloseConfirmed(false);}return;}
-      if(alive.current){setJob(next);setConfirmed(false);}
+      if(alive.current){setJob(next);setConfirmed(false);setActiveJob(null);setActiveJobId('');setCloseConfirmed(false);}
     });
   }
   async function inspectActive(id:string) {
@@ -206,10 +207,10 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
     });
   }
   async function closePreview(target:ActiveJob) {
-    if(!closeConfirmed||!target.canClosePreview)return;
+    if(!closeConfirmed||!closable(target))return;
     await run('Zatvaram nepočeti Tessera pregled',async()=>{
       const current=await api<Job>('/line-items/jobs/'+target.id);
-      if(!current.canClosePreview||current.awaitingCheck||!['reviewing','ready'].includes(current.status)){
+      if(!closable(current)){
         if(alive.current)setActiveJob(current);
         throw Error('Ovaj pregled više nije moguće bezbedno zatvoriti. GAM stanje nije menjano.');
       }
@@ -279,7 +280,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
         <label className="gam-confirm"><input type="checkbox" disabled={Boolean(busy)||!job.canStart} checked={confirmed} onChange={event=>setConfirmed(event.target.checked)}/>Potvrđujem dodavanje nedostajućih stavki iz izbora {job.reporting?.keyCount??0} ključeva i {job.reporting?.valueCount??0} vrednosti u GAM mreži {job.network.networkCode}. Postojeća podešavanja ostaju bez izmene.</label>
         <button type="button" className="gam-primary" disabled={Boolean(busy)||!confirmed||!job.canStart} onClick={()=>void start()}>Pokreni pripremu key-values</button>
       </div>}
-      {closeTarget?.canClosePreview&&<div className="gam-kv-close-preview"><h4>Zatvori nepočeti pregled</h4><p>Zatvara se samo sačuvani Tessera pregled koji nikada nije pokrenut. U GAM-u se ništa ne kreira, menja ili briše.</p><label className="gam-confirm"><input type="checkbox" disabled={Boolean(busy)} checked={closeConfirmed} onChange={event=>setCloseConfirmed(event.target.checked)}/>Potvrđujem zatvaranje nepočetog pregleda {closeTarget.id} za mrežu {closeTarget.network.networkCode}. GAM ostaje bez izmene.</label><button type="button" disabled={Boolean(busy)||!closeConfirmed} onClick={()=>void closePreview(closeTarget)}>Zatvori nepočeti pregled</button></div>}
+      {closeTarget&&closable(closeTarget)&&<div className="gam-kv-close-preview"><h4>Zatvori nepočeti pregled</h4><p>Zatvara se samo sačuvani Tessera pregled koji nikada nije pokrenut. U GAM-u se ništa ne kreira, menja ili briše.</p><label className="gam-confirm"><input type="checkbox" disabled={Boolean(busy)} checked={closeConfirmed} onChange={event=>setCloseConfirmed(event.target.checked)}/>Potvrđujem zatvaranje nepočetog pregleda {closeTarget.id} za mrežu {closeTarget.network.networkCode}. GAM ostaje bez izmene.</label><button type="button" disabled={Boolean(busy)||!closeConfirmed} onClick={()=>void closePreview(closeTarget)}>Zatvori nepočeti pregled</button></div>}
     </section>
 
     {job&&results.length>0&&<article className="gam-card gam-kv-results" aria-label="Rezultat key-values posla">
