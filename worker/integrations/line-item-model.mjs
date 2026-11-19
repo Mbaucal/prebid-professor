@@ -730,15 +730,22 @@ export function totals(job, states = referenceStates(job)) {
 function reportingResults(job, states) {
   const indexed=new Map();
   for(const [key,value] of states)if(key.startsWith('key:')||key.startsWith('value:'))
-    indexed.set(key.toLowerCase(),value);
+    indexed.set(key.toLowerCase(),{value,prior:job.refs[key]});
   const result=(ref)=>{
-    const value=indexed.get(ref.toLowerCase()),state=value?.state || 'pending';
+    const entry=indexed.get(ref.toLowerCase()),value=entry?.value,prior=entry?.prior;
+    const state=value?.state || 'pending',sameId=Boolean(prior?.id&&prior.id===value?.id);
+    // A transient inspection overlay can omit historical write metadata.
+    // Preserve that outcome only for the same currently verified identity;
+    // current conflict/unknown/blocked states always remain authoritative.
+    const created=state==='created'||(sameId&&(prior.state==='created'||prior.createdByJob));
+    const updated=value?.reportingUpdated||(sameId&&prior.reportingUpdated);
     const outcome=state==='created'?'created':state==='existing'
-      ? value.reportingUpdated?'updated':'existing'
+      ? created?'created':updated?'updated':'existing'
       : ['new','update','unverified','blocked','conflict'].includes(state)?state:'pending';
+    const message=value?.message||value?.reconciliationMessage||(sameId?prior.reconciliationMessage:undefined);
     return {state,outcome,...(value?.id?{id:value.id}:{}),
-      ...(value?.reportingReconciled?{reconciled:true}:{}),
-      ...((value?.message||value?.reconciliationMessage)?{message:value.message||value.reconciliationMessage}:{})};
+      ...((value?.reportingReconciled||(sameId&&prior.reportingReconciled))?{reconciled:true}:{}),
+      ...(message?{message}:{})};
   };
   const results=job.plan.reporting.keys.map(spec=>({key:spec.key,...result(`key:${spec.key}`),
     values:spec.values.map(name=>({name,...result(`value:${spec.key}:${name}`)}))}));
