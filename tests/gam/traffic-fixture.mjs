@@ -38,11 +38,13 @@ export function trafficFixture() {
     async network() {
       return { ...f.network, currency: "EUR", timeZone: "Europe/Belgrade" };
     },
-    async byIds(kind, ids) {
+    async byIds(kind, ids, options = {}) {
+      if(kind==='value'&&!options.parentId)throw Error('Custom targeting value ID reads require a parent key');
       const wanted = new Set(ids);
       return structuredClone(
         db[kind].filter((r) =>
-          wanted.has(String(r[kind === "association" ? "lineItemId" : "id"])),
+          wanted.has(String(r[kind === "association" ? "lineItemId" : "id"])) &&
+          (kind!=='value'||String(r.customTargetingKeyId)===String(options.parentId)),
         ),
       );
     },
@@ -62,6 +64,7 @@ export function trafficFixture() {
     async query(kind, where, bindings = {}, options = {}) {
       const orderId = where?.match(/^orderId = ([1-9][0-9]*)$/)?.[1];
       const keyId = where?.match(/customTargetingKeyId = ([1-9][0-9]*)/)?.[1];
+      const ids = where?.match(/(?:^|AND )(?:id|lineItemId) IN \(([0-9,]+)\)/)?.[1].split(',');
       const rows = db[kind].filter(
         (r) =>
           (!bindings.name || r.name === bindings.name) &&
@@ -70,6 +73,7 @@ export function trafficFixture() {
           (!bindings.order || r.orderId === bindings.order) &&
           (!orderId || String(r.orderId) === orderId) &&
           (!keyId || String(r.customTargetingKeyId) === keyId) &&
+          (!ids || ids.includes(String(r[kind==='association'?'lineItemId':'id']))) &&
           (!bindings.parent || String(r[kind === 'value' ? 'customTargetingKeyId' : 'advertiserId']) === String(bindings.parent)) &&
           (!bindings.search ||
             r.name.includes(bindings.search.replaceAll("%", ""))),
