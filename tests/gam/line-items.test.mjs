@@ -156,13 +156,15 @@ test("review is read only; Prebid creates values, shared creative pool, targetin
   assert.equal(f.calls.length, 0);
   assert.equal(j.counts.lineItem.total, 3);
   const done = await finish(f, await start(f, j));
-  assert.equal(f.db.key.length, 1);
-  assert.equal(f.db.value.length, 3);
+  assert.equal(f.db.key.length, 13);
+  assert.equal(f.db.value.length, 286);
   assert.equal(f.db.creative.length, 2);
   assert.equal(f.db.lineItem.length, 3);
   assert.equal(f.db.association.length, 6);
+  const priceKey=f.db.key.find(row=>row.name==='hb_pb');
+  const priceValues=f.db.value.filter(row=>row.customTargetingKeyId===priceKey.id);
   assert.deepEqual(
-    f.db.value.map((r) => r.name),
+    priceValues.map((r) => r.name),
     ["0.01", "0.02", "0.03"],
   );
   assert.deepEqual(
@@ -173,7 +175,7 @@ test("review is read only; Prebid creates values, shared creative pool, targetin
     f.db.lineItem.map(
       (r) => r.targeting.customTargeting.children[0].valueIds[0],
     ),
-    f.db.value.map((r) => r.id),
+    priceValues.map((r) => r.id),
   );
   assert(f.db.association.every((r) => r.sizes.length === 2));
   assert.equal(done.counts.association.created, 6);
@@ -210,7 +212,10 @@ test("new advertiser and order, ordinary Standard goal/dates, no creatives", asy
   assert.equal(f.db.creative.length, 0);
   assert.equal(done.counts.association.total, 0);
   assert.equal(f.db.order.at(-1).advertiserId, f.db.advertiser.at(-1).id);
-  assert.equal(f.db.value.length, 2);
+  assert.equal(f.db.value.length, 285);
+  const sectionKey=f.db.key.find(row=>row.name==='section');
+  assert.deepEqual(f.db.value.filter(row=>row.customTargetingKeyId===sectionKey.id).map(row=>row.name),['sport','news']);
+  assert.equal(li.targeting.customTargeting.children.length,1,'reporting keys must never become campaign targeting requirements');
 });
 test("lost response reconciles existing entities without a second mutation; missing response never blindly retries", async () => {
   const f = await setup();

@@ -126,6 +126,11 @@ export class GamTrafficClient {
     // PQL predicates have a property on the left. An omitted WHERE is the
     // documented match-all form, rather than the SQL tautology `1 = 1`.
     const filter = where.trim() === "1 = 1" ? "" : where.trim();
+    const valueParent = kind === "value"
+      ? filter.match(/\bcustomTargetingKeyId\s*=\s*([1-9][0-9]*)\b/)?.[1]
+      : null;
+    if (kind === "value" && !valueParent)
+      throw new GamError("Provera vrednosti zahteva tačno određen GAM ključ.", 422);
     const seen = new Set();
     let offset = start,
       expectedTotal;
@@ -156,6 +161,8 @@ export class GamTrafficClient {
               ? !validRowId(row.lineItemId) || !validRowId(row.creativeId)
               : !validRowId(row.id)),
         ) ||
+        (["key", "value"].includes(kind) && rows.some((row) => typeof row.name !== "string" || !row.name)) ||
+        (kind === "value" && rows.some((row) => String(row.customTargetingKeyId) !== valueParent)) ||
         (rows.length && offset + rows.length > total) ||
         (rows.length &&
           value.startIndex !== undefined &&
@@ -203,11 +210,28 @@ export class GamTrafficClient {
       ),
     );
   }
-  async byIds(kind, ids) {
+  async update(kind, payloads) {
+    if (kind !== "key") throw new Error("Only custom targeting key reporting updates are supported");
+    const keys = payloads.map((payload) => {
+      // Only the audited key fields, in the v202608 SOAP sequence. Status is
+      // read-only and must not reactivate an operator-disabled key.
+      if (payload.reportableType !== "ON" || !["FREEFORM", "PREDEFINED"].includes(payload.type) ||
+          typeof payload.name !== "string" || !payload.name ||
+          (payload.displayName !== undefined && typeof payload.displayName !== "string"))
+        throw new GamError("Neispravna dopuna reporting ključa.", 422);
+      return { id: numericId(String(payload.id)), name: payload.name,
+        ...(payload.displayName !== undefined ? { displayName: payload.displayName } : {}),
+        type: payload.type, reportableType: "ON" };
+    });
+    return list(await this.client.call("CustomTargetingService", "updateCustomTargetingKeys",
+      keys.map((key) => element("keys", key)).join(""), { entityCount: keys.length }));
+  }
+  async byIds(kind, ids, options = {}) {
     if (!ids.length) return [];
     const field = kind === "association" ? "lineItemId" : "id";
+    const scope = kind === "value" ? `customTargetingKeyId = ${numericId(String(options.parentId))} AND ` : "";
     return (
-      await this.query(kind, `${field} IN (${ids.map(numericId).join(",")})`)
+      await this.query(kind, `${scope}${field} IN (${ids.map(numericId).join(",")})`)
     ).rows;
   }
   async byNames(kind, names, where = "", bindings = {}) {
@@ -217,12 +241,28 @@ export class GamTrafficClient {
       b["name" + i] = name;
       return ":name" + i;
     });
-    return (
+    // These GAM names are case-insensitive. Keep the existing indexed query as
+    // the fast path, but prove a missing alphabetic name with a complete scope
+    // scan rather than assuming the PQL service uses the same collation.
+    const keyValue = ["key", "value"].includes(kind);
+    let scope = where;
+    if (kind === "value") {
+      if (where.trim() !== "customTargetingKeyId = :parent")
+        throw new GamError("Provera vrednosti zahteva tačno određen GAM ključ.", 422);
+      scope = `customTargetingKeyId = ${numericId(String(bindings.parent))}`;
+      delete b.parent;
+    }
+    const found = (
       await this.query(
         kind,
-        `${where ? where + " AND " : ""}name IN (${terms.join(",")})`,
+        `${scope ? scope + " AND " : ""}name IN (${terms.join(",")})`,
         b,
       )
     ).rows;
+    if (!keyValue || names.every((name) => name.toLowerCase() === name.toUpperCase() ||
+      found.some((row) => typeof row.name === "string" && row.name.toLowerCase() === name.toLowerCase()))) return found;
+    const wanted = new Set(names.map((name) => name.toLowerCase()));
+    return (await this.query(kind, scope, kind === "value" ? {} : bindings)).rows
+      .filter((row) => typeof row.name === "string" && wanted.has(row.name.toLowerCase()));
   }
 }

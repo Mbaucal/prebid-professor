@@ -15,6 +15,9 @@ import {
   advance,
   jobView,
   compatible,
+  phaseCount,
+  sameEntityName,
+  reportingReady,
 } from "./line-item-model.mjs";
 
 const prefix = "api-integrations/gam/line-items/v1/";
@@ -41,6 +44,20 @@ const canonicalPlan = (value) => JSON.stringify(value, function (_key, item) {
     ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]]))
     : item;
 });
+function sameActivePlan(previous, next, input) {
+  if (canonicalPlan(previous) === canonicalPlan(next)) return true;
+  if (previous.reporting || Object.hasOwn(input, "reportingValues")) return false;
+  const withoutDefault = { ...next };
+  delete withoutDefault.reporting;
+  return canonicalPlan(previous) === canonicalPlan(withoutDefault);
+}
+const firstPhase = (plan) => plan.mode === "reporting" ? "key" : "advertiser";
+const pendingWrite = (state) => ["new", "update"].includes(state);
+function finishBatch(job, batch, states) {
+  // Updating existing metadata and creating missing keys use separate durable
+  // operations. A cursor bump makes the remaining half a new safe attempt.
+  advance(job, batch.some((entity) => pendingWrite(states.get(entity.key)?.state)) ? 0 : batch.length);
+}
 const attemptKey = (id, cursor) =>
   prefix + `attempts/${uuid(id)}/${cursor}.json`;
 const lockKey = (network) => prefix + "locks/" + numericId(network) + ".json";
@@ -61,7 +78,7 @@ const summary = (j) => ({
   network: j.network,
   createdAt: j.createdAt,
   updatedAt: j.updatedAt,
-  name: j.plan.orders[0].name || j.labels["order:0"],
+  name: j.plan.mode === "reporting" ? "GAM reporting" : j.plan.orders[0]?.name || j.labels["order:0"] || "",
   count: j.plan.rows.length,
 });
 async function historyPrefix(actor, origin, network) {
@@ -150,6 +167,7 @@ function limitFor(phase, review, plan) {
 }
 async function selectionChecks(client, plan) {
   const network = await client.network();
+  if (plan.mode === "reporting") return { network, labels: { inventory: [], advertiser: "" } };
   if (network.currency !== plan.currency)
     fail(
       `Izabrana valuta ${plan.currency} ne odgovara valuti GAM mreže (${network.currency}). Uskladite cenu i Prebid valutu.`,
@@ -213,7 +231,7 @@ function checkExisting(job, batch, states) {
       prior = job.refs[e.key];
     if (found?.state === "conflict")
       fail(`${e.payload.name || e.key}: ${found.message}`);
-    if (!found || !["new", "existing"].includes(found.state))
+    if (!found || !["new", "existing", "update"].includes(found.state))
       fail(found?.message || "Korak nije pouzdano proveren. Ponovite proveru istog posla.");
     if (prior?.id && (found.id !== prior.id || found.state === "new"))
       fail(
@@ -223,10 +241,24 @@ function checkExisting(job, batch, states) {
       fail("Prethodni korak nije potvrđen. Proverite sačuvani napredak.");
   }
 }
-async function verifyParents(client, job, batch) {
+class ReportingParentsChanged extends GamError {}
+async function verifyParents(client, job, batch, recovering = false) {
   const plan = job.plan,
     first = batch[0];
   if (!first) return;
+  if (first.kind === "value") {
+    const needed = new Set(batch.flatMap((entity) => entity.depends));
+    const parents = entities(plan, job.refs, "key", 0, phaseCount(plan, "key"))
+      .filter((entity) => needed.has(entity.key));
+    const states = await inspectEntities(client, parents, plan);
+    recordResult(job, parents, states);
+    if (parents.some((entity) => !["existing", "update"].includes(states.get(entity.key)?.state)))
+      fail("Roditeljski GAM ključ nije pouzdano dostupan. Ponovite proveru istog posla.");
+    if (parents.some((entity) => states.get(entity.key)?.state === "update")) {
+      if (recovering) return true;
+      throw new ReportingParentsChanged("Reporting podešavanje ključa je promenjeno. Isti posao se vraća na proveru i dopunu ključeva pre nastavka vrednosti.");
+    }
+  }
   if (["order", "creative"].includes(first.kind)) {
     const a = await client.byIds("advertiser", [job.refs["advertiser:0"].id]);
     if (a.length !== 1 || a[0].type !== "ADVERTISER")
@@ -279,7 +311,7 @@ async function verifyParents(client, job, batch) {
   }
 }
 function validateCreated(batch, rows, plan) {
-  if (rows.length !== batch.length)
+  if (!Array.isArray(rows) || rows.length !== batch.length)
     fail("GAM nije potvrdio ceo paket. Proverite ishod pre nastavka.", 502);
   const states = new Map(),
     ids = new Set();
@@ -288,9 +320,11 @@ function validateCreated(batch, rows, plan) {
       e.kind === "association"
         ? String(r.lineItemId) === e.payload.lineItemId &&
           String(r.creativeId) === e.payload.creativeId
-        : r.name === e.payload.name,
+        : sameEntityName(e.kind, r.name, e.payload.name) &&
+          (e.kind !== "value" || String(r.customTargetingKeyId) === e.payload.customTargetingKeyId),
     );
-    if (matched.length !== 1 || !compatible(e, matched[0], plan))
+    if (matched.length !== 1 || !compatible(e, matched[0], plan) ||
+        (e.kind === "key" && e.payload.reportableType && matched[0].type !== e.payload.type))
       fail(
         "GAM odgovor se razlikuje od potvrđenog zahteva. Proverite ishod.",
         502,
@@ -308,6 +342,26 @@ function validateCreated(batch, rows, plan) {
       name: row.name || id,
       status: row.status || "",
     });
+  }
+  return states;
+}
+function validateUpdated(batch, rows, plan) {
+  if (!Array.isArray(rows) || rows.length !== batch.length)
+    fail("GAM nije potvrdio sve dopune reporting ključeva. Proverite ishod.", 502);
+  const states = new Map(), seen = new Set();
+  for (const entity of batch) {
+    const payload = entity.updatePayload;
+    const matches = rows.filter((row) => String(row.id) === payload.id);
+    if (matches.length !== 1 || seen.has(payload.id))
+      fail("GAM odgovor ne potvrđuje iste ID-jeve reporting ključeva. Proverite ishod.", 502);
+    const actual = matches[0];
+    if (!sameEntityName("key", actual.name, payload.name) || actual.type !== payload.type ||
+        String(actual.displayName ?? "") !== String(payload.displayName ?? "") ||
+        !reportingReady(actual.reportableType) || !compatible(entity, actual, plan))
+      fail("GAM nije potvrdio reporting dopunu uz očuvane podatke ključa. Proverite ishod.", 502);
+    seen.add(payload.id);
+    states.set(entity.key, { state: "existing", id: numericId(payload.id), name: actual.name,
+      status: actual.status || "", reportableType: actual.reportableType, reportingUpdated: true });
   }
   return states;
 }
@@ -387,7 +441,7 @@ export async function lineItemResponse(
     });
   }
   if (path === "/line-items/preview" && request.method === "POST") {
-    const plan = normalizeLinePlan(await body(request)),
+    const previewInput = await body(request), plan = normalizeLinePlan(previewInput),
       { client, connection } = await clientFor(plan.networkCode);
     const owner = (await read(bucket, lockKey(plan.networkCode)))?.value.owner;
     if (owner) {
@@ -395,7 +449,7 @@ export async function lineItemResponse(
       if (!active || !["completed", "cancelled"].includes(active.status)) {
         if (active?.actor === actor && active.origin === origin) {
           if (active.status === "creating" && active.connectionRevision === connection.revision &&
-              canonicalPlan(active.plan) === canonicalPlan(plan))
+              sameActivePlan(active.plan, plan, previewInput))
             return json({ ...jobView(active, await currentAttempt(bucket, active)), resumed: true });
           return json({
             error: "Postojeći posao za ovu mrežu nije završen. Otvorite ga i proverite napredak pre novog plana.",
@@ -417,7 +471,7 @@ export async function lineItemResponse(
       labels,
       refs: {},
       status: "reviewing",
-      phase: "advertiser",
+      phase: firstPhase(plan),
       offset: 0,
       cursor: 0,
       createdAt: now,
@@ -565,7 +619,7 @@ export async function lineItemResponse(
     await selectionChecks(client, job.plan);
     await claim(bucket, job);
     job.status = "creating";
-    job.phase = "advertiser";
+    job.phase = firstPhase(job.plan);
     job.offset = 0;
     job.cursor++;
     job.error = "";
@@ -580,7 +634,7 @@ export async function lineItemResponse(
     if (input.retry === true && (job.status === "ready" ||
         (job.status === "reviewing" && jobView(job).conflictCount > 0))) {
       job.status = "reviewing";
-      job.phase = "advertiser";
+      job.phase = firstPhase(job.plan);
       job.offset = 0;
       job.cursor++;
       delete job.expiresAt;
@@ -655,15 +709,32 @@ export async function lineItemResponse(
     job.offset,
     limitFor(job.phase, false, job.plan),
   );
+  let reportingParentsNeedUpdate = false;
   const parentsVerified = async () => {
     try {
-      await verifyParents(client, job, batch);
+      reportingParentsNeedUpdate = await verifyParents(client, job, batch, action === "check") === true;
       return true;
     } catch (error) {
       const message = error instanceof GamError ? error.message
         : "Prethodni korak nije pouzdano proveren. Ponovite proveru istog posla.";
-      job.verificationResults = Object.fromEntries(batch.map((e) => [e.key, { state: "unverified", message }]));
+      if (error instanceof ReportingParentsChanged && !attempt) {
+        job.phase = "key";
+        job.offset = 0;
+        job.cursor++;
+        delete job.verificationResults;
+      } else job.verificationResults = Object.fromEntries(batch.map((e) => [e.key, { state: "unverified", message }]));
       job.error = message;
+      await save(bucket, job, stored.etag);
+      return false;
+    }
+  };
+  const existingVerified = async (states) => {
+    try {
+      checkExisting(job, batch, states);
+      return true;
+    } catch (error) {
+      job.verificationResults = Object.fromEntries(states);
+      job.error = error instanceof GamError ? error.message : "Korak nije pouzdano proveren. Ponovite proveru istog posla.";
       await save(bucket, job, stored.etag);
       return false;
     }
@@ -678,21 +749,42 @@ export async function lineItemResponse(
       await save(bucket, job, stored.etag);
       return json(jobView(job, attempt));
     }
-    checkExisting(job, batch, states);
-    if (batch.every((e) => states.get(e.key)?.state === "existing")) {
+    if (!await existingVerified(states)) return json(jobView(job, attempt));
+    if (!Array.isArray(attempt.keys) || !attempt.keys.length ||
+        attempt.keys.some((key) => typeof key !== "string") || new Set(attempt.keys).size !== attempt.keys.length)
+      fail("Sačuvani pokušaj nema pouzdan spisak entiteta. Upis nije ponovljen.");
+    const attempted = new Set(attempt.keys);
+    const attemptedBatch = batch.filter((entity) => attempted.has(entity.key));
+    if (attemptedBatch.length !== attempted.size)
+      fail("Sačuvani pokušaj se ne poklapa sa ovim korakom. Upis nije ponovljen.");
+    if (attemptedBatch.every((e) => states.get(e.key)?.state === "existing")) {
       delete job.verificationResults;
       recordResult(job, batch, states);
       rememberLabels(job, batch, states);
       job.error = "";
-      advance(job, batch.length);
+      if (reportingParentsNeedUpdate) {
+        job.phase = "key"; job.offset = 0; job.cursor++;
+      } else finishBatch(job, batch, states);
       await save(bucket, job, stored.etag);
       if (job.status === "completed") await release(bucket, job);
+      return json(jobView(job));
+    }
+    if (attempt.operation === "update" && Date.now() >= attempt.startedAt + 90000 &&
+        attemptedBatch.every((entity) => ["existing", "update"].includes(states.get(entity.key)?.state))) {
+      // A completed wait plus a fresh owned-ID read proves which idempotent
+      // set-ON updates remain. Close this attempt; a later explicit step may
+      // update those same IDs using their freshly read metadata, never create.
+      recordResult(job, batch, states);
+      delete job.verificationResults;
+      job.error = "";
+      advance(job, 0);
+      await save(bucket, job, stored.etag);
       return json(jobView(job));
     }
     if (job.phase !== "association")
       recordResult(job, batch.filter((e) => states.get(e.key)?.state === "existing"), states);
     job.verificationResults = Object.fromEntries([...states].map(([key, value]) => [key,
-      value.state === "new" ? { state: "unverified", message: "GAM još nije potvrdio ishod ranijeg upisa. Upis nije ponovljen." } : value,
+      attempted.has(key) && pendingWrite(value.state) ? { ...value, state: "unverified", message: "GAM još nije potvrdio ishod ranijeg upisa. Upis nije ponovljen." } : value,
     ]));
     await save(bucket, job, stored.etag);
     return json({
@@ -711,9 +803,14 @@ export async function lineItemResponse(
       await save(bucket, job, stored.etag);
       return json(jobView(job));
     }
-    checkExisting(job, batch, states);
+    if (!await existingVerified(states)) return json(jobView(job));
     delete job.verificationResults;
-    const missing = batch.filter((e) => states.get(e.key).state === "new");
+    const missing = batch.filter((e) => states.get(e.key).state === "new"),
+      updates = batch.filter((e) => states.get(e.key).state === "update");
+    const operation = updates.length ? "update" : "create";
+    const writeBatch = updates.length
+      ? updates.map((entity) => ({ ...entity, updatePayload: states.get(entity.key).updatePayload }))
+      : missing;
     if (job.phase === "lineItem")
       for (const orderId of [...new Set(missing.map((e) => e.payload.orderId))])
         await capacity(
@@ -721,12 +818,12 @@ export async function lineItemResponse(
           orderId,
           missing.filter((e) => e.payload.orderId === orderId).length,
         );
-    if (missing.length) {
+    if (writeBatch.length) {
       if (
         !(await put(
           bucket,
           attemptKey(job.id, job.cursor),
-          { startedAt: Date.now(), keys: missing.map((e) => e.key) },
+          { startedAt: Date.now(), keys: writeBatch.map((e) => e.key), operation },
           { etagDoesNotMatch: "*" },
         ))
       )
@@ -735,20 +832,15 @@ export async function lineItemResponse(
       // attempt record must lose its CAS, or this reservation loses and no
       // Google write occurs. This closes the cancel/read/create race.
       stored.etag = await save(bucket, job, stored.etag);
-      const created = validateCreated(
-        missing,
-        await client.create(
-          job.phase,
-          missing.map((e) => e.payload),
-        ),
-        job.plan,
-      );
-      for (const [key, value] of created) states.set(key, value);
+      const confirmed = operation === "update"
+        ? validateUpdated(writeBatch, await client.update("key", writeBatch.map((entity) => entity.updatePayload)), job.plan)
+        : validateCreated(writeBatch, await client.create(job.phase, writeBatch.map((entity) => entity.payload)), job.plan);
+      for (const [key, value] of confirmed) states.set(key, value);
     }
     recordResult(job, batch, states);
     rememberLabels(job, batch, states);
     job.error = "";
-    advance(job, batch.length);
+    finishBatch(job, batch, states);
     await save(bucket, job, stored.etag);
     if (job.status === "completed") await release(bucket, job);
     return json(jobView(job));

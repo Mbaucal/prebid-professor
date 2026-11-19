@@ -2,7 +2,7 @@ import { XMLParser } from '../../vendor/gam-xml-parser/parser.mjs';
 import { GamError, numericId, parseSizes } from '../../shared/gam/plan.mjs';
 
 export const API_VERSION = 'v202608';
-// Batch creates can finish in Google after the old 25 s client deadline.
+// Batch writes can finish in Google after the old 25 s read deadline.
 // Keep the deadline below the line-item job's 90 s cancellation guard.
 const CREATE_TIMEOUT_MS = 60000;
 const READ_TIMEOUT_MS = 25000;
@@ -68,8 +68,8 @@ export class GamClient {
   async call(service,operation,content='',{entityCount=null}={}) {
     const ns = `https://www.google.com/apis/ads/publisher/${API_VERSION}`;
     const body = `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Header><RequestHeader xmlns="${ns}"><networkCode>${this.networkCode}</networkCode><applicationName>Tessera API Integrations</applicationName></RequestHeader></soap:Header><soap:Body><${operation} xmlns="${ns}">${content}</${operation}></soap:Body></soap:Envelope>`;
-    const creating = operation.startsWith('create');
-    const timeoutMs = creating ? CREATE_TIMEOUT_MS : READ_TIMEOUT_MS;
+    const writing = operation.startsWith('create') || operation.startsWith('update');
+    const timeoutMs = writing ? CREATE_TIMEOUT_MS : READ_TIMEOUT_MS;
     const signal = AbortSignal.timeout(timeoutMs), startedAt = Date.now();
     let response, source, stage = 'headers';
     try {
@@ -86,7 +86,7 @@ export class GamClient {
       const reason = timedOut
         ? `Čekanje GAM odgovora je isteklo posle ${timeoutMs/1000} sekundi.`
         : 'Veza sa GAM-om je prekinuta tokom čekanja odgovora.';
-      throw new GamError(reason + (creating
+      throw new GamError(reason + (writing
         ? ' Upis možda jeste izvršen. Proverite ishod u GAM-u, pa nastavite isti posao.'
         : ' Pokušajte ponovo.'),502);
     }

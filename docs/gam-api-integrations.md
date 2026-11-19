@@ -58,3 +58,78 @@ Create requests wait up to 60 seconds, including response-body reading; reads re
 Transport failures distinguish deadline expiration from a connection/body interruption. Sanitized logs contain only service, operation, entity count, response stage, elapsed time and deadline. They do not include raw exceptions, credentials, SOAP bodies or creative snippets. Explicit Google SOAP rejections keep their existing reason handling.
 
 An unconfirmed create is still never replayed automatically. Use **Proveri ishod u GAM-u** to inspect existing entities, then explicitly **Nastavi posao** after successful reconciliation. Existing plans, batch sizes, attempts and saved cursors are unchanged, so interrupted 100-creative jobs remain recoverable. This change does not prove the historical production interruption was specifically a timeout; the previous implementation discarded that distinction.
+
+## Automatic ads.js reporting setup — MBA-429
+
+New Prebid and ordinary line-item plans first prepare the current ads.js reporting
+catalog. Existing networks can use **Pripremi GAM reporting** with no advertiser,
+order, inventory or creative selection. This uses the same saved review,
+network confirmation, execution and recovery flow. Preview/review only read GAM;
+they never create or update keys. A network's existing unfinished job must be
+recovered or explicitly closed before starting a separate job.
+
+The versioned plan snapshot contains twelve keys and 283 known values:
+
+| Keys | New-key type | Known values |
+| --- | --- | --- |
+| `refresh_bucket`, `refresh_policy`, `aq_timed_out` | PREDEFINED | Existing frozen reporting contract |
+| `aq_bid_origin`, `aq_first_request`, `aq_consent_wait` | PREDEFINED | All 17 request-reporting values |
+| `geo_country`, `Variant` | PREDEFINED | 250 accepted country codes; A and B |
+| `refresh_count`, `aq_bid_count`, `aq_bidder_count` | FREEFORM | Initial value 0 |
+| `refresh_interval` | FREEFORM | initial and unscheduled |
+
+New reporting keys use `reportableType=ON`; their values use `matchType=EXACT`.
+An existing ON or CUSTOM_DIMENSION key is reused. An active OFF key is reviewed
+as **Za dopunu**, then updated by its existing ID, preserving its actual name,
+display name and type. The API does not reactivate inactive keys, convert key
+types, downgrade custom dimensions, or enable high-cardinality Prebid render IDs
+for reporting. Case-insensitive key/value matching and parent-scoped value
+reads prevent duplicate creation. A failed, malformed or incomplete read cannot
+establish absence. An uncertain update is reconciled read-only before another
+explicit continuation; update writes share the 60-second create deadline.
+
+Reporting requirements are separate from line-item serving criteria. They are
+never added as mandatory targeting rules. Old saved jobs retain their original
+snapshots; reopening an otherwise identical legacy plan resumes the old job
+without silently adding new work. Once that job is complete, a new reporting
+setup can prepare its network.
+
+The four numeric domains are open. Defining a FREEFORM key does **not** make every
+future value reportable. The preview therefore identifies these domains rather
+than promising complete coverage. API callers can supply explicit additions in
+`reportingValues`, for example:
+
+```json
+{
+  "mode": "reporting",
+  "networkCode": "123456",
+  "reportingValues": {
+    "refresh_count": [1, 2, 3],
+    "refresh_interval": [30],
+    "aq_bid_count": [1, 2, 3],
+    "aq_bidder_count": [1, 2]
+  }
+}
+```
+
+Only these four keys accept additions, up to 1,000 values each and 4,000 total.
+Counters must be nonnegative safe integers; intervals must be positive seconds
+with at most six decimal places. Values are canonicalized and deduplicated.
+Choose actual configured/observed values before measurement. Google excludes
+undefined values from reports and does not backfill historical impressions.
+GAM reportable-key/value limits and available report types still apply.
+
+The independent reporting suite checks read-only review, metadata-only updates,
+case-insensitive reuse, key-scoped values, malformed/incomplete reads, mixed
+update/create batches, lost responses, externally changed/deleted keys and old
+job recovery. The compiled TEST and production Worker checks also execute the
+standalone preparation and repeated no-write replay against local SOAP fixtures.
+Browser checks cover desktop/mobile preview, confirmation and recovery. These
+checks use synthetic credentials and Google responses; deployment alone does
+not provision a real connected GAM network.
+
+Sources: [CustomTargetingKey v202608](https://developers.google.com/ad-manager/api/reference/v202608/CustomTargetingService.CustomTargetingKey),
+[CustomTargetingService](https://developers.google.com/ad-manager/api/reference/v202608/CustomTargetingService),
+[Report on key-values](https://support.google.com/admanager/answer/14528835?hl=en),
+[Make key-values reportable](https://support.google.com/admanager/answer/10018898?hl=en),
+[Key-value matching](https://support.google.com/admanager/answer/10020177?hl=en).

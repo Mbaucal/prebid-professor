@@ -9,6 +9,7 @@ import {join} from 'node:path';
 import {Miniflare} from './local-miniflare.mjs';
 import {soapTrafficFixture} from '../tests/gam/soap-traffic-fixture.mjs';
 import {prebidPlan} from '../tests/gam/traffic-fixture.mjs';
+import {reportingSetup} from '../shared/gam/reporting-catalog.mjs';
 const traffic=soapTrafficFixture();let trafficMode=false;
 
 const compiled = process.argv[2] || '.generated/gam-worker-dry-run';
@@ -134,6 +135,21 @@ try {
   }
   const prebid=await trafficJob({...defaults.data.draft,ranges:[{from:'0.01',to:'0.03',step:'0.01'}],creative:{...defaults.data.draft.creative,copies:2}});
   checked('Native SOAP creates advertiser, order, hb_pb values, CPM-named creatives, priced line items and size-override links',prebid.counts.lineItem.created===3&&prebid.counts.creative.created===6&&prebid.counts.association.created===6);
+  const catalog=reportingSetup();
+  for(const spec of catalog.keys){
+    const keys=traffic.db.key.filter(key=>key.name.toLowerCase()===spec.key.toLowerCase());
+    assert.equal(keys.length,1,spec.key);assert.equal(keys[0].reportableType,'ON');
+    assert.equal(keys[0].type,spec.type);
+    const values=traffic.db.value.filter(value=>String(value.customTargetingKeyId)===keys[0].id);
+    assert.deepEqual(new Set(values.map(value=>value.name)),new Set(spec.values),spec.key);
+    assert(values.every(value=>value.matchType==='EXACT'));
+  }
+  const priceKey=traffic.db.key.find(key=>key.name==='hb_pb');
+  assert(traffic.db.lineItem.every(item=>{
+    const children=[].concat(item.targeting.customTargeting.children);
+    return children.length===1&&String(children[0].keyId)===priceKey.id;
+  }));
+  checked('Compiled ad setup provisions all twelve reporting keys and 283 known values without adding line-item criteria');
   const count=traffic.calls.length;
   await trafficJob({...defaults.data.draft,ranges:[{from:'0.01',to:'0.03',step:'0.01'}],creative:{...defaults.data.draft.creative,copies:2}});
   checked('Native SOAP replay reuses matching entities without new writes',traffic.calls.length===count);
@@ -182,6 +198,40 @@ try {
   await trafficJob(retryPlan);
   checked('Compiled native fully existing replay skips capacity and creates nothing',traffic.calls.length === beforeVerifiedReplay && rejectedCapacity === rejectedBeforeReplay);
   failCapacity = false;
+  const reportingKey=traffic.db.key.find(key=>key.name==='aq_bid_origin');
+  Object.assign(reportingKey,{name:'AQ_BID_ORIGIN',displayName:'Existing operator label',type:'FREEFORM',reportableType:'OFF'});
+  const originalKey=structuredClone(reportingKey),beforeReporting=traffic.calls.length;
+  const reportingPlan={mode:'reporting',networkCode:'123456',reportingValues:{refresh_count:['1','2'],refresh_interval:['30']}};
+  reviewResult=await call('/line-items/preview',reportingPlan);
+  assert.equal(reviewResult.status,201,JSON.stringify(reviewResult.data));
+  let reportingJob=reviewResult.data;
+  for(let i=0;reportingJob.status==='reviewing'&&i<100;i++){
+    reviewResult=await call(`/line-items/jobs/${reportingJob.id}/review`,{cursor:reportingJob.cursor});
+    assert.equal(reviewResult.status,200,JSON.stringify(reviewResult.data));reportingJob=reviewResult.data;
+  }
+  assert.equal(reportingJob.canStart,true,JSON.stringify(reportingJob));
+  assert.equal(reportingJob.counts.key.update,1);assert.equal(reportingJob.counts.key.done,11);
+  assert.equal(reportingJob.counts.value.new,3);assert.equal(reportingJob.counts.value.existing,283);
+  assert.equal(traffic.calls.length,beforeReporting);assert.deepEqual(reportingKey,originalKey);
+  checked('Compiled standalone preview is read-only and distinguishes OFF metadata from completed keys');
+  reviewResult=await call(`/line-items/jobs/${reportingJob.id}/start`,{confirm:true,confirmNetwork:'123456'});
+  assert.equal(reviewResult.status,200,JSON.stringify(reviewResult.data));reportingJob=reviewResult.data;
+  for(let i=0;reportingJob.status==='creating'&&i<100;i++){
+    reviewResult=await call(`/line-items/jobs/${reportingJob.id}/step`,{cursor:reportingJob.cursor});
+    assert.equal(reviewResult.status,200,JSON.stringify(reviewResult.data));reportingJob=reviewResult.data;
+    assert.equal(reportingJob.error,'',JSON.stringify(reportingJob));
+  }
+  assert.equal(reportingJob.status,'completed');
+  assert.deepEqual(reportingKey,{...originalKey,reportableType:'ON'});
+  const reportingWrites=traffic.calls.slice(beforeReporting);
+  assert.equal(reportingWrites.filter(write=>write.operation==='update').length,1);
+  assert(reportingWrites.every(write=>write.kind==='key'||write.kind==='value'));
+  assert.equal(reportingWrites.filter(write=>write.kind==='value').flatMap(write=>write.payloads).length,3);
+  for(const kind of ['advertiser','order','creative','lineItem','association'])assert.equal(reportingJob.counts[kind].total,0);
+  checked('Compiled standalone execution preserves the existing key identity and creates only three explicit numeric values');
+  const afterReporting=traffic.calls.length;
+  await trafficJob(reportingPlan);
+  checked('Compiled standalone replay reuses case-insensitive keys and all values without another write',traffic.calls.length===afterReporting);
   trafficMode=false;
 
   for (const nextMode of ['oauth-redirect', 'soap-redirect', 'oauth-rejected', 'soap-rejected']) {
