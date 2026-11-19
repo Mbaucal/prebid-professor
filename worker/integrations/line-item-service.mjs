@@ -235,10 +235,20 @@ function rememberLabels(job, batch, states) {
   }
 }
 async function currentAttempt(bucket, job) {
-  return (await read(bucket, attemptKey(job.id, job.cursor)))?.value;
+  const stored=await read(bucket,attemptKey(job.id,job.cursor));
+  if(!stored)return null;
+  return stored.value&&typeof stored.value==='object'&&!Array.isArray(stored.value)
+    ? stored.value : {invalid:true};
+}
+function abortedBeforeDispatch(attempt) {
+  return attempt?.preDispatchAborted===true&&validJobReference(attempt.dispatchToken)&&
+    Number.isFinite(attempt.startedAt)&&Number.isFinite(attempt.abortedAt)&&attempt.abortedAt>=attempt.startedAt&&
+    ['create','update'].includes(attempt.operation)&&Array.isArray(attempt.keys)&&attempt.keys.length>0&&
+    new Set(attempt.keys).size===attempt.keys.length&&attempt.keys.every(key=>typeof key==='string');
 }
 function disjointAttempt(job,attempt) {
   if(!attempt)return true;
+  if(abortedBeforeDispatch(attempt))return true;
   if(!['advertiser','order','creative','lineItem','association'].includes(job.phase)||
     !Number.isFinite(attempt.startedAt)||attempt.startedAt<0||
     ![undefined,'create'].includes(attempt.operation)||!Array.isArray(attempt.keys)||!attempt.keys.length||
@@ -627,9 +637,10 @@ export async function lineItemResponse(
       const j = (await read(bucket, object.key))?.value;
       if (j) jobs.push(j);
     }
-    // Keep an older active job reachable even after 100 subsequent previews.
-    const owner = (await read(bucket, lockKey(network)))?.value.owner;
-    if (owner) {
+    // Keep both execution lanes reachable after the bounded history page.
+    for(const key of [lockKey(network),reportingLockKey(network)]){
+      const owner = (await read(bucket,key))?.value?.owner;
+      if(!validJobReference(owner))continue;
       const active = (await read(bucket, jobKey(owner)))?.value;
       if (active?.actor === actor && active.origin === origin) {
         const i = jobs.findIndex((j) => j.id === owner);
@@ -742,7 +753,7 @@ export async function lineItemResponse(
   if (action === "cancel") {
     if(attempt&&!disjointAttempt(job,attempt))
       fail('Ishod ranijeg key-values upisa nije potvrđen. Najpre proverite ishod; posao i rezervacija nisu zaustavljeni.');
-    if (attempt && Date.now() < attempt.startedAt + 90000)
+    if (attempt && !abortedBeforeDispatch(attempt) && Date.now() < attempt.startedAt + 90000)
       fail(
         "GAM zahtev možda još traje. Sačekajte 90 sekundi od početka koraka.",
       );
@@ -924,6 +935,16 @@ export async function lineItemResponse(
   };
   if (action === "check") {
     if (!attempt) return json(await view(job));
+    if(abortedBeforeDispatch(attempt)){
+      // Only the handler that reserved this attempt can journal this proof.
+      // Close its cursor explicitly; a later step performs a fresh inspection.
+      delete job.verificationResults;
+      job.error='';
+      advance(job,0);
+      await save(bucket,job,stored.etag);
+      if(targetingPhase)await releaseTargetingIfSafe(bucket,job);
+      return json(await view(job));
+    }
     if (!await parentsVerified()) return json(await view(job, attempt));
     const states = await inspectEntities(client, batch, job.plan);
     if ([...states.values()].some((r) => ["unverified", "blocked"].includes(r.state))) {
@@ -986,6 +1007,7 @@ export async function lineItemResponse(
     });
   }
   if (attempt) return json(await view(job, attempt));
+  let ownedAttempt,googleInvoked=false;
   try {
     if (!await parentsVerified()) return json(await view(job));
     const states = await inspectEntities(client, batch, job.plan);
@@ -1014,20 +1036,18 @@ export async function lineItemResponse(
         );
     if (writeBatch.length) {
       if(targetingPhase)await targetingOwned(bucket,job);
-      if (
-        !(await put(
-          bucket,
-          attemptKey(job.id, job.cursor),
-          { startedAt: Date.now(), keys: writeBatch.map((e) => e.key), operation },
-          { etagDoesNotMatch: "*" },
-        ))
-      )
+      const attemptValue={startedAt:Date.now(),keys:writeBatch.map(entity=>entity.key),operation,dispatchToken:crypto.randomUUID()};
+      const attemptPath=attemptKey(job.id,job.cursor);
+      const reserved=await put(bucket,attemptPath,attemptValue,{etagDoesNotMatch:'*'});
+      if(!reserved)
         return json(await view(job, await currentAttempt(bucket, job)));
+      ownedAttempt={path:attemptPath,value:attemptValue,etag:reserved.etag};
       // Reserve the job ETag as well: cancellation that started before the
       // attempt record must lose its CAS, or this reservation loses and no
       // Google write occurs. This closes the cancel/read/create race.
       stored.etag = await save(bucket, job, stored.etag);
       if(targetingPhase)await targetingOwned(bucket,job);
+      googleInvoked=true;
       const confirmed = operation === "update"
         ? validateUpdated(writeBatch, await client.update("key", writeBatch.map((entity) => entity.updatePayload)), job.plan)
         : validateCreated(writeBatch, await client.create(job.phase, writeBatch.map((entity) => entity.payload)), job.plan);
@@ -1043,7 +1063,13 @@ export async function lineItemResponse(
     return json(await view(job));
   } catch (error) {
     // The attempt is durable before any Google mutation. Never re-send it blindly.
+    if(ownedAttempt&&!googleInvoked){
+      await put(bucket,ownedAttempt.path,{...ownedAttempt.value,preDispatchAborted:true,abortedAt:Date.now()},
+        {etagMatches:ownedAttempt.etag});
+    }
     const latest = await read(bucket, jobKey(id));
+    if(latest&&['completed','cancelled'].includes(latest.value.status))
+      await releaseTargetingIfSafe(bucket,latest.value,job.targetingToken);
     if (
       latest?.value.cursor !== input.cursor ||
       latest?.value.status !== "creating"

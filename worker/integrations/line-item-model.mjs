@@ -821,7 +821,7 @@ export function jobView(job, attempt, {noWriteAttempts=false,relatedAdJob}={}) {
     } } : {}),
     error: job.error || "",
     awaitingCheck: Boolean(attempt) && job.status === "creating",
-    retryAfter: attempt
+    retryAfter: attempt && Number.isFinite(attempt.startedAt) && !attempt.preDispatchAborted
       ? Math.max(0, Math.ceil((attempt.startedAt + 90000 - Date.now()) / 1000))
       : 0,
     conflicts: conflicts.slice(0, 30).map(([ref, r]) => ({ ref, ...r })),
