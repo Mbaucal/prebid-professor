@@ -278,6 +278,17 @@ finishing old ad job cannot admit a competing targeting writer mid-step.
 Failed first-start cleanup is conditional on its own reservation token and a
 proven never-started job; a concurrent first start cannot reuse that token.
 
+A step cancelled before its Google call can prove that it never dispatched:
+only the handler that inserted the attempt may CAS-journal that fact using its
+captured insertion ETag and dispatch token. The flag is never written after
+invoking `create` or `update`. A cancelled owner's reservation can be released
+using this explicit proof; a still-running job needs an explicit read-only
+check to close the aborted cursor before a later fresh step. Failed proof
+writes stay uncertain. Time, cancellation and a missing Google response are
+never substituted for this proof. Active owners from both execution lanes
+remain available beyond the bounded history page; malformed attempt records
+are treated as uncertainty rather than absence.
+
 The Key-values UI continues its own preview, confirmation, execution and saved
 result. An optional actor/origin-scoped `relatedAdJob` summary explains the
 independent existing ad job and has no controls for mutating it. A real

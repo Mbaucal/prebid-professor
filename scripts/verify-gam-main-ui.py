@@ -287,4 +287,4 @@ with sync_playwright() as p:
   evidence.extend(verify_during_existing_creatives(browser))
  finally:browser.close()
 (out/'result.json').write_text(json.dumps({'passed':True,'scope':'Actual MAIN App build, real local GAM handler; synthetic storage and Google only','cases':evidence},indent=2)+'\n')
-print('PASS actual MAIN App: exact add-only subset, visible progress, saved results, OFF metadata preserved, inline read-only blockers and explicit safe preview closure at desktop/mobile')
+print('PASS actual MAIN App: independent add-only completion beside partial legacy creatives, exact old job/lock/ad preservation, OFF metadata, progress, saved results and safe blockers at desktop/mobile')
