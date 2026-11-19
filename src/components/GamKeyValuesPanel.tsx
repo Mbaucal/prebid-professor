@@ -14,7 +14,7 @@ type Job = {
   conflictCount:number;verificationCount?:number;unverifiedCount?:number;blockedCount?:number;
   conflicts:{ref:string;message:string}[];verificationIssues?:{ref:string;message:string}[];
   reporting?:{keyCount:number;valueCount:number;needsUpdate:number;keys:{key:string;valueCount:number;openDomain:boolean;type:string}[];
-    results?:KeyResult[];outcomes?:{keys:OutcomeCounts;values:OutcomeCounts}};
+    results?:KeyResult[];outcomes?:{keys:OutcomeCounts;values:OutcomeCounts};reviewProgress?:{processed:number;total:number}};
 };
 type History = {id:string;mode:string;name:string;status:string;createdAt:string;updatedAt?:string};
 const descriptions:Record<string,string> = {
@@ -100,6 +100,14 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
     generation.current++;stop.current=true;setJob(null);setConfirmed(false);setError('');setActiveJobId('');setHistory([]);setHistoryError('');
     if(network)void loadHistory().catch(e=>{if(alive.current)setHistoryError((e as Error).message);});
   },[network,endpoint]);
+  useEffect(()=>{
+    if(!catalog||job?.mode!=='reporting'||!job.reporting?.results)return;
+    setPicks(Object.fromEntries(catalog.keys.map(key=>{
+      const result=job.reporting?.results?.find(item=>item.key===key.key);
+      const values=result?.values.map(value=>value.name)??[];
+      return [key.key,{enabled:Boolean(result),values:values.filter(value=>key.values.includes(value)),extra:values.filter(value=>!key.values.includes(value)).join(', ')}];
+    })));
+  },[catalog,job?.id]);
 
   const selection=useMemo(()=>{
     try {
@@ -156,14 +164,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
       setJob(null);setConfirmed(false);
       const next=await api<Job>('/line-items/jobs/'+id);
       if(next.mode!=='reporting'){onOpenLineItems(id);return;}
-      if(alive.current){
-        setJob(next);setConfirmed(false);
-        if(catalog&&next.reporting?.results)setPicks(Object.fromEntries(catalog.keys.map(key=>{
-          const result=next.reporting?.results?.find(item=>item.key===key.key);
-          const values=result?.values.map(value=>value.name)??[];
-          return [key.key,{enabled:Boolean(result),values:values.filter(value=>key.values.includes(value)),extra:values.filter(value=>!key.values.includes(value)).join(', ')}];
-        })));
-      }
+      if(alive.current){setJob(next);setConfirmed(false);}
     });
   }
   async function recheck() {
@@ -197,7 +198,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
   const total=job?.reporting?(job.reporting.keyCount+job.reporting.valueCount):0;
   const done=(jobKeys?.done??((jobKeys?.created??0)+(jobKeys?.existing??0)))+(jobValues?.done??((jobValues?.created??0)+(jobValues?.existing??0)));
   const percent=total?Math.min(100,Math.round(done/total*100)):0;
-  const processed=[jobKeys,jobValues].reduce((sum,count)=>sum+(count?count.existing+count.created+count.new+(count.update??0)+count.conflict+(count.unverified??0)+(count.blocked??0):0),0);
+  const processed=job?.reporting?.reviewProgress?.processed??0;
   const results=job?.reporting?.results??[];
   const keyOutcomes=job?.reporting?.outcomes?.keys,valueOutcomes=job?.reporting?.outcomes?.values;
   const displayStatus=catalogLoading?'Učitavam pripremljene ključeve':busy?busy:error||job?.error||job&&issues(job)?'Potrebna je provera — posao nije potvrđen':job?.awaitingCheck?'Čeka se potvrda ishoda u GAM-u':job?.status==='completed'&&!completed(job)?'Posao još nije potvrđen':job?statusNames[job.status]||job.status:'Izaberite ključeve za pripremu';
@@ -242,6 +243,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
     {job&&results.length>0&&<article className="gam-card gam-kv-results" aria-label="Rezultat key-values posla">
       <span className="gam-step">{completed(job)?'ZAVRŠENO / REZULTAT':'PREGLED / TRENUTNO STANJE'}</span><h3>{completed(job)?'Šta je urađeno u GAM-u':'Stanje izabranih ključeva'}</h3>
       {keyOutcomes&&valueOutcomes&&<div className="gam-kv-totals"><p><strong>Ključevi:</strong> {keyOutcomes.created} kreirano · {keyOutcomes.existing} već postoji · {keyOutcomes.updated} reporting dopunjen</p><p><strong>Vrednosti:</strong> {valueOutcomes.created} kreirano · {valueOutcomes.existing} već postoji</p></div>}
+      {completed(job)&&<p><a href={`https://admanager.google.com/${encodeURIComponent(job.network.networkCode)}#inventory/custom_targeting/list`} target="_blank" rel="noopener noreferrer">Otvori key-values u GAM-u</a></p>}
       <div className="gam-kv-result-list">{results.map(key=><details key={key.key} className="gam-kv-result-key"><summary><code>{key.key}</code><span className={'gam-kv-outcome '+key.outcome}>{outcomeNames[key.outcome]}</span><small>{key.values.length} vrednosti{key.id?' · GAM ID '+key.id:''}</small></summary>
         {(key.message||key.reconciled)&&<p>{key.message||(['created','existing','updated'].includes(key.outcome)?'Ishod je naknadno potvrđen proverom u GAM-u.':'Raniji ishod je bio potvrđen; proveri trenutno stanje.')}</p>}
         {key.values.length?<div className="gam-table-wrap"><table><thead><tr><th scope="col">Vrednost</th><th scope="col">Ishod</th><th scope="col">GAM ID</th></tr></thead><tbody>{key.values.map(value=><tr key={value.name}><td><code>{value.name}</code></td><td>{outcomeNames[value.outcome]}{(value.message||value.reconciled)&&<small>{value.message||(['created','existing','updated'].includes(value.outcome)?'Ishod je naknadno potvrđen proverom u GAM-u.':'Raniji ishod je bio potvrđen; proveri trenutno stanje.')}</small>}</td><td><code>{value.id||'—'}</code></td></tr>)}</tbody></table></div>:<p>Izabrana je priprema samo ključa, bez vrednosti.</p>}
