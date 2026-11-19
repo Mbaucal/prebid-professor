@@ -64,15 +64,15 @@ export const values = (plan) =>
     ...(r.reportableType ? { reporting: true } : {}) })));
 export const creativeCount = (plan) => plan.counts.creatives;
 export function phaseCount(plan, kind) {
-  return {
-    advertiser: plan.mode === "reporting" ? 0 : 1,
-    order: plan.orders.length,
-    key: rules(plan).length,
-    value: values(plan).length,
-    creative: creativeCount(plan),
-    lineItem: plan.rows.length,
-    association: plan.counts.associations,
-  }[kind];
+  switch (kind) {
+    case "advertiser": return plan.mode === "reporting" ? 0 : 1;
+    case "order": return plan.orders.length;
+    case "key": return rules(plan).length;
+    case "value": return values(plan).length;
+    case "creative": return creativeCount(plan);
+    case "lineItem": return plan.rows.length;
+    case "association": return plan.counts.associations;
+  }
 }
 const verified = (state) => ["existing", "created"].includes(state);
 // A planned reportability update still has a verified key identity. Values can
@@ -81,7 +81,10 @@ const ref = (refs, key) => verified(refs[key]?.state) ||
   (key.startsWith("key:") && refs[key]?.state === "update" && refs[key].verifiedId)
   ? refs[key].id : undefined;
 const valueReference = (plan, key, value) => {
-  if (!plan.reporting) return `value:${key}:${value}`;
+  // Prebid's reserved price key is canonical already; resolving one price must
+  // not rebuild the complete price/reporting catalog for every line item.
+  if (!plan.reporting || (plan.mode === "prebid" && key === "hb_pb"))
+    return `value:${key}:${value}`;
   const rule = rules(plan).find((r) => r.key.toLowerCase() === key.toLowerCase());
   const actual = rule?.values.find((v) => v.toLowerCase() === value.toLowerCase());
   return `value:${rule?.key || key}:${actual || value}`;
