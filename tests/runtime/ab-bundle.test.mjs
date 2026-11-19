@@ -17,7 +17,7 @@ import {saveDraftRelease, readDraftRelease, describeCandidate} from '../../worke
 import {readPackage, generatePackage} from '../../worker/site-runtime/releases.mjs';
 import {siteRuntimeSettings, changeSiteRuntime} from '../../worker/site-runtime/service.mjs';
 import {PAGES_HEADERS} from '../../scripts/pages-release-verification.mjs';
-import {AB_LOADER_CONFIG_SCHEMA, AB_LOADER_VERSION, renderAbLoader} from '../../worker/experiments/ab-loader-1.0.1.mjs';
+import {AB_LOADER_CONFIG_SCHEMA, AB_LOADER_VERSION, renderAbLoader} from '../../worker/experiments/ab-loader-1.0.2.mjs';
 import {AB_BUNDLE_LAYOUT, AB_TEST_SCHEMA, abTestIdentity, checkAbCompatibility, composeAbBundle} from '../../worker/experiments/ab-bundle.mjs';
 
 const STAMP = '20261115_120000', ACTOR = 'tester@example.invalid';
@@ -396,7 +396,7 @@ async function syntheticDraft(siteId, runtimeVersion, script) {
 test('golden values: fixed inputs keep their test id and ZIP bytes', async () => {
   const a = await syntheticDraft('golden-site', '9.0.0', 'window.goldenArm = "A";\n');
   const b = await syntheticDraft('golden-site', '9.0.1', 'window.goldenArm = "B";\n');
-  const bundle = await composeAbBundle({site: 'golden-site', a, b, trafficBPercent: 10, testId: 'golden_1', name: 'Golden test'});
+  const bundle = await composeAbBundle({site: 'golden-site', a, b, trafficBPercent: 10, testId: 'golden_1', name: 'Golden test', loaderVersion: '1.0.1'});
   // The store keeps create-only records and checks id === 'abx-' + sha256(abTestIdentity(record)), so a saved test
   // must keep its id. Update these values only for a deliberate change to the identity, the bundle files, the loader
   // version or the ZIP layout, and say so in the commit.

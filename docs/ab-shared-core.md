@@ -27,5 +27,40 @@ P2 note explicitly says Cloudflare delivery and real GPT were not verified.
 Current MAIN package tests cover 3.25.1 saved bytes. They do not establish
 publisher delivery, paid impressions or revenue. The loader retains its assigned
 variant during a control fallback; measurement must distinguish assignment from
-execution. Loader 1.0.1 has no deadline for a download that never finishes or
-raises an error. Measurement and hosted acceptance remain separate work.
+execution. Measurement and hosted acceptance remain separate work.
+
+## Loader 1.0.2
+
+New bundles select loader 1.0.2 and include that version and template hash in
+their identity. Earlier loader bytes and registry entries remain unchanged.
+Explicit internal composition with `loaderVersion: '1.0.1'` preserves historical
+identities and golden ZIP checks; existing saved records and ZIPs remain readable.
+The public create API always uses the current loader.
+
+Each arm has an eight second loading deadline. Before a runtime starts, a failed
+assigned arm gets one attempt at control A. Control failure is terminal in the
+diagnostics. Expired elements lose their handlers and are detached. A startup
+accessor makes an expired arm's existing native guard return without executing
+its runtime, even if its response arrives after removal. The composer verifies
+that both saved programs contain the supported immediate native guard. When the
+page refuses the accessor, the loader chooses unlabelled A before inserting B.
+
+Measured arms wait for the GPT queue to install exclusive Variant/TestId handling.
+An eight second queue wait degrades to unlabelled A. Existing publisher reserved
+keys exclude the page from the test; keyword maps are copied without reserved
+keys, preserving the original objects and unrelated values. Existing publisher
+GAM service values and later publisher updates are preserved when this loader
+never assigned labels. After an assignment, later reserved writes through GPT's
+service or modern `googletag.setConfig({targeting: ...})` exclude measurement, suppress the reserved write
+and remove only values still matching this loader's own labels. Other targeting
+calls retain their receiver, arguments, return value and error behavior.
+Unpatchable GPT chooses unlabelled A. Forced QA and missing randomness remain
+unlabelled. CMP authority is unchanged.
+
+Immediately before a native refresh, the loader also verifies its page-label
+ownership and checks the selected slots for reserved overrides. Missing/null
+slot selection checks `getSlots()`. Initial `display` checks registered slots as
+well, covering compatible runtimes that can request ads at that boundary.
+Foreign slot values exclude measurement and remain publisher-owned; only matching
+Tessera page values are removed. Both dispatch calls forward native arguments,
+receiver, result and errors unchanged.

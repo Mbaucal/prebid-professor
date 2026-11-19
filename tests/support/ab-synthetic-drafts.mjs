@@ -9,7 +9,9 @@ const bytesOf = value => typeof value === 'string' ? new TextEncoder().encode(va
  * tests/runtime/ab-bundle.test.mjs). prebid:false makes a GAM-only version; adsMin replaces only
  * ads.min.js, so a large arm stays within the 12 MB package limit. */
 export async function syntheticDraft({siteId = 'test-site', runtimeVersion = '9.0.0', script = 'window.arm = "A";\n', adsMin = null, note = 'Version A', prebid = true, options = {}} = {}) {
-  const files = Object.fromEntries(Object.entries({'README.txt': 'Synthetic package\n', 'ads.js': script, 'ads.min.js': adsMin ?? script,
+  const guarded = value => '(function(){if(window.__TESSERA_RUNTIME_STARTED)return;window.__TESSERA_RUNTIME_STARTED={};\n'+new TextDecoder().decode(bytesOf(value))+'\n})();\n';
+  const readable = guarded(script), compact = guarded(adsMin ?? script);
+  const files = Object.fromEntries(Object.entries({'README.txt': 'Synthetic package\n', 'ads.js': readable, 'ads.min.js': compact,
     'div-export.csv': 'code\nP1\n', 'implementation.html': '<script src="./ads.js"></script>\n', 'min-height.css': '#P1{min-height:250px}\n',
     'sticky.css': '/* no sticky position */\n', ...(prebid ? {'prebid.js': '/* Prebid.js v11.34.0, synthetic stand-in */\n'} : {})}).map(([name, value]) => [name, bytesOf(value)]));
   const runtime = {schemaVersion: 1, configSchemaVersion: 1, runtimeId: 'synthetic-' + runtimeVersion, runtimeVersion, runtimeSha256: hash(files['ads.min.js']), capabilities: []};

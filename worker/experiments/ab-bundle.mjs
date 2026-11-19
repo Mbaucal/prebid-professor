@@ -1,8 +1,10 @@
 import {zipSync} from 'fflate';
+import {parse} from 'acorn';
 import {sha256} from '../runtime/prebid-artifact-check.mjs';
 import {describeCandidate} from '../runtime/draft-release-store.mjs';
 import {PAGES_HEADERS} from '../../shared/pages/headers.mjs';
-import {AB_LOADER_CONFIG_SCHEMA,AB_LOADER_VERSION,renderAbLoader} from './ab-loader-1.0.1.mjs';
+import * as legacyLoader from './ab-loader-1.0.1.mjs';
+import * as currentLoader from './ab-loader-1.0.2.mjs';
 import registry from './ab-loader-registry.json' with {type:'json'};
 
 /* Generic A/B bundle composer (MBA-416, layout publisher-ab-v1). It never rebuilds a script:
@@ -36,6 +38,28 @@ const canonical=v=>Array.isArray(v)?`[${v.map(canonical).join(',')}]`:record(v)?
 const same=(a,b)=>canonical(a)===canonical(b);
 const sorted=list=>[...new Set(list)].sort();
 const only=(list,other)=>list.filter(x=>!other.includes(x));
+function loaderFor(version=currentLoader.AB_LOADER_VERSION){
+  if(version===currentLoader.AB_LOADER_VERSION)return currentLoader;
+  if(version===legacyLoader.AB_LOADER_VERSION)return legacyLoader;
+  invalid('Choose a registered A/B loader version.');
+}
+/** The timeout gate depends on the unchanged, immediate native runtime startup guard. */
+function startupGuard(files){
+  let program;try{program=parse(decode.decode(files['ads.min.js']),{ecmaVersion:2015});}catch{return false;}
+  const flag=node=>node?.type==='MemberExpression'&&!node.computed&&node.object?.name==='window'&&node.property?.name==='__TESSERA_RUNTIME_STARTED';
+  let guards=0,references=0;
+  (function walk(node){
+    if(!node||typeof node!=='object')return;
+    if(flag(node))references++;
+    if(node.type==='CallExpression'&&node.callee?.type==='FunctionExpression'){
+      const statements=node.callee.body.body.filter(row=>!row.directive),first=statements[0],second=statements[1];
+      if(first?.type==='IfStatement'&&flag(first.test)&&first.consequent?.type==='ReturnStatement'&&!first.consequent.argument&&!first.alternate&&
+        second?.type==='ExpressionStatement'&&second.expression?.type==='AssignmentExpression'&&second.expression.operator==='='&&flag(second.expression.left))guards++;
+    }
+    for(const value of Object.values(node))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);
+  })(program);
+  return guards===1&&references===2;
+}
 async function sri(bytes){
   const hash=new Uint8Array(await crypto.subtle.digest('SHA-384',bytes));
   return 'sha384-'+btoa(String.fromCharCode(...hash));
@@ -69,10 +93,11 @@ async function savedVersion(pkg,side){
 }
 
 /** Hard compatibility checks, in a fixed order; the first failure refuses the test. */
-async function compatibilityChecks(site,A,B){
+async function compatibilityChecks(site,A,B,loaderVersion){
   const checks=[];
   for(const v of [A,B])if(v.siteId!==site)refuse('site-differs',`Version ${v.side} belongs to site ${v.siteId}. Choose two saved versions of ${site}.`,'site');
   checks.push({check:'site',result:'same'});
+  if(loaderVersion==='1.0.2')for(const v of [A,B])if(!startupGuard(v.files))refuse('startup-guard-missing',`Version ${v.side} has no supported runtime startup guard. Choose a verified built-in version before creating this test.`,'startup');
   const pa=A.files['prebid.js'],pb=B.files['prebid.js'];
   if(!pa!==!pb)refuse('prebid-differs',`Version ${pa?'A':'B'} loads Prebid.js and version ${pa?'B':'A'} is GAM only. Choose two versions with the same Prebid setting.`,'prebid');
   if(pa&&await sha256(pa)!==await sha256(pb))refuse('prebid-differs','Versions A and B use different Prebid.js files. Generate both versions with the same Prebid build, then create the test again.','prebid');
@@ -203,12 +228,12 @@ function validate({site,a,b,trafficBPercent,testId,name}){
 
 /** Compatibility result and summary of differences without building a bundle (for a dry run).
  * {compatible, refusal:{code, check, message}|null, checks, warnings, configDiff|null} */
-export async function checkAbCompatibility({site,a,b}){
+export async function checkAbCompatibility({site,a,b,loaderVersion}){
   let A,B,diff=null,notes=[];
   try{
     if(typeof site!=='string'||!SITE.test(site))invalid('Choose a site for the test.');
     A=await savedVersion(a,'A');B=await savedVersion(b,'B');diff=configDiff(A,B);notes=warnings(A,B);
-    return {compatible:true,refusal:null,checks:await compatibilityChecks(site,A,B),warnings:notes,configDiff:diff};
+    return {compatible:true,refusal:null,checks:await compatibilityChecks(site,A,B,loaderFor(loaderVersion).AB_LOADER_VERSION),warnings:notes,configDiff:diff};
   }catch(e){
     if(e.status!==422)throw e;
     return {compatible:false,refusal:{code:e.code,check:e.check??null,message:e.message},checks:[],warnings:notes,configDiff:diff};
@@ -217,23 +242,24 @@ export async function checkAbCompatibility({site,a,b}){
 
 /** Builds the publisher-ab-v1 bundle of one A/B test. Throws Error {status:400, code:'invalid-request'}
  * for invalid fields and {status:422, code, check} when the versions cannot be compared. */
-export async function composeAbBundle({site,a,b,trafficBPercent,testId,name}){
+export async function composeAbBundle({site,a,b,trafficBPercent,testId,name,loaderVersion}){
   validate({site,a,b,trafficBPercent,testId,name});
+  const selectedLoader=loaderFor(loaderVersion);
   const A=await savedVersion(a,'A'),B=await savedVersion(b,'B');
-  const checks=await compatibilityChecks(site,A,B);
+  const checks=await compatibilityChecks(site,A,B,selectedLoader.AB_LOADER_VERSION);
   const arms={A:await arm(A),B:await arm(B)};
   const files={_headers:encode.encode(PAGES_HEADERS)};
   if(A.files['prebid.js'])files['prebid.js']=A.files['prebid.js'].slice();
   // For A/A both arms name the same path, so the bundle holds one arm file.
   for(const v of [A,B])files[`r/${v.id}/ads.js`]=v.files['ads.min.js'].slice();
   const inventory=async()=>Promise.all(Object.keys(files).sort().map(async path=>({path,sha256:await sha256(files[path]),bytes:files[path].length})));
-  const loader={version:AB_LOADER_VERSION,sha256:registry[AB_LOADER_VERSION].sha256};
+  const loader={version:selectedLoader.AB_LOADER_VERSION,sha256:registry[selectedLoader.AB_LOADER_VERSION].sha256};
   const prebid=files['prebid.js']?{sha256:await sha256(files['prebid.js']),version:A.prebidVersion}:null;
   const record={schema:AB_TEST_SCHEMA,id:null,site,name,testId,trafficBPercent,arms,prebid,loader,
     compatibility:{checks,warnings:warnings(A,B)},configDiff:configDiff(A,B),
     bundle:{layout:AB_BUNDLE_LAYOUT,files:await inventory(),zipSha256:null},createdBy:null,createdAt:null};
   record.id='abx-'+await sha256(encode.encode(abTestIdentity(record)));
-  files['ads.js']=encode.encode(renderAbLoader({schema:AB_LOADER_CONFIG_SCHEMA,id:record.id,testId,name,trafficBPercent,arms,loader}));
+  files['ads.js']=encode.encode(selectedLoader.renderAbLoader({schema:selectedLoader.AB_LOADER_CONFIG_SCHEMA,id:record.id,testId,name,trafficBPercent,arms,loader}));
   const ordered=Object.fromEntries(Object.keys(files).sort().map(p=>[p,files[p]]));
   const archive=zip(ordered);
   record.bundle={layout:AB_BUNDLE_LAYOUT,files:await inventory(),zipSha256:await sha256(archive)};
