@@ -6,6 +6,7 @@ from playwright.sync_api import sync_playwright,expect
 ROOT=Path(__file__).resolve().parent.parent
 OUT=ROOT/'.generated/ab-tests-main-ui';OUT.mkdir(parents=True,exist_ok=True)
 (OUT/'result.json').unlink(missing_ok=True)
+(OUT/'failure.json').unlink(missing_ok=True)
 process=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/ab-tests-main-browser-fixture.mjs'],cwd=ROOT,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
 fixture=json.loads(process.stdout.readline());assert fixture['ready'];origin=fixture['origin']
 ALPHA='/api/publishers/alpha-site/ab-tests';BETA='/api/publishers/beta-site/ab-tests'
@@ -68,6 +69,8 @@ try:
       article(f'MAIN comparison {width}').scroll_into_view_if_needed()
      elif name=='load-error':
       panel.get_by_role('alert').scroll_into_view_if_needed()
+     elif name=='loading':
+      panel.get_by_text('Loading A/B tests…',exact=True).scroll_into_view_if_needed()
      else:
       field('Version A').scroll_into_view_if_needed()
      page.screenshot(path=str(OUT/f'{name}-{width}.png'))
@@ -80,6 +83,7 @@ try:
     # The real MAIN panel reports loading and a recoverable GET error.
     mode['holdList']=ALPHA;page.goto(origin+'/')
     expect(panel.get_by_text('Loading A/B tests…',exact=True)).to_be_visible()
+    shot('loading')
     pending,_=take_held();pending.fulfill(status=503,content_type='application/json',body=json.dumps({'error':'Synthetic list unavailable'}))
     expect(panel.get_by_role('alert')).to_contain_text('Synthetic list unavailable');shot('load-error')
     button('Reload A/B tests').click();expect(field('Version A')).to_have_value(fixture['versions']['alpha-site'][0])
