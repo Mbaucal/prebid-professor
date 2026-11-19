@@ -457,7 +457,7 @@ export async function lineItemResponse(
   }
   if (path === "/line-items/preview" && request.method === "POST") {
     const previewInput = await body(request), plan = normalizeLinePlan(previewInput),
-      { client, connection } = await clientFor(plan.networkCode);
+      connection = await connected(plan.networkCode);
     const owner = (await read(bucket, lockKey(plan.networkCode)))?.value.owner;
     if (owner) {
       const active = (await read(bucket, jobKey(owner)))?.value;
@@ -478,6 +478,11 @@ export async function lineItemResponse(
         fail("Drugi posao za line iteme je u toku u ovoj mreži. Nije pokrenut novi posao.");
       }
     }
+    // A blocked or resumed saved job is an R2-only operation. Resolve Google
+    // credentials only after the shared network lease permits a new preview.
+    const client = trafficFactory
+      ? await trafficFactory(connection)
+      : new GamTrafficClient(await makeClient(connection));
     const { network, labels } = await selectionChecks(client, plan),
       now = new Date().toISOString();
     const job = {
