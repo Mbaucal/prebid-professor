@@ -28,8 +28,9 @@ error clears the previous preview in the UI.
 ## Compatible report data
 
 Use one row for each date and assigned `Variant=A|B` under the plan's exact
-`TestId`. Missing days or groups remain missing. A blank metric is unknown, not
-zero. Duplicate rows, another test, another period, ambiguous raw Key-values
+`TestId`. Missing days or groups remain missing. Fill the required impression and
+revenue fields; blank optional metrics are unknown, not zero. Duplicate rows,
+another test, another period, ambiguous raw Key-values
 exports and invalid numeric input are refused. Do not sum overlapping Key-values
 rows, a report total and its details, or the same revenue from GAM and an SSP.
 
