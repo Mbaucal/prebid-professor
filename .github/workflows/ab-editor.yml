@@ -48,6 +48,11 @@ jobs:
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-ab-loader-real-gpt.mjs
           python scripts/verify-ab-loader-real-gpt.py
+      - name: Verify measurement ledger with native adaptive timeout, fresh auctions and bid cache
+        run: |
+          node scripts/build-runtime324-prebid.mjs --version 11.34.0
+          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-combined-measurement-timeout-qa.mjs --prebid .generated/runtime324-prebid/11.34.0 --out .generated/combined-measurement-timeout-qa
+          python scripts/verify-combined-measurement-timeout-qa.py .generated/combined-measurement-timeout-qa
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -58,6 +63,8 @@ jobs:
             .generated/ab-tests-main-workerd/**
             .generated/ab-loader-main-browser/**
             .generated/ab-loader-real-gpt/**
+            .generated/combined-measurement-timeout-qa/**
+            .generated/runtime324-prebid/11.34.0/manifest.json
           if-no-files-found: error
           retention-days: 30
   ab-editor:
