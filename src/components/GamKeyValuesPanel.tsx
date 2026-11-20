@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-type CatalogKey = {key:string;type:string;reportableType:string;values:string[];openDomain:boolean};
+type CatalogKey = {key:string;type:string;reportableType:string;values:string[];openDomain:boolean;valueInput?:'test-id'};
 type Catalog = {schemaVersion:number;profile:string;keys:CatalogKey[]};
 type Pick = {enabled:boolean;values:string[];extra:string};
 type Outcome = 'created'|'existing'|'updated'|'new'|'update'|'unverified'|'blocked'|'conflict'|'pending';
@@ -34,6 +34,7 @@ const descriptions:Record<string,string> = {
   refresh_policy:'Putanja zahteva: početni, nova aukcija ili fallback.',
   geo_country:'Oznaka države, na primer RS. Izaberi samo potrebne države.',
   Variant:'A ili B krak eksperimenta.',
+  TestId:'Tačan TestId A/B testa, da bi se rezultati različitih testova razlikovali.',
 };
 const outcomeNames:Record<Outcome,string> = {
   created:'Kreirano',existing:'Već postoji',updated:'Reporting dopunjen',new:'Nedostaje',update:'Reporting za dopunu',
@@ -50,8 +51,12 @@ const freshPicks = (catalog:Catalog, enabled:(key:string)=>boolean=()=>true):Rec
 
 function valuesFor(key:CatalogKey,pick:Pick):string[] {
   const extra=pick.extra.trim()?pick.extra.trim().split(/[\s,;]+/).filter(Boolean):[];
-  if(extra.length&&!key.openDomain)throw Error(`Dodatne vrednosti nisu podržane za ${key.key}.`);
+  if(extra.length&&!key.openDomain&&key.valueInput!=='test-id')throw Error(`Dodatne vrednosti nisu podržane za ${key.key}.`);
   const values=[...pick.values,...extra].map(value=>{
+    if(key.valueInput==='test-id'){
+      if(!/^[a-z0-9_]{1,24}$/.test(value))throw Error('TestId: unesite tačan TestId iz A/B testa — 1–24 mala slova, cifre ili donju crtu.');
+      return value;
+    }
     if(!key.openDomain)return value;
     if(key.key==='refresh_interval'&&['initial','unscheduled'].includes(value.toLowerCase()))return value.toLowerCase();
     const number=Number(value);
@@ -129,10 +134,14 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
     setPicks(current=>current?{...current,[key]:{...current[key],...patch}}:current);
     setJob(null);setConfirmed(false);setError('');setActiveJobId('');setCloseConfirmed(false);setNotice('');
   }
-  function selectPreset(kind:'all'|'none'|'new') {
+  function selectPreset(kind:'all'|'none'|'new'|'ab') {
     if(!catalog)return;
-    setPicks(kind==='none'?Object.fromEntries(Object.entries(picks??freshPicks(catalog)).map(([key,pick])=>[key,{...pick,enabled:false}])):
-      freshPicks(catalog,kind==='new'?key=>newLabels.has(key):()=>true));
+    setPicks(current=>{
+      if(kind==='none'||kind==='ab')return Object.fromEntries(Object.entries(current??freshPicks(catalog)).map(([key,pick])=>[key,{...pick,enabled:kind==='ab'&&['Variant','TestId'].includes(key)}]));
+      const next=freshPicks(catalog,kind==='new'?key=>newLabels.has(key):()=>true);
+      if(current?.TestId&&next.TestId)next.TestId={...current.TestId,enabled:next.TestId.enabled};
+      return next;
+    });
     setJob(null);setConfirmed(false);setError('');setActiveJobId('');setCloseConfirmed(false);setNotice('');
   }
   async function run(label:string,action:()=>Promise<void>) {
@@ -310,7 +319,7 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
       <article className="gam-card gam-kv-selection"><div className="gam-card-heading"><div><span className="gam-step">01 / IZBOR</span><h3>Koji ključevi su ti potrebni?</h3></div><strong className="gam-kv-selected-count">{selection.rows.length} ključeva · {selection.valueCount} vrednosti</strong></div>
         {catalogLoading&&<p role="status">Učitavam pripremljene ključeve i vrednosti…</p>}
         {catalogError&&<div className="gam-message error" role="alert">{catalogError}<button type="button" disabled={false} onClick={()=>void loadCatalog()}>Ponovi učitavanje ključeva</button></div>}
-        <div className="gam-li-actions gam-kv-presets"><button type="button" onClick={()=>selectPreset('all')}>Izaberi sve</button><button type="button" onClick={()=>selectPreset('none')}>Poništi izbor</button><button type="button" onClick={()=>selectPreset('new')}>Samo tri nove oznake</button></div>
+        <div className="gam-li-actions gam-kv-presets"><button type="button" onClick={()=>selectPreset('all')}>Izaberi sve</button><button type="button" onClick={()=>selectPreset('none')}>Poništi izbor</button><button type="button" onClick={()=>selectPreset('new')}>Samo tri nove oznake</button><button type="button" onClick={()=>selectPreset('ab')}>Samo A/B oznake</button></div>
         <p className="gam-help">Novi ključevi pripremaju se sa uključenim reportingom. Postojeći ključevi zadržavaju svoja podešavanja, uključujući isključen reporting. Vrednosti moraju biti definisane unapred da bi ulazile u GAM izveštaje; nema retroaktivne dopune podataka.</p>
         <div className="gam-kv-key-list">{catalog?.keys.map(key=>{
           const pick=picks?.[key.key];if(!pick)return null;
@@ -318,12 +327,13 @@ export default function GamKeyValuesPanel({endpoint,connections,network,onNetwor
           let pickedCount:string;try{pickedCount=valuesFor(key,pick).length+' izabrano';}catch{pickedCount='Proveri unos';}
           return <div className={'gam-kv-key '+(pick.enabled?'selected':'')} key={key.key}>
             <label className="gam-kv-key-toggle"><input type="checkbox" aria-label={'Uključi ključ '+key.key} checked={pick.enabled} onChange={event=>change(key.key,{enabled:event.target.checked})}/><span><code>{key.key}</code><small>{descriptions[key.key]||'Reporting ključ za ads.js.'}</small></span><span className="gam-kv-key-count">{pickedCount}</span></label>
-            <details><summary>Vrednosti za {key.key} · {key.openDomain?'numeričke vrednosti':'pripremljena lista'}</summary>
+            <details><summary>Vrednosti za {key.key} · {key.valueInput==='test-id'?'ID-jevi testova':key.openDomain?'numeričke vrednosti':'pripremljena lista'}</summary>
               <fieldset className="gam-fields" disabled={!pick.enabled}>
                 {key.values.length>20&&<label>Pretraži vrednosti za {key.key}<input value={query} onChange={event=>setQueries(current=>({...current,[key.key]:event.target.value}))} placeholder="npr. RS"/></label>}
-                <div className="gam-li-actions"><button type="button" onClick={()=>change(key.key,{values:[...key.values]})}>Sve vrednosti za {key.key}</button><button type="button" onClick={()=>change(key.key,{values:[]})}>Bez vrednosti za {key.key}</button></div>
+                <div className="gam-li-actions">{key.valueInput!=='test-id'&&<button type="button" onClick={()=>change(key.key,{values:[...key.values]})}>Sve vrednosti za {key.key}</button>}<button type="button" onClick={()=>change(key.key,{values:[],...(key.valueInput==='test-id'?{extra:''}:{})})}>Bez vrednosti za {key.key}</button></div>
                 <div className="gam-kv-values">{visible.map(value=><label key={value}><input type="checkbox" aria-label={`${key.key}: ${value}`} checked={pick.values.includes(value)} onChange={event=>change(key.key,{values:event.target.checked?[...pick.values,value]:pick.values.filter(item=>item!==value)})}/><code>{value}</code></label>)}</div>
                 {key.openDomain&&<label>Dodatne vrednosti za {key.key}<textarea aria-label={'Dodatne vrednosti za '+key.key} rows={2} value={pick.extra} onChange={event=>change(key.key,{extra:event.target.value})} placeholder={key.key==='refresh_interval'?'npr. 30, 60':'npr. 1, 2, 3'}/><small>{key.key==='refresh_interval'?'Pozitivne sekunde, do šest decimala.':'Nenegativni celi brojevi.'} Odvoji zarezom ili novim redom.</small></label>}
+                {key.valueInput==='test-id'&&<label>TestId vrednosti<textarea aria-label="TestId vrednosti" rows={2} value={pick.extra} onChange={event=>change(key.key,{extra:event.target.value})}/><small>Prekopiraj tačan TestId iz A/B testa: 1–24 mala slova, cifre ili donju crtu. Više ID-jeva odvoji zarezom ili novim redom. Unos ne pokreće upis u GAM. Bez unosa priprema se samo ključ; nema podrazumevanih ID-jeva.</small></label>}
               </fieldset>
               {!pick.values.length&&!pick.extra.trim()&&<p className="gam-help">Priprema samo ključa. Za reporting je potrebno unapred definisati i vrednosti.</p>}
             </details>

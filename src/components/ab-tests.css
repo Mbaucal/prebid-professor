@@ -1,0 +1,51 @@
+/* A/B tests panel (AbTestsPanel.tsx). Every rule is scoped to .ab-tests-panel; buttons, inputs and .runtime-error come
+   from the workspace styles. Long names, ids and values wrap, and the summary table scrolls inside its own box. */
+.ab-tests-panel{margin-top:24px}
+.ab-tests-panel h3{margin:28px 0 8px}
+.ab-tests-panel h4{margin:16px 0 8px}
+.ab-tests-panel .ab-tests-form{border:1px solid #d7dfec;border-radius:12px;padding:20px;margin:16px 0;min-width:0;background:#fafbfd}
+.ab-tests-panel .ab-tests-form h3{margin-top:0}
+.ab-tests-panel .ab-tests-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px}
+.ab-tests-panel .ab-tests-field{min-width:0}
+.ab-tests-panel .ab-tests-field label{margin:14px 0 0}
+.ab-tests-panel .ab-tests-help{font-size:13px;line-height:1.45;color:#5c6b80;margin:6px 0 0}
+.ab-tests-panel .ab-tests-form>.ab-tests-help{margin-top:14px}
+.ab-tests-panel .ab-tests-note{padding:10px 12px;border-radius:8px;background:#fff7e6;border:1px solid #f1d3a1;color:#5b3d00;margin:12px 0}
+.ab-tests-panel .ab-tests-status{padding:12px;border-radius:8px;background:#edf6ef;margin:12px 0}
+.ab-tests-panel .ab-tests-status.ab-tests-refused{background:#fff0ed;color:#a52620}
+.ab-tests-panel .ab-tests-warnings{margin:8px 0;padding-left:20px}
+.ab-tests-panel .ab-tests-diff{max-width:100%;overflow-x:auto;border:1px solid #d7dfec;border-radius:8px;background:#fff}
+.ab-tests-panel table{width:100%;border-collapse:collapse;font-size:14px;text-align:left}
+.ab-tests-panel th,.ab-tests-panel td{padding:10px 12px;border-bottom:1px solid #e4e8ef;vertical-align:top}
+.ab-tests-panel thead th{background:#f5f7fa;color:#66758c;font-size:12px;text-transform:uppercase}
+.ab-tests-panel tbody tr:last-child>*{border-bottom:0}
+.ab-tests-panel tbody th{font-weight:600;min-width:120px}
+.ab-tests-panel tbody th code{display:block;font-weight:400;font-size:12px;color:#66758c;margin-top:4px}
+.ab-tests-panel td code{white-space:pre-wrap}
+.ab-tests-panel .ab-tests-item{border-top:1px solid #d7dfec;padding:16px 0;min-width:0}
+.ab-tests-panel .ab-tests-item p{margin:6px 0}
+.ab-tests-panel .ab-tests-arms,.ab-tests-panel .ab-tests-details{display:grid;gap:8px;margin:10px 0}
+.ab-tests-panel dl div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px}
+.ab-tests-panel dt{font-weight:600;color:#5c6b80}
+.ab-tests-panel dd{margin:0;min-width:0}
+.ab-tests-panel dd ul{margin:0;padding-left:18px}
+.ab-tests-panel .ab-tests-tag{color:#8a4b00}
+.ab-tests-panel .ab-tests-events{margin:6px 0;padding-left:20px;font-size:14px;color:#5c6b80}
+.ab-tests-panel details{margin:8px 0}
+.ab-tests-panel summary{cursor:pointer;font-weight:600;padding:6px 0}
+.ab-tests-panel ol{margin:6px 0;padding-left:22px}
+.ab-tests-panel .ab-tests-deleted{border-top:1px solid #d7dfec;padding-top:12px;margin-top:16px}
+.ab-tests-panel :is(.ab-tests-name,code,dd,td,th,li,.ab-tests-status,.ab-tests-note,.runtime-error,.ab-tests-help){overflow-wrap:anywhere}
+@media(max-width:600px){
+  .ab-tests-panel .ab-tests-form{padding:14px}
+  .ab-tests-panel .ab-tests-fields{grid-template-columns:minmax(0,1fr)}
+  .ab-tests-panel dl div{grid-template-columns:minmax(0,1fr);gap:2px}
+  .ab-tests-panel .runtime-actions button{flex:1 1 auto}
+  /* The summary of differences becomes one block per setting: A above B, each at full width. */
+  .ab-tests-panel .ab-tests-diff :is(table,tbody,tr,th,td){display:block}
+  .ab-tests-panel .ab-tests-diff thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .ab-tests-panel .ab-tests-diff tbody tr{border-bottom:1px solid #e4e8ef;padding:8px 0}
+  .ab-tests-panel .ab-tests-diff tbody tr:last-child{border-bottom:0}
+  .ab-tests-panel .ab-tests-diff tbody :is(th,td){border-bottom:0;padding:4px 12px}
+  .ab-tests-panel .ab-tests-diff td::before{content:attr(data-label);display:block;font-size:12px;font-weight:700;color:#66758c}
+}
