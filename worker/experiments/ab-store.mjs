@@ -134,6 +134,26 @@ function checkSizes(bundle,recordBytes){
   if(total>AB_LIMITS.bundle||bundle.zip.length>AB_LIMITS.zip||recordBytes.length>AB_LIMITS.record)tooLarge();
 }
 
+// A retry can span a deployment that selects a newer loader. Keep the original
+// committed test when every other identity input and immutable delivery file is
+// identical. A different choice, incomplete save or corrupt ZIP never recovers.
+async function recoverClaimedTest(bucket,site,testId,candidate){
+  const claim=await storedBytes(bucket,keys.testId(site,testId),{kind:'ab-test-id',max:1024});
+  if(!claim)return null;
+  if(!claim.bytes)storageFault('The TestId claim is invalid.');
+  let owner;
+  try{owner=JSON.parse(decode.decode(claim.bytes));}catch{storageFault('The TestId claim is invalid.');}
+  if(owner.schemaVersion!==1||owner.site!==site||owner.testId!==testId||!AB_TEST_ID.test(owner.id))storageFault('The TestId claim is invalid.');
+  if(owner.id===candidate.id)return null;
+  const saved=await readRecord(bucket,site,owner.id);
+  if(!saved)fail(409,`TestId ${testId} is reserved by an A/B test whose save has not finished. Each TestId is used once. Choose another TestId.`,'testid-taken');
+  const withoutLoader=record=>{const identity=JSON.parse(abTestIdentity(record));delete identity.loader;return canonical(identity);};
+  if(withoutLoader(saved.record)!==withoutLoader(candidate))
+    fail(409,`TestId ${testId} is already used by another A/B test on this site. Each TestId is used once. Choose another TestId.`,'testid-taken');
+  await readAbZip(bucket,site,owner.id);
+  return {created:false,record:saved.record,recordSha256:saved.recordSha256,deletedAt:await deletedAtOf(bucket,site,owner.id)};
+}
+
 /** Composes and stores one A/B test. a and b are saved packages as readPackage returns them.
  * Everything that can refuse runs before the first put, and the record is written last.
  * Returns {created, record, recordSha256, deletedAt}. Throws Error {status, code, check?}. */
@@ -149,22 +169,18 @@ export async function createAbTest(bucket,{site,actor,a,b,name,testId,trafficBPe
   // The same inputs give the same id: a saved test is returned as it is, with no write.
   const existing=await readRecord(bucket,site,id);
   if(existing)return {created:false,record:existing.record,recordSha256:existing.recordSha256,deletedAt:await deletedAtOf(bucket,site,id)};
+  const recovered=await recoverClaimedTest(bucket,site,testId,record);
+  if(recovered)return recovered;
   if((await listAll(bucket,abPrefix(site)+'records/')).length>=AB_LIMITS.tests)
     fail(409,`This site has reached its lifetime limit of ${AB_LIMITS.tests} A/B tests. Deleted tests still count, because their bytes are kept.`,'limit');
   // The claim makes the TestId unique per site; a retry of this exact test reuses it.
   const claimKey=keys.testId(site,testId),claimBytes=encode.encode(JSON.stringify({schemaVersion:1,site,testId,id})),claimSha256=await sha256(claimBytes);
   await bucket.put(claimKey,claimBytes,{onlyIf:createOnly(),sha256:claimSha256,
     httpMetadata:{contentType:'application/json; charset=utf-8',cacheControl:'private, no-store'},customMetadata:{kind:'ab-test-id',sha256:claimSha256}});
-  const claim=await storedBytes(bucket,claimKey,{kind:'ab-test-id',max:1024});
-  if(!claim?.bytes)storageFault('The TestId claim was not stored.');
-  const owner=JSON.parse(decode.decode(claim.bytes));
-  if(owner.schemaVersion!==1||owner.site!==site||owner.testId!==testId||!AB_TEST_ID.test(owner.id))storageFault('The TestId claim is invalid.');
-  if(owner.id!==id){
-    // A claim without its record is a save that failed or is still running: the TestId is reserved for those exact values.
-    if(!await bucket.get(keys.record(site,owner.id)))
-      fail(409,`TestId ${testId} is reserved by an A/B test whose save has not finished. Each TestId is used once. Choose another TestId.`,'testid-taken');
-    fail(409,`TestId ${testId} is already used by another A/B test on this site. Each TestId is used once. Choose another TestId.`,'testid-taken');
-  }
+  const claimed=await storedBytes(bucket,claimKey,{kind:'ab-test-id',max:1024});
+  if(!claimed?.bytes)storageFault('The TestId claim was not stored.');
+  const concurrentRecovery=await recoverClaimedTest(bucket,site,testId,record);
+  if(concurrentRecovery)return concurrentRecovery;
   for(const path of Object.keys(bundle.files))await immutablePut(bucket,keys.file(site,id,path),bundle.files[path],{kind:'ab-bundle-file',max:AB_LIMITS.file});
   await immutablePut(bucket,keys.zip(site,id),bundle.zip,{kind:'ab-bundle-zip',max:AB_LIMITS.zip,metadata:{zipByteSize:String(bundle.zip.length)}});
   const recordSha256=await sha256(recordBytes);

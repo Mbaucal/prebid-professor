@@ -11,7 +11,7 @@ const hash=bytes=>createHash('sha256').update(bytes).digest('hex'),encode=new Te
 const input=async()=>({site:'guard-site',a:await syntheticDraft({siteId:'guard-site'}),b:await syntheticDraft({siteId:'guard-site',runtimeVersion:'9.0.1',script:'window.arm="B";'}),name:'Startup guard',testId:'guard_1',trafficBPercent:50});
 
 test('new bundle identity explicitly selects 1.0.2 while legacy 1.0.1 keeps its own identity',async()=>{
-  const value=await input(),current=await composeAbBundle(value),legacy=await composeAbBundle({...value,loaderVersion:'1.0.1'});
+  const value=await input(),current=await composeAbBundle({...value,loaderVersion:'1.0.2'}),legacy=await composeAbBundle({...value,loaderVersion:'1.0.1'});
   assert.equal(current.record.loader.version,'1.0.2');assert.equal(legacy.record.loader.version,'1.0.1');
   assert.notEqual(current.id,legacy.id);assert.notEqual(current.zipSha256,legacy.zipSha256);
   assert.deepEqual(current.files[current.record.arms.A.path],legacy.files[legacy.record.arms.A.path]);

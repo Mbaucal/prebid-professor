@@ -4,7 +4,8 @@ import {sha256} from '../runtime/prebid-artifact-check.mjs';
 import {describeCandidate} from '../runtime/draft-release-store.mjs';
 import {PAGES_HEADERS} from '../../shared/pages/headers.mjs';
 import * as legacyLoader from './ab-loader-1.0.1.mjs';
-import * as currentLoader from './ab-loader-1.0.2.mjs';
+import * as previousLoader from './ab-loader-1.0.2.mjs';
+import * as currentLoader from './ab-loader-1.1.0.mjs';
 import registry from './ab-loader-registry.json' with {type:'json'};
 
 /* Generic A/B bundle composer (MBA-416, layout publisher-ab-v1). It never rebuilds a script:
@@ -40,6 +41,7 @@ const sorted=list=>[...new Set(list)].sort();
 const only=(list,other)=>list.filter(x=>!other.includes(x));
 function loaderFor(version=currentLoader.AB_LOADER_VERSION){
   if(version===currentLoader.AB_LOADER_VERSION)return currentLoader;
+  if(version===previousLoader.AB_LOADER_VERSION)return previousLoader;
   if(version===legacyLoader.AB_LOADER_VERSION)return legacyLoader;
   invalid('Choose a registered A/B loader version.');
 }
@@ -97,7 +99,7 @@ async function compatibilityChecks(site,A,B,loaderVersion){
   const checks=[];
   for(const v of [A,B])if(v.siteId!==site)refuse('site-differs',`Version ${v.side} belongs to site ${v.siteId}. Choose two saved versions of ${site}.`,'site');
   checks.push({check:'site',result:'same'});
-  if(loaderVersion==='1.0.2')for(const v of [A,B])if(!startupGuard(v.files))refuse('startup-guard-missing',`Version ${v.side} has no supported runtime startup guard. Choose a verified built-in version before creating this test.`,'startup');
+  if(loaderVersion==='1.0.2'||loaderVersion==='1.1.0')for(const v of [A,B])if(!startupGuard(v.files))refuse('startup-guard-missing',`Version ${v.side} has no supported runtime startup guard. Choose a verified built-in version before creating this test.`,'startup');
   const pa=A.files['prebid.js'],pb=B.files['prebid.js'];
   if(!pa!==!pb)refuse('prebid-differs',`Version ${pa?'A':'B'} loads Prebid.js and version ${pa?'B':'A'} is GAM only. Choose two versions with the same Prebid setting.`,'prebid');
   if(pa&&await sha256(pa)!==await sha256(pb))refuse('prebid-differs','Versions A and B use different Prebid.js files. Generate both versions with the same Prebid build, then create the test again.','prebid');
@@ -259,7 +261,7 @@ export async function composeAbBundle({site,a,b,trafficBPercent,testId,name,load
     compatibility:{checks,warnings:warnings(A,B)},configDiff:configDiff(A,B),
     bundle:{layout:AB_BUNDLE_LAYOUT,files:await inventory(),zipSha256:null},createdBy:null,createdAt:null};
   record.id='abx-'+await sha256(encode.encode(abTestIdentity(record)));
-  files['ads.js']=encode.encode(selectedLoader.renderAbLoader({schema:selectedLoader.AB_LOADER_CONFIG_SCHEMA,id:record.id,testId,name,trafficBPercent,arms,loader}));
+  files['ads.js']=encode.encode(selectedLoader.renderAbLoader({schema:selectedLoader.AB_LOADER_CONFIG_SCHEMA,id:record.id,...(loader.version==='1.1.0'?{site}:{}),testId,name,trafficBPercent,arms,loader}));
   const ordered=Object.fromEntries(Object.keys(files).sort().map(p=>[p,files[p]]));
   const archive=zip(ordered);
   record.bundle={layout:AB_BUNDLE_LAYOUT,files:await inventory(),zipSha256:await sha256(archive)};

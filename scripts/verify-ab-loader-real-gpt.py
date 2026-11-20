@@ -263,7 +263,7 @@ def main():
     try:
         manifest = json.loads((OUT / 'manifest.json').read_text())
         assert manifest['schemaVersion'] == 1 and manifest['runtime']['runtimeVersion'] == '3.25.1'
-        assert manifest['loader']['version'] == '1.0.2' and manifest['assigned'] == 'B'
+        assert manifest['loader']['version'] == '1.1.0' and manifest['assigned'] == 'B'
         report['loader'] = manifest['loader']
         report['fixtureManifestSha256'] = sha256((OUT / 'manifest.json').read_bytes())
         files = {}
