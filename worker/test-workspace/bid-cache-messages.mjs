@@ -1,16 +1,34 @@
-// TEST-only wording names this workspace's existing views and the combined Preview script.
+// TEST-only wording names this workspace's existing views and the Preview scripts to allow. The versions come from the
+// release registry by the shared naming rule (site-runtime/script-versions.mjs), as the panels and the shared Generate
+// refusal name them, so a new release or runtime notice changes them together. With the TEST releases (up to 3.24.0)
+// that is 3.24.0 Preview.
 import {BID_CACHE_GENERATOR_MESSAGE} from '../site-runtime/prebid-cache-settings.mjs';
+import {scriptVersionsWith,versionList} from '../site-runtime/script-versions.mjs';
 
 const KEEP_SCRIPT='open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position.';
-export const TEST_BID_CACHE_GENERATOR_MESSAGE=BID_CACHE_GENERATOR_MESSAGE.slice(0,BID_CACHE_GENERATOR_MESSAGE.indexOf('To keep'))
- +'To keep this script version instead, '+KEEP_SCRIPT;
-export const TEST_BID_CACHE_BIDDER_RULES_MESSAGE='This script cannot combine bid caching and bidder rules. To use both, select 3.24.0 Preview in Script setup, allow Preview scripts, and save. '
- +'To keep this script version instead, turn bid caching off: '+KEEP_SCRIPT+' Your saved bidder rules are kept.';
-export const BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE='Script 3.23.0 has bid caching but cannot apply enabled bidder rules. To use both, select 3.24.0 Preview in Script setup, allow Preview scripts, and save. '
- +'To keep 3.23.0 instead, turn off bidder rules in Bidder rules. Your saved settings are kept.';
+// How the shared refusal ends: the way back to this script names Config pages, which TEST words with its own views.
+const KEEP_PREFIX='To keep this script version instead, ',SHARED_KEEP=BID_CACHE_GENERATOR_MESSAGE.slice(BID_CACHE_GENERATOR_MESSAGE.indexOf(KEEP_PREFIX)+KEEP_PREFIX.length);
+/** The shared bid caching refusal (bidCacheGeneratorMessage in site-runtime/prebid-cache-settings.mjs), whichever
+ * versions it names for the site's saved options. */
+export const isBidCacheRefusal=message=>typeof message==='string'&&message.startsWith('Bid caching needs a compatible script version')&&message.endsWith(SHARED_KEEP);
+const testGeneratorMessage=message=>message.slice(0,message.length-SHARED_KEEP.length)+KEEP_SCRIPT;
+export const TEST_BID_CACHE_GENERATOR_MESSAGE=testGeneratorMessage(BID_CACHE_GENERATOR_MESSAGE);
+/** The TEST messages for enabled bidder rules beside bid caching, naming the versions that apply both (at most two, by
+ * the shared rule). The history and notices are arguments only so tests can show the text follows the registry. */
+export function testBidderRulesMessages(history,notices){
+ const releases=scriptVersionsWith(['bid-cache','bidder-rules'],history,notices),preview=releases.some(release=>release.channel==='preview');
+ const both=releases.length
+  ?`To use both, select ${versionList(releases.map(release=>release.version+(release.channel==='preview'?' Preview':'')),'or')} in Script setup, ${preview?'allow Preview scripts, ':''}and save.`
+  :'No available script version applies bid caching and bidder rules together.';
+ return {combined:`This script cannot combine bid caching and bidder rules. ${both} To keep this script version instead, turn bid caching off: ${KEEP_SCRIPT} Your saved bidder rules are kept.`,
+  withoutBidCache:`Script 3.23.0 has bid caching but cannot apply enabled bidder rules. ${both} To keep 3.23.0 instead, turn off bidder rules in Bidder rules. Your saved settings are kept.`};
+}
+const RULES=testBidderRulesMessages();
+export const TEST_BID_CACHE_BIDDER_RULES_MESSAGE=RULES.combined;
+export const BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE=RULES.withoutBidCache;
 const bidderRulesOn=config=>config?.enablePrebid===true&&config?.runtimeControls?.bidderRules?.enabled===true;
 /** The TEST wording for the shared bid cache refusal, given the saved site configuration; other messages pass unchanged. */
-export const testBidCacheMessage=(message,config)=>message!==BID_CACHE_GENERATOR_MESSAGE?message:bidderRulesOn(config)?TEST_BID_CACHE_BIDDER_RULES_MESSAGE:TEST_BID_CACHE_GENERATOR_MESSAGE;
+export const testBidCacheMessage=(message,config)=>!isBidCacheRefusal(message)?message:bidderRulesOn(config)?TEST_BID_CACHE_BIDDER_RULES_MESSAGE:testGeneratorMessage(message);
 /** A script with bid caching but without bidder rules (3.23.0) cannot apply enabled bidder rules. Checked before the
  * shared bidder rules guard, whose 'or later' wording would point at 3.23.0. Same status as that guard. */
 export function requireBidderRulesBesideBidCache(config,descriptor){

@@ -429,6 +429,8 @@ export type UnitRuleSaveResult = {
 export type BiddersResponse = {
   ok: true;
   bidders: Bidder[];
+  /** Script versions that apply bidder accounts with the site's other saved options, such as "3.24.0 (Preview)" or "3.26.0 (Preview)". */
+  accountScriptVersions: string[];
 };
 
 export type BidderResponse = {

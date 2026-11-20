@@ -15,7 +15,7 @@ The editor's decision preview uses the same evaluator as the generated runtime. 
 
 ## Applying a change
 
-Save the rules, explicitly select and save script 3.22.0 or later, then Generate a new package. Existing selected versions, stored packages and live URLs are not changed by saving these settings. Earlier engines reject enabled bidder rules instead of silently ignoring them. GAM-only packages retain the settings with filtering inactive.
+Save the rules, explicitly select and save a script version that the Bidder rules panel names, then Generate a new package. The panel and the Script setup and Generate messages name only versions that apply bidder rules together with the site's other saved options (bidder accounts, bid caching), and at most two of them: the smallest step (the version with the fewest capabilities, the newest patch on a tie) and the newest version, leaving out versions with a runtime notice. On TEST, with the releases up to 3.24.0, that is 3.22.2 Preview or 3.24.0 Preview, and 3.24.0 Preview alone when bid caching is saved (main, with the releases up to 3.26.0, names 3.22.2 Preview or 3.26.0 Preview, and 3.24.0 Preview or 3.26.0 Preview with bid caching). Existing selected versions, stored packages and live URLs are not changed by saving these settings. Earlier engines reject enabled bidder rules instead of silently ignoring them. GAM-only packages retain the settings with filtering inactive.
 
 The runtime filters the final explicit Prebid ad-unit array after responsive Outstream resolves its units. A position with no eligible bidders still follows the existing consent-gated GAM path. SChain, bidder parameters, deals, contextual signals and original configured arrays are preserved.
 
