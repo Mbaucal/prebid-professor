@@ -382,6 +382,28 @@
   width: min(760px, 100%);
 }
 
+.modal-backdrop.bidder-form-dialog {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  box-sizing: border-box;
+  background: transparent;
+  backdrop-filter: none;
+  color: inherit;
+}
+
+.modal-backdrop.bidder-form-dialog:not([open]) {
+  display: none;
+}
+
+.bidder-form-dialog::backdrop {
+  background: rgb(12 17 24 / 72%);
+  backdrop-filter: blur(3px);
+}
+
 .json-textarea {
   min-height: 190px;
   resize: vertical;

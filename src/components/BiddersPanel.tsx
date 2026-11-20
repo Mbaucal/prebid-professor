@@ -1,5 +1,8 @@
 import { normalizeBidderAccount } from '../../shared/bidder-accounts/settings.mjs';
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
+  type FormEvent, type ReactNode, type RefObject,
+} from 'react';
 import { api, ApiError } from '../api';
 import DealsPanel from './DealsPanel';
 import type {
@@ -156,6 +159,69 @@ function IdChips({ params }: { params: JsonObject }) {
   );
 }
 
+function BidderFormDialog({ titleId, busy, opener, fallbackFocus, onDismiss, children }: {
+  titleId: string;
+  busy: boolean;
+  opener: HTMLButtonElement | null;
+  fallbackFocus: RefObject<HTMLButtonElement | null>;
+  onDismiss: () => void;
+  children: ReactNode;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useLayoutEffect(() => {
+    const element = dialog.current;
+    if (!element) return;
+    element.showModal();
+    element.querySelector<HTMLElement>('[data-dialog-initial-focus]')?.focus();
+    return () => {
+      element.close();
+      const target = opener?.isConnected ? opener : fallbackFocus.current;
+      if (target?.isConnected) target.focus();
+    };
+  }, [opener, fallbackFocus]);
+
+  return (
+    <dialog
+      ref={dialog}
+      className="modal-backdrop bidder-form-dialog"
+      aria-labelledby={titleId}
+      aria-busy={busy}
+      closedby={busy ? 'none' : undefined}
+      onClose={() => {
+        const element = dialog.current;
+        if (element?.isConnected && !element.open) element.showModal();
+      }}
+      onCancel={(event) => {
+        event.preventDefault();
+        onDismiss();
+      }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          event.preventDefault();
+          onDismiss();
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Tab') return;
+        const targets = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+          'button, input, select, textarea, a[href], [tabindex]',
+        )).filter((node) => node.tabIndex >= 0 && !node.matches(':disabled') && node.getClientRects().length > 0);
+        const first = targets[0];
+        const last = targets.at(-1);
+        const wrapTarget = event.shiftKey
+          ? document.activeElement === first && last
+          : document.activeElement === last && first;
+        if (wrapTarget) {
+          event.preventDefault();
+          wrapTarget.focus();
+        }
+      }}
+    >
+      <section className="modal-card bidder-modal">{children}</section>
+    </dialog>
+  );
+}
+
 export default function BiddersPanel({ publisherId, onChanged }: Props) {
   const currentSite = useRef(publisherId); currentSite.current = publisherId;
   const loadSequence = useRef(0);
@@ -175,6 +241,8 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
   const [overrideForm, setOverrideForm] = useState<OverrideFormState>(emptyOverrideForm);
   const [overrideFormError, setOverrideFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const dialogOpener = useRef<HTMLButtonElement>(null);
+  const newBidderButton = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
@@ -213,14 +281,16 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
     [bidders],
   );
 
-  function openCreateBidder() {
+  function openCreateBidder(opener: HTMLButtonElement) {
+    dialogOpener.current = opener;
     setBidderMode('create');
     setBidderSource(null);
     setBidderForm(emptyBidderForm);
     setBidderFormError(null);
   }
 
-  function openEditBidder(bidder: Bidder) {
+  function openEditBidder(bidder: Bidder, opener?: HTMLButtonElement) {
+    if (opener) dialogOpener.current = opener;
     setBidderMode('edit');
     setBidderSource(bidder);
     setBidderForm({
@@ -236,7 +306,8 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
     setBidderFormError(null);
   }
 
-  function openDuplicateBidder(bidder: Bidder) {
+  function openDuplicateBidder(bidder: Bidder, opener: HTMLButtonElement) {
+    dialogOpener.current = opener;
     setBidderMode('duplicate');
     setBidderSource(bidder);
     setBidderForm({
@@ -259,7 +330,8 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
     setBidderFormError(null);
   }
 
-  function openCreateOverride(bidder: Bidder) {
+  function openCreateOverride(bidder: Bidder, opener: HTMLButtonElement) {
+    dialogOpener.current = opener;
     setOverrideMode('create');
     setOverrideBidder(bidder);
     setOverrideSource(null);
@@ -271,7 +343,8 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
     setOverrideFormError(null);
   }
 
-  function openEditOverride(bidder: Bidder, override: BidderOverride) {
+  function openEditOverride(bidder: Bidder, override: BidderOverride, opener: HTMLButtonElement) {
+    dialogOpener.current = opener;
     setOverrideMode('edit');
     setOverrideBidder(bidder);
     setOverrideSource(override);
@@ -284,7 +357,8 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
     setOverrideFormError(null);
   }
 
-  function openDuplicateOverride(bidder: Bidder, override: BidderOverride) {
+  function openDuplicateOverride(bidder: Bidder, override: BidderOverride, opener: HTMLButtonElement) {
+    dialogOpener.current = opener;
     setOverrideMode('duplicate');
     setOverrideBidder(bidder);
     setOverrideSource(override);
@@ -461,7 +535,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
               Base params may be empty when a bidder is configured through slot, device or exact ad-unit overrides.
             </p>
           </div>
-          <button className="button primary" onClick={openCreateBidder} type="button">
+          <button ref={newBidderButton} className="button primary" onClick={(event) => openCreateBidder(event.currentTarget)} type="button">
             ＋ New bidder
           </button>
         </div>
@@ -515,7 +589,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                     <strong>Overrides</strong>
                     <span>slot · device · adunit</span>
                   </div>
-                  <button onClick={() => openCreateOverride(bidder)} type="button">＋ Add override</button>
+                  <button onClick={(event) => openCreateOverride(bidder, event.currentTarget)} type="button">＋ Add override</button>
                 </div>
 
                 <div className="override-list">
@@ -536,8 +610,8 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                         <pre>{prettyJson(override.params)}</pre>
                       </details>
                       <div className="override-actions">
-                        <button onClick={() => openEditOverride(bidder, override)} type="button">Edit</button>
-                        <button onClick={() => openDuplicateOverride(bidder, override)} type="button">Duplicate</button>
+                        <button onClick={(event) => openEditOverride(bidder, override, event.currentTarget)} type="button">Edit</button>
+                        <button onClick={(event) => openDuplicateOverride(bidder, override, event.currentTarget)} type="button">Duplicate</button>
                         <button className="danger-link" onClick={() => void removeOverride(override)} type="button">
                           Delete
                         </button>
@@ -546,15 +620,15 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                   ))}
 
                   {!bidder.overrides.length ? (
-                    <button className="empty-override" onClick={() => openCreateOverride(bidder)} type="button">
+                    <button className="empty-override" onClick={(event) => openCreateOverride(bidder, event.currentTarget)} type="button">
                       ＋ Add first override
                     </button>
                   ) : null}
                 </div>
 
                 <div className="ad-unit-actions bidder-actions">
-                  <button onClick={() => openEditBidder(bidder)} type="button">Edit bidder</button>
-                  <button onClick={() => openDuplicateBidder(bidder)} type="button">Duplicate</button>
+                  <button onClick={(event) => openEditBidder(bidder, event.currentTarget)} type="button">Edit bidder</button>
+                  <button onClick={(event) => openDuplicateBidder(bidder, event.currentTarget)} type="button">Duplicate</button>
                   <button className="danger-link" onClick={() => void removeBidder(bidder)} type="button">
                     Delete
                   </button>
@@ -564,7 +638,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
           })}
 
           {!loading && !bidders.length ? (
-            <button className="empty-bidder-card" onClick={openCreateBidder} type="button">
+            <button className="empty-bidder-card" onClick={(event) => openCreateBidder(event.currentTarget)} type="button">
               <strong>＋ Add first bidder</strong>
               <span>Configure global params or add override-only integrations such as Ogury and RichAudience.</span>
             </button>
@@ -573,14 +647,8 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
       </section>
 
       {bidderMode ? (
-        <div className="modal-backdrop" onMouseDown={closeBidderForm} role="presentation">
-          <section
-            aria-labelledby="bidder-form-title"
-            aria-modal="true"
-            className="modal-card bidder-modal"
-            onMouseDown={(event) => event.stopPropagation()}
-            role="dialog"
-          >
+        <BidderFormDialog titleId="bidder-form-title" busy={submitting} opener={dialogOpener.current}
+          fallbackFocus={newBidderButton} onDismiss={closeBidderForm}>
             <div className="modal-heading">
               <div>
                 <span className="panel-kicker">Bidder workflow</span>
@@ -592,14 +660,14 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                       : `Edit ${bidderSource?.bidder ?? 'bidder'}`}
                 </h2>
               </div>
-              <button className="icon-button" onClick={closeBidderForm} type="button">×</button>
+              <button className="icon-button" onClick={closeBidderForm} disabled={submitting} aria-label="Close bidder dialog" type="button">×</button>
             </div>
 
             <form className="publisher-form" onSubmit={submitBidder}>
               <label>
                 <span>Bidder code</span>
                 <input
-                  autoFocus
+                  data-dialog-initial-focus
                   onChange={(event) =>
                     setBidderForm((current) => ({ ...current, bidder: event.target.value.toLowerCase() }))
                   }
@@ -683,19 +751,12 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                 </button>
               </div>
             </form>
-          </section>
-        </div>
+        </BidderFormDialog>
       ) : null}
 
       {overrideMode && overrideBidder ? (
-        <div className="modal-backdrop" onMouseDown={closeOverrideForm} role="presentation">
-          <section
-            aria-labelledby="override-form-title"
-            aria-modal="true"
-            className="modal-card bidder-modal"
-            onMouseDown={(event) => event.stopPropagation()}
-            role="dialog"
-          >
+        <BidderFormDialog titleId="override-form-title" busy={submitting} opener={dialogOpener.current}
+          fallbackFocus={newBidderButton} onDismiss={closeOverrideForm}>
             <div className="modal-heading">
               <div>
                 <span className="panel-kicker">{overrideBidder.bidder} override</span>
@@ -707,7 +768,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                       : `Edit ${overrideSource?.scopeKey ?? 'override'}`}
                 </h2>
               </div>
-              <button className="icon-button" onClick={closeOverrideForm} type="button">×</button>
+              <button className="icon-button" onClick={closeOverrideForm} disabled={submitting} aria-label="Close override dialog" type="button">×</button>
             </div>
 
             <form className="publisher-form" onSubmit={submitOverride}>
@@ -715,6 +776,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                 <label>
                   <span>Scope type</span>
                   <select
+                    data-dialog-initial-focus
                     onChange={(event) => {
                       const scopeType = event.target.value as BidderOverrideScope;
                       const options = scopeOptions(scopeType, adUnits);
@@ -794,8 +856,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                 </button>
               </div>
             </form>
-          </section>
-        </div>
+        </BidderFormDialog>
       ) : null}
     </>
   );

@@ -36,7 +36,7 @@ with sync_playwright() as pw:
     if url.netloc!='accounts-review.fixture.invalid':external.append(request.url);route.abort();return
     if reject and url.path==endpoint and request.method=='GET':
      reject.pop();route.fulfill(status=503,headers={'content-type':'application/json'},body=json.dumps({'error':'Synthetic list outage: retry.'}));return
-    if hold and url.path==endpoint and request.method==hold[0]:pending.append(route);hold.pop();return
+    if hold and url.path.startswith(endpoint) and request.method==hold[0]:pending.append(route);hold.pop();return
     fulfill(route)
    page.route('**/*',route)
    def passed(name):checks.append(name)
@@ -57,6 +57,129 @@ with sync_playwright() as pw:
     hold.append('GET');page.reload(wait_until='domcontentloaded');expect(page.locator('.bidders-page .config-loading')).to_be_visible();screen('listing-loading')
     assert len(pending)==1;fulfill(pending.pop());expect(card('pubmatic')).to_be_visible();expect(page.locator('.bidders-page .config-loading')).to_have_count(0)
     passed('Loading preserves the component and reload recovers the real API')
+    before_keyboard_tests = data(endpoint)
+    new_bidder = page.get_by_role('button', name='＋ New bidder', exact=True)
+    new_bidder.click()
+    d = dialog()
+    bidder_code = d.get_by_label('Bidder code', exact=False)
+    expect(bidder_code).to_be_focused()
+    bidder_code.fill('discarded_account')
+    finish = d.get_by_role('button', name='Create bidder', exact=True)
+    close = d.get_by_role('button', name='Close bidder dialog', exact=True)
+    finish.focus()
+    page.keyboard.press('Tab')
+    expect(close).to_be_focused()
+    page.keyboard.press('Shift+Tab')
+    expect(finish).to_be_focused()
+    screen('bidder-dialog-keyboard', d)
+    page.keyboard.press('Escape')
+    expect(d).to_have_count(0)
+    expect(new_bidder).to_be_focused()
+    new_bidder.click()
+    expect(bidder_code).to_have_value('')
+    d.get_by_role('button', name='Cancel', exact=True).click()
+    expect(new_bidder).to_be_focused()
+
+    edit_bidder = card('pubmatic').get_by_role('button', name='Edit bidder', exact=True)
+    edit_bidder.click()
+    expect(bidder_code).to_be_focused()
+    page.keyboard.press('Escape')
+    expect(d).to_have_count(0)
+    expect(edit_bidder).to_be_focused()
+
+    add_override = card('pubmatic').get_by_role('button', name='＋ Add override', exact=True)
+    add_override.click()
+    expect(d.get_by_label('Scope type', exact=False)).to_be_focused()
+    finish = d.get_by_role('button', name='Create override', exact=True)
+    close = d.get_by_role('button', name='Close override dialog', exact=True)
+    finish.focus()
+    page.keyboard.press('Tab')
+    expect(close).to_be_focused()
+    page.keyboard.press('Shift+Tab')
+    expect(finish).to_be_focused()
+    screen('override-dialog-keyboard', d)
+    page.keyboard.press('Escape')
+    expect(d).to_have_count(0)
+    expect(add_override).to_be_focused()
+    add_override.click()
+    page.mouse.click(1, 1)
+    expect(d).to_have_count(0)
+    expect(add_override).to_be_focused()
+    assert data(endpoint) == before_keyboard_tests
+    passed('Bidder and override dialogs wrap keyboard focus and return it to the exact opener without saving')
+
+    def escape_while_saving(finish_name):
+        hold.append('POST')
+        d.get_by_role('button', name=finish_name, exact=True).click()
+        expect(d.get_by_role('button', name='Saving…', exact=True)).to_be_disabled()
+        # A native close removes the open attribute during the Escape itself, before any reopen.
+        page.evaluate('''() => {
+            const changes = window.savingDialogOpenChanges = [];
+            new MutationObserver((records) => changes.push(...records)).observe(document.querySelector('dialog.bidder-form-dialog'), {attributeFilter: ['open']});
+        }''')
+        for _ in range(5):
+            page.keyboard.press('Escape')
+        # While the dialog stays open the page behind it is inert, so Enter cannot reach the opener and reset the form.
+        page.keyboard.press('Enter')
+        expect(page.locator('dialog.bidder-form-dialog')).to_have_js_property('open', True)
+        expect(d).to_be_visible()
+        assert page.evaluate('window.savingDialogOpenChanges.length') == 0, 'The saving dialog closed natively'
+        # The disabled Saving… button can leave focus on body; it must not reach the page behind the dialog.
+        assert page.evaluate('document.activeElement === document.body || document.querySelector("dialog[open]")?.contains(document.activeElement) === true'), 'Focus moved to the page behind the saving dialog'
+        assert len(pending) == 1
+        return pending.pop()
+
+    def synthetic_save_outage(held, message):
+        held.fulfill(status=503, headers={'content-type': 'application/json'}, body=json.dumps({'error': message}))
+
+    new_bidder.click()
+    bidder_code.fill('escape_failed')
+    held = escape_while_saving('Create bidder')
+    screen('bidder-saving-after-escape', d)
+    synthetic_save_outage(held, 'Synthetic bidder save outage: retry.')
+    expect(d.get_by_role('alert')).to_contain_text('Synthetic bidder save outage')
+    expect(d.get_by_role('alert')).to_be_visible()
+    expect(bidder_code).to_be_visible()
+    expect(bidder_code).to_have_value('escape_failed')
+    screen('bidder-save-failed-after-escape', d.get_by_role('alert'))
+    # Chromium closes the dialog on a non-cancelable Escape and sends the close event later, so the
+    # event can arrive after the failed save has rendered. close() reproduces that order every time.
+    page.evaluate('document.querySelector("dialog.bidder-form-dialog").close()')
+    expect(page.locator('dialog.bidder-form-dialog')).to_have_js_property('open', True)
+    expect(d.get_by_role('alert')).to_be_visible()
+    expect(bidder_code).to_have_value('escape_failed')
+    passed('A close event that arrives after a failed save reopens the mounted bidder dialog')
+    page.keyboard.press('Escape')
+    expect(d).to_have_count(0)
+    expect(new_bidder).to_be_focused()
+    new_bidder.click()
+    expect(bidder_code).to_be_focused()
+    expect(bidder_code).to_have_value('')
+    page.keyboard.press('Escape')
+    expect(d).to_have_count(0)
+    expect(new_bidder).to_be_focused()
+    passed('Repeated Escape cannot close a saving bidder dialog; a failed save keeps its error and form open')
+
+    add_override.click()
+    held = escape_while_saving('Create override')
+    synthetic_save_outage(held, 'Synthetic override save outage: retry.')
+    expect(d.locator('.form-error')).to_contain_text('Synthetic override save outage')
+    expect(d.locator('.form-error')).to_be_visible()
+    expect(d.get_by_label('Scope key', exact=False)).to_have_value('P1')
+    screen('override-save-failed-after-escape', d.locator('.form-error'))
+    page.keyboard.press('Escape')
+    expect(d).to_have_count(0)
+    expect(add_override).to_be_focused()
+    assert data(endpoint) == before_keyboard_tests
+    passed('Repeated Escape cannot close a saving override dialog; a failed save keeps its error and form open')
+
+    d = create('adf_escape', 'inherit', {'mid': 333}, 'Escape Adform')
+    fulfill(escape_while_saving('Create bidder'))
+    expect(d).to_have_count(0)
+    expect(card('adf_escape')).to_contain_text('Site chain')
+    expect(new_bidder).to_be_focused()
+    passed('Repeated Escape keeps a successful bidder save open until the save closes it')
+
     d=create('adf_smn','inherit',{'mid':111},'SMN Adform')
     d.get_by_role('button',name='Create bidder',exact=True).click();expect(d).to_have_count(0);expect(card('adf_smn')).to_contain_text('Site chain')
     d=create('adf_ag','custom',{'mid':222},'Agency Adform')
@@ -65,7 +188,13 @@ with sync_playwright() as pw:
     expect(d.get_by_label('Base params JSON',exact=False)).to_have_value(json.dumps({'mid':222}));screen('custom-json-error',d.get_by_role('alert'));passed('Invalid custom chain preserves account and parameter input')
     d.get_by_label('Custom SChain JSON',exact=True).fill(json.dumps(custom));d.get_by_label('Account SChain',exact=True).select_option('none')
     hold.append('POST');d.get_by_role('button',name='Create bidder',exact=True).click();expect(d.get_by_role('button',name='Saving…',exact=True)).to_be_disabled();screen('account-saving')
+    expect(d.get_by_role('button', name='Close bidder dialog', exact=True)).to_be_disabled()
+    page.keyboard.press('Escape')
+    expect(d).to_be_visible()
+    page.mouse.click(1, 1)
+    expect(d).to_be_visible()
     assert len(pending)==1;fulfill(pending.pop());expect(d).to_have_count(0);expect(card('adf_ag')).to_contain_text('No upstream chain')
+    expect(new_bidder).to_be_focused()
     passed('Agency alias saves with no upstream chain and saving state prevents double submission')
     page.reload();expect(card('adf_ag')).to_be_visible();saved=data(endpoint)['bidders'];agency=next(row for row in saved if row['bidder']=='adf_ag');own=next(row for row in saved if row['bidder']=='adf_smn')
     assert agency['baseAdapter']=='adf' and agency['schain']['mode']=='none' and agency['schain']['config']==custom and agency['params']=={'mid':222};assert own['params']=={'mid':111} and own['schain']['mode']=='inherit'
