@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import './ab-tests.css';
+import AbMeasurementPanel from './AbMeasurementPanel';
 
 /* A/B tests of one site (MBA-416): compare two saved versions, save an immutable test, download its ZIP and record,
  * mark it live or stopped, and move it to and from the trash. Shared by both lines: the caller passes the API endpoint
@@ -292,6 +293,7 @@ function SiteAbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Props){
           <div><dt>Version B</dt><dd className="ab-tests-name">{loaded.record.arms.B.name}</dd></div>
           <div><dt>Files</dt><dd><ul>{loaded.record.bundle.files.map(file=><li key={file.path}><code>{file.path}</code> · {file.bytes} bytes</li>)}</ul></dd></div>
         </dl>:<p>Reading test details…</p>}</details>
+        <AbMeasurementPanel endpoint={`${endpoint}/${test.id}/measurement/plans`} experimentId={test.id} testId={test.testId} disabled={busy}/>
       </article>;
     })}
     {data.deleted.length?<details className="ab-tests-deleted"><summary>Deleted A/B tests</summary>

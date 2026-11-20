@@ -8,7 +8,7 @@ import {pinRuntime} from '../worker/runtime/version-pin.mjs';
 import {describeCandidate} from '../worker/runtime/draft-release-store.mjs';
 import {runtime325BrowserSite} from '../tests/runtime/runtime325-browser-site.mjs';
 import {composeAbBundle} from '../worker/experiments/ab-bundle.mjs';
-import {AB_LOADER_TEMPLATE, AB_LOADER_VERSION} from '../worker/experiments/ab-loader-1.0.2.mjs';
+import {AB_LOADER_TEMPLATE, AB_LOADER_VERSION} from '../worker/experiments/ab-loader-1.1.0.mjs';
 
 const root=resolve(import.meta.dirname,'..');
 const args=process.argv.slice(2);
@@ -30,7 +30,7 @@ for(const [side,stamp]of [['A','20261120_010000'],['B','20261120_010001']]){
   packages[side]={files:candidate.files,release:{id:saved.releaseId,siteId:snapshot.site.id,note:`Native GAM-only ${side}`}};
 }
 const bundle=await composeAbBundle({site:'reporting-site',a:packages.A,b:packages.B,
-  trafficBPercent:100,testId:'real_gpt_102',name:'Offline generic-loader wire regression'});
+  trafficBPercent:100,testId:'real_gpt_110',name:'Offline generic-loader wire regression'});
 assert.equal(bundle.record.loader.version,AB_LOADER_VERSION);
 assert(!bundle.files['prebid.js']);
 const gptRoot='vendor/gpt/m202611120201';

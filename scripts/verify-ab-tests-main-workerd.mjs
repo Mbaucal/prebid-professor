@@ -21,7 +21,7 @@ assert.equal(hash(prebid),'384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b1
 await mkdir(output,{recursive:true});
 const checks=[];
 const check=(name,ok)=>{assert(ok,name);checks.push(name);};
-let mf,db,bucket,cookie='',outbound=0,expected,record;
+let mf,db,bucket,cookie='',outbound=0,expected,record,measurementPlan;
 const options={modules:guardedModules(script),compatibilityDate:'2026-07-15',compatibilityFlags:['nodejs_compat'],cf:false,
   resourcePersistencePath:directory,d1Databases:{DB:'main-ab-d1'},r2Buckets:{BUILDS:'main-ab-r2'},
   bindings:{ADMIN_EMAIL:actor,ADMIN_PASSWORD:password,SESSION_SECRET:secret},
@@ -159,6 +159,23 @@ try{
   check('A saved test cannot be read from another site',(await request(base(other)+'/'+record.id)).status===404);
   const recordResponse=await request(base(site)+'/'+record.id+'/record'),recordBytes=new Uint8Array(await recordResponse.arrayBuffer());
   check('Downloaded record bytes match the response checksum',recordResponse.status===200&&hash(recordBytes)===recordResponse.headers.get('x-record-sha256'));
+  const plans=base(site)+'/'+record.id+'/measurement/plans';
+  check('Nested measurement plans retain actual MAIN authentication',(await request(plans,{auth:false})).status===401);
+  const report={networkCode:'999',inventoryPath:'/999/'+site+'/',startDate:'2026-11-18',endDate:'2026-11-18',currency:'EUR',timeZone:'UTC',revenueBasis:'net',revenueMetric:'total'};
+  check('Cross-origin measurement writes are refused',(await request(plans,{method:'POST',body:report,origin:'https://foreign.invalid'})).status===403);
+  check('Foreign experiment plans cannot be read through another publisher',(await request(base(other)+'/'+record.id+'/measurement/plans')).status===404);
+  const planSaved=await json(plans,{method:'POST',body:report},201);measurementPlan=planSaved;
+  check('Compiled measurement plans bind the verified experiment and source ZIP',planSaved.created&&planSaved.plan.experimentId===record.id&&planSaved.plan.zipSha256===record.bundle.zipSha256&&planSaved.plan.measurement.collection==='disabled');
+  const planRetry=await json(plans,{method:'POST',body:report});
+  check('Report-plan retries retain one immutable identity',!planRetry.created&&planRetry.plan.id===planSaved.plan.id&&planRetry.planSha256===planSaved.planSha256);
+  const planPath=plans+'/'+planSaved.plan.id,template=await request(planPath+'/template.csv');
+  check('Compiled report template uses joint TestId and Variant dimensions',template.status===200&&/date,TestId,Variant,/.test(await template.text()));
+  const objectsBeforePreview=JSON.stringify((await bucket.list()).objects.map(row=>[row.key,row.etag]));
+  const csv='date,TestId,Variant,impressions,revenue,adRequests,responsesServed,measurableImpressions,viewableImpressions\n'+['A','B'].map(side=>`2026-11-18,${record.testId},${side},10,1.23,20,10,8,6`).join('\n')+'\n';
+  const preview=await json(planPath+'/preview',{method:'POST',body:{csv}});
+  check('Ad request and impression counts cannot enable page RPM or a winner',preview.revenueReady===false&&preview.winner===null&&preview.upliftPercent===null&&['A','B'].every(side=>preview.totals[side].receivedAssignments===null&&preview.totals[side].pageRpm===null));
+  check('CSV preview has no R2 persistence or publisher side effect',JSON.stringify((await bucket.list()).objects.map(row=>[row.key,row.etag]))===objectsBeforePreview&&await persistent()===dbBefore&&await sourceObjects()===sourcesBefore);
+  check('Compiled preview rejects an ambiguous raw Key-values CSV',(await request(planPath+'/preview',{method:'POST',body:{csv:'Key-values,Total impressions,Total revenue\nVariant=A,10,1.23\n'}})).status===422);
   // Corrupt only ephemeral fixture objects; the real R2-backed readers must refuse their bytes.
   const zipKey=`site-experiments/v1/${site}/zips/${record.id}.zip`,zipObject=await bucket.get(zipKey);
   const corruptZip=bytes.slice();corruptZip[corruptZip.length-1]^=1;
@@ -188,6 +205,8 @@ try{
   await mf.dispose();mf=null;await start();
   const restarted=await json(base(site)+'/'+record.id);
   check('Actual workerd restart preserves identity, ZIP and audit history',restarted.record.id===record.id&&restarted.events.length===2&&hash(await download(record.id))===hash(bytes));
+  const restartedPlan=await json(base(site)+'/'+record.id+'/measurement/plans/'+measurementPlan.plan.id);
+  check('Actual workerd restart preserves immutable reporting plans',restartedPlan.planSha256===measurementPlan.planSha256&&JSON.stringify(restartedPlan.plan)===JSON.stringify(measurementPlan.plan));
   const retried=await json(base(site),{method:'POST',body:input});
   check('Retry after restart remains idempotent',retried.created===false&&retried.record.id===record.id&&(await json(base(site))).tests.length===1);
   check('Restart and repeated reads preserve source packages and publisher channels',await persistent()===dbBefore&&await sourceObjects()===sourcesBefore);

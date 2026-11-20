@@ -73,7 +73,7 @@ try{
     const input={site:SITE,a:A,b,trafficBPercent,testId:`main_ab_${name}`,name:`MAIN 3.25.1 ${name}`};
     assert.equal((await checkAbCompatibility(input)).compatible,true);
     const bundle=await composeAbBundle(input);
-    assert.equal(bundle.record.loader.version,'1.0.2','This native proof pins the new guarded loader.');
+    assert.equal(bundle.record.loader.version,'1.1.0','This native proof pins the guarded memory-measurement loader.');
     for(const [side,p]of [['A',A],['B',b]])assert.equal(bundle.record.arms[side].sha256,hash(p.files['ads.min.js']));
     assert.deepEqual(bundle.files['prebid.js'],prebidBytes);
     await put(`bundles/${name}/bundle.zip`,bundle.zip);await put(`bundles/${name}/record.json`,JSON.stringify(bundle.record,null,2)+'\n');

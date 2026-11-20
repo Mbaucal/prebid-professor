@@ -39,7 +39,7 @@ def read_bundle(name):
     record = json.loads((fixtures / 'bundles' / name / 'record.json').read_text())
     data = (fixtures / 'bundles' / name / 'bundle.zip').read_bytes()
     assert sha256(data) == record['bundle']['zipSha256'] == manifest['bundles'][name]['zipSha256'], ('ZIP checksum', name)
-    assert record['loader'] == manifest['bundles'][name]['loader'] and record['loader']['version'] == '1.0.2', ('guarded loader pin', name)
+    assert record['loader'] == manifest['bundles'][name]['loader'] and record['loader']['version'] == '1.1.0', ('guarded loader pin', name)
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         files = {info.filename: archive.read(info) for info in archive.infolist()}
     assert sorted(files) == [entry['path'] for entry in record['bundle']['files']], ('bundle file list', name, sorted(files))
@@ -334,7 +334,7 @@ def run(browser, case, width):
             cdn.holds[ARM['B']].set()
         wait_until(page, SETTLED)
         if case.get('gpt') == 'late':
-            # 1.0.2 waits for GPT before inserting an arm, so labels are usable
+            # The guarded loader waits for GPT before inserting an arm, so labels are usable
             # before the first runtime can execute.
             assert page.evaluate('Array.isArray(window.googletag && window.googletag.cmd) && !window.__testAds'), 'GPT must load last'
             assert not arm_log({'cdn':cdn.log}),'No arm may run before the label gate exists'
