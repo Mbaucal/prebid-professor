@@ -40,6 +40,9 @@ export const accountsNeeding=(config,snapshot)=>config.enablePrebid===true
   ?savedBidderAccounts(snapshot,{activeOnly:true}).filter(account=>account.bidder!==account.baseAdapter||account.schain.mode!=='inherit').map(account=>account.bidder):[];
 /** Enabled bidder rules (requireBidderRulesRuntime); none while Prebid is off. */
 export const rulesNeeded=config=>config?.enablePrebid===true&&config?.runtimeControls?.bidderRules?.enabled===true;
-/** The capabilities a script needs for saved {accounts, rules, cache}. */
-export const neededCapabilities=needs=>[...(needs.accounts.length?['bidder-accounts']:[]),...(needs.rules?['bidder-rules']:[]),...(needs.cache?['bid-cache']:[])];
-export const CAPABILITY_NAMES=Object.freeze({'bidder-accounts':'bidder accounts','bidder-rules':'bidder rules','bid-cache':'bid caching'});
+/** An enabled adaptive auction timeout (requireAdaptiveTimeoutRuntime), so the names never send a site to a script
+ * that would then refuse it. Read from the saved setting directly: a line without that setting never has it on. */
+export const timeoutNeeded=config=>config?.adaptiveAuctionTimeout?.enabled===true;
+/** The capabilities a script needs for saved {accounts, rules, cache, timeout}. */
+export const neededCapabilities=needs=>[...(needs.accounts.length?['bidder-accounts']:[]),...(needs.rules?['bidder-rules']:[]),...(needs.cache?['bid-cache']:[]),...(needs.timeout?['adaptive-auction-timeout']:[])];
+export const CAPABILITY_NAMES=Object.freeze({'bidder-accounts':'bidder accounts','bidder-rules':'bidder rules','bid-cache':'bid caching','adaptive-auction-timeout':'adaptive timeout'});

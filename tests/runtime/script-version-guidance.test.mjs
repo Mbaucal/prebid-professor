@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runtimeCatalog,previewInput,buildArtifactCandidate} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {assertSnapshotCompilerCompatibility} from '../../worker/compiler-input-compatibility.mjs';
-import {requireSupportedCacheGenerator,bidCacheGeneratorMessage} from '../../worker/site-runtime/prebid-cache-settings.mjs';
+import {requireSupportedCacheGenerator,bidCacheGeneratorMessage,bidCacheScriptVersions} from '../../worker/site-runtime/prebid-cache-settings.mjs';
+import {DEFAULT_ADAPTIVE_TIMEOUT} from '../../shared/auction-timeout/settings.mjs';
 import {configurationErrorMessage} from '../../worker/runtime/configuration-error.mjs';
 import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
@@ -22,6 +23,7 @@ import {adminAuditStore} from '../support/admin-audit-store.mjs';
 const TS='20261116_120000';
 const RULES={schemaVersion:1,enabled:true,rules:[{id:'r',name:'RS only',enabled:true,bidder:'openx',positions:[],countries:{mode:'include',values:['RS'],unknown:'skip'},devices:['desktop','tablet','mobile']}]};
 const CACHE={enabled:true,maxBidAgeSeconds:60};
+const TIMEOUT={...DEFAULT_ADAPTIVE_TIMEOUT,enabled:true};
 const numeric=version=>/^\d+\.\d+\.\d+$/.test(version);
 const parts=version=>version.split('.').map(Number);
 const byVersion=(a,b)=>{const x=parts(a.version),y=parts(b.version);return x[0]-y[0]||x[1]-y[1]||x[2]-y[2];};
@@ -44,6 +46,10 @@ const CASES={
   'accounts+cache':{make:()=>configure(runtime324Site({}),c=>{c.runtimeControls.bidderRules={schemaVersion:1,enabled:false,rules:[]};}),needs:['bidder-accounts','bid-cache']},
   'accounts+rules':{make:()=>runtime324Site({cache:false}),needs:['bidder-accounts','bidder-rules']},
   'accounts+rules+cache':{make:()=>runtime324Site({}),needs:['bidder-accounts','bidder-rules','bid-cache']},
+  // An enabled adaptive auction timeout is refused by its own check, so the named versions must also have it.
+  'rules+timeout':{make:()=>configure(bidCacheSite({}),c=>{c.runtimeControls.bidderRules=RULES;c.adaptiveAuctionTimeout=TIMEOUT;}),needs:['bidder-rules','adaptive-auction-timeout']},
+  'accounts+timeout':{make:()=>configure(runtime324Site({cache:false}),c=>{c.runtimeControls.bidderRules={schemaVersion:1,enabled:false,rules:[]};c.adaptiveAuctionTimeout=TIMEOUT;}),needs:['bidder-accounts','adaptive-auction-timeout']},
+  'accounts+rules+cache+timeout':{make:()=>configure(runtime324Site({}),c=>{c.adaptiveAuctionTimeout=TIMEOUT;}),needs:['bidder-accounts','bidder-rules','bid-cache','adaptive-auction-timeout']},
 };
 const selectable=runtimeCatalog.filter(r=>numeric(r.version));
 // What Script setup and Generate check for one saved site and one selected script (null when accepted).
@@ -141,8 +147,8 @@ test('patterns for the guidance are anchored and refuse altered text',()=>{
 // Script setup and Releases read the saved site through the Worker services.
 const fixtures=[];
 test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
-function savedSite({cache=false,rules=false,alias=false,version}){
-  const f=adminAuditStore({config:{...(cache?{prebidBidCache:CACHE}:{}),runtimeControls:{sticky:{bottomAdUnitId:''},...(rules?{bidderRules:{...RULES,rules:[{...RULES.rules[0],bidder:'pubmatic'}]}}:{})}}});
+function savedSite({cache=false,rules=false,alias=false,timeout=false,version}){
+  const f=adminAuditStore({config:{...(cache?{prebidBidCache:CACHE}:{}),...(timeout?{adaptiveAuctionTimeout:TIMEOUT}:{}),runtimeControls:{sticky:{bottomAdUnitId:''},...(rules?{bidderRules:{...RULES,rules:[{...RULES.rules[0],bidder:'pubmatic'}]}}:{})}}});
   fixtures.push(f);
   if(alias)f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,account_json) VALUES('alias','audit-site','pm_ag','{}',?)").run(JSON.stringify({baseAdapter:'pubmatic',displayName:'Agency',schain:{mode:'none'}}));
   if(version){
@@ -234,13 +240,29 @@ test('versions come from release capabilities: the smallest step and the newest,
   const r322=runtimeCatalog.find(x=>x.version==='3.22.0');
   assert.equal(scriptGuidance({accounts:['pm_ag'],rules:true,cache:false},r322),`Script 3.22.0 cannot apply bidder accounts (pm_ag). To keep them with your saved bidder rules, select ${choice(expectedVersions(['bidder-accounts','bidder-rules']))} in Script setup and save. Your saved settings and previous packages are unchanged.`);
   assert.equal(scriptGuidance({accounts:['pm_ag'],rules:true,cache:true},runtimeCatalog.find(x=>x.version==='3.24.0')),null);
+  // An enabled adaptive timeout is kept like bid caching: only versions with it are named, and turning bidder rules
+  // off alone is not offered, because the script would still refuse the timeout.
+  for(const needs of [['bidder-rules','adaptive-auction-timeout'],['bidder-accounts','adaptive-auction-timeout'],['bidder-accounts','bidder-rules','bid-cache','adaptive-auction-timeout']])
+    assert.equal(scriptVersionText(needs,MAIN_3260),'3.26.0 (Preview)',needs.join('+'));
+  const r3212=runtimeCatalog.find(x=>x.version==='3.21.2');
+  const timeoutRules=scriptGuidance({accounts:[],rules:true,cache:false,timeout:true},r3212);
+  assert.equal(timeoutRules,`Script 3.21.2 cannot apply enabled bidder rules. To keep them with your saved adaptive timeout, select ${choice(expectedVersions(['bidder-rules','adaptive-auction-timeout']))} in Script setup and save. Your saved settings and previous packages are unchanged.`);
+  const timeoutAll=scriptGuidance({accounts:['pm_ag'],rules:true,cache:true,timeout:true},r322);
+  assert.equal(timeoutAll,`Script 3.22.0 cannot apply bidder accounts (pm_ag). To keep them with your saved bidder rules, bid caching and adaptive timeout, select ${choice(expectedVersions(['bidder-accounts','bidder-rules','bid-cache','adaptive-auction-timeout']))} in Script setup and save. Your saved settings and previous packages are unchanged.`);
+  assert.equal(scriptGuidance({accounts:[],rules:true,cache:false,timeout:true},runtimeCatalog.find(x=>x.version==='3.26.0')),null);
+  const timeoutNone=scriptGuidance({accounts:['a1'],rules:true,cache:true,timeout:true},{version:'4.0.2',capabilities:['a']},history);
+  assert.equal(timeoutNone,'Script 4.0.2 cannot apply bidder accounts (a1) or enabled bidder rules. No available script version applies bidder accounts, bidder rules, bid caching and adaptive timeout together. Your saved settings and previous packages are unchanged.');
+  for(const message of [timeoutRules,timeoutAll,timeoutNone])assert.equal(configurationErrorMessage(Error(message)),message);
+  // The bid caching panels name the same versions.
+  assert.deepEqual(bidCacheScriptVersions({enablePrebid:true,prebidBidCache:CACHE,adaptiveAuctionTimeout:TIMEOUT},[]),expectedVersions(['bid-cache','adaptive-auction-timeout']));
+  assert.deepEqual(bidCacheScriptVersions({enablePrebid:true,prebidBidCache:CACHE,adaptiveAuctionTimeout:{...TIMEOUT,enabled:false}},[]),expectedVersions(['bid-cache']));
 });
 
 // Panel copy reads the versions from the server payloads, so it follows the saved options and the registry.
 test('the Bidder rules and Bidders payloads name the versions for their option plus the saved ones',async()=>{
   const {getBidderRuleSettings}=await import('../../worker/site-runtime/bidder-rule-settings.mjs');
   const {listBidders}=await import('../../worker/bidders.ts');
-  for(const [options,needs] of [[{},[]],[{cache:true},['bid-cache']],[{rules:true,alias:true},['bidder-accounts','bidder-rules']],[{cache:true,rules:true,alias:true,version:'3.23.0'},['bidder-accounts','bidder-rules','bid-cache']]]){
+  for(const [options,needs] of [[{},[]],[{cache:true},['bid-cache']],[{rules:true,alias:true},['bidder-accounts','bidder-rules']],[{cache:true,rules:true,alias:true,version:'3.23.0'},['bidder-accounts','bidder-rules','bid-cache']],[{timeout:true},['adaptive-auction-timeout']],[{cache:true,alias:true,timeout:true},['bidder-accounts','bid-cache','adaptive-auction-timeout']]]){
     const f=savedSite(options),label=JSON.stringify(options);
     const rules=await getBidderRuleSettings(f.env,'audit-site');
     assert.deepEqual(rules.scriptVersions,expectedVersions(['bidder-rules',...needs]),label);assert.equal(rules.runtimeEligible,false,label);

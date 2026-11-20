@@ -41,7 +41,7 @@ export function publicRuntimeHistory<T extends { version: string }>(history: rea
   return entries;
 }
 
-// Server-provided version labels as one choice: "3.22.2 (Preview) or 3.24.0 (Preview)".
+// Server-provided version labels as one choice: "3.22.2 (Preview) or 3.26.0 (Preview)".
 export function versionChoice(labels: readonly string[], word = 'or') {
   return labels.length < 2 ? labels[0] ?? '' : `${labels.slice(0, -1).join(', ')} ${word} ${labels.at(-1)}`;
 }
