@@ -1,7 +1,8 @@
 /** Admin wording for saved options that the selected script cannot apply: bidder accounts, bidder rules and bid
- * caching. It names the script versions that apply every saved option at once, read from the registered release
- * capabilities, so a new release changes the text without an edit here. Only the wording is decided here: which
- * settings a script accepts stays with the existing guards, and generated packages are unchanged. */
+ * caching. It names at most two script versions that apply every saved option at once (scriptVersionsWith), read
+ * from the registered release capabilities and runtime notices, so a new release or notice changes the text without
+ * an edit here and the text never grows with the number of releases. Only the wording is decided here: which settings
+ * a script accepts stays with the existing guards, and generated packages are unchanged. */
 import {runtimeReleaseHistory} from '../runtime/runtime-release-history.mjs';
 import {runtimeNotices} from '../../shared/runtime-notices.mjs';
 import {savedBidderAccounts} from '../../shared/bidder-accounts/snapshot.mjs';
@@ -11,25 +12,27 @@ const RELEASE=/^(\d+)\.(\d+)\.(\d+)$/;
 const parts=version=>RELEASE.exec(version)?.slice(1).map(Number);
 const byVersion=(a,b)=>{const x=parts(a.version),y=parts(b.version);return x[0]-y[0]||x[1]-y[1]||x[2]-y[2];};
 const covers=(release,capabilities)=>capabilities.every(capability=>release.capabilities.includes(capability));
-const noticed=release=>runtimeNotices.some(notice=>notice.version===release.version&&notice.runtimeSha256===release.codeSha256);
+const noticed=(release,notices)=>notices.some(notice=>notice.version===release.version&&notice.runtimeSha256===release.codeSha256);
 const label=release=>release.version+(release.channel==='preview'?' (Preview)':'');
 const list=(items,word)=>items.length<2?items[0]??'':`${items.slice(0,-1).join(', ')} ${word} ${items.at(-1)}`;
 const named=codes=>codes.length>3?`${codes.slice(0,3).join(', ')} and ${codes.length-3} more`:codes.join(', ');
 
-/** Releases offered in Script setup that have every listed capability, oldest first. A release with a runtime
- * notice (shared/runtime-notices.mjs) is left out, and so is a release that a newer patch of the same minor line,
- * with all of its capabilities, supersedes (3.22.2 for 3.22.1). */
-export function scriptVersionsWith(capabilities,history=runtimeReleaseHistory){
-  const offered=history.filter(release=>parts(release.version)&&covers(release,capabilities)&&!noticed(release));
-  return offered.filter(release=>{
-    const [major,minor,patch]=parts(release.version);
-    return !offered.some(other=>{const [m,n,p]=parts(other.version);return m===major&&n===minor&&p>patch&&covers(other,release.capabilities);});
-  }).sort(byVersion);
+/** The releases named for a set of capabilities, oldest first, at most two. Offered releases are the numeric
+ * registry releases with every listed capability and no runtime notice (shared/runtime-notices.mjs). Of these, the
+ * smallest step is the release with the fewest capabilities, the newest of those on a tie (3.22.2 rather than 3.22.1),
+ * and the other is the newest offered release. When both are the same release it is named once; when no release is
+ * offered the list is empty. A notice added later to the smallest step moves it to the next one. */
+export function scriptVersionsWith(capabilities,history=runtimeReleaseHistory,notices=runtimeNotices){
+  const offered=history.filter(release=>parts(release.version)&&covers(release,capabilities)&&!noticed(release,notices)).sort(byVersion);
+  if(!offered.length)return [];
+  const size=release=>new Set(release.capabilities).size,fewest=Math.min(...offered.map(size));
+  const smallest=offered.filter(release=>size(release)===fewest).at(-1),newest=offered.at(-1);
+  return smallest===newest?[newest]:[smallest,newest];
 }
-/** ['3.22.2 (Preview)', '3.24.0 (Preview)'] for the panels, which join them like scriptVersionText. */
-export const scriptVersionLabels=(capabilities,history)=>scriptVersionsWith(capabilities,history).map(label);
-/** "3.22.2 (Preview) or 3.24.0 (Preview)"; empty when no release has every capability. */
-export const scriptVersionText=(capabilities,history)=>list(scriptVersionLabels(capabilities,history),'or');
+/** ['3.22.2 (Preview)', '3.26.0 (Preview)'] for the panels, which join them like scriptVersionText. */
+export const scriptVersionLabels=(capabilities,history,notices)=>scriptVersionsWith(capabilities,history,notices).map(label);
+/** "3.22.2 (Preview) or 3.26.0 (Preview)", or one version; empty when no offered release has every capability. */
+export const scriptVersionText=(capabilities,history,notices)=>list(scriptVersionLabels(capabilities,history,notices),'or');
 
 /** The saved options that only some scripts apply, by the same tests as their guards: active bidder accounts with an
  * alias or their own SChain (requireBidderAccounts), enabled bidder rules (requireBidderRulesRuntime) and bid caching

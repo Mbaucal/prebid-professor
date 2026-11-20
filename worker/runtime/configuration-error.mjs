@@ -3,10 +3,11 @@
  * input adapters throw plain Errors, so keep their allowlist here in admin code. */
 const GENERIC = 'The saved settings are not supported by this built-in runtime. Resolve configuration validation first.';
 // Script version guidance for bidder accounts, bidder rules and bid caching (site-runtime/script-version-guidance.mjs).
+// It names one or two versions (the smallest step and the newest), never more.
 const RELEASE = String.raw`\d{1,3}\.\d{1,3}\.\d{1,3}`, CHOICE = String.raw`${RELEASE}(?: \(Preview\))?`;
 const ACCOUNT = '[a-z][a-z0-9_-]{0,63}', OPTION = '(?:bidder accounts|bidder rules|bid caching)';
 const SCRIPT_GUIDANCE = new RegExp(`^(?:Script ${RELEASE}|This script) cannot apply (?:bidder accounts \\(${ACCOUNT}(?:, ${ACCOUNT}){0,2}(?: and [1-9]\\d{0,3} more)?\\)(?: or enabled bidder rules)?|enabled bidder rules)\\. `
-  + `(?:(?:To keep them with your saved ${OPTION}(?: and ${OPTION})?, select|Select) ${CHOICE}(?:, ${CHOICE}){0,8}(?: or ${CHOICE})? in Script setup and save(?:, or turn off bidder rules)?`
+  + `(?:(?:To keep them with your saved ${OPTION}(?: and ${OPTION})?, select|Select) ${CHOICE}(?: or ${CHOICE})? in Script setup and save(?:, or turn off bidder rules)?`
   + `|No available script version applies ${OPTION}(?:(?:, | and )${OPTION}){0,2} together)\\. Your saved settings and previous packages are unchanged\\.$`, 'u');
 const diagnostics = [
   SCRIPT_GUIDANCE,

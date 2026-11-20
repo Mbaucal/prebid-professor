@@ -4,13 +4,14 @@ import {runtimeCatalog,previewInput,descriptorForPin,buildArtifactCandidate} fro
 import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {fixture,configure,checkedFixture,TS} from './artifact-fixture.mjs';
 import {defaultBidderRules} from '../../shared/bidder-rules/settings.mjs';
+import {scriptVersionText} from '../../worker/site-runtime/script-version-guidance.mjs';
 const current=runtimeCatalog.find(row=>row.version==='3.22.0');
 const policy=()=>({schemaVersion:1,enabled:true,rules:[{id:'rs',name:'RS only',bidder:'ix',enabled:true,positions:['P1'],countries:{mode:'include',values:['RS'],unknown:'skip'},devices:['desktop']}]});
 
 test('every older bundled runtime rejects enabled rules with an actionable version choice',()=>{
   assert(current?.capabilities.includes('bidder-rules'));
   const snapshot=configure(fixture(),c=>{c.runtimeControls.bidderRules=policy();});
-  for(const descriptor of runtimeCatalog.filter(row=>!row.capabilities.includes('bidder-rules')))assert.throws(()=>previewInput(snapshot,descriptor,TS),/cannot apply enabled bidder rules\. Select 3\.22\.2 \(Preview\) or 3\.24\.0 \(Preview\) in Script setup and save, or turn off bidder rules\./);
+  for(const descriptor of runtimeCatalog.filter(row=>!row.capabilities.includes('bidder-rules')))assert.throws(()=>previewInput(snapshot,descriptor,TS),error=>error.message.includes(`cannot apply enabled bidder rules. Select ${scriptVersionText(['bidder-rules'])} in Script setup and save, or turn off bidder rules.`));
   assert.deepEqual(previewInput(snapshot,current,TS).bidderRules,policy());
   assert.equal(descriptorForPin(pinRuntime(current)).version,'3.22.0');
 });
