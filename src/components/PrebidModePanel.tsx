@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { versionChoice } from '../site-workspace/runtime-labels';
 
 type Props = {
   publisherId: string;
@@ -13,8 +14,9 @@ type ModePayload = {
   bidCachePositions: string[];
   /** The first script version that applies bid caching. */
   bidCacheRuntimeVersion: string;
-  /** The version to select for bid caching, such as "3.24.0 (Preview)"; empty when none applies it with the saved options. */
-  bidCacheScriptVersion: string;
+  /** The versions to select for bid caching with the site's other saved options, at most two, such as
+   * ["3.24.0 (Preview)", "3.26.0 (Preview)"]; Generate's refusal names the same. Empty when none applies them. */
+  bidCacheScriptVersions: string[];
   runtimeSupportsBidCache: boolean;
   namedScriptLibrary: boolean;
   /** Positions of the reviewed named-script inventory; empty when the site has no named-script library. */
@@ -147,7 +149,7 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
   const unused=Object.entries(positionOverrides).filter(([code])=>!payload?.bidCachePositions.includes(code));
   const savedOverrides=dropUnused?Object.fromEntries(applied):positionOverrides;
   const hasCache=cacheEnabled||applied.some(([,on])=>on);
-  const cacheScript=payload?.bidCacheScriptVersion?`script ${payload.bidCacheScriptVersion}`:'a compatible script';
+  const cacheScript=payload?.bidCacheScriptVersions?.length?`script ${versionChoice(payload.bidCacheScriptVersions)}`:'a compatible script';
   // Saved settings that would reuse bids (the site default, or a position override on).
   const savedCache=!!payload&&(payload.prebidMode.bidCache.enabled||Object.values(positionOverrides).some(Boolean));
 

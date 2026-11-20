@@ -1,7 +1,8 @@
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
+import {versionChoice} from '../site-workspace/runtime-labels';
 
 export type BidCachePayload={revision:string;bidCacheAvailable:boolean;bidCachePositions:string[];
-  bidCacheRuntimeVersion:string;bidCacheScriptVersion:string;runtimeSupportsBidCache:boolean;namedScriptLibrary:boolean;namedScriptPositions:string[];
+  bidCacheRuntimeVersion:string;bidCacheScriptVersions:string[];runtimeSupportsBidCache:boolean;namedScriptLibrary:boolean;namedScriptPositions:string[];
   prebidMode:{enabled:boolean;bidCache:{enabled:boolean;maxBidAgeSeconds:number;positionOverrides?:Record<string,boolean>}}};
 export async function fetchBidCacheSettings(site:string,body?:unknown):Promise<BidCachePayload>{
   const response=await fetch(`/api/publishers/${encodeURIComponent(site)}/prebid-mode`,{
@@ -52,7 +53,7 @@ export default function PositionBidCachePanel({publisherId,code,onClose,onSaved}
       <p><strong>Effective: {!data.prebidMode.enabled?'Inactive — Prebid is off':effective?'On':'Off'}</strong></p>
       <p>{data.prebidMode.enabled?'Every refresh still starts a new auction.':'When Prebid is enabled, every refresh starts a new auction.'} {effective?'Valid, unused bids from earlier auctions for this position may also compete.':'This position uses only bids from its current auction.'}</p>
       {effective?<p>Maximum cached bid age: {data.prebidMode.bidCache.maxBidAgeSeconds} seconds, or less if its original TTL expires.</p>:null}
-      <p>{data.runtimeSupportsBidCache?'Applies to the next package generated with the selected script.':data.bidCacheScriptVersion?`Applies to the next package generated with script ${data.bidCacheScriptVersion}. Select that version in Script setup to use it.`:'Applies to the next package generated with a compatible script. Select one in Script setup to use it.'}{!data.namedScriptLibrary?'':data.namedScriptPositions.includes(code)?' New named scripts in Releases → Scripts and A/B tests use it too.':' Named scripts in Releases → Scripts and A/B tests do not include this position; an override here stops new named scripts until it is set to Use site setting.'}</p>
+      <p>{data.runtimeSupportsBidCache?'Applies to the next package generated with the selected script.':data.bidCacheScriptVersions?.length?`Applies to the next package generated with script ${versionChoice(data.bidCacheScriptVersions)}. Select ${data.bidCacheScriptVersions.length>1?'one of these versions':'that version'} in Script setup to use it.`:'Applies to the next package generated with a compatible script. Select one in Script setup to use it.'}{!data.namedScriptLibrary?'':data.namedScriptPositions.includes(code)?' New named scripts in Releases → Scripts and A/B tests use it too.':' Named scripts in Releases → Scripts and A/B tests do not include this position; an override here stops new named scripts until it is set to Use site setting.'}</p>
       <button className="button primary" disabled={busy||!dirty||!data.prebidMode.enabled} onClick={()=>void save()}>{busy?'Saving…':'Save position setting'}</button>
     </>:data?<p>{code} cannot reuse bids. Only enabled ATF and BTF banner positions can; TakeOver and Outstream positions always use the current auction.</p>:null}
     {error?<button className="button secondary" disabled={busy} onClick={()=>void reload()}>Reload bid cache settings</button>:null}

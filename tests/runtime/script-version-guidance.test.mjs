@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runtimeCatalog,previewInput,buildArtifactCandidate} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {assertSnapshotCompilerCompatibility} from '../../worker/compiler-input-compatibility.mjs';
-import {requireSupportedCacheGenerator,BID_CACHE_GENERATOR_MESSAGE} from '../../worker/site-runtime/prebid-cache-settings.mjs';
+import {requireSupportedCacheGenerator,bidCacheGeneratorMessage} from '../../worker/site-runtime/prebid-cache-settings.mjs';
 import {configurationErrorMessage} from '../../worker/runtime/configuration-error.mjs';
 import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
@@ -48,7 +48,7 @@ const CASES={
 const selectable=runtimeCatalog.filter(r=>numeric(r.version));
 // What Script setup and Generate check for one saved site and one selected script (null when accepted).
 function refusal(snapshot,descriptor){
-  try{requireSupportedCacheGenerator(JSON.parse(snapshot.config.config_json),descriptor);assertSnapshotCompilerCompatibility(snapshot,descriptor);previewInput(snapshot,descriptor,TS);return null;}
+  try{requireSupportedCacheGenerator(JSON.parse(snapshot.config.config_json),descriptor,snapshot.bidders);assertSnapshotCompilerCompatibility(snapshot,descriptor);previewInput(snapshot,descriptor,TS);return null;}
   catch(error){return error.message;}
 }
 const namedVersions=(message,selected)=>[...new Set(message.match(/\b\d+\.\d+\.\d+\b/g)??[])].filter(version=>version!==selected);
@@ -65,12 +65,14 @@ test('the guidance names the smallest step and the newest release, never more th
 });
 
 test('a script without bidder rules or accounts names only versions that apply every saved option, and each of them is accepted',async()=>{
-  let checked=0,other=0;
+  let checked=0,other=0,cached=0;
   for(const [name,{make,needs}] of Object.entries(CASES))for(const descriptor of selectable){
-    const message=refusal(make(),descriptor);
+    const snapshot=make(),message=refusal(snapshot,descriptor);
     if(needs.every(capability=>descriptor.capabilities.includes(capability))){assert.equal(message,null,`${name} on ${descriptor.version}`);continue;}
     assert.ok(message,`${name} on ${descriptor.version} is refused`);
-    if(message===BID_CACHE_GENERATOR_MESSAGE){assert.ok(!descriptor.capabilities.includes('bid-cache'));continue;}
+    if(message===bidCacheGeneratorMessage(JSON.parse(snapshot.config.config_json),snapshot.bidders)){
+      // Generate's bid caching refusal names the same versions as this guidance would.
+      assert.ok(!descriptor.capabilities.includes('bid-cache'));assert.ok(message.includes(`Select ${choice(expectedVersions(needs))} in Script setup and save;`),message);cached++;continue;}
     // Older engines may first refuse another saved setting (size maps, contextual signals); that reason is not this guidance.
     if(!/bidder rules|bidder accounts/i.test(message)){other++;continue;}
     const label=`${name} on ${descriptor.version}: ${message}`;
@@ -88,7 +90,7 @@ test('a script without bidder rules or accounts names only versions that apply e
     assert.equal(configurationErrorMessage(Object.assign(Error(message),{status:422})),message,label);
     checked++;
   }
-  assert.ok(checked>=30&&other<checked,`checked ${checked} refusals, ${other} for other settings`);
+  assert.ok(checked>=30&&other<checked&&cached>0,`checked ${checked} refusals, ${other} for other settings, ${cached} for bid caching`);
 });
 
 test('the bidder rules off-switch is offered only when turning rules off lets that script apply the saved options',()=>{
@@ -105,7 +107,7 @@ test('the bidder rules off-switch is offered only when turning rules off lets th
       assert.ok(after===null||!/bidder rules|bidder accounts|bid cach/i.test(after),label);offered++;
     }else{
       assert.doesNotMatch(message,/turn off/,label);
-      assert.ok(after===BID_CACHE_GENERATOR_MESSAGE||/cannot apply bidder accounts/.test(after),label);withheld++;
+      assert.ok(/^Bid caching needs a compatible script version\. /.test(after)||/cannot apply bidder accounts/.test(after),label);withheld++;
     }
   }
   assert.ok(offered>0&&withheld>0,`offered ${offered}, withheld ${withheld}`);
@@ -182,7 +184,8 @@ test('Script setup on 3.21.2 with bid caching does not offer turning bidder rule
   // Turning rules off on 3.21.2 would only lead to the bid caching refusal.
   const config=f.readConfig();config.runtimeControls.bidderRules.enabled=false;f.writeConfig(config);
   assert.equal((await siteRuntimeSettings(f.env,'audit-site')).validationIssue,null);
-  assert.equal((await packageState(f.env,'audit-site')).error,BID_CACHE_GENERATOR_MESSAGE);
+  assert.equal((await packageState(f.env,'audit-site')).error,bidCacheGeneratorMessage(f.readConfig(),[]));
+  assert.ok(bidCacheGeneratorMessage(f.readConfig(),[]).includes(`Select ${choice(expectedVersions(['bid-cache']))} in Script setup and save;`));
 });
 
 test('versions come from release capabilities: the smallest step and the newest, notices, ties, one release and none',async()=>{

@@ -8,8 +8,8 @@ import {BID_CACHE_RUNTIME_VERSION, bidCacheEligibleCodes} from '../../shared/bid
 import {CACHE_POSITIONS} from '../../worker/experiments/position-cache-settings.mjs';
 import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
 import {runtimeNotices} from '../../shared/runtime-notices.mjs';
-import {BID_CACHE_GENERATOR_MESSAGE, MAX_POSITION_OVERRIDES, bidCacheOverrides, bidCacheSettings, requireEligibleOverrides} from '../../worker/site-runtime/prebid-cache-settings.mjs';
-import {scriptVersionLabels} from '../../worker/site-runtime/script-version-guidance.mjs';
+import {BID_CACHE_GENERATOR_MESSAGE, MAX_POSITION_OVERRIDES, bidCacheGeneratorMessage, bidCacheOverrides, bidCacheScriptVersions, bidCacheSettings, requireEligibleOverrides, requireSupportedCacheGenerator} from '../../worker/site-runtime/prebid-cache-settings.mjs';
+import {packageState} from '../../worker/site-runtime/releases.mjs';
 
 // A synthetic site that is not Tanjug: its own inventory, its own GAM path.
 const SITE = 'audit-site';
@@ -207,37 +207,95 @@ test('the payload says whether the selected script version applies bid caching',
   assert.equal(state.runtimeSupportsBidCache, true);
 });
 
-test('the panels name the newest script with bid caching that has no runtime notice, never "or later"', async () => {
-  // Independent of the server code: numeric registry releases with bid caching, without a runtime notice.
-  const numbers = version => version.split('.').map(Number);
-  const offered = runtimeReleaseHistory.filter(release => /^\d+\.\d+\.\d+$/.test(release.version) && release.capabilities.includes('bid-cache')
-    && !runtimeNotices.some(notice => notice.version === release.version && notice.runtimeSha256 === release.codeSha256))
-    .sort((a, b) => { const x = numbers(a.version), y = numbers(b.version); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; });
-  const newest = offered.at(-1), expected = newest.version + (newest.channel === 'preview' ? ' (Preview)' : '');
-  assert.equal(expected, '3.24.0 (Preview)');
+// Independent of the server code: of the numeric registry releases with bid caching and the other needed capabilities,
+// without a runtime notice, the smallest step (fewest capabilities, newest on a tie) and the newest, oldest first.
+const numbers = version => version.split('.').map(Number);
+const byVersion = (a, b) => { const x = numbers(a.version), y = numbers(b.version); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; };
+function cacheVersions(needs, history = runtimeReleaseHistory, notices = runtimeNotices) {
+  const offered = history.filter(release => /^\d+\.\d+\.\d+$/.test(release.version) && ['bid-cache', ...needs].every(capability => release.capabilities.includes(capability))
+    && !notices.some(notice => notice.version === release.version && notice.runtimeSha256 === release.codeSha256)).sort(byVersion);
+  if (!offered.length) return [];
+  const fewest = Math.min(...offered.map(release => release.capabilities.length));
+  return [...new Set([offered.filter(release => release.capabilities.length === fewest).at(-1), offered.at(-1)])].map(release => release.version + (release.channel === 'preview' ? ' (Preview)' : ''));
+}
+const choice = labels => labels.length < 2 ? labels[0] ?? '' : `${labels.slice(0, -1).join(', ')} or ${labels.at(-1)}`;
+const MAIN_3260 = runtimeReleaseHistory.filter(release => /^\d+\.\d+\.\d+$/.test(release.version) && byVersion(release, {version: '3.26.0'}) <= 0);
+const rulesOn = {schemaVersion: 1, enabled: true, rules: []};
+function withAlias(f) {
+  f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,account_json) VALUES('alias','audit-site','pm_ag','{}',?)").run(JSON.stringify({baseAdapter: 'pubmatic', displayName: 'Agency', schain: {mode: 'none'}}));
+  return f;
+}
+
+test('the panels name the bid caching versions for the saved options, at most two, never "or later"', async () => {
+  // With the releases up to 3.26.0: 3.23.0 has a notice, so 3.24.0 is the smallest step and 3.26.0 the newest.
+  assert.deepEqual(cacheVersions([], MAIN_3260), ['3.24.0 (Preview)', '3.26.0 (Preview)']);
+  assert.deepEqual(bidCacheScriptVersions({}, [], MAIN_3260), ['3.24.0 (Preview)', '3.26.0 (Preview)']);
   const selection = runtime => ({schemaVersion: 1, runtime: pinRuntime(runtime, {allowPreview: true}), prebid: null});
-  const rules = {schemaVersion: 1, enabled: true, rules: []};
-  for (const config of [{}, {prebidBidCache: {enabled: true, maxBidAgeSeconds: 60}},
-    {builtinRuntimeSelection: selection(runtimeCatalog.find(runtime => runtime.version === BID_CACHE_RUNTIME_VERSION))},
-    {runtimeControls: {...runtimeControls, bidderRules: rules}, builtinRuntimeSelection: selection(runtimeCatalog.find(runtime => runtime.version === '3.21.2'))}]) {
-    const state = await read(setup(config));
-    assert.equal(state.bidCacheScriptVersion, expected, JSON.stringify(config));
+  for (const [config, needs, alias] of [[{}, []], [{prebidBidCache: {enabled: true, maxBidAgeSeconds: 60}}, []],
+    [{builtinRuntimeSelection: selection(runtimeCatalog.find(runtime => runtime.version === BID_CACHE_RUNTIME_VERSION))}, []],
+    [{runtimeControls: {...runtimeControls, bidderRules: rulesOn}, builtinRuntimeSelection: selection(runtimeCatalog.find(runtime => runtime.version === '3.21.2'))}, ['bidder-rules']],
+    [{}, ['bidder-accounts'], true], [{runtimeControls: {...runtimeControls, bidderRules: rulesOn}}, ['bidder-accounts', 'bidder-rules'], true]]) {
+    const f = setup(config), label = JSON.stringify({config, alias});
+    if (alias) withAlias(f);
+    const state = await read(f), expected = cacheVersions(needs);
+    assert.deepEqual(state.bidCacheScriptVersions, expected, label);
+    assert.ok(expected.length >= 1 && expected.length <= 2, label);
     // The first version with bid caching stays as it is (3.23.0, which has a runtime notice).
     assert.equal(state.bidCacheRuntimeVersion, BID_CACHE_RUNTIME_VERSION);
   }
   const f = setup();
   const saved = await put({enabled: true, revision: (await read(f)).revision, bidCache: {enabled: true, maxBidAgeSeconds: 60}}, f);
-  assert.equal((await saved.json()).bidCacheScriptVersion, expected, 'the save response names it too');
+  assert.deepEqual((await saved.json()).bidCacheScriptVersions, cacheVersions([]), 'the save response names them too');
 });
 
-test('Generate names the same bid caching script as the panels, which read it from the registry', async () => {
-  // The Generate refusal is fixed text. When a new release changes the version the panels name, this fails until the
-  // refusal names it too.
-  const state = await read(setup()), named = state.bidCacheScriptVersion;
-  // The refusal says that version combines bid caching with bidder accounts and bidder rules.
-  assert.equal(scriptVersionLabels(['bid-cache', 'bidder-accounts', 'bidder-rules']).at(-1), named);
-  assert.ok(BID_CACHE_GENERATOR_MESSAGE.includes(`Select ${named} in Script setup and save;`), BID_CACHE_GENERATOR_MESSAGE);
-  assert.deepEqual(BID_CACHE_GENERATOR_MESSAGE.match(/\b\d+\.\d+\.\d+\b/g), [named.replace(' (Preview)', '')]);
+test('Generate names the same bid caching versions as the panels, read from the registry', async () => {
+  const runtime3212 = runtimeCatalog.find(runtime => runtime.version === '3.21.2');
+  const cache = {enabled: true, maxBidAgeSeconds: 60};
+  for (const [config, alias] of [[{}], [{runtimeControls: {...runtimeControls, bidderRules: rulesOn}}], [{}, true], [{runtimeControls: {...runtimeControls, bidderRules: rulesOn}}, true]]) {
+    const f = setup({...config, prebidBidCache: cache}), label = JSON.stringify({config, alias});
+    if (alias) withAlias(f);
+    const named = (await read(f)).bidCacheScriptVersions;
+    // The refusal Generate shows for this saved site with a script without bid caching.
+    const bidders = f.sqlite.prepare('SELECT bidder, account_json, enabled FROM bidders WHERE publisher_id=?').all(SITE);
+    let message;
+    try { requireSupportedCacheGenerator(f.readConfig(), runtime3212, bidders); } catch (error) { message = error.message; assert.equal(error.status, 409, label); }
+    assert.equal(message, bidCacheGeneratorMessage(f.readConfig(), bidders), label);
+    assert.ok(message.startsWith(`Bid caching needs a compatible script version. Select ${choice(named)} in Script setup and save; your bid cache settings are kept. `), message);
+    assert.deepEqual([...new Set(message.match(/\b\d+\.\d+\.\d+\b/g))], named.map(version => version.replace(' (Preview)', '')), message);
+    assert.match(message, named.length > 1 ? /\. Both versions combine bid caching with bidder accounts, bidder rules and the current native activity and floor checks\. / : /\. This version combines bid caching with /, message);
+    assert.doesNotMatch(message, /or later/, message);
+  }
+  // Releases → Generate shows the same text for a saved site.
+  const f = setup({prebidBidCache: cache});
+  f.writeConfig({...f.readConfig(), builtinRuntimeSelection: {schemaVersion: 1, runtime: pinRuntime(runtime3212), prebid: null}});
+  assert.equal((await packageState(f.env, SITE)).error, bidCacheGeneratorMessage(f.readConfig(), []));
+  assert.equal(BID_CACHE_GENERATOR_MESSAGE, bidCacheGeneratorMessage({}), 'the exported text is the case without other saved options');
+});
+
+test('the Generate bid caching refusal cannot go stale: a new release or notice changes it with the panels', () => {
+  const release = (version, capabilities) => ({id: 'tessera-' + version, version, channel: 'preview', codeSha256: version, capabilities});
+  const r326 = runtimeReleaseHistory.find(entry => entry.version === '3.26.0'), r324 = runtimeReleaseHistory.find(entry => entry.version === '3.24.0');
+  const histories = {
+    'up to 3.26.0': [MAIN_3260, runtimeNotices],
+    'up to 3.24.0 (TEST)': [MAIN_3260.filter(entry => byVersion(entry, {version: '3.24.0'}) <= 0), runtimeNotices],
+    'a future 3.27.0': [[release('3.27.0', [...r326.capabilities, 'future']), ...MAIN_3260], runtimeNotices],
+    'a notice on 3.24.0': [MAIN_3260, [...runtimeNotices, {version: '3.24.0', runtimeSha256: r324.codeSha256}]],
+  };
+  const texts = new Set();
+  for (const [name, [history, notices]] of Object.entries(histories)) for (const config of [{}, {enablePrebid: true, runtimeControls: {bidderRules: rulesOn}}]) {
+    const named = bidCacheScriptVersions(config, [], history, notices), message = bidCacheGeneratorMessage(config, [], history, notices);
+    assert.deepEqual(named, cacheVersions(config.runtimeControls ? ['bidder-rules'] : [], history, notices), name);
+    assert.ok(message.includes(`Select ${choice(named)} in Script setup and save;`), `${name}: ${message}`);
+    assert.deepEqual([...new Set(message.match(/\b\d+\.\d+\.\d+\b/g))], named.map(version => version.replace(' (Preview)', '')), `${name}: ${message}`);
+    texts.add(message);
+  }
+  assert.equal(texts.size, 4, 'each history words the refusal differently');
+  assert.ok(bidCacheGeneratorMessage({}, [], histories['up to 3.24.0 (TEST)'][0]).includes('Select 3.24.0 (Preview) in Script setup and save; your bid cache settings are kept. This version combines '));
+  assert.ok(bidCacheGeneratorMessage({}, [], ...histories['a notice on 3.24.0']).includes('Select 3.25.1 (Preview) or 3.26.0 (Preview) in Script setup and save; your bid cache settings are kept. Both versions combine '));
+  // No version applies them together: the refusal says so instead of naming one.
+  const none = bidCacheGeneratorMessage({enablePrebid: true, runtimeControls: {bidderRules: rulesOn}}, [], MAIN_3260.filter(entry => byVersion(entry, {version: '3.23.0'}) <= 0));
+  assert.equal(none, 'Bid caching needs a compatible script version, but no available script version applies bidder rules and bid caching together. Your bid cache settings are kept. '
+    + 'To use this script version, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.');
 });
 
 test('Tanjug gets the same cache fields; only the named-script library sentence differs', async () => {
@@ -252,7 +310,7 @@ test('Tanjug gets the same cache fields; only the named-script library sentence 
   assert(tanjug.bidCachePositions.includes('Home_Top') && !tanjug.namedScriptPositions.includes('Home_Top'), 'an eligible Tanjug position outside the named-script inventory');
   // Bidder counts and Prebid builds differ between the two fixtures; every cache field is equal.
   const cacheFields = state => ({revision: state.revision, bidCacheAvailable: state.bidCacheAvailable, bidCachePositions: state.bidCachePositions,
-    bidCacheRuntimeVersion: state.bidCacheRuntimeVersion, bidCacheScriptVersion: state.bidCacheScriptVersion, selectedRuntime: state.selectedRuntime, runtimeSupportsBidCache: state.runtimeSupportsBidCache, prebidMode: state.prebidMode});
+    bidCacheRuntimeVersion: state.bidCacheRuntimeVersion, bidCacheScriptVersions: state.bidCacheScriptVersions, selectedRuntime: state.selectedRuntime, runtimeSupportsBidCache: state.runtimeSupportsBidCache, prebidMode: state.prebidMode});
   assert.deepEqual(cacheFields(tanjug), cacheFields(example));
   assert.deepEqual(Object.keys(tanjug).sort(), Object.keys(example).sort());
   // The same save is accepted or refused the same way for both sites.
