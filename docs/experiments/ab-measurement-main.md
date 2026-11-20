@@ -52,6 +52,11 @@ script that executes, control fallback, exclusions and load failures. It sends
 no external measurement request and adds no persistent visitor identifier.
 Existing loader versions and saved ZIPs retain their original bytes.
 
+On a page using the new bundle, inspect the copied ledger with
+`window.__tesseraAbLoader.measurement()` or `window.AdVariant.measurement()`.
+Re-saving an existing test returns its original loader and ZIP. Use a new TestId
+for a new bundle; reporting plans do not retrofit instrumentation into old files.
+
 Assignment to B followed by execution of A still belongs to assigned B for an
 intention-to-treat comparison. Exclusions after assignment and failed loads stay
 in the assigned-page denominator. Revenue from requests that lost their test
