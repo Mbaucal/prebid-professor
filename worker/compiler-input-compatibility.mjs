@@ -1,4 +1,5 @@
 import { requireBidderAccounts } from './site-runtime/bidder-account-settings.mjs';
+import {requireAdaptiveTimeoutRuntime} from '../shared/auction-timeout/settings.mjs';
 /** Mutable admin preflight. Historical compiler bytes remain unchanged. */
 import { assertSizeMapCompatibility } from './site-runtime/size-map-compatibility.mjs';
 export function assertCompilerStrings(value, field = 'Settings', depth = 0) {
@@ -32,6 +33,7 @@ export function assertSnapshotCompilerCompatibility(snapshot, runtime) {
   assertSizeMapCompatibility(snapshot, runtime);
   requireBidderAccounts(snapshot, runtime);
   const config = JSON.parse(snapshot.config.config_json);
+  requireAdaptiveTimeoutRuntime(config,runtime);
   for (const row of snapshot.bidders ?? []) assertCompilerStrings(JSON.parse(row.params_json), `Bidder ${row.bidder}.params`);
   for (const row of snapshot.overrides ?? []) assertCompilerStrings(JSON.parse(row.params_json), `Bidder override ${row.bidder}/${row.scope_key}.params`);
   assertCompilerStrings(config.userSync, 'User IDs');

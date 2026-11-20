@@ -300,7 +300,7 @@ try {
   }
   // Exercise account compilation through the actual bundled save/download path,
   // with TakeOver timing as well as inherited, custom and omitted upstream chains.
-  for (const version of ['3.22.1','3.22.2','3.24.0']) {
+  for (const version of ['3.22.1','3.22.2','3.24.0','3.25.0','3.25.1','3.26.0']) {
     const site='parity-accounts-'+version.replaceAll('.','-');
     await createSite(site,'prebid',5);
     for (const [bidder,mid,schain] of [
@@ -309,7 +309,7 @@ try {
     ]) await json(`/api/publishers/${site}/bidders`,{bidder,baseAdapter:'adf',params:{mid},schain},201);
     const config=await readConfig(site);
     config.runtimeControls.schain={enabled:true,version:'1.0',complete:1,nodes:[{asi:'seller.example',sid:'site',hp:1}]};
-    if (version === '3.24.0') {
+    if (version === '3.24.0' || version === '3.25.0' || version === '3.25.1' || version === '3.26.0') {
       config.prebidBidCache={enabled:true,maxBidAgeSeconds:45};
       config.runtimeControls.bidderRules={schemaVersion:1,enabled:true,rules:[{
         id:'account-scope',name:'Agency account eligibility',enabled:true,bidder:'adf_ag',positions:['P1'],
@@ -321,6 +321,11 @@ try {
     assert(runtime,'The reviewed account runtime must be selectable explicitly');
     await select(site,runtime,true);
     await addTakeOver(site,'prebid',5);
+    if(version==='3.26.0'){
+      const state=await json(settingsPath(site));
+      await json(settingsPath(site),{action:'auction-timeout',revision:state.revision,policy:{enabled:true,minMs:800,maxMs:4000}});
+      assert.equal((await json(settingsPath(site))).adaptiveTimeout.policy.enabled,true,'Compiled MAIN service must persist the explicit adaptive policy');
+    }
     await savedPackage(site,{config:'prebid-accounts-'+version,demand:'prebid',takeover:'interval-5',path:'saved-package',version,accountCase:true});
     const calls=await guardCalls(mf,origin);
     guard['prebid-accounts-'+version]=describeCalls(calls);

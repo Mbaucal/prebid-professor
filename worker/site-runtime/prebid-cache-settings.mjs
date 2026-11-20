@@ -2,6 +2,7 @@
 import {CACHE_POSITIONS,hasBidCache} from '../experiments/position-cache-settings.mjs';
 import {runtimeSupportsBidCache} from '../../shared/bid-cache/eligibility.mjs';
 import {validateAdUnitCode} from '../../shared/gam/ad-unit-code.mjs';
+import {requireAdaptiveTimeoutRuntime} from '../../shared/auction-timeout/settings.mjs';
 export {hasBidCache};
 export const DEFAULT_BID_CACHE = Object.freeze({enabled:false,maxBidAgeSeconds:60});
 /** The most position overrides one site can save; each names one of its own ad units. */
@@ -53,6 +54,7 @@ export function savedPrebidSettings(config) {
 /** Named scripts (Releases → Scripts and A/B tests) keep the reviewed Tanjug inventory of
  * CACHE_POSITIONS. A site override for any other position is refused, never silently dropped. */
 export function settingsForScript(config,refreshSeconds) {
+  requireAdaptiveTimeoutRuntime(config,null);
   const {enabled,bidCache}=savedPrebidSettings(config);
   if(!enabled)throw Object.assign(Error('Enable Prebid in Config → Demand → Prebid before creating a new script.'),{status:409});
   const outside=Object.keys(bidCache.positionOverrides??{}).filter(code=>!CACHE_POSITIONS.includes(code));

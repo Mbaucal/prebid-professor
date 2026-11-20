@@ -60,6 +60,10 @@ type Count = {
   existing: number;
   created: number;
   conflict: number;
+  done?: number;
+  update?: number;
+  unverified?: number;
+  blocked?: number;
 };
 type Job = {
   id: string;
@@ -76,6 +80,21 @@ type Job = {
   retryAfter: number;
   conflictCount: number;
   conflicts: { ref: string; message: string }[];
+  verificationIssues?: { ref: string; message: string; state?: string }[];
+  verificationCount?: number;
+  unverifiedCount?: number;
+  blockedCount?: number;
+  canStart?: boolean;
+  resumed?: boolean;
+  pendingUpdateCount?: number;
+  reporting?: {
+    profile: string;
+    keys: { key: string; type: string; valueCount: number; openDomain: boolean }[];
+    keyCount: number;
+    valueCount: number;
+    openKeys: string[];
+    needsUpdate: number;
+  };
   configuration: {
     advertiser: string;
     orders: { name: string; id?: string; status?: string }[];
@@ -142,11 +161,53 @@ const statuses: Record<string, string> = {
   cancelled: "Zaustavljeno",
 };
 const stateNames: Record<string, string> = {
-  new: "Novo",
-  existing: "Postoji",
-  created: "Kreirano",
+  new: "Nedostaje — biće kreirano",
+  existing: "✓ Urađeno · postoji u GAM-u",
+  created: "✓ Urađeno · kreirano",
   conflict: "Konflikt",
+  update: "Za dopunu · uključi reporting",
+  unverified: "Čeka ponovnu proveru",
+  blocked: "Čeka proveru prethodnog koraka",
 };
+const hasVerificationIssues = (job: Job) =>
+  Boolean(
+    job.verificationCount ||
+      job.unverifiedCount ||
+      job.blockedCount ||
+      Object.values(job.counts).some((c) => c.unverified || c.blocked),
+  );
+const canCreate = (job: Job) =>
+  job.status === "ready" &&
+  job.canStart !== false &&
+  !job.conflictCount &&
+  !hasVerificationIssues(job) &&
+  !job.error;
+const waitingForVerification = (count: Count) =>
+  Math.max(
+    0,
+    count.total -
+      count.new -
+      count.existing -
+      count.created -
+      count.conflict -
+      (count.update || 0),
+  );
+const doneCount = (count: Count) => count.done ?? count.existing + count.created;
+function issueName(job: Job, ref: string) {
+  const [kind, index] = ref.split(":");
+  if (kind === "order")
+    return job.configuration.orders[Number(index)]?.name || "Order";
+  if (kind === "lineItem")
+    return job.examples[Number(index)]?.name || "Line item";
+  return labels[kind] || "Stavka";
+}
+class ActiveJobError extends Error {
+  activeJobId: string;
+  constructor(message: string, activeJobId: string) {
+    super(message);
+    this.activeJobId = activeJobId;
+  }
+}
 function Picker({
   label,
   kind,
@@ -293,12 +354,16 @@ export default function GamLineItemsPanel({
   network,
   onNetworkChange,
   onRunning,
+  onOpenKeyValues,
+  initialJobId,
 }: {
   endpoint: string;
   connections: { networkCode: string; name: string }[];
   network: string;
   onNetworkChange: (s: string) => void;
   onRunning: (b: boolean) => void;
+  onOpenKeyValues?: () => void;
+  initialJobId?: string;
 }) {
   const [draft, setDraft] = useState<Draft>(initial),
     [job, setJob] = useState<Job | null>(null),
@@ -306,6 +371,7 @@ export default function GamLineItemsPanel({
     [confirmed, setConfirmed] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [activeJobId, setActiveJobId] = useState<string | null>(null),
     [defaults, setDefaults] = useState<Defaults | null>(null),
     [loadingDefaults, setLoadingDefaults] = useState(false),
     [defaultsError, setDefaultsError] = useState(""),
@@ -324,6 +390,7 @@ export default function GamLineItemsPanel({
     setJob(null);
     setConfirmed(false);
     setError("");
+    setActiveJobId(null);
   };
   const creative = (v: Partial<Creative>) =>
     patch({ creative: { ...draft.creative, ...v } });
@@ -333,11 +400,16 @@ export default function GamLineItemsPanel({
       headers: body === undefined ? {} : { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    const d = (await r.json()) as T & { error?: string };
-    if (!r.ok)
-      throw Error(
-        d.error || "Zahtev nije uspeo. Otvorite sačuvani posao pre nastavka.",
-      );
+    const d = (await r.json()) as T & {
+      error?: string;
+      activeJobId?: string;
+    };
+    if (!r.ok) {
+      const message =
+        d.error || "Zahtev nije uspeo. Otvorite sačuvani posao pre nastavka.";
+      if (d.activeJobId) throw new ActiveJobError(message, d.activeJobId);
+      throw Error(message);
+    }
     return d;
   }
   async function loadHistory() {
@@ -369,6 +441,7 @@ export default function GamLineItemsPanel({
     setLoadingDefaults(Boolean(network));
     setError("");
     setConfirmed(false);
+    setActiveJobId(null);
     if (network) {
       void loadHistory().catch((e) => {
         if (active) setError(e.message);
@@ -392,6 +465,9 @@ export default function GamLineItemsPanel({
       active = false;
     };
   }, [network, endpoint]);
+  useEffect(() => {
+    if (initialJobId) void open(initialJobId);
+  }, [initialJobId]);
   async function run(action: () => Promise<void>) {
     if (working.current) return;
     working.current = true;
@@ -399,10 +475,14 @@ export default function GamLineItemsPanel({
     setBusy(true);
     onRunning(true);
     setError("");
+    setActiveJobId(null);
     try {
       await action();
     } catch (e) {
-      if (alive.current) setError((e as Error).message);
+      if (alive.current) {
+        setError((e as Error).message);
+        if (e instanceof ActiveJobError) setActiveJobId(e.activeJobId);
+      }
     } finally {
       working.current = false;
       if (alive.current) {
@@ -419,6 +499,7 @@ export default function GamLineItemsPanel({
       !stop.current &&
       ["reviewing", "creating"].includes(j.status) &&
       !j.awaitingCheck &&
+      !hasVerificationIssues(j) &&
       !j.error
     ) {
       j = await api<Job>(
@@ -437,6 +518,23 @@ export default function GamLineItemsPanel({
         networkCode: network,
       });
       setConfirmed(false);
+      if (j.resumed) {
+        if (alive.current) setJob(j);
+        return;
+      }
+      await walk(j);
+    });
+  }
+  async function previewReporting() {
+    await run(async () => {
+      const input = { mode: "reporting", networkCode: network };
+      normalizeLinePlan(input);
+      const j = await api<Job>("/line-items/preview", input);
+      setConfirmed(false);
+      if (j.resumed) {
+        if (alive.current) setJob(j);
+        return;
+      }
       await walk(j);
     });
   }
@@ -446,18 +544,19 @@ export default function GamLineItemsPanel({
     await run(async () => {
       normalizeLinePlan({ ...draft, networkCode: network });
       setConfirmed(false);
-      let j = await walk(
-        await api<Job>("/line-items/preview", {
-          ...draft,
-          networkCode: network,
-        }),
-      );
+      let j = await api<Job>("/line-items/preview", {
+        ...draft,
+        networkCode: network,
+      });
+      if (j.resumed) {
+        if (alive.current) setJob(j);
+        return;
+      }
+      j = await walk(j);
       if (
         !alive.current ||
         stop.current ||
-        j.status !== "ready" ||
-        j.conflictCount ||
-        j.error
+        !canCreate(j)
       )
         return;
       j = await api<Job>(`/line-items/jobs/${j.id}/start`, {
@@ -495,12 +594,27 @@ export default function GamLineItemsPanel({
     if (!job) return;
     await run(async () => {
       let j = await api<Job>("/line-items/jobs/" + job.id);
-      if (j.error && !j.awaitingCheck) j = { ...j, error: "" };
+      if (j.status === "creating" && !j.awaitingCheck)
+        j = await api<Job>(`/line-items/jobs/${j.id}/step`, {
+          cursor: j.cursor,
+        });
       await walk(j);
     });
   }
+  async function recheck() {
+    if (!job || !["reviewing", "ready"].includes(job.status)) return;
+    await run(async () => {
+      setConfirmed(false);
+      await walk(
+        await api<Job>(`/line-items/jobs/${job.id}/review`, {
+          cursor: job.cursor,
+          retry: true,
+        }),
+      );
+    });
+  }
   async function start() {
-    if (!job || !confirmed) return;
+    if (!job || !confirmed || !canCreate(job)) return;
     await run(async () => {
       await walk(
         await api<Job>(`/line-items/jobs/${job.id}/start`, {
@@ -606,6 +720,17 @@ export default function GamLineItemsPanel({
       {error && (
         <div className="gam-message error" role="alert">
           {error}
+          {activeJobId && (
+            <div className="gam-li-actions">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void open(activeJobId)}
+              >
+                Otvori postojeći posao
+              </button>
+            </div>
+          )}
         </div>
       )}
       <fieldset
@@ -651,6 +776,18 @@ export default function GamLineItemsPanel({
               ))}
             </select>
           </label>
+          <div className="gam-li-actions">
+            <button
+              type="button"
+              disabled={!network}
+              onClick={() => onOpenKeyValues ? onOpenKeyValues() : void previewReporting()}
+            >
+              Pripremi GAM reporting
+            </button>
+            <span className="gam-help">
+              Proveri reporting ključeve za ovu mrežu. Upis sledi tek posle potvrde.
+            </span>
+          </div>
         </article>
         {draft.mode === "prebid" && (
           <article className="gam-card gam-li-preset">
@@ -1398,11 +1535,11 @@ export default function GamLineItemsPanel({
                 <table>
                   <thead>
                     <tr>
-                      <th>Order</th>
-                      <th>Line item</th>
-                      <th>CPM rate</th>
-                      <th>Key-value</th>
-                      <th>Kreativi</th>
+                      <th scope="col">Order</th>
+                      <th scope="col">Line item</th>
+                      <th scope="col">CPM rate</th>
+                      <th scope="col">Key-value</th>
+                      <th scope="col">Kreativi</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1463,102 +1600,186 @@ export default function GamLineItemsPanel({
       {job && (
         <article className="gam-card gam-li-review">
           <span className="gam-step">05 / PREGLED I REZULTAT</span>
-          <h3>{statuses[job.status]}</h3>
+          <h3>
+            {hasVerificationIssues(job) &&
+            ["reviewing", "ready"].includes(job.status)
+              ? "Provera nije završena"
+              : statuses[job.status]}
+          </h3>
           <div className="gam-review-summary">
             <strong>
               {job.network.name} · {job.network.networkCode}
             </strong>
-            <span>
-              {job.configuration.advertiser}
-              {job.advertiserId ? " · " + job.advertiserId : ""}
-            </span>
+            {job.mode !== "reporting" && (
+              <span>
+                {job.configuration.advertiser}
+                {job.advertiserId ? " · " + job.advertiserId : ""}
+              </span>
+            )}
           </div>
           {job.error && (
             <div className="gam-message error" role="alert">
               {job.error}
             </div>
           )}
-          <p>
-            {job.configuration.type} · {job.configuration.costType} ·{" "}
-            {job.configuration.currency} ·{" "}
-            {job.configuration.start || "Početak odmah"} →{" "}
-            {job.configuration.end || "Bez krajnjeg datuma"}
-            {job.configuration.goal.units
-              ? " · Cilj: " + job.configuration.goal.units
-              : ""}
-          </p>
-          <p>
-            <strong>Inventory:</strong>{" "}
-            {job.configuration.inventory
-              .map((i) => i.name + " (" + i.id + ")")
-              .join(", ")}
-            <br />
-            <strong>Veličine:</strong> {job.configuration.sizes}
-            <br />
-            <strong>Size override:</strong>{" "}
-            {job.configuration.overrideSizes &&
-            job.configuration.creativeMode !== "none"
-              ? "Da"
-              : "Ne"}
-          </p>
-          {job.configuration.ranges.length > 0 && (
-            <p>
-              <strong>Prebid rasponi / hb_pb:</strong>{" "}
-              {job.configuration.ranges
-                .map((r) => `${r.from}–${r.to}, korak ${r.step}`)
-                .join("; ")}
-            </p>
+          {job.mode !== "reporting" && (
+            <>
+              <p>
+                {job.configuration.type} · {job.configuration.costType} ·{" "}
+                {job.configuration.currency} ·{" "}
+                {job.configuration.start || "Početak odmah"} →{" "}
+                {job.configuration.end || "Bez krajnjeg datuma"}
+                {job.configuration.goal.units
+                  ? " · Cilj: " + job.configuration.goal.units
+                  : ""}
+              </p>
+              <p>
+                <strong>Inventory:</strong>{" "}
+                {job.configuration.inventory
+                  .map((i) => i.name + " (" + i.id + ")")
+                  .join(", ")}
+                <br />
+                <strong>Veličine:</strong> {job.configuration.sizes}
+                <br />
+                <strong>Size override:</strong>{" "}
+                {job.configuration.overrideSizes &&
+                job.configuration.creativeMode !== "none"
+                  ? "Da"
+                  : "Ne"}
+              </p>
+              {job.configuration.ranges.length > 0 && (
+                <p>
+                  <strong>Prebid rasponi / hb_pb:</strong>{" "}
+                  {job.configuration.ranges
+                    .map((r) => `${r.from}–${r.to}, korak ${r.step}`)
+                    .join("; ")}
+                </p>
+              )}
+              {job.configuration.customRules.length > 0 && (
+                <p>
+                  <strong>Dodatni targeting (AND):</strong>{" "}
+                  {job.configuration.customRules
+                    .map((r) => `${r.key} = ${r.values.join(" | ")}`)
+                    .join("; ")}
+                </p>
+              )}
+              {job.configuration.creativeName && (
+                <p>
+                  <strong>Set kreativa:</strong> {job.configuration.creativeName} ·{" "}
+                  {job.configuration.creativeSize} · SafeFrame:{" "}
+                  {job.configuration.creativeSafeFrame ? "Da" : "Ne"}
+                </p>
+              )}
+              {job.configuration.creativeSnippet && (
+                <details>
+                  <summary>Kod kreativa iz sačuvanog pregleda</summary>
+                  <pre className="gam-li-saved-code">
+                    {job.configuration.creativeSnippet}
+                  </pre>
+                </details>
+              )}
+            </>
           )}
-          {job.configuration.customRules.length > 0 && (
-            <p>
-              <strong>Dodatni targeting (AND):</strong>{" "}
-              {job.configuration.customRules
-                .map((r) => `${r.key} = ${r.values.join(" | ")}`)
-                .join("; ")}
-            </p>
+          {job.reporting && (
+            <div className="gam-li-reporting">
+              <p>
+                <strong>GAM reporting:</strong> {job.reporting.keyCount} ključeva ·{" "}
+                {job.reporting.valueCount} unapred definisanih vrednosti · profil{" "}
+                {job.reporting.profile}.
+              </p>
+              <p className="gam-help">
+                {job.status === "completed"
+                  ? "Reporting je pripremljen za prikazane ključeve."
+                  : "Priprema uključuje reporting (ON); postojeći CUSTOM_DIMENSION se zadržava."}{" "}
+                {job.reporting.needsUpdate > 0 &&
+                  `Za uključivanje reportinga: ${job.reporting.needsUpdate}. `}
+                Dodatne numeričke vrednosti za {job.reporting.openKeys.join(", ")}{" "}
+                moraju biti unapred definisane u GAM-u da bi ulazile u izveštaje.
+                Podaci se ne dopunjavaju retroaktivno.
+              </p>
+              <details open={job.mode === "reporting"}>
+                <summary>Reporting ključevi i obuhvat vrednosti</summary>
+                <div className="gam-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th scope="col">Ključ</th>
+                        <th scope="col">Tip</th>
+                        <th scope="col">Vrednosti u planu</th>
+                        <th scope="col">Obuhvat</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {job.reporting.keys.map((key) => (
+                        <tr key={key.key}>
+                          <td>{key.key}</td>
+                          <td>{key.type}</td>
+                          <td>{key.valueCount}</td>
+                          <td>
+                            {key.openDomain
+                              ? "Poznate vrednosti; dodatne se definišu unapred"
+                              : "Fiksne vrednosti"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
           )}
-          {job.configuration.creativeName && (
-            <p>
-              <strong>Set kreativa:</strong> {job.configuration.creativeName} ·{" "}
-              {job.configuration.creativeSize} · SafeFrame:{" "}
-              {job.configuration.creativeSafeFrame ? "Da" : "Ne"}
-            </p>
-          )}
-          {job.configuration.creativeSnippet && (
-            <details>
-              <summary>Kod kreativa iz sačuvanog pregleda</summary>
-              <pre className="gam-li-saved-code">
-                {job.configuration.creativeSnippet}
-              </pre>
-            </details>
-          )}
-          <div className="gam-table-wrap">
+          <div className="gam-table-wrap gam-li-counts">
             <table>
               <thead>
                 <tr>
-                  <th>Entitet</th>
-                  <th>Ukupno</th>
-                  <th>Novo</th>
-                  <th>Postoji</th>
-                  <th>Kreirano</th>
-                  <th>Konflikt</th>
+                  <th scope="col">Entitet</th>
+                  <th scope="col">Ukupno</th>
+                  <th scope="col">Urađeno</th>
+                  <th scope="col">Nedostaje</th>
+                  <th scope="col">Čeka proveru</th>
+                  <th scope="col">Konflikt</th>
+                  <th scope="col">Za dopunu</th>
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(job.counts).map(([k, v]) => (
+                {Object.entries(job.counts)
+                  .filter(
+                    ([kind]) => job.mode !== "reporting" || ["key", "value"].includes(kind),
+                  )
+                  .map(([k, v]) => (
                   <tr key={k}>
                     <td>{labels[k]}</td>
                     <td>{v.total}</td>
+                    <td>
+                      <strong>
+                        {doneCount(v) > 0 ? "✓ " : ""}
+                        {doneCount(v)}
+                      </strong>
+                      <small>
+                        {v.existing} postoji · {v.created} kreirano
+                      </small>
+                    </td>
                     <td>{v.new}</td>
-                    <td>{v.existing}</td>
-                    <td>{v.created}</td>
+                    <td>
+                      {waitingForVerification(v)}
+                      {Boolean(v.blocked) && (
+                        <small>{v.blocked} čeka prethodni korak</small>
+                      )}
+                    </td>
                     <td>{v.conflict}</td>
+                    <td>{v.update || 0}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          {job.status === "ready" && (
+          <p className="gam-help">
+            Urađene stavke se koriste ponovo. Kreiraju se samo stavke za koje
+            je provereno da nedostaju. Stavke koje čekaju proveru ne šalju se
+            na kreiranje. Za dopunu označava postojeće ključeve kojima će se
+            uključiti reporting posle potvrde.
+          </p>
+          {job.status === "ready" && job.mode !== "reporting" && (
             <p className="gam-help">
               Veze sa kreativima proveravaju se pojedinačno tokom kreiranja.
               Postojeći entiteti sa istim nazivom koriste se samo ako im se
@@ -1567,8 +1788,8 @@ export default function GamLineItemsPanel({
           )}
           {job.conflictCount > 0 && (
             <div className="gam-message error">
-              {job.conflictCount} konflikata. Ispravite izbor ili nazive i
-              ponovite proveru.
+              {job.conflictCount} konflikata. Proverite prikazane razlike i
+              uskladite plan pre ponovne provere.
               {job.conflicts.map((c) => (
                 <p key={c.ref}>
                   {c.ref}: {c.message}
@@ -1576,84 +1797,104 @@ export default function GamLineItemsPanel({
               ))}
             </div>
           )}
-          <details>
-            <summary>Orderi i GAM ID-jevi</summary>
-            {job.configuration.orders.map((o, i) => (
-              <p key={i}>
-                {o.name} · {o.id || "Nov order"} ·{" "}
-                {o.status || "DRAFT nakon kreiranja"}
-              </p>
-            ))}
-            {job.creativeIds.length > 0 && (
+          {hasVerificationIssues(job) && (
+            <div className="gam-message info gam-li-verification" role="status">
+              <strong>Provera postojećih stavki nije završena.</strong>
               <p>
-                GAM ID-jevi kreativa (prvih 50): {job.creativeIds.join(", ")}.
-                Kompletno mapiranje je u CSV-u.
+                Potvrđeni GAM ID-jevi su sačuvani. Ponovite proveru istog posla
+                za nastavak od potvrđenog stanja.
               </p>
-            )}
-          </details>
-          <details open={job.status === "completed"}>
-            <summary>Line itemi — prvih {job.examples.length}</summary>
-            <div className="gam-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Naziv</th>
-                    <th>{job.mode === "prebid" ? "CPM rate" : "Cena"}</th>
-                    {job.mode === "prebid" && (
-                      <>
-                        <th>Key-value</th>
-                        <th>Kreativi</th>
-                      </>
-                    )}
-                    <th>GAM ID</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {job.examples.map((r, i) => (
-                    <tr key={i}>
-                      <td>{r.name}</td>
-                      <td>
-                        {r.price} {job.configuration.currency}
-                      </td>
-                      {job.mode === "prebid" && (
-                        <>
-                          <td>hb_pb = {r.hbPb}</td>
-                          <td>
-                            {r.creativeFirst}
-                            {r.creativeLast !== r.creativeFirst && (
-                              <small>… {r.creativeLast}</small>
-                            )}
-                          </td>
-                        </>
-                      )}
-                      <td>{r.id || "—"}</td>
-                      <td>{stateNames[r.state] || "Čeka proveru"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {job.verificationIssues?.map((issue) => (
+                <p key={issue.ref}>
+                  {issueName(job, issue.ref)}: {issue.message}
+                </p>
+              ))}
             </div>
-          </details>
-          {job.mode === "prebid" && (
-            <p className="gam-help">
-              {job.configuration.creativeLayout === "per-price"
-                ? `${job.configuration.creativesPerLine} sopstvenih kreativa po ceni, sa CPM-om u nazivu.`
-                : "Ovaj posao koristi zajedničke / postojeće kreative bez pojedinačnog CPM-a u nazivu."}
-            </p>
           )}
-          <p>
-            <a href={`${endpoint}/line-items/jobs/${job.id}/export`} download>
-              Preuzmi kompletnu listu i GAM ID-jeve (CSV)
-            </a>
-          </p>
-          {job.status === "ready" && !job.conflictCount && (
+          {job.mode !== "reporting" && (
             <>
-              <p className="gam-message info">
-                Novi orderi ostaju DRAFT; odobravanje radite u GAM-u. U
-                postojećem odobrenom order-u line item može početi isporuku
-                prema izabranom terminu.
+              <details>
+                <summary>Orderi i GAM ID-jevi</summary>
+                {job.configuration.orders.map((o, i) => (
+                  <p key={i}>
+                    {o.name} · {o.id || "Nov order"} ·{" "}
+                    {o.status || "DRAFT nakon kreiranja"}
+                  </p>
+                ))}
+                {job.creativeIds.length > 0 && (
+                  <p>
+                    GAM ID-jevi kreativa (prvih 50): {job.creativeIds.join(", ")}.
+                    Kompletno mapiranje je u CSV-u.
+                  </p>
+                )}
+              </details>
+              <details open={job.status === "completed"}>
+                <summary>Line itemi — prvih {job.examples.length}</summary>
+                <div className="gam-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th scope="col">Naziv</th>
+                        <th scope="col">{job.mode === "prebid" ? "CPM rate" : "Cena"}</th>
+                        {job.mode === "prebid" && (
+                          <>
+                            <th scope="col">Key-value</th>
+                            <th scope="col">Kreativi</th>
+                          </>
+                        )}
+                        <th scope="col">GAM ID</th>
+                        <th scope="col">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {job.examples.map((r, i) => (
+                        <tr key={i}>
+                          <td>{r.name}</td>
+                          <td>
+                            {r.price} {job.configuration.currency}
+                          </td>
+                          {job.mode === "prebid" && (
+                            <>
+                              <td>hb_pb = {r.hbPb}</td>
+                              <td>
+                                {r.creativeFirst}
+                                {r.creativeLast !== r.creativeFirst && (
+                                  <small>… {r.creativeLast}</small>
+                                )}
+                              </td>
+                            </>
+                          )}
+                          <td>{r.id || "—"}</td>
+                          <td>{stateNames[r.state] || "Čeka proveru"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+              {job.mode === "prebid" && (
+                <p className="gam-help">
+                  {job.configuration.creativeLayout === "per-price"
+                    ? `${job.configuration.creativesPerLine} sopstvenih kreativa po ceni, sa CPM-om u nazivu.`
+                    : "Ovaj posao koristi zajedničke / postojeće kreative bez pojedinačnog CPM-a u nazivu."}
+                </p>
+              )}
+              <p>
+                <a href={`${endpoint}/line-items/jobs/${job.id}/export`} download>
+                  Preuzmi kompletnu listu i GAM ID-jeve (CSV)
+                </a>
               </p>
+            </>
+          )}
+          {canCreate(job) && (
+            <>
+              {job.mode !== "reporting" && (
+                <p className="gam-message info">
+                  Novi orderi ostaju DRAFT; odobravanje radite u GAM-u. U
+                  postojećem odobrenom order-u line item može početi isporuku
+                  prema izabranom terminu.
+                </p>
+              )}
               <label className="gam-confirm">
                 <input
                   type="checkbox"
@@ -1661,17 +1902,39 @@ export default function GamLineItemsPanel({
                   checked={confirmed}
                   onChange={(e) => setConfirmed(e.target.checked)}
                 />
-                Potvrđujem ovu postavku u mreži {job.network.networkCode}:{" "}
-                {job.counts.lineItem.total} line itema i{" "}
-                {job.counts.creative.total} kreativa.
+                {job.mode === "reporting" ? (
+                  <>
+                    Potvrđujem GAM reporting u mreži {job.network.networkCode}:{" "}
+                    {job.reporting?.keyCount || job.counts.key.total} ključeva i{" "}
+                    {job.reporting?.valueCount || job.counts.value.total} vrednosti;{" "}
+                    {job.pendingUpdateCount || 0} dopuna postojećih ključeva.
+                  </>
+                ) : (
+                  <>
+                    Potvrđujem ovu postavku u mreži {job.network.networkCode}:{" "}
+                    {job.counts.lineItem.total} line itema i{" "}
+                    {job.counts.creative.total} kreativa.
+                    {job.reporting && (
+                      <>
+                        {" "}Reporting: {job.reporting.keyCount} ključeva,{" "}
+                        {job.reporting.valueCount} vrednosti
+                        {job.pendingUpdateCount
+                          ? `, ${job.pendingUpdateCount} dopuna postojećih ključeva`
+                          : ""}.
+                      </>
+                    )}
+                  </>
+                )}
               </label>
               <button
                 type="button"
                 className="gam-primary"
-                disabled={busy || !confirmed}
+                disabled={busy || !confirmed || !canCreate(job)}
                 onClick={() => void start()}
               >
-                Kreiraj potvrđenu postavku
+                {job.mode === "reporting"
+                  ? "Pripremi potvrđeni reporting"
+                  : "Kreiraj potvrđenu postavku"}
               </button>
             </>
           )}
@@ -1690,9 +1953,20 @@ export default function GamLineItemsPanel({
               </div>
             </div>
           )}
+          {!busy && ["reviewing", "ready"].includes(job.status) && (
+            <button
+              type="button"
+              className="gam-primary"
+              onClick={() => void recheck()}
+            >
+              Ponovi proveru istog posla
+            </button>
+          )}
           {!busy &&
             ["reviewing", "creating"].includes(job.status) &&
-            !job.awaitingCheck && (
+            !job.awaitingCheck &&
+            (job.status === "creating" || !hasVerificationIssues(job)) &&
+            !(job.status === "reviewing" && job.error) && (
               <button
                 type="button"
                 className="gam-primary"

@@ -26,6 +26,7 @@ import { packageTestPageResponse } from './site-runtime/test-page.mjs';
 import { abEditorResponse } from './site-runtime/ab-editor.mjs';
 import {requireSupportedCacheGenerator} from './site-runtime/prebid-cache-settings.mjs';
 import { scriptLibraryResponse } from './site-runtime/script-library.mjs';
+import { mainAbTestsResponse } from './site-runtime/ab-tests.mjs';
 interface Env extends AuthEnv, ReleaseEnv { ASSETS: Fetcher; GAM_CREDENTIALS_KEY?: string }
 const downstream = baseApp as {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
@@ -43,6 +44,14 @@ export default {
     if (url.pathname === '/api/organization' || url.pathname.startsWith('/api/organization/')) {
       const actor = await getAuthenticatedUser(request, env);
       return organizationResponse(request, env, actor?.email);
+    }
+    const abTestsMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/ab-tests(?:\/.*)?$/);
+    if(abTestsMatch){
+      const actor=await getAuthenticatedUser(request,env);
+      const fail=(error:string,status:number)=>Response.json({error},{status,headers:{'cache-control':'private, no-store','x-content-type-options':'nosniff'}});
+      if(!actor)return fail('Authentication required.',401);
+      if(!isSameOriginMutation(request)||(['POST','DELETE','PUT'].includes(request.method)&&request.headers.get('origin')!==url.origin))return fail('Same-origin request required.',403);
+      return mainAbTestsResponse(request,env,abTestsMatch[1],actor.email);
     }
     const libraryMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/script-library(?:\/(scripts|tests)(?:\/(tanjug-(?:script-[12]|test-1)\.0\.0-[a-f0-9]{64})\.zip)?)?$/);
     if(libraryMatch){

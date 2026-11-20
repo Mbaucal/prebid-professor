@@ -8,8 +8,11 @@ import {pinRuntime} from '../worker/runtime/version-pin.mjs';
 import {prebidRequirements,inspectPrebidArtifact,sha256} from '../worker/runtime/prebid-artifact-check-v2.mjs';
 import {runtime324Site} from '../tests/runtime/runtime324-site.mjs';
 const args=process.argv.slice(2),options={};
-for(let i=0;i<args.length;i+=2){assert(['--prebid','--out'].includes(args[i])&&args[i+1]&&!Object.hasOwn(options,args[i]),'Use --prebid <directory> --out <directory>');options[args[i]]=resolve(args[i+1]);}
-const root=resolve(import.meta.dirname,'..'),out=options['--out']??resolve(root,'.generated/runtime324-browser');
+for(let i=0;i<args.length;i+=2){assert(['--prebid','--out','--runtime'].includes(args[i])&&args[i+1]&&!Object.hasOwn(options,args[i]),'Use --prebid <directory> --out <directory> [--runtime tessera-3.24.0|tessera-3.25.1]');options[args[i]]=args[i]==='--runtime'?args[i+1]:resolve(args[i+1]);}
+const root=resolve(import.meta.dirname,'..'),runtimeId=options['--runtime']??'tessera-3.24.0';
+assert(['tessera-3.24.0','tessera-3.25.1'].includes(runtimeId),'Supply a supported combined runtime ID.');
+const descriptor=runtimeCatalog.find(row=>row.id===runtimeId);assert(descriptor,runtimeId+' must be registered');
+const out=options['--out']??resolve(root,'.generated/runtime'+descriptor.version.replace(/\./g,'')+'-browser');
 assert(options['--prebid'],'Supply an exact native build with --prebid <directory>.');
 const source=options['--prebid'],bytes=await readFile(resolve(source,'prebid.js'));
 const prebid=JSON.parse(await readFile(resolve(source,'prebid-config.json'),'utf8'));
@@ -17,7 +20,6 @@ const nativeBuild=JSON.parse(await readFile(resolve(source,'manifest.json'),'utf
 const pinned={'11.11.0':'0f6ba177203d5f63e0a11453ed0c887fcf5efe33','11.34.0':'195e0c6069928ed906bde550cb4e4183d1dc8474'};
 assert.equal(nativeBuild.sourceCommit,pinned[prebid.version],'Native build must use the pinned upstream commit');
 assert.equal(nativeBuild.buildSha256,createHash('sha256').update(bytes).digest('hex'),'Native build differs from its receipt');
-const descriptor=runtimeCatalog.find(row=>row.id==='tessera-3.24.0');assert(descriptor,'3.24.0 must be registered');
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const files={},cases={on:{},off:{cache:false},expiry:{maxAge:1},lazy:{lazy:true},sticky:{sticky:true},floor:{floor:'raise'},'floor-valid':{floor:'valid'},'floor-deal':{floor:'deal'},'floor-zero':{floor:'zero'},gam:{prebid:false},...(prebid.version==='11.34.0'?{formats:{formats:true}}:{})};
 await mkdir(out,{recursive:true});
@@ -38,7 +40,7 @@ for(const [name,options]of Object.entries(cases)){
   if(file==='prebid.js'&&!checked)continue;
   assert(result.files[file],file);await writeFile(resolve(dir,file),result.files[file]);files[`${name}/${file}`]=hash(result.files[file]);
  }
- assert.equal(result.manifest.runtime.runtimeVersion,'3.24.0');
+ assert.equal(result.manifest.runtime.runtimeVersion,descriptor.version);
 }
 await writeFile(resolve(out,'manifest.json'),JSON.stringify({runtime:descriptor,prebid,nativeBuild,cases,files},null,2)+'\n');
-console.log(JSON.stringify({packages:Object.keys(cases),prebid:prebid.version,output:out}));
+console.log(JSON.stringify({runtime:descriptor.version,packages:Object.keys(cases),prebid:prebid.version,output:out}));

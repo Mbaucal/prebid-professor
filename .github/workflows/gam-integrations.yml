@@ -2,13 +2,15 @@ name: GAM API integration checks
 on:
   pull_request:
     branches: [main, feature/isolated-runtime-workspace-v1]
-    paths: [tools/**, ops/runtime-test/**, package.json, package-lock.json, tsconfig*.json, vite.config.ts, wrangler.jsonc, tests/runtime/test-toolchain-targets.test.mjs, shared/gam/**, worker/integrations/**, worker/test-workspace/**, src/components/ApiIntegrationsPanel.tsx, src/components/GamLineItemsPanel.tsx, src/api-integrations/**, src/api-integrations.css, src/App.tsx, scripts/**, tests/gam/**, vendor/gam-xml-parser/**, .github/workflows/gam-integrations.yml]
+    paths: [tools/**, ops/runtime-test/**, package.json, package-lock.json, tsconfig*.json, vite.config.ts, wrangler.jsonc, tests/runtime/test-toolchain-targets.test.mjs, shared/gam/**, worker/integrations/**, worker/test-workspace/**, src/components/ApiIntegrationsPanel.tsx, src/components/GamLineItemsPanel.tsx, src/components/GamKeyValuesPanel.tsx, src/api-integrations/**, src/api-integrations.css, src/App.tsx, scripts/**, tests/gam/**, vendor/gam-xml-parser/**, .github/workflows/gam-integrations.yml]
 permissions:
   contents: read
 jobs:
   gam:
     runs-on: ubuntu-24.04 # Playwright 1.55 browser dependencies are pinned to this supported OS.
-    timeout-minutes: 10
+    # The full 40k-creative case plus cold Chromium dependency installation need
+    # more than ten minutes; preserve all assertions and a bounded job deadline.
+    timeout-minutes: 20
     env:
       TZ: UTC
       TESSERA_TEST_TOOLCHAIN: isolated
@@ -36,6 +38,8 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install playwright==1.55.0 && python -m playwright install --with-deps chromium
       - run: python scripts/verify-gam-ui.py
+      - name: Verify the Key-values flow in the actual MAIN dashboard bundle
+        run: python scripts/verify-gam-main-ui.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

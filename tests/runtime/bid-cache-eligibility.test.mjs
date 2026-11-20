@@ -32,8 +32,8 @@ test('runtimeSupportsBidCache is true only when the capabilities list bid-cache'
   assert.equal(runtimeSupportsBidCache({capabilities: ['bid-cache']}), true);
   assert.ok(runtime3212, '3.21.2 is in the catalog');
   assert.equal(runtimeSupportsBidCache(runtime3212), false);
-  for (const descriptor of runtimeCatalog) assert.equal(runtimeSupportsBidCache(descriptor), ['tessera-3.23.0','tessera-3.24.0'].includes(descriptor.id), `${descriptor.id}: only registered cache-capable runtimes may reuse bids`);
-  assert.equal(runtimeCatalog.filter(runtimeSupportsBidCache).map(descriptor => descriptor.version).join(), '3.23.0,3.24.0', 'both cache-capable runtimes are selectable');
+  for (const descriptor of runtimeCatalog) assert.equal(runtimeSupportsBidCache(descriptor), ['tessera-3.23.0','tessera-3.24.0','tessera-3.25.0','tessera-3.25.1','tessera-3.26.0'].includes(descriptor.id), `${descriptor.id}: only registered cache-capable runtimes may reuse bids`);
+  assert.equal(runtimeCatalog.filter(runtimeSupportsBidCache).map(descriptor => descriptor.version).join(), '3.23.0,3.24.0,3.25.0,3.25.1,3.26.0', 'all cache-capable runtimes are selectable');
   for (const value of [undefined, null, {}, [], 'bid-cache', ['bid-cache'], {capabilities: 'bid-cache'}, {capabilities: ['bid-cache-v2']},
     {capabilities: [['bid-cache']]}, {capabilities: null}, {version: '3.23.0'}, {id: 'tessera-3.23.0', version: '3.23.0', capabilities: []}]) {
     assert.equal(runtimeSupportsBidCache(value), false, JSON.stringify(value));

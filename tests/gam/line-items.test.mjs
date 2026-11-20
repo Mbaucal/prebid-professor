@@ -7,6 +7,8 @@ import {
   prebidNamingPreview,
 } from "../../shared/gam/line-items.mjs";
 import { trafficFixture, prebidPlan } from "./traffic-fixture.mjs";
+import { GamClient } from "../../worker/integrations/gam-client.mjs";
+import { GamTrafficClient } from "../../worker/integrations/gam-traffic-client.mjs";
 const origin = "https://fixture.invalid",
   base = "/api/integrations/gam";
 async function req(
@@ -154,13 +156,15 @@ test("review is read only; Prebid creates values, shared creative pool, targetin
   assert.equal(f.calls.length, 0);
   assert.equal(j.counts.lineItem.total, 3);
   const done = await finish(f, await start(f, j));
-  assert.equal(f.db.key.length, 1);
-  assert.equal(f.db.value.length, 3);
+  assert.equal(f.db.key.length, 14);
+  assert.equal(f.db.value.length, 286);
   assert.equal(f.db.creative.length, 2);
   assert.equal(f.db.lineItem.length, 3);
   assert.equal(f.db.association.length, 6);
+  const priceKey=f.db.key.find(row=>row.name==='hb_pb');
+  const priceValues=f.db.value.filter(row=>row.customTargetingKeyId===priceKey.id);
   assert.deepEqual(
-    f.db.value.map((r) => r.name),
+    priceValues.map((r) => r.name),
     ["0.01", "0.02", "0.03"],
   );
   assert.deepEqual(
@@ -171,7 +175,7 @@ test("review is read only; Prebid creates values, shared creative pool, targetin
     f.db.lineItem.map(
       (r) => r.targeting.customTargeting.children[0].valueIds[0],
     ),
-    f.db.value.map((r) => r.id),
+    priceValues.map((r) => r.id),
   );
   assert(f.db.association.every((r) => r.sizes.length === 2));
   assert.equal(done.counts.association.created, 6);
@@ -208,7 +212,10 @@ test("new advertiser and order, ordinary Standard goal/dates, no creatives", asy
   assert.equal(f.db.creative.length, 0);
   assert.equal(done.counts.association.total, 0);
   assert.equal(f.db.order.at(-1).advertiserId, f.db.advertiser.at(-1).id);
-  assert.equal(f.db.value.length, 2);
+  assert.equal(f.db.value.length, 285);
+  const sectionKey=f.db.key.find(row=>row.name==='section');
+  assert.deepEqual(f.db.value.filter(row=>row.customTargetingKeyId===sectionKey.id).map(row=>row.name),['sport','news']);
+  assert.equal(li.targeting.customTargeting.children.length,1,'reporting keys must never become campaign targeting requirements');
 });
 test("lost response reconciles existing entities without a second mutation; missing response never blindly retries", async () => {
   const f = await setup();
@@ -237,6 +244,46 @@ test("lost response reconciles existing entities without a second mutation; miss
     (await req(g, `/line-items/jobs/${j.id}/cancel`, {})).status,
     409,
   );
+});
+test("an interrupted 100-creative response recovers the same per-price job without duplicates", async t => {
+  t.mock.method(console, "warn", () => {});
+  const f = await setup();
+  const plan = {
+    ...prebidPlan(),
+    ranges: [{ from: "0.01", to: "0.06", step: "0.01" }],
+    creative: { ...prebidPlan().creative, layout: "per-price", copies: 20 },
+  };
+  let j = await start(f, await review(f, plan));
+  while (j.phase !== "Kreativi") j = await act(f, j, "step");
+  const create = f.traffic.create.bind(f.traffic);
+  let interrupt = true;
+  f.traffic.create = async (kind, payloads) => {
+    if (kind !== "creative" || !interrupt) return create(kind, payloads);
+    interrupt = false;
+    const transport = new GamTrafficClient(new GamClient("123456", "synthetic", async () => {
+      await create(kind, payloads); // Google committed, but its body never arrived.
+      return { status: 200, ok: true, text: async () => { throw new TypeError("Synthetic body interruption"); } };
+    }));
+    return transport.create(kind, payloads);
+  };
+  j = await act(f, j, "step");
+  assert(j.awaitingCheck);
+  assert.match(j.error, /prekinuta/);
+  assert.equal(f.db.creative.length, 100);
+  const calls = f.calls.length, cursor = j.cursor, id = j.id;
+  j = await act(f, j, "step");
+  assert.equal(f.calls.length, calls);
+  j = await act(f, j, "check");
+  assert.equal(j.awaitingCheck, false);
+  assert.equal(j.error, "");
+  assert.equal(j.cursor, cursor + 1);
+  assert.equal(j.id, id);
+  assert.equal(f.calls.length, calls); // The check is read-only, even after recovery.
+  await finish(f, j);
+  assert.equal(f.db.creative.length, 120);
+  assert.equal(new Set(f.db.creative.map(c => c.name)).size, 120);
+  assert.equal(f.db.lineItem.length, 6);
+  assert.equal(f.db.association.length, 120);
 });
 test("concurrent step, stale cursor and network lock permit one creation sequence", async () => {
   const f = await setup(),

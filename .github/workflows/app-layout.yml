@@ -8,7 +8,9 @@ permissions:
 jobs:
   layout:
     runs-on: ubuntu-24.04 # Playwright 1.55 browser dependencies are pinned to this supported OS.
-    timeout-minutes: 10
+    # Chromium dependencies took 7–8 minutes in two observed runs. Keep time
+    # for the complete unchanged desktop/mobile audit after that setup.
+    timeout-minutes: 20
     env:
       TZ: UTC
       TESSERA_TEST_TOOLCHAIN: isolated

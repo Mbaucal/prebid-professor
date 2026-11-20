@@ -53,7 +53,7 @@ with sync_playwright() as p:
     saved=data(base+'/outstream-settings')['outstream']['units']['Billboard'];assert saved['playerSizing']=='size-map' and saved['playerSizes']=={}
     page.get_by_role('button',name='Close format settings',exact=True).click()
     page.get_by_role('button',name='Generate and releases',exact=True).click()
-    page.get_by_label('What changed?',exact=True).fill('Synthetic MAIN revenue regression')
+    page.get_by_label('Version name',exact=True).fill('Synthetic MAIN revenue regression')
     page.get_by_role('button',name='Generate and save package',exact=True).click()
     expect(page.get_by_role('status').filter(has_text='Package saved in Releases.')).to_be_visible(timeout=90000)
     state=data(base+'/builtin-releases');release_id=state['releases'][0]['id'];assert release_id.startswith('builtin-release-')
