@@ -7,8 +7,16 @@ root=Path(__file__).resolve().parent.parent
 out=root/'.generated/bidder-rules-ui-evidence';out.mkdir(parents=True,exist_ok=True)
 origin='https://bidder-rules.fixture.invalid';endpoint='/api/publishers/audit-site/bidder-rules'
 checks=[]
-# Script versions with bidder rules in the registry, without runtime notices or superseded patches.
-RULE_SCRIPTS='3.22.2 (Preview) or 3.24.0 (Preview)'
+def registry_labels(*capabilities):
+ """The versions the admin names for these capabilities, read from the release registry by the shared rule
+ (worker/site-runtime/script-versions.mjs): the smallest step and the newest without a runtime notice, one or two."""
+ code="const {scriptVersionLabels}=await import('./worker/site-runtime/script-versions.mjs');console.log(JSON.stringify(scriptVersionLabels(JSON.parse(process.argv[1]))))"
+ labels=json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
+ assert 1<=len(labels)<=2,labels
+ return ' or '.join(labels)
+RULE_SCRIPTS=registry_labels('bidder-rules')
+# With saved bid caching, only versions that apply bid caching and bidder rules together.
+RULE_CACHE_SCRIPTS=registry_labels('bidder-rules','bid-cache')
 with sync_playwright() as playwright:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
  executable=os.environ.get('CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROMIUM_PATH')
@@ -94,7 +102,7 @@ with sync_playwright() as playwright:
     panel.get_by_role('checkbox',name='Enable bidder rules for this site').uncheck();save.click();expect(panel.get_by_text('Saved. Generate a new script to apply this change. Existing scripts are unchanged.',exact=True)).to_be_visible();assert data()['settings']['enabled'] is False;assert data()['settings']['rules']==saved['rules']
     panel.get_by_role('button',name='Add bidder rule').click();panel.get_by_role('textbox',name='Rule 3 name',exact=True).fill('Unsaved');panel.get_by_role('button',name='Reset changes').click();expect(panel.get_by_role('textbox',name='Rule 3 name',exact=True)).to_have_count(0)
     # Saved bid caching with 3.23.0: the note names only versions that apply bid caching and bidder rules together.
-    data('/__fixture/bid-cache-323',{});page.reload();expect(note).to_have_text('You can save rules now. Select and save script version 3.24.0 (Preview) before generating a package that uses them.');screen('bid-cache-323')
+    data('/__fixture/bid-cache-323',{});page.reload();expect(note).to_have_text(f'You can save rules now. Select and save script version {RULE_CACHE_SCRIPTS} before generating a package that uses them.');assert RULE_CACHE_SCRIPTS!=RULE_SCRIPTS;screen('bid-cache-323')
     data('/__fixture/remove-bidder',{});page.reload();expect(panel.get_by_role('combobox',name='Bidder for rule 1')).to_have_value('pubmatic');expect(panel.get_by_text('This bidder is not configured or is disabled. The rule is kept; it does not activate a bidder.')).to_have_count(2);expect(panel.get_by_role('checkbox',name='m.box_1 · not configured',exact=True)).to_be_checked();screen('orphan-preserved')
     assert not errors,errors
     no_auth=send(endpoint,{'revision':data()['revision'],'settings':saved},{'cookie':''});assert no_auth['status']==401

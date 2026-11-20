@@ -15,11 +15,19 @@ origin=fixture['origin'];assert urlsplit(origin).hostname=='127.0.0.1'
 errors=[];requests=[];checks=[]
 LOCK='Turn Prebid on or off in Prebid and bidders. Here you can change bid caching only.'
 RULES_NOTE='You can save rules now. Select and save script version {} before generating a package that uses them.'
-# The newest registry version with bid caching and no runtime notice, as the server names it.
-CACHE_SCRIPT='3.24.0 (Preview)'
+def registry_labels(*capabilities):
+ """The versions the admin names for these capabilities, read from the release registry by the shared rule
+ (worker/site-runtime/script-versions.mjs): the smallest step and the newest without a runtime notice, one or two.
+ With the TEST releases (up to 3.24.0): 3.22.2 (Preview) or 3.24.0 (Preview) for bidder rules, 3.24.0 (Preview) with bid caching."""
+ code="const {scriptVersionLabels}=await import('./worker/site-runtime/script-versions.mjs');console.log(JSON.stringify(scriptVersionLabels(JSON.parse(process.argv[1]))))"
+ labels=json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
+ assert 1<=len(labels)<=2,labels
+ return labels
+CACHE_SCRIPTS=registry_labels('bid-cache');CACHE_SCRIPT=' or '.join(CACHE_SCRIPTS)
+RULE_SCRIPTS=registry_labels('bidder-rules');RULE_CACHE_SCRIPTS=registry_labels('bidder-rules','bid-cache')
 NEEDS=f'Bid caching needs script {CACHE_SCRIPT}.'
-BLOCKED=('Bid caching needs a compatible script version. Select 3.24.0 (Preview) in Script setup and save; your bid cache settings are kept. '
- 'This version combines bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
+BLOCKED=(f'Bid caching needs a compatible script version. Select {CACHE_SCRIPT} in Script setup and save; your bid cache settings are kept. '
+ +('Both versions combine' if len(CACHE_SCRIPTS)>1 else 'This version combines')+' bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
  'To keep this script version instead, open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position.')
 # "or later" as words: "for later reactivation" elsewhere on the page is not a version claim.
 def or_later(text):return re.search(r'\bor later\b',text) is not None
@@ -55,8 +63,8 @@ try:
   check('Named script test does not tie bid caching to the Tanjug copy','bid-cache settings' not in page.locator('body').inner_text())
   # Bidder rules name the versions the server derives for them with the saved options: 3.23.0 is later but has none.
   page.goto(origin+'/site-workspace#bidder-rules')
-  note=page.get_by_text(RULES_NOTE.format('3.22.2 (Preview) or 3.24.0 (Preview)'),exact=True);note.wait_for()
-  check('Bidder rules name 3.22.2 (Preview) or 3.24.0 (Preview), not a fixed version or "or later"',not or_later(page.locator('main').inner_text()))
+  note=page.get_by_text(RULES_NOTE.format(' or '.join(RULE_SCRIPTS)),exact=True);note.wait_for()
+  check(f'Bidder rules name {" or ".join(RULE_SCRIPTS)}, not a fixed version or "or later"',not or_later(page.locator('main').inner_text()))
   # The TEST home page opens the TEST site's own Bid caching view.
   page.goto(origin+'/')
   link=page.get_by_role('link',name='Bid caching',exact=True);link.wait_for()
@@ -66,7 +74,7 @@ try:
   page.get_by_role('button',name='Billboard · Bid cache: Off',exact=True).wait_for()
   check('Prebid on/off is read-only here and the page says where to change it',page.get_by_text(LOCK,exact=True).is_visible()
    and all(radio.is_disabled() for radio in page.get_by_role('radio').all()) and page.get_by_role('radio').count()==2)
-  check('3.21.2 is selected and nothing is saved: the panel names 3.24.0 (Preview), never "or later"',page.get_by_text(NEEDS,exact=True).is_visible() and not or_later(page.locator('main').inner_text()))
+  check(f'3.21.2 is selected and nothing is saved: the panel names {CACHE_SCRIPT}, never "or later"',page.get_by_text(NEEDS,exact=True).is_visible() and not or_later(page.locator('main').inner_text()))
   text=page.locator('main').inner_text() if page.locator('main').count() else page.locator('body').inner_text()
   check('No Tanjug-only or production-menu wording',all(s not in text for s in ['Tanjug','This generator does not apply','Config →','Releases →','Ad units → Bid cache']))
   check('Each eligible TEST position has a Bid cache control',page.get_by_role('button',name='Sticky · Bid cache: Off',exact=True).is_visible())
@@ -79,7 +87,7 @@ try:
   check('The site default is saved for the TEST site',status==200 and mode['prebidMode']['bidCache']=={'enabled':True,'maxBidAgeSeconds':45} and mode['prebidMode']['enabled'] is True)
   page.get_by_role('button',name='Sticky · Bid cache: On',exact=True).click()
   dialog=page.get_by_role('dialog',name='Bid cache · Sticky',exact=True);dialog.get_by_label('Bid cache for Sticky',exact=True).wait_for()
-  check('The position dialog names 3.24.0 (Preview), never "or later", without production menus',dialog.get_by_text(f'Applies to the next package generated with script {CACHE_SCRIPT}. Select that version in Script setup to use it.',exact=True).is_visible())
+  check(f'The position dialog names {CACHE_SCRIPT}, never "or later", without production menus',dialog.get_by_text(f'Applies to the next package generated with script {CACHE_SCRIPT}. Select {"one of these versions" if len(CACHE_SCRIPTS)>1 else "that version"} in Script setup to use it.',exact=True).is_visible())
   dialog.get_by_label('Bid cache for Sticky',exact=True).select_option('off')
   dialog.get_by_role('button',name='Save position setting').click()
   dialog.get_by_role('status').filter(has_text='Saved. Select a compatible script in Script setup to apply it.').wait_for()
@@ -95,8 +103,9 @@ try:
   shots(page,'bid-cache-saved')
   # With bid caching saved, Bidder rules name only the script that applies both.
   page.goto(origin+'/site-workspace#bidder-rules')
-  page.get_by_text(RULES_NOTE.format('3.24.0 (Preview)'),exact=True).wait_for()
-  check('With bid caching saved, Bidder rules name only 3.24.0 (Preview)','3.22.2' not in page.locator('main').inner_text())
+  page.get_by_text(RULES_NOTE.format(' or '.join(RULE_CACHE_SCRIPTS)),exact=True).wait_for()
+  dropped=[label.replace(' (Preview)','') for label in RULE_SCRIPTS if label not in RULE_CACHE_SCRIPTS];assert dropped,RULE_SCRIPTS
+  check(f'With bid caching saved, Bidder rules name only {" or ".join(RULE_CACHE_SCRIPTS)}',not any(version in page.locator('main').inner_text() for version in dropped))
   shots(page,'bidder-rules-bid-cache-saved')
   # Generate with 3.21.2: blocked, with the reason shown above Script setup.
   page.get_by_role('button',name='Generate and releases',exact=True).click()
