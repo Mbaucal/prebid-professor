@@ -2,7 +2,7 @@
 import {CACHE_POSITIONS,hasBidCache} from '../experiments/position-cache-settings.mjs';
 import {runtimeSupportsBidCache} from '../../shared/bid-cache/eligibility.mjs';
 import {validateAdUnitCode} from '../../shared/gam/ad-unit-code.mjs';
-import {scriptVersionsWith,releaseLabel,versionList,accountsNeeding,rulesNeeded,neededCapabilities,CAPABILITY_NAMES} from './script-versions.mjs';
+import {scriptVersionsWith,releaseLabel,versionList,accountsNeeding,rulesNeeded,timeoutNeeded,neededCapabilities,CAPABILITY_NAMES} from './script-versions.mjs';
 export {hasBidCache};
 export const DEFAULT_BID_CACHE = Object.freeze({enabled:false,maxBidAgeSeconds:60});
 /** The most position overrides one site can save; each names one of its own ad units. */
@@ -63,7 +63,8 @@ export function settingsForScript(config,refreshSeconds) {
     ...(bidCache.positionOverrides?{positionOverrides:bidCache.positionOverrides}:{})};
 }
 /** The script versions that apply bid caching together with the site's other saved options that only some scripts
- * apply (active bidder accounts with an alias or their own SChain, enabled bidder rules), by the naming rule in
+ * apply (active bidder accounts with an alias or their own SChain, enabled bidder rules, an enabled adaptive auction
+ * timeout), by the naming rule in
  * script-versions.mjs: at most two, the smallest step and the newest, without runtime notices. Demand → Prebid, the
  * position bid cache dialog and Generate's refusal all name these, read from the registry, so a new release or notice
  * changes them together. `bidders` are the saved bidder rows; without them (the older generation routes, which never
@@ -74,7 +75,7 @@ export function bidCacheScripts(config,bidders,history,notices) {
 function cacheCapabilities(config,bidders) {
   let accounts=[];
   if(bidders)try{accounts=accountsNeeding(config,{bidders});}catch{}
-  return neededCapabilities({accounts,rules:rulesNeeded(config),cache:true});
+  return neededCapabilities({accounts,rules:rulesNeeded(config),cache:true,timeout:timeoutNeeded(config)});
 }
 /** ['3.24.0 (Preview)', '3.26.0 (Preview)'] for the panels. */
 export const bidCacheScriptVersions=(config,bidders,history,notices)=>bidCacheScripts(config,bidders,history,notices).map(releaseLabel);

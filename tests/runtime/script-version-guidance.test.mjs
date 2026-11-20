@@ -261,6 +261,20 @@ test('versions come from release capabilities: the smallest step and the newest,
   const r322=runtimeCatalog.find(x=>x.version==='3.22.0');
   assert.equal(scriptGuidance({accounts:['pm_ag'],rules:true,cache:false},r322),`Script 3.22.0 cannot apply bidder accounts (pm_ag). To keep them with your saved bidder rules, select ${choice(expectedVersions(['bidder-accounts','bidder-rules']))} in Script setup and save. Your saved settings and previous packages are unchanged.`);
   assert.equal(scriptGuidance({accounts:['pm_ag'],rules:true,cache:true},runtimeCatalog.find(x=>x.version==='3.24.0')),null);
+  // An enabled adaptive timeout (MAIN 3.26.0; TEST has no such setting or release) is kept like bid caching: only
+  // versions with it are named, and turning bidder rules off alone is not offered. With TEST's own releases none has it.
+  for(const needs of [['bidder-rules','adaptive-auction-timeout'],['bidder-accounts','adaptive-auction-timeout'],['bidder-accounts','bidder-rules','bid-cache','adaptive-auction-timeout']]){
+    assert.equal(scriptVersionText(needs,MAIN_3260),'3.26.0 (Preview)',needs.join('+'));
+    assert.equal(scriptVersionText(needs),'',needs.join('+'));
+  }
+  const r3212=runtimeCatalog.find(x=>x.version==='3.21.2');
+  const timeoutRules=scriptGuidance({accounts:[],rules:true,cache:false,timeout:true},r3212,MAIN_3260);
+  assert.equal(timeoutRules,'Script 3.21.2 cannot apply enabled bidder rules. To keep them with your saved adaptive timeout, select 3.26.0 (Preview) in Script setup and save. Your saved settings and previous packages are unchanged.');
+  const timeoutAll=scriptGuidance({accounts:['pm_ag'],rules:true,cache:true,timeout:true},r322,MAIN_3260);
+  assert.equal(timeoutAll,'Script 3.22.0 cannot apply bidder accounts (pm_ag). To keep them with your saved bidder rules, bid caching and adaptive timeout, select 3.26.0 (Preview) in Script setup and save. Your saved settings and previous packages are unchanged.');
+  const timeoutNone=scriptGuidance({accounts:['a1'],rules:true,cache:true,timeout:true},{version:'4.0.2',capabilities:['a']},history);
+  assert.equal(timeoutNone,'Script 4.0.2 cannot apply bidder accounts (a1) or enabled bidder rules. No available script version applies bidder accounts, bidder rules, bid caching and adaptive timeout together. Your saved settings and previous packages are unchanged.');
+  for(const message of [timeoutRules,timeoutAll,timeoutNone])assert.equal(configurationErrorMessage(Error(message)),message);
 });
 
 // Panel copy reads the versions from the server payloads, so it follows the saved options and the registry.

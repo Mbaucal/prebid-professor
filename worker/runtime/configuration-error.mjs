@@ -6,10 +6,10 @@ const GENERIC = 'The saved settings are not supported by this built-in runtime. 
 // Script version guidance for bidder accounts, bidder rules and bid caching (site-runtime/script-version-guidance.mjs).
 // It names one or two versions (the smallest step and the newest), never more.
 const RELEASE = String.raw`\d{1,3}\.\d{1,3}\.\d{1,3}`, CHOICE = String.raw`${RELEASE}(?: \(Preview\))?`;
-const ACCOUNT = '[a-z][a-z0-9_-]{0,63}', OPTION = '(?:bidder accounts|bidder rules|bid caching)';
+const ACCOUNT = '[a-z][a-z0-9_-]{0,63}', OPTION = '(?:bidder accounts|bidder rules|bid caching|adaptive timeout)';
 const SCRIPT_GUIDANCE = new RegExp(`^(?:Script ${RELEASE}|This script) cannot apply (?:bidder accounts \\(${ACCOUNT}(?:, ${ACCOUNT}){0,2}(?: and [1-9]\\d{0,3} more)?\\)(?: or enabled bidder rules)?|enabled bidder rules)\\. `
-  + `(?:(?:To keep them with your saved ${OPTION}(?: and ${OPTION})?, select|Select) ${CHOICE}(?: or ${CHOICE})? in Script setup and save(?:, or turn off bidder rules)?`
-  + `|No available script version applies ${OPTION}(?:(?:, | and )${OPTION}){0,2} together)\\. Your saved settings and previous packages are unchanged\\.$`, 'u');
+  + `(?:(?:To keep them with your saved ${OPTION}(?:(?:, ${OPTION}){0,2} and ${OPTION})?, select|Select) ${CHOICE}(?: or ${CHOICE})? in Script setup and save(?:, or turn off bidder rules)?`
+  + `|No available script version applies ${OPTION}(?:(?:, | and )${OPTION}){0,3} together)\\. Your saved settings and previous packages are unchanged\\.$`, 'u');
 // TEST wording for enabled bidder rules with script 3.23.0 (test-workspace/bid-cache-messages.mjs), checked before
 // the script version guidance; shown only exactly as written.
 const EXACT = [BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE];
