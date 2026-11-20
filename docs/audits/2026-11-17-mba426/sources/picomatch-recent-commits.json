@@ -1,0 +1,77 @@
+[
+  {
+    "sha": "9fab7bf61913ea334c4203ed321c426cfde44a42",
+    "date": "2026-08-27T19:07:51Z",
+    "message": "Merge pull request #181 from fdma/fix/globstar-adjacent-literal-issue-99"
+  },
+  {
+    "sha": "8f5ecc02e186bfea06cf50f35d0539c339e1a26e",
+    "date": "2026-08-27T19:04:06Z",
+    "message": "fix: treat `**` adjacent to a literal as a single star (#99)"
+  },
+  {
+    "sha": "838c9d791cbd0e7c92e858f71ae38f6597416c09",
+    "date": "2026-08-27T11:48:42Z",
+    "message": "Merge pull request #202 from koding88/fix/globstar-newlines"
+  },
+  {
+    "sha": "1fc1284b0d7201acc266ca5f585f6800d5d600b9",
+    "date": "2026-08-27T11:25:16Z",
+    "message": "Merge pull request #203 from youdie006/fix/punct-backslash"
+  },
+  {
+    "sha": "b96ad51e957cb27971ed311adde2d839bb662e87",
+    "date": "2026-08-27T11:23:13Z",
+    "message": "chore: sync .verb.md and add negation test for punct backslash"
+  },
+  {
+    "sha": "15c324a9dae5d5b1e7281a6708d16371a0b14098",
+    "date": "2026-08-27T02:02:26Z",
+    "message": "fix: include the backslash in [[:punct:]]"
+  },
+  {
+    "sha": "1470a59e4e6c3bc3c1d04f98c9ab032837107baa",
+    "date": "2026-08-25T22:23:43Z",
+    "message": "test: add carriage return tests for newline globstar matching"
+  },
+  {
+    "sha": "75c313a9a5de0883afbbd9fa74ae03ef2919bd3e",
+    "date": "2026-08-25T16:56:07Z",
+    "message": "fix: allow globstars to match paths containing newlines"
+  },
+  {
+    "sha": "36bc4615479355c30eac88b60a12e79cdaf892fd",
+    "date": "2026-08-24T22:54:44Z",
+    "message": "Merge pull request #184 from micromatch/renovate/pin-dependencies"
+  },
+  {
+    "sha": "8b4f457290c152a6381179c0d6203dbb6f18b82a",
+    "date": "2026-08-24T22:51:47Z",
+    "message": "Pin actions/upload-code-coverage action to 1c15be3"
+  },
+  {
+    "sha": "ef533d0d80b7481cfdf07e77197469bb6546ffc3",
+    "date": "2026-08-24T22:49:23Z",
+    "message": "Merge pull request #196 from rajanpanth/fix/bracket-negation-default"
+  },
+  {
+    "sha": "73de57b15b1f3880d5aaeea9327fecadd92a84a4",
+    "date": "2026-08-24T22:26:35Z",
+    "message": "fix: preserve bracket negation compatibility"
+  },
+  {
+    "sha": "ea09356af3d0de0a7c7c21c6acf2e5ddd500ce97",
+    "date": "2026-08-24T21:53:58Z",
+    "message": "Merge pull request #178 from micromatch/renovate/actions-checkout-7.x"
+  },
+  {
+    "sha": "b4ad96f12498ed37cb41577ff089020e15419702",
+    "date": "2026-08-24T21:52:21Z",
+    "message": "Update actions/checkout action to v7"
+  },
+  {
+    "sha": "b33f1c4893937c89f0fba9101e010cc321b921a6",
+    "date": "2026-08-24T21:51:01Z",
+    "message": "Merge pull request #185 from micromatch/renovate/actions-setup-node-7.x"
+  }
+]

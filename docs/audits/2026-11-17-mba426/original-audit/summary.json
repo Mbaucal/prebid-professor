@@ -1,0 +1,65 @@
+{
+  "note": "Historical full lock is retained as inventory, not a zero-findings claim. Active root-production and tools must have zero findings. No automatic fixes or package changes.",
+  "summaries": [
+    {
+      "scope": "all",
+      "role": "historical-full-lock",
+      "exitCode": 1,
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 11,
+        "critical": 0,
+        "total": 11
+      },
+      "packages": [
+        "@cloudflare/vite-plugin",
+        "fdir",
+        "miniflare",
+        "nanoid",
+        "picomatch",
+        "sharp",
+        "source-map-js",
+        "tinyglobby",
+        "undici",
+        "vite",
+        "wrangler"
+      ]
+    },
+    {
+      "scope": "production",
+      "role": "active-root-production",
+      "exitCode": 0,
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "packages": []
+    },
+    {
+      "scope": "active-tools",
+      "role": "active-tools",
+      "exitCode": 1,
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 5,
+        "critical": 0,
+        "total": 5
+      },
+      "packages": [
+        "@vitejs/plugin-react",
+        "fdir",
+        "picomatch",
+        "tinyglobby",
+        "vite"
+      ]
+    }
+  ]
+}

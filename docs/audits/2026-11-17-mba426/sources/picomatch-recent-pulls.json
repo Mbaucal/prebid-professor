@@ -1,0 +1,402 @@
+[
+  {
+    "number": 254,
+    "state": "open",
+    "title": "fix: flatten single-branch wildcard repetition to avoid ReDoS",
+    "merged_at": null,
+    "merge_commit_sha": "7152299c4972d38a4e4e43d0146d63d7fe57213b",
+    "updated_at": "2026-11-17T18:31:17Z"
+  },
+  {
+    "number": 253,
+    "state": "open",
+    "title": "fix: do not match dotfiles with a negated bracket at the start of a segment",
+    "merged_at": null,
+    "merge_commit_sha": "ba8b02195d070bee66e5b33c1133016b96140bc3",
+    "updated_at": "2026-11-16T06:24:42Z"
+  },
+  {
+    "number": 250,
+    "state": "open",
+    "title": "fix: align dotfile fast paths with full parsing",
+    "merged_at": null,
+    "merge_commit_sha": "902120ac5e60ca5801baf5d453cda6be28e2355a",
+    "updated_at": "2026-11-10T02:53:47Z"
+  },
+  {
+    "number": 249,
+    "state": "open",
+    "title": "fix: anchor negation extglobs at the slash that ends the segment",
+    "merged_at": null,
+    "merge_commit_sha": "80de83cea52a55a004c81eecb015148e63d1eef8",
+    "updated_at": "2026-11-09T08:56:06Z"
+  },
+  {
+    "number": 248,
+    "state": "open",
+    "title": "docs: correct prepend option type",
+    "merged_at": null,
+    "merge_commit_sha": "3209064282b83c20e2c5020928754975a84e6a72",
+    "updated_at": "2026-11-05T18:13:40Z"
+  },
+  {
+    "number": 246,
+    "state": "open",
+    "title": "[v2] Guard single-branch repeated-star extglobs against ReDoS",
+    "merged_at": null,
+    "merge_commit_sha": "a94d0cf76113e8344ad2edb0ef80fafdcb99f54b",
+    "updated_at": "2026-11-05T16:35:53Z"
+  },
+  {
+    "number": 245,
+    "state": "open",
+    "title": "fix: preserve paren tracking after unmatched closing parens",
+    "merged_at": null,
+    "merge_commit_sha": "5c88e77a838137b585c0b84499396b4290173909",
+    "updated_at": "2026-10-29T14:13:49Z"
+  },
+  {
+    "number": 244,
+    "state": "open",
+    "title": "fix: keep plain globs when noext is true",
+    "merged_at": null,
+    "merge_commit_sha": "ec4f683149de134d8cd385bec77d1935c3c49556",
+    "updated_at": "2026-10-29T08:37:24Z"
+  },
+  {
+    "number": 241,
+    "state": "open",
+    "title": "Fix Bash stars in the inline fast path",
+    "merged_at": null,
+    "merge_commit_sha": "398473d2266d530f632c73b9e14e1b971d1aa822",
+    "updated_at": "2026-10-28T13:28:10Z"
+  },
+  {
+    "number": 240,
+    "state": "closed",
+    "title": "fix: prevent single-branch extglob ReDoS (CVE-2026-112366)",
+    "merged_at": null,
+    "merge_commit_sha": "9d5f5871feddc440aaecf2d00b12c6b7eb097d50",
+    "updated_at": "2026-10-28T07:23:32Z"
+  },
+  {
+    "number": 238,
+    "state": "open",
+    "title": "fix: literalize single-branch extglobs with a leading bare quantifier (CVE-2026-112366)",
+    "merged_at": null,
+    "merge_commit_sha": "0a04524bc1967cf706f0c08cdaa19644e6467041",
+    "updated_at": "2026-11-17T18:37:00Z"
+  },
+  {
+    "number": 237,
+    "state": "open",
+    "title": "fix: CVE-2026-112366 prevent ReDoS in single-branch repeated extglobs",
+    "merged_at": null,
+    "merge_commit_sha": "261d1e72ac5b1d214d24dd86d8dc506a4e1aaaeb",
+    "updated_at": "2026-11-10T20:58:48Z"
+  },
+  {
+    "number": 236,
+    "state": "open",
+    "title": "fix: allow format to normalize non-string inputs",
+    "merged_at": null,
+    "merge_commit_sha": "3f31c3dca78800a3a3e9f1c0a8db3606db89b9f3",
+    "updated_at": "2026-10-22T00:20:59Z"
+  },
+  {
+    "number": 235,
+    "state": "closed",
+    "title": "fix: detect glob-star-in-branch and repetition overlap as ReDoS-risky extglobs (CVE-2026-112366)",
+    "merged_at": null,
+    "merge_commit_sha": "b8b303b7df0dc1cf5c40d040e6472e33eed9c4b9",
+    "updated_at": "2026-11-17T18:00:08Z"
+  },
+  {
+    "number": 233,
+    "state": "open",
+    "title": "fix: reset stateful matcher regexes",
+    "merged_at": null,
+    "merge_commit_sha": "3dc6c169b260b83a477cbae9696caf3172e6986d",
+    "updated_at": "2026-10-19T08:01:19Z"
+  },
+  {
+    "number": 232,
+    "state": "open",
+    "title": "fix: treat a brace range with no bounds as literal text",
+    "merged_at": null,
+    "merge_commit_sha": "832b6aa07ef38a8f90b0f4b53c72c992c59b744e",
+    "updated_at": "2026-10-16T20:00:41Z"
+  },
+  {
+    "number": 231,
+    "state": "open",
+    "title": "fix: escape dots when a brace range falls back to literal matching",
+    "merged_at": null,
+    "merge_commit_sha": "5beec63d57d157b917691c446a05a38844db43d4",
+    "updated_at": "2026-10-16T19:43:34Z"
+  },
+  {
+    "number": 230,
+    "state": "open",
+    "title": "fix: populate single-segment scan tokens",
+    "merged_at": null,
+    "merge_commit_sha": "615194aae098a0d3ca7e122f5d7ed706b2202aca",
+    "updated_at": "2026-10-13T17:18:30Z"
+  },
+  {
+    "number": 229,
+    "state": "open",
+    "title": "fix: return match details from array matchers",
+    "merged_at": null,
+    "merge_commit_sha": "260863af8486eb1e60572f4487e7fbb06c064683",
+    "updated_at": "2026-10-12T06:16:52Z"
+  },
+  {
+    "number": 228,
+    "state": "open",
+    "title": "chore(deps): update actions/setup-node digest to 949feb2",
+    "merged_at": null,
+    "merge_commit_sha": "38d5b5d0b5ac6f6b7ce82ccd1564d5f1c6b36720",
+    "updated_at": "2026-10-08T04:42:50Z"
+  },
+  {
+    "number": 227,
+    "state": "open",
+    "title": "fix: accept cross-realm regular expressions in matchBase",
+    "merged_at": null,
+    "merge_commit_sha": "2ed5749142d32a1429b4eec3fbdc7dbcc06ccf51",
+    "updated_at": "2026-10-07T23:40:41Z"
+  },
+  {
+    "number": 226,
+    "state": "open",
+    "title": "fix: preserve consecutive escaped backslashes",
+    "merged_at": null,
+    "merge_commit_sha": "8e6a0126d5ddda60bbaafa5f2b0969fe8113f59a",
+    "updated_at": "2026-10-07T12:55:36Z"
+  },
+  {
+    "number": 225,
+    "state": "open",
+    "title": "fix: format paths before basename matching",
+    "merged_at": null,
+    "merge_commit_sha": "0dfeaf991395036fd90af31cea39481a7945811d",
+    "updated_at": "2026-10-06T16:21:39Z"
+  },
+  {
+    "number": 224,
+    "state": "open",
+    "title": "fix: keep globstars before a pipe in parens (#147)",
+    "merged_at": null,
+    "merge_commit_sha": "e6e48b9c540461252d6f7a224eba15611edf9283",
+    "updated_at": "2026-10-06T15:17:57Z"
+  },
+  {
+    "number": 221,
+    "state": "open",
+    "title": "Match zero directories for leading globstars inside groups",
+    "merged_at": null,
+    "merge_commit_sha": "f89a0509e16f876c70a4903c36b8a929310a7dc6",
+    "updated_at": "2026-10-02T05:37:47Z"
+  },
+  {
+    "number": 220,
+    "state": "open",
+    "title": "perf: avoid split allocation in basename",
+    "merged_at": null,
+    "merge_commit_sha": "d7f0ce9cbfc5a9a5d072e11bf94b971ee8137632",
+    "updated_at": "2026-09-29T17:05:25Z"
+  },
+  {
+    "number": 219,
+    "state": "open",
+    "title": "fix: do not treat character classes as self-matching filenames (#71)",
+    "merged_at": null,
+    "merge_commit_sha": "c9bc87b38d9f082f3bc6d5d8fa4002939014f89a",
+    "updated_at": "2026-11-09T08:41:54Z"
+  },
+  {
+    "number": 218,
+    "state": "open",
+    "title": "fix: reset stateful regexes when reusing matchers",
+    "merged_at": null,
+    "merge_commit_sha": "c992eac76624c4d7f23fd2042d840853d7c8717f",
+    "updated_at": "2026-09-27T13:28:44Z"
+  },
+  {
+    "number": 216,
+    "state": "closed",
+    "title": "Fix optional trailing slash for prefix star fast path",
+    "merged_at": null,
+    "merge_commit_sha": "01eee66173f47fa7b0fab6c8271a54f7915446f1",
+    "updated_at": "2026-09-24T21:49:12Z"
+  },
+  {
+    "number": 215,
+    "state": "open",
+    "title": "fix: let the one-character guard accept a newline or carriage return",
+    "merged_at": null,
+    "merge_commit_sha": "456e26cad4f7cabed5cccf942b4e1d42c3dc338a",
+    "updated_at": "2026-09-24T10:44:39Z"
+  },
+  {
+    "number": 214,
+    "state": "open",
+    "title": "chore(deps): update actions/upload-code-coverage digest to 2b21a77",
+    "merged_at": null,
+    "merge_commit_sha": "46dfdaaaf90fb33fb292c4db0a1d245f60b91f1b",
+    "updated_at": "2026-10-01T17:50:17Z"
+  },
+  {
+    "number": 211,
+    "state": "open",
+    "title": "Treat unmatched double quotes as literal path characters",
+    "merged_at": null,
+    "merge_commit_sha": "6efe3f9e9622570a9247aef14926e5cd9ba8f14c",
+    "updated_at": "2026-09-16T07:10:29Z"
+  },
+  {
+    "number": 210,
+    "state": "open",
+    "title": "docs: correct the .toRegex and .makeRe examples",
+    "merged_at": null,
+    "merge_commit_sha": "b36177426d0e6e7a81408d636f7c3f9fda3f147f",
+    "updated_at": "2026-09-12T13:20:15Z"
+  },
+  {
+    "number": 209,
+    "state": "closed",
+    "title": "fix: apply prepend as a string on generated regexes (#110)",
+    "merged_at": null,
+    "merge_commit_sha": "4fd2064965a2365bd9ce9424ff74c8df01b57da8",
+    "updated_at": "2026-10-14T12:23:31Z"
+  },
+  {
+    "number": 208,
+    "state": "open",
+    "title": "fix: match names ending in a dot with `*.*` (#207)",
+    "merged_at": null,
+    "merge_commit_sha": "c2369d310909f6c3a47e669a9cda1cf735adb9dc",
+    "updated_at": "2026-10-01T16:32:32Z"
+  },
+  {
+    "number": 205,
+    "state": "closed",
+    "title": "parse: honor noglobstar on the leading **/ fast path",
+    "merged_at": null,
+    "merge_commit_sha": "8586b4e95fb6d153460992117783eb9648b5b5f6",
+    "updated_at": "2026-10-24T00:06:58Z"
+  },
+  {
+    "number": 204,
+    "state": "closed",
+    "title": "scan: report isGlobstar without scanToEnd",
+    "merged_at": null,
+    "merge_commit_sha": "eca8df748f791bad63fe1be10216f22ec4d93150",
+    "updated_at": "2026-10-24T00:06:54Z"
+  },
+  {
+    "number": 203,
+    "state": "closed",
+    "title": "fix: include the backslash in [[:punct:]]",
+    "merged_at": "2026-08-27T11:25:17Z",
+    "merge_commit_sha": "1fc1284b0d7201acc266ca5f585f6800d5d600b9",
+    "updated_at": "2026-08-27T11:25:17Z"
+  },
+  {
+    "number": 202,
+    "state": "closed",
+    "title": "fix: allow globstars to match paths containing newlines",
+    "merged_at": "2026-08-27T11:48:43Z",
+    "merge_commit_sha": "838c9d791cbd0e7c92e858f71ae38f6597416c09",
+    "updated_at": "2026-08-27T11:48:43Z"
+  },
+  {
+    "number": 201,
+    "state": "closed",
+    "title": "docs: backfill changelog through 4.0.7",
+    "merged_at": "2026-08-24T21:27:22Z",
+    "merge_commit_sha": "68211346e3d2405abaab3a998807d389cb007dfa",
+    "updated_at": "2026-08-24T21:27:25Z"
+  },
+  {
+    "number": 200,
+    "state": "open",
+    "title": "fix: respect dot option in brace alternatives",
+    "merged_at": null,
+    "merge_commit_sha": "6f37082e512dbfd7ba34be75800f68f0b0160bec",
+    "updated_at": "2026-08-25T10:04:43Z"
+  },
+  {
+    "number": 199,
+    "state": "closed",
+    "title": "fix: return complete pattern parts from scan",
+    "merged_at": "2026-08-24T14:03:58Z",
+    "merge_commit_sha": "ada9d3fe9eb5a606bb4f6d87bc5cd7ac87fe63a4",
+    "updated_at": "2026-08-24T14:04:00Z"
+  },
+  {
+    "number": 198,
+    "state": "closed",
+    "title": "fix: handle terminal globstars in parenthesized patterns",
+    "merged_at": "2026-08-24T14:30:32Z",
+    "merge_commit_sha": "fdfb1559e4ef761f95c3009c1fd7afceb8830f55",
+    "updated_at": "2026-08-24T14:30:35Z"
+  },
+  {
+    "number": 197,
+    "state": "closed",
+    "title": "fix: scan full pattern when tokens are requested",
+    "merged_at": "2026-08-24T13:09:05Z",
+    "merge_commit_sha": "9b74f6fc70ed828ea4ef7106833a31428b8d7329",
+    "updated_at": "2026-08-24T13:09:07Z"
+  },
+  {
+    "number": 196,
+    "state": "closed",
+    "title": "fix: translate POSIX bracket negation by default",
+    "merged_at": "2026-08-24T22:49:23Z",
+    "merge_commit_sha": "ef533d0d80b7481cfdf07e77197469bb6546ffc3",
+    "updated_at": "2026-08-24T22:49:23Z"
+  },
+  {
+    "number": 195,
+    "state": "open",
+    "title": "fix: apply OS detection when called without an options object",
+    "merged_at": null,
+    "merge_commit_sha": "c2719279f29d32a4d6b8ecf138c60ee05a73e7b1",
+    "updated_at": "2026-08-18T15:19:34Z"
+  },
+  {
+    "number": 194,
+    "state": "open",
+    "title": "fix: treat a leading `?` in an extglob body as a wildcard",
+    "merged_at": null,
+    "merge_commit_sha": "659d5bc6572692a21ec87091733ede4a4dd968a4",
+    "updated_at": "2026-11-09T08:42:00Z"
+  },
+  {
+    "number": 193,
+    "state": "open",
+    "title": "fix: star opening a brace at a segment start should not match dotfiles",
+    "merged_at": null,
+    "merge_commit_sha": "ba009582d15f027bc8b2e880b4a441ad76030bec",
+    "updated_at": "2026-08-14T02:55:51Z"
+  },
+  {
+    "number": 191,
+    "state": "open",
+    "title": "fix: treat `?` and `+` after a closing extglob as glob tokens",
+    "merged_at": null,
+    "merge_commit_sha": "bc46636880aacef9cd08d3cc340bb11d3cdac491",
+    "updated_at": "2026-11-09T08:41:57Z"
+  },
+  {
+    "number": 190,
+    "state": "open",
+    "title": "fix: negated patterns with slashes incorrectly use basename-only matching when matchBase is true",
+    "merged_at": null,
+    "merge_commit_sha": "936e1f06e74971711556b310a8e49c9bcbae4298",
+    "updated_at": "2026-08-02T11:29:44Z"
+  }
+]
