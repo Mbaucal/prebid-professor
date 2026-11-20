@@ -30,7 +30,7 @@ jobs:
       - name: Build MAIN and verify immutable experiment contracts
         run: |
           node scripts/isolated-toolchain.mjs build
-          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-loader*.test.mjs tests/runtime/ab-bundle.test.mjs tests/runtime/ab-store.test.mjs tests/runtime/ab-tests-api.test.mjs tests/runtime/ab-main-package3251.test.mjs tests/runtime/ab-tests-main.test.mjs tests/runtime/ab-report-plan.test.mjs tests/runtime/ab-gam-report.test.mjs tests/runtime/ab-measurement*.test.mjs
+          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-loader*.test.mjs tests/runtime/ab-bundle.test.mjs tests/runtime/ab-store*.test.mjs tests/runtime/ab-tests-api.test.mjs tests/runtime/ab-main-package3251.test.mjs tests/runtime/ab-tests-main.test.mjs tests/runtime/ab-report-plan.test.mjs tests/runtime/ab-gam-report.test.mjs tests/runtime/ab-measurement*.test.mjs
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/verify-ab-tests-main-workerd.mjs
       - name: Install pinned browser tools
         run: |
