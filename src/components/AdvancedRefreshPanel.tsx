@@ -9,6 +9,7 @@ import {
 import type { RefreshScript } from '../../worker/refresh-inheritance';
 import type { AdUnit } from '../shared/types';
 import EditRebaseReview from './EditRebaseReview';
+import AdaptiveAuctionTimeoutPanel from './AdaptiveAuctionTimeoutPanel';
 
 type Props = {
   publisherId: string;
@@ -316,6 +317,7 @@ export default function AdvancedRefreshPanel({ publisherId, onChanged, onOpenUni
       {savedMessage ? <div className="advanced-save-message">✓ {savedMessage}</div> : null}
       {loading ? <div className="config-loading">Loading rules…</div> : null}
 
+      <AdaptiveAuctionTimeoutPanel key={publisherId} publisherId={publisherId} onChanged={onChanged}/>
       <div className="advanced-refresh-layout">
         <aside className="advanced-target-list">
           <span className="panel-kicker">Rule target</span>
