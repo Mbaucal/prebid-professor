@@ -63,6 +63,8 @@ test('the Unit rules list of scripts that skip TakeOver and Outstream for group 
       assert.equal(await excludes(descriptor, scope, format), GROUP_RULE_FORMAT_SCRIPTS.includes(release.version), `${release.version} ${scope} ${format}`);
   }
   assert.deepEqual([...GROUP_RULE_FORMAT_SCRIPTS], ['3.21.1', '3.21.2', '3.22.1', '3.22.2', '3.23.0', '3.24.0']);
+  // The help names only scripts this line registers: MAIN also lists 3.25.0, 3.25.1 and 3.26.0, which TEST does not have.
+  assert.deepEqual(GROUP_RULE_FORMAT_SCRIPTS.filter(version => !releases.some(release => release.version === version)), [], 'Every listed script is registered');
 });
 
 test('the help text names every listed script and 3.22.0 explicitly, never "and later"', () => {

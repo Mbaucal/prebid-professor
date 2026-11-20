@@ -1,5 +1,5 @@
 """Real admin size-map UI and HTTP routes. All browser requests are local fixtures."""
-import base64,json,os,subprocess
+import base64,json,os,re,subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright,expect
@@ -7,6 +7,12 @@ root=Path(__file__).resolve().parent.parent
 out=root/'.generated/size-map-references-ui';out.mkdir(parents=True,exist_ok=True)
 origin='https://map-audit.fixture.invalid';endpoint='/api/publishers/audit-site/size-maps'
 checks=[]
+# The Unit rules help names the scripts listed in src/site-workspace/group-rule-scripts.ts, which
+# tests/runtime/group-rule-format-scripts.test.mjs checks against generated packages for every release.
+_scripts=re.search(r"GROUP_RULE_FORMAT_SCRIPTS = Object\.freeze\(\[([^\]]*)\]\)",(root/'src/site-workspace/group-rule-scripts.ts').read_text()).group(1)
+_scripts=[v.strip().strip("'") for v in _scripts.split(',')]
+assert len(_scripts)>=2 and all(re.fullmatch(r'\d+\.\d+\.\d+',v) for v in _scripts),_scripts
+GROUP_RULE_TEXT='In scripts '+', '.join(_scripts[:-1])+' and '+_scripts[-1]+', Default, ATF and BTF conditions apply only to those formats'
 # Same name as the fixture's long page-type map of "display" (one unbreakable token).
 LONG='vesti_sport_regionalno_beograd_i_okolina_najnovije_vesti_dana_iz_grada_i_regiona_sa_fotografijama'
 # Short laptop and phone screens where the confirmation used to push "Confirm and save" out of the dialog.
@@ -135,7 +141,7 @@ with sync_playwright() as playwright:
     note=dialog.locator('.page-type-confirmation');expect(note).to_contain_text('Page type galerija: P1, P2 will use galerija_rectangle instead of rectangle.')
     expect(note.locator('.page-type-video-size')).to_have_text(['Outstream on P1: no video size is chosen for galerija_rectangle. Choose one in Formats before Generate.']);confirm_in_view(dialog);screen('page-type-confirm-outstream')
     dialog.get_by_role('button',name='Cancel',exact=True).click();expect(dialog).to_have_count(0);assert 'clip' in map_names() and 'galerija_rectangle' not in map_names()
-    page.get_by_role('button',name='Unit rules',exact=True).click();page.get_by_role('button',name='＋ New rule',exact=True).click();rule_dialog=page.get_by_role('dialog');rule_dialog.get_by_label('Rule target',exact=False).select_option('__DEFAULT__');scope=rule_dialog.locator('.conditional-section');scope.scroll_into_view_if_needed();expect(scope).to_contain_text('In scripts 3.21.1, 3.21.2, 3.22.1, 3.22.2, 3.23.0 and 3.24.0, Default, ATF and BTF conditions apply only to those formats');expect(scope).to_contain_text('Scripts before 3.21.1 and script 3.22.0 can reject packages when those group rules reach TakeOver or Outstream.');expect(scope).to_contain_text('A Default or group preset does not restrict TakeOver or Outstream.');expect(scope.get_by_text('Conditional rules support Banner and Sticky.',exact=False)).to_be_in_viewport();screen('rule-format-scope');rule_dialog.get_by_role('button',name='Cancel',exact=True).click();expect(rule_dialog).to_have_count(0);assert not errors,errors
+    page.get_by_role('button',name='Unit rules',exact=True).click();page.get_by_role('button',name='＋ New rule',exact=True).click();rule_dialog=page.get_by_role('dialog');rule_dialog.get_by_label('Rule target',exact=False).select_option('__DEFAULT__');scope=rule_dialog.locator('.conditional-section');scope.scroll_into_view_if_needed();expect(scope).to_contain_text(GROUP_RULE_TEXT);expect(scope).to_contain_text('Scripts before 3.21.1 and script 3.22.0 can reject packages when those group rules reach TakeOver or Outstream.');expect(scope).to_contain_text('A Default or group preset does not restrict TakeOver or Outstream.');expect(scope.get_by_text('Conditional rules support Banner and Sticky.',exact=False)).to_be_in_viewport();screen('rule-format-scope');rule_dialog.get_by_role('button',name='Cancel',exact=True).click();expect(rule_dialog).to_have_count(0);assert not errors,errors
     # F3: an ad-unit form or CSV preview opened before a map rename cannot save the old name back.
     BOX=[{'minViewPort':[0,0],'sizes':[[300,250]]}];CSV_HEADER='code,type,mediaType,sizeMapKey,enabled,sortOrder\n'
     def unit_key(code):return next((row['size_map_key'] for row in data('/__fixture/snapshot')['units'] if row['code']==code),None)
