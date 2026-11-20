@@ -3,6 +3,7 @@
  * input adapters throw plain Errors, so keep their allowlist here in admin code. */
 const GENERIC = 'The saved settings are not supported by this built-in runtime. Resolve configuration validation first.';
 const diagnostics = [
+  /^Adaptive auction timeout (?:requires script 3\.26\.0\. Select it in Script setup and save, or turn off adaptive timeout\. Your saved rules are kept\.|must be an object\.|contains an unsupported field\.|enabled must be a boolean\.|minimum must not exceed maximum\.|\w+ must be an integer between \d+ and \d+\.)$/u,
   /^.{1,128}, mapping [1-9]\d*: (?:Enabled must be on or off|priority must be 0–10000|choose ALL or ANY conditions|invalid slot action|selected size map does not exist|choose a size map or a slot action|use 1–12 conditions|invalid key or operator|enter a condition value)\.$/u,
   /^.{1,128}: (?:use up to 100 key-value mappings|country conditions use equals, does not equal, exists or does not exist|enter a two-letter country code such as RS or DE)\.$/u,
   /^.{1,128} (?:needs a saved size map|has no enabled sizes)\.$/u,

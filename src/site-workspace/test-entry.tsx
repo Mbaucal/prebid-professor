@@ -11,6 +11,8 @@ import SiteRuntimePanel from '../components/SiteRuntimePanel';
 import ScriptSetupPanel from '../components/ScriptSetupPanel';
 import SitePackagesPanel from '../components/SitePackagesPanel';
 import SiteTestPagePanel from '../components/SiteTestPagePanel';
+import AdaptiveAuctionTimeoutPanel from '../components/AdaptiveAuctionTimeoutPanel';
+import '../advanced-refresh.css';
 function Formats() {
   const [units,setUnits]=useState<Array<{code:string;enabled:boolean;sizeMap:string}>|null>(null);
   const [error,setError]=useState(''),[busy,setBusy]=useState(true),[attempt,setAttempt]=useState(0),[selected,setSelected]=useState<string|null>(null);
@@ -35,7 +37,7 @@ function Workspace() {
       <button onClick={()=>setView('deals')}>Deals</button><button onClick={()=>setView('formats')}>Formats</button>
       <button onClick={()=>setView('test-page')}>Test page</button>
     </nav>
-    {view==='rules'?<div className="test-unit-rules"><UnitRulesPanel publisherId="test-site"/></div>:view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
+    {view==='rules'?<div className="test-unit-rules"><AdaptiveAuctionTimeoutPanel publisherId="test-site" endpoint="/test-api/site-runtime"/><UnitRulesPanel publisherId="test-site"/></div>:view==='deals'?<div className="site-runtime-panel"><DealsPanel publisherId="test-site" endpoint="/test-api/deals"/></div>:view==='formats'?<Formats/>:view==='test-page'?<SiteTestPagePanel publisherId="test-site" endpoint="/test-api/site-packages" testOnly/>:view==='packages'?<SitePackagesPanel publisherId="test-site" endpoint="/test-api/site-packages" settingsEndpoint="/test-api/site-runtime" onNavigate={destination=>{if(destination==='prebid')window.location.assign('/prebid-settings');else setView('versions');}}/>:view==='versions'?<ScriptSetupPanel publisherId="test-site" endpoint="/test-api/site-runtime" onOpenPrebid={()=>window.location.assign('/prebid-settings')} onContinue={()=>setView('packages')}/>:<SiteRuntimePanel key={view} publisherId="test-site" endpoint="/test-api/site-runtime" view={view} onOpenPrebid={()=>window.location.assign('/prebid-settings')}/>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Workspace/>);

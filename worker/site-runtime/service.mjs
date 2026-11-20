@@ -14,6 +14,7 @@ import { initializeMissingUserSync } from '../user-id-config.ts';
 import { assertSnapshotCompilerCompatibility } from '../compiler-input-compatibility.mjs';
 import { refreshSummary } from './refresh-summary.mjs';
 import { recommendedRuntimeRelease } from '../../shared/runtime-notices.mjs';
+import {normalizeAdaptiveTimeout,requireAdaptiveTimeoutRuntime} from '../../shared/auction-timeout/settings.mjs';
 
 export class SiteRuntimeError extends Error { constructor(message,status=422){super(message);this.status=status;} }
 const fail=(message,status)=>{throw new SiteRuntimeError(message,status);};
@@ -72,9 +73,11 @@ export async function siteRuntimeSettings(env,siteId){
  try{if(pin){const descriptor=descriptorForPin(pin);assertSnapshotCompilerCompatibility(saved,descriptor);preview=previewInput(saved,descriptor,'20000101_000000');}}catch(e){validationIssue=e.message;}
  const positions=readPositions(config,saved.units),sticky=config.runtimeControls?.sticky;
  const stickyId=Object.hasOwn(sticky??{},'bottomAdUnitId')?sticky.bottomAdUnitId:(saved.units.some(u=>u.code==='Sticky'&&u.enabled===1)?'Sticky':'');
+ let adaptivePolicy,adaptiveError=null;try{adaptivePolicy=normalizeAdaptiveTimeout(config.adaptiveAuctionTimeout);}catch(e){adaptivePolicy=normalizeAdaptiveTimeout();adaptiveError=e.message;}
  return {site:saved.site,revision:await digest(saved),selected:pin??null,validationIssue,enablePrebid:config.enablePrebid===true,...siteSetupState(saved),
   loadingSummary:loadingSummary(preview,saved.units,pin,validationIssue),
   refreshSummary:refreshSummary(preview,saved.units,pin,saved.rules),
+  adaptiveTimeout:{policy:adaptivePolicy,validationIssue:adaptiveError,supported:runtimeCatalog.some(r=>r.id===pin?.runtimeId&&r.version===pin?.runtimeVersion&&r.codeSha256===pin?.runtimeSha256&&r.capabilities.includes('adaptive-auction-timeout')),baseMs:preview?.core?.defaultTimeout??2500},
   currentRuntime:current?{version:current.version,channel:current.channel,pin:pinRuntime(current)}:null,
   runtimes:runtimeCatalog.map(r=>({version:r.version,channel:r.channel,pin:pinRuntime(r,{allowPreview:true})})),history:describeRuntimeReleases(runtimeCatalog,pin),
   positions:saved.units.filter(u=>u.media_type==='banner'&&u.type!=='DRAFT').map(u=>({code:u.code,type:u.type,sizeMap:u.size_map_key,enabled:u.enabled===1,
@@ -85,6 +88,11 @@ export async function siteRuntimeSettings(env,siteId){
 export async function changeSiteRuntime(env,siteId,actor,body){
  const saved=await read(env,siteId),config=JSON.parse(saved.config.config_json);
  if(typeof body?.revision!=='string'||body.revision!==await digest(saved))fail('Site settings changed. Reload before saving.',409);
+ if(body.action==='auction-timeout'){
+  keys(body,['action','revision','policy']);
+  try{config.adaptiveAuctionTimeout=normalizeAdaptiveTimeout(body.policy);requireAdaptiveTimeoutRuntime(config,config.builtinRuntimeSelection?.runtime?descriptorForPin(config.builtinRuntimeSelection.runtime):null);}catch(e){fail(e.message);}
+  return commitSiteConfiguration(env,saved,JSON.stringify(config),actor);
+ }
  if(body.action==='version'||body.action==='setup'){
   const setupAction=body.action==='setup';
   keys(body,setupAction?['action','revision','runtime','allowPreview','enablePrebid']:['action','revision','runtime','allowPreview']);
