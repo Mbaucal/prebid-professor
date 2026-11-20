@@ -17,7 +17,7 @@ import {saveDraftRelease, readDraftRelease, describeCandidate} from '../../worke
 import {readPackage, generatePackage} from '../../worker/site-runtime/releases.mjs';
 import {siteRuntimeSettings, changeSiteRuntime} from '../../worker/site-runtime/service.mjs';
 import {PAGES_HEADERS} from '../../scripts/pages-release-verification.mjs';
-import {AB_LOADER_CONFIG_SCHEMA, AB_LOADER_VERSION, renderAbLoader} from '../../worker/experiments/ab-loader-1.0.2.mjs';
+import {AB_LOADER_CONFIG_SCHEMA, AB_LOADER_VERSION, renderAbLoader} from '../../worker/experiments/ab-loader-1.1.0.mjs';
 import {AB_BUNDLE_LAYOUT, AB_TEST_SCHEMA, abTestIdentity, checkAbCompatibility, composeAbBundle} from '../../worker/experiments/ab-bundle.mjs';
 
 const STAMP = '20261115_120000', ACTOR = 'tester@example.invalid';
@@ -191,7 +191,7 @@ test('each arm is the saved ads.min.js byte for byte, and its SRI is the sha384 
   assert.deepEqual(record.prebid, {sha256: hash(PREBID), version: PREBID_CONFIG.version});
   assert.deepEqual(record.loader, {version: AB_LOADER_VERSION, sha256: registry[AB_LOADER_VERSION].sha256});
   // ads.js is the registered loader with exactly this test's configuration.
-  assert.equal(text(bundle.files['ads.js']), renderAbLoader({schema: AB_LOADER_CONFIG_SCHEMA, id: record.id, testId: 'test_site_1',
+  assert.equal(text(bundle.files['ads.js']), renderAbLoader({schema: AB_LOADER_CONFIG_SCHEMA, id: record.id, site: record.site, testId: 'test_site_1',
     name: 'Bid cache 3.23.0', trafficBPercent: 10, arms: record.arms, loader: record.loader}));
 });
 

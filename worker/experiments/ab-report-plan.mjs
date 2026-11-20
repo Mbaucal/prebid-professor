@@ -89,7 +89,13 @@ export async function listMeasurementPlans(bucket,{site,id,readVersion}){
 }
 export async function createMeasurementPlan(bucket,{site,id,actor,report,readVersion,now=new Date()}){
   check(typeof actor?.email==='string'&&actor.email.length>0&&actor.email.length<=254,'An authenticated actor is required.',401);
-  const context=await testContext(bucket,site,id),normalized=normalizeReport(report),scope=await savedScope(context,readVersion);
+  const context=await testContext(bucket,site,id),normalized=normalizeReport(report),plans=await storedPlans(bucket,context);
+  // A lost save response must remain recoverable after the source versions move
+  // to Trash. Each candidate is already verified against this exact saved abx.
+  const matches=plans.filter(({plan})=>canonical(plan.report)===canonical(normalized));
+  check(matches.length<=1,'The saved report identity is ambiguous.',409,'report-plan-unverified');
+  if(matches.length)return {created:false,...matches[0]};
+  const scope=await savedScope(context,readVersion);
   check(normalized.networkCode===scope.networkCode&&normalized.inventoryPath===scope.inventoryPath,'Use the GAM network and inventory path from both saved source packages.',422,'report-scope-mismatch');
   const record=context.record;
   const plan={schemaVersion:1,kind:AB_REPORT_PLAN_KIND,id:null,site,experimentId:id,testId:record.testId,recordSha256:context.recordSha256,
@@ -97,7 +103,7 @@ export async function createMeasurementPlan(bucket,{site,id,actor,report,readVer
     source:{savedPackageScopeVerified:true,gamReportSourceVerified:false},measurement:{collection:'disabled',coverage:'unknown',revenueReady:false},createdAt:now.toISOString(),createdBy:actor.email};
   plan.id='abm-'+await sha256(encode.encode(reportPlanIdentity(plan)));assertReportPlan(plan);
   const existing=await readStored(bucket,context,plan.id);if(existing)return {created:false,...existing};
-  check((await storedPlans(bucket,context)).length<MAX_PLANS,'This test already has the maximum number of reporting plans.',409,'report-plan-limit');
+  check(plans.length<MAX_PLANS,'This test already has the maximum number of reporting plans.',409,'report-plan-limit');
   const bytes=encode.encode(JSON.stringify(plan)),digest=await sha256(bytes);
   check(bytes.length<=MAX_BYTES,'This reporting plan is too large.');
   const written=await bucket.put(path(site,id,plan.id),bytes,{onlyIf:new Headers({'If-None-Match':'*'}),sha256:digest,httpMetadata:{contentType:'application/json; charset=utf-8',cacheControl:'private, no-store'},customMetadata:{kind:KIND,sha256:digest}});
