@@ -1,0 +1,3 @@
+import type {AdaptiveTimeoutPolicy} from '../../shared/auction-timeout/settings.mjs';
+export type TimeoutRecord={id:number;codes:string[];enabled:boolean;baseMs:number;timeoutMs:number;nativeTimeoutMs:number|null;failsafeMs:number|null;device:string;connection:string;format:string;positionCount:number;reasons:string[]};
+export function createAdaptiveAuctionTimeout(win:unknown,policy:AdaptiveTimeoutPolicy):{resolve(input:unknown,baseMs?:number):TimeoutRecord;started(row:TimeoutRecord,event:unknown):{actualMs:number;failsafeMs:number};snapshot():{enabled:boolean;localBounds:{minMs:number;maxMs:number};nativeSafetyMaxMs:number;auctions:TimeoutRecord[]}};
