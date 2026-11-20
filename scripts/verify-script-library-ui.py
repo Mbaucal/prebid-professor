@@ -8,6 +8,13 @@ out=root/'.generated/script-library-ui';out.mkdir(exist_ok=True)
 process=subprocess.Popen(['node','scripts/script-library-browser-fixture.mjs'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
 assert json.loads(process.stdout.readline())['ready']
 errors=[];requests=[];checks=[];last_saved=None;hold_next_save=False;held_save=[]
+# The versions the bid caching panels name, read from the release registry by the shared rule
+# (worker/site-runtime/script-versions.mjs): the smallest step and the newest without a runtime notice, one or two.
+_code="const {scriptVersionLabels}=await import('./worker/site-runtime/script-versions.mjs');console.log(JSON.stringify(scriptVersionLabels(['bid-cache'])))"
+CACHE_SCRIPTS=json.loads(subprocess.run(['node','--input-type=module','-e',_code],cwd=root,check=True,capture_output=True,text=True).stdout)
+assert 1<=len(CACHE_SCRIPTS)<=2,CACHE_SCRIPTS
+CACHE_SCRIPT=' or '.join(CACHE_SCRIPTS)
+CACHE_DIALOG=f'Applies to the next package generated with script {CACHE_SCRIPT}. Select {"one of these versions" if len(CACHE_SCRIPTS)>1 else "that version"} in Script setup to use it.'
 def check(name,ok):
  assert ok,name
  checks.append(name)
@@ -40,7 +47,7 @@ try:
   check('Releases has a cache summary, not a second cache form',page.get_by_label('Auction mode',exact=True).count()==0 and page.get_by_text('Bid caching: Off',exact=True).is_visible())
   page.get_by_role('button',name='Edit Prebid settings',exact=True).click()
   cache=page.get_by_role('checkbox',name='Reuse valid, unused bids',exact=True);cache.wait_for();cache.check()
-  check('Demand says new named scripts use the cache setting too, and never calls an unsaved change saved',page.get_by_text('Bid caching needs script 3.24.0 (Preview). New named scripts in Releases → Scripts and A/B tests use it too; saved scripts and tests keep their own settings.',exact=True).is_visible())
+  check('Demand says new named scripts use the cache setting too, and never calls an unsaved change saved',page.get_by_text(f'Bid caching needs script {CACHE_SCRIPT}. New named scripts in Releases → Scripts and A/B tests use it too; saved scripts and tests keep their own settings.',exact=True).is_visible())
   page.get_by_label('Maximum bid age (seconds)',exact=True).fill('60')
   page.get_by_role('button',name='Save Prebid settings',exact=True).click()
   page.get_by_text('Prebid settings saved.',exact=False).wait_for()
@@ -165,12 +172,12 @@ try:
   page.reload();page.get_by_role('button',name='Ad positions',exact=True).click()
   position('Home_Top').get_by_role('button',name='Bid cache: On',exact=True).click()
   home=page.get_by_role('dialog',name='Bid cache · Home_Top',exact=True);home.get_by_label('Bid cache for Home_Top',exact=True).wait_for()
-  check('A position outside the named-script inventory is not said to reach named scripts',home.get_by_text('Applies to the next package generated with script 3.24.0 (Preview). Select that version in Script setup to use it. Named scripts in Releases → Scripts and A/B tests do not include this position; an override here stops new named scripts until it is set to Use site setting.',exact=True).is_visible())
+  check('A position outside the named-script inventory is not said to reach named scripts',home.get_by_text(CACHE_DIALOG+' Named scripts in Releases → Scripts and A/B tests do not include this position; an override here stops new named scripts until it is set to Use site setting.',exact=True).is_visible())
   page.screenshot(path=str(out/'position-outside-named-scripts.png'))
   page.keyboard.press('Escape');home.wait_for(state='detached')
   position('Sticky').get_by_role('button',name='Bid cache: On',exact=True).click()
   sticky=page.get_by_role('dialog',name='Bid cache · Sticky',exact=True);sticky.get_by_label('Bid cache for Sticky',exact=True).wait_for()
-  check('A named-script position still says new named scripts use it too',sticky.get_by_text('Applies to the next package generated with script 3.24.0 (Preview). Select that version in Script setup to use it. New named scripts in Releases → Scripts and A/B tests use it too.',exact=True).is_visible())
+  check('A named-script position still says new named scripts use it too',sticky.get_by_text(CACHE_DIALOG+' New named scripts in Releases → Scripts and A/B tests use it too.',exact=True).is_visible())
   page.keyboard.press('Escape');sticky.wait_for(state='detached')
   check('Position settings introduce no UI error',not errors)
   browser.close()

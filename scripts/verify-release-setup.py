@@ -64,9 +64,9 @@ def dashboard_fits(browser):
         inline.screenshot(path=str(out/'runtime-322-dashboard-inline-select.png'))
         # A saved Preview version that is also selected: the closed select shows "<version> · Preview"
         # and fits, standalone and inside Releases. The open list keeps "Saved version" on it while
-        # another version is selected.
+        # another version is selected. 3.26.0 is the newest version the guidance names on main.
         labels=lambda select:select.locator('option').evaluate_all('(items)=>items.map(item=>({label:item.textContent.trim(),value:item.value}))')
-        for saved in ['3.24.0','3.22.2','3.22.1']:
+        for saved in ['3.26.0','3.24.0','3.22.2','3.22.1']:
             label=saved+' · Preview'
             page.get_by_role('button',name='Configuration',exact=True).click()
             version=panel.get_by_role('combobox',name='Script version',exact=True);version.wait_for()

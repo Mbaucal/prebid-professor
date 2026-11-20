@@ -7,8 +7,15 @@ from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/review-mba413-test-editor';out.mkdir(parents=True,exist_ok=True)
 custom={'ver':'1.0','complete':1,'nodes':[{'asi':'agency.example','sid':'agency-42','hp':1}]}
-# Script versions with bidder accounts in the registry, without runtime notices or superseded patches.
-ACCOUNT_SCRIPTS='3.22.2 (Preview) or 3.24.0 (Preview)'
+# Script versions that apply bidder accounts, from the registry.
+def registry_labels(*capabilities):
+ """The versions the admin names for these capabilities, read from the release registry by the shared rule
+ (worker/site-runtime/script-versions.mjs): the smallest step and the newest without a runtime notice, one or two."""
+ code="const {scriptVersionLabels}=await import('./worker/site-runtime/script-versions.mjs');console.log(JSON.stringify(scriptVersionLabels(JSON.parse(process.argv[1]))))"
+ labels=json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
+ assert 1<=len(labels)<=2,labels
+ return ' or '.join(labels)
+ACCOUNT_SCRIPTS=registry_labels('bidder-accounts')
 reports=[]
 with sync_playwright() as pw:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
