@@ -7,6 +7,7 @@ export type BidderRulesPayload={
   positions:{code:string;enabled:boolean;configured:boolean}[];
   enablePrebid:boolean;
   runtimeEligible:boolean;
+  scriptVersions:string[];
   published:false;
 };
 export function getBidderRuleSettings(env:RuntimeServiceEnv,siteId:string):Promise<BidderRulesPayload>;

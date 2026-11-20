@@ -5,6 +5,7 @@ import {parse} from 'acorn';
 import {runtimeCatalog, previewInput, buildArtifactCandidate} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
 import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
+import {scriptVersionText} from '../../worker/site-runtime/script-version-guidance.mjs';
 import {compileRuntime3212} from '../../worker/runtime-3212/compiler.mjs';
 import {compileRuntime3221} from '../../worker/runtime-3221/compiler.mjs';
 import {runtime3221Source,sourceFiles} from '../../scripts/prepare-runtime3221.mjs';
@@ -48,7 +49,7 @@ test('3.22.1 package carries exact bidder rules while older selected runtimes ke
  assert(text(built.files['README.txt']).includes('Fixed in 3.21.2'));
  assert.deepEqual(snapshot,before);
  const old=runtimeCatalog.find(r=>r.version==='3.21.2');
- assert.throws(()=>previewInput(snapshot,old,TS),/Bidder rules require/);
+ assert.throws(()=>previewInput(snapshot,old,TS),error=>error.message.startsWith(`Script 3.21.2 cannot apply enabled bidder rules. Select ${scriptVersionText(['bidder-rules'])} in Script setup and save, or turn off bidder rules.`));
 });
 
 async function checkedAccountPrebid(snapshot,version='11.11.0') {
@@ -96,5 +97,5 @@ for (const position of ['P1','m.box_1','__proto__']) test(`two-account package p
  assert(source.includes('__AD_BIDDER_ACCOUNTS'));
  assert(source.includes('request: _adBidderRules.request'));
  assert.deepEqual(snapshot,before);
- for(const old of runtimeCatalog.filter(r=>!r.capabilities.includes('bidder-accounts')))assert.throws(()=>previewInput(snapshot,old,TS),/require script 3.22.1/);
+ for(const old of runtimeCatalog.filter(r=>!r.capabilities.includes('bidder-accounts')))assert.throws(()=>previewInput(snapshot,old,TS),error=>error.message.includes(`cannot apply bidder accounts (adf_ag). Select ${scriptVersionText(['bidder-accounts'])} in Script setup and save.`));
 });
