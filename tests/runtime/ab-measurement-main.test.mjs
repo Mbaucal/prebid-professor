@@ -87,3 +87,20 @@ test('plan endpoints reject unknown fields, methods, queries and cross-plan use 
   assert.equal((await h.request(endpoint+'/preview',{method:'POST',body:{csv:'invalid',assignedPageviews:100}})).status,422);
   assert.equal(h.r2.log.puts.length,puts);
 });
+
+test('a completed plan retry survives known source cleanup while a different plan still requires verified sources',async()=>{
+  const saved=await h.json(path,{method:'POST',body:report}),release=h.versions['alpha-site'][1];
+  const sql=h.f.sqlite,row=sql.prepare('SELECT * FROM releases WHERE id=?').get(release),state=h.persistent(),before=sources();
+  assert(row);const columns=Object.keys(row),puts=h.r2.log.puts.length;
+  sql.prepare('DELETE FROM releases WHERE id=?').run(release);
+  try{
+    const listing=await h.json(path);assert(listing.sourceError);assert(listing.plans.some(plan=>plan.id===saved.plan.id));
+    const recovered=await h.json(path,{method:'POST',body:report});assert.equal(recovered.created,false);
+    assert.deepEqual(recovered.plan,saved.plan);assert.equal(recovered.planSha256,saved.planSha256);
+    assert.equal((await h.request(path,{method:'POST',body:{...report,endDate:'2026-11-20'}})).status,422);
+    assert.equal(h.r2.log.puts.length,puts);assert.deepEqual(sources(),before);
+  }finally{
+    sql.prepare(`INSERT INTO releases(${columns.join(',')}) VALUES(${columns.map(()=>'?').join(',')})`).run(...columns.map(key=>row[key]));
+  }
+  assert.equal(h.persistent(),state);
+});
