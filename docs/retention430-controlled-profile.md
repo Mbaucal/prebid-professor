@@ -107,4 +107,8 @@ All 20 late/buffer cases pass with the outcomes described above. The buffer-sele
 
 ## CI proposal
 
-Run the six pure metric/artifact-safety checks and one `--quick --versions 11.34.0` OFF/ON pair using the already-built pinned native artifact in `site-editor-checks.yml`'s `bid-cache-prebid` job. This checks fixture/native integration and exercised cache competition with eight opportunities per slot. The current fixture preparer deliberately requires both native versions for this complete experiment; before wiring that CI step, add a reviewed single-version fixture entry/filter rather than rebuilding the other version inside each existing matrix job. This is a proposal; no workflow is changed here. Quick mode does not claim long-page memory coverage. Keep the complete 30-profile experiment a deliberate manual investigation with a disk/host budget; do not add it to every PR or weaken existing runtime/consent/dispatch checks.
+The existing site-editor workflow runs the six pure metric/artifact-safety checks. The full measured matrix remains a deliberate investigation with a disk/host budget.
+
+A future bounded native integration gate can run one `--quick --versions 11.34.0` OFF/ON pair using the already-built pinned artifact in the `bid-cache-prebid` job. This checks fixture/native integration and exercised cache competition with eight opportunities per slot. The current preparer requires both native versions; add a reviewed single-version fixture filter before wiring that gate. It is not enabled here. Quick mode does not establish long-page memory coverage; the existing runtime, consent and dispatch checks remain required.
+
+The measured native renderer lifecycle follow-up is tracked in [MBA-435](https://linear.app/mbaucal/issue/MBA-435). It requires a separately pinned fix and a proof with ReportingObserver still available. Disabling that browser API in the causal QA pair is not a publisher remedy.
