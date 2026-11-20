@@ -62,12 +62,12 @@ test('the Unit rules list of scripts that skip TakeOver and Outstream for group 
     for (const format of Object.keys(FORMATS)) for (const scope of ['__DEFAULT__', '__ATF__'])
       assert.equal(await excludes(descriptor, scope, format), GROUP_RULE_FORMAT_SCRIPTS.includes(release.version), `${release.version} ${scope} ${format}`);
   }
-  assert.deepEqual([...GROUP_RULE_FORMAT_SCRIPTS], ['3.21.1', '3.21.2', '3.22.1', '3.22.2', '3.23.0', '3.24.0']);
+  assert.deepEqual([...GROUP_RULE_FORMAT_SCRIPTS], ['3.21.1', '3.21.2', '3.22.1', '3.22.2', '3.23.0', '3.24.0', '3.25.0', '3.25.1', '3.26.0']);
 });
 
 test('the help text names every listed script and 3.22.0 explicitly, never "and later"', () => {
   const text = groupRuleFormatText();
-  assert.equal(text, 'In scripts 3.21.1, 3.21.2, 3.22.1, 3.22.2, 3.23.0 and 3.24.0, Default, ATF and BTF conditions apply only to those formats; '
+  assert.equal(text, 'In scripts 3.21.1, 3.21.2, 3.22.1, 3.22.2, 3.23.0, 3.24.0, 3.25.0, 3.25.1 and 3.26.0, Default, ATF and BTF conditions apply only to those formats; '
     + 'TakeOver and Outstream keep their own maps and serving behavior. Scripts before 3.21.1 and script 3.22.0 can reject packages when those group rules reach TakeOver or Outstream.');
   assert.doesNotMatch(text, /or later|and later/);
 });
