@@ -85,6 +85,8 @@ jobs:
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime323-package-qa.test.mjs tests/runtime/bid-cache323.test.mjs tests/runtime/bid-cache-eligibility.test.mjs
       - name: Combined admission, request reporting and immutable-source regressions
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime324*.test.mjs tests/runtime/bid-cache324.test.mjs tests/runtime/bid-cache3251.test.mjs tests/runtime/runtime325*.test.mjs
+      - name: Adaptive timeout policy, native watchdog, MAIN and isolated TEST package boundaries
+        run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/adaptive-auction-timeout-qa.test.mjs tests/runtime/adaptive-auction-timeout-readiness-qa.test.mjs tests/runtime/adaptive-timeout-integration.test.mjs
       - name: Verify audited 3.22.x composition, lazy auction ownership and immutable history
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime3221-package-qa.test.mjs tests/runtime/runtime3222-lazy.test.mjs tests/runtime/runtime-lineage.test.mjs tests/runtime/runtime-release-history.test.mjs tests/runtime/runtime-allow-list-parity.test.mjs
       - name: Verify bidder eligibility and generated request isolation
@@ -113,6 +115,8 @@ jobs:
         run: python scripts/verify-login-branding.py
       - name: Verify keyboard login, rate limit and retry on desktop and mobile
         run: python scripts/verify-login-recovery.py && python scripts/verify-login-recovery.py --test-workspace
+      - name: Adaptive timeout MAIN and isolated TEST editor save, conflict and uncertain-response recovery
+        run: python scripts/verify-adaptive-timeout-ui.py
       - name: Size-map and runtime-control editing, errors and recovery
         run: |
           python scripts/verify-size-map-heights-ui.py
@@ -153,6 +157,7 @@ jobs:
         with:
           name: site-editor-evidence
           path: |
+            .generated/adaptive-timeout-ui/**
             .generated/release-deletion-ui/
             .generated/storage3211-browser/
             .generated/storage3212-browser/
@@ -224,6 +229,10 @@ jobs:
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-runtime325-browser-fixtures.mjs --prebid ".generated/runtime324-prebid/${{ matrix.prebid }}" --out ".generated/runtime325-browser-${{ matrix.prebid }}"
           python scripts/verify-runtime325-browser.py ".generated/runtime325-browser-${{ matrix.prebid }}"
+      - name: Local adaptive timeout, actual native timeout and matching watchdog with synthetic demand
+        run: |
+          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-adaptive-timeout-qa.mjs --prebid ".generated/runtime324-prebid/${{ matrix.prebid }}" --out ".generated/adaptive-timeout-qa-${{ matrix.prebid }}"
+          python scripts/verify-adaptive-timeout-qa.py ".generated/adaptive-timeout-qa-${{ matrix.prebid }}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -235,6 +244,7 @@ jobs:
             .generated/runtime324-prebid/${{ matrix.prebid }}/manifest.json
             .generated/runtime324-browser-${{ matrix.prebid }}/manifest.json
             .generated/runtime324-browser-${{ matrix.prebid }}/browser-results.json
+            .generated/adaptive-timeout-qa-${{ matrix.prebid }}/**
             vendor/gpt/m202611120201/manifest.json
             .generated/runtime325-browser-${{ matrix.prebid }}/manifest.json
             .generated/runtime325-browser-${{ matrix.prebid }}/browser-results.json

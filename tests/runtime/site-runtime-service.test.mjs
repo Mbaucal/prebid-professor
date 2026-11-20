@@ -61,7 +61,7 @@ test('one current recommendation leaves historical catalog, unconfigured site an
  assert.equal(state.currentRuntime.channel,'stable');
  assert(state.runtimes.every(item=>['stable','preview'].includes(item.channel)));
  assert.equal(state.runtimes.find(item=>item.version==='3.16.0-revenue.preview.3').channel,'preview');
- assert.deepEqual(state.runtimes.map(item=>item.version),['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.13.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3','3.16.0','3.16.1','3.16.2','3.17.0','3.18.0','3.19.0','3.19.1','3.20.0','3.20.1','3.21.0','3.21.1','3.21.2','3.22.0','3.22.1','3.22.2','3.23.0','3.24.0','3.25.0','3.25.1']);
+ assert.deepEqual(state.runtimes.map(item=>item.version),['3.10.0-tessera.preview.1','3.9.1-tessera.preview.2','3.13.0','3.14.0','3.16.0-revenue.preview.1','3.16.0-revenue.preview.2','3.16.0-revenue.preview.3','3.16.0','3.16.1','3.16.2','3.17.0','3.18.0','3.19.0','3.19.1','3.20.0','3.20.1','3.21.0','3.21.1','3.21.2','3.22.0','3.22.1','3.22.2','3.23.0','3.24.0','3.25.0','3.25.1','3.26.0']);
  assert.equal(f.sqlite.prepare('SELECT config_json FROM publisher_configs').get().config_json,before);
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM audit_log').get().n,audits);
  assert.equal(f.log.gets.length,0);assert.equal(f.log.puts.length,0);

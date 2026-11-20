@@ -1,3 +1,4 @@
+import {prepareRuntime326} from './prepare-runtime326.mjs';
 import {prepareRuntime3251} from './prepare-runtime3251.mjs';
 import { prepareRuntime325 } from './prepare-runtime325.mjs';
 import { prepareRuntime324 } from './prepare-runtime324.mjs';
@@ -115,6 +116,7 @@ export async function prepareBuiltinRuntime(root = ROOT) {
   await prepareRuntime324(root);
   await prepareRuntime325(root);
   await prepareRuntime3251(root);
+  await prepareRuntime326(root);
   await prepareTestPageClient(root);
   // Source text the Worker entries install; see worker/runtime-canonical/functions.mjs.
   await prepareBrowserCanonical(root);
