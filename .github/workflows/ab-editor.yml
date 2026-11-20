@@ -69,7 +69,8 @@ jobs:
           retention-days: 30
   ab-editor:
     runs-on: ubuntu-24.04 # Playwright 1.55 browser dependencies are pinned to this supported OS.
-    timeout-minutes: 15
+    # Include slow Ubuntu dependency downloads; all test commands and their own deadlines stay required.
+    timeout-minutes: 25
     env:
       TZ: UTC
       TESSERA_TEST_TOOLCHAIN: isolated
