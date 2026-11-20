@@ -10,6 +10,7 @@ import {BID_CACHE_GENERATOR_MESSAGE} from '../../worker/site-runtime/prebid-cach
 import {TEST_BID_CACHE_GENERATOR_MESSAGE,TEST_BID_CACHE_BIDDER_RULES_MESSAGE,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE} from '../../worker/test-workspace/bid-cache-messages.mjs';
 import {TEST_BID_CACHE_GENERATOR_MESSAGE as SITE_WORKSPACE_MESSAGE} from '../../worker/test-workspace/site-workspace.mjs';
 import {getPrebidSettings,savePrebidSettings} from '../../worker/test-workspace/prebid-settings.mjs';
+import {scriptVersionLabels,scriptVersionText} from '../../worker/site-runtime/script-version-guidance.mjs';
 const MODE='/api/publishers/test-site/prebid-mode';
 const fixtures=[];
 test.before(()=>{globalThis.fetch=()=>assert.fail('No external request in the TEST bid cache flow');});
@@ -197,7 +198,8 @@ test('saved bidder accounts on 3.23.0: TEST Script setup and Releases name the s
   .run(JSON.stringify({unit:'synthetic-unit',delDomain:'synthetic.example.invalid'}),JSON.stringify({baseAdapter:'openx',displayName:'Agency',schain:{mode:'none'}}));
  const mode=(await f.req(MODE)).data;
  assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
- const expected='Script 3.23.0 cannot apply bidder accounts (ox_ag). To keep them with your saved bid caching, select 3.24.0 (Preview) in Script setup and save. Your saved settings and previous packages are unchanged.';
+ // The versions come from the registry (on TEST, with the releases up to 3.24.0, that is 3.24.0 (Preview) alone).
+ const expected=`Script 3.23.0 cannot apply bidder accounts (ox_ag). To keep them with your saved bid caching, select ${scriptVersionText(['bidder-accounts','bid-cache'])} in Script setup and save. Your saved settings and previous packages are unchanged.`;
  const setup=(await f.req('/test-api/site-runtime')).data;
  assert.equal(setup.validationIssue,expected);
  // Generate and releases shows the same reason, not the generic configuration text.
@@ -207,23 +209,25 @@ test('saved bidder accounts on 3.23.0: TEST Script setup and Releases name the s
  const before=config(f),r323=setup.runtimes.find(r=>r.version==='3.23.0');
  const refused=await f.req('/test-api/site-runtime',{action:'setup',revision:setup.revision,runtime:r323.pin,allowPreview:false,enablePrebid:true});
  assert.equal(refused.status,422);assert.equal(refused.data.error,expected);assert.deepEqual(config(f),before);
- // Following it: 3.24.0 is ready.
- await select(f,'3.24.0',true);
+ // Following it: the newest named version is ready.
+ const newest=scriptVersionLabels(['bidder-accounts','bid-cache']).at(-1).replace(' (Preview)','');
+ await select(f,newest,true);
  const ready=(await f.req('/test-api/site-packages')).data;
- assert.equal(ready.ready,true,ready.error);assert.equal(ready.runtime.runtimeVersion,'3.24.0');
+ assert.equal(ready.ready,true,ready.error);assert.equal(ready.runtime.runtimeVersion,newest);
 });
 
 test('the TEST Bidder rules view and Prebid editor name the versions for their option plus the saved ones',async()=>{
  const f=await fixture();await enablePrebid(f);
- // 3.22.1 is superseded by 3.22.2; 3.22.0 and 3.23.0 carry runtime notices; 3.23.0 has neither option.
- const both=['3.22.2 (Preview)','3.24.0 (Preview)'];
- assert.deepEqual((await f.req('/test-api/bidder-rules')).data.scriptVersions,both);
- assert.deepEqual((await f.req('/test-api/prebid-settings')).data.accountScriptVersions,both);
+ // At most two versions from the registry: the smallest step and the newest. On TEST that is 3.22.2 (Preview) or
+ // 3.24.0 (Preview): 3.22.1 ties with 3.22.2, 3.22.0 and 3.23.0 carry runtime notices, and 3.23.0 has neither option.
+ assert.deepEqual((await f.req('/test-api/bidder-rules')).data.scriptVersions,scriptVersionLabels(['bidder-rules']));
+ assert.deepEqual((await f.req('/test-api/prebid-settings')).data.accountScriptVersions,scriptVersionLabels(['bidder-accounts']));
  // Saved bid caching: only the script that applies bid caching with bidder rules or bidder accounts.
  const mode=(await f.req(MODE)).data;
  assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
- assert.deepEqual((await f.req('/test-api/bidder-rules')).data.scriptVersions,['3.24.0 (Preview)']);
- assert.deepEqual((await f.req('/test-api/prebid-settings')).data.accountScriptVersions,['3.24.0 (Preview)']);
+ assert.deepEqual((await f.req('/test-api/bidder-rules')).data.scriptVersions,scriptVersionLabels(['bidder-rules','bid-cache']));
+ assert.deepEqual((await f.req('/test-api/prebid-settings')).data.accountScriptVersions,scriptVersionLabels(['bidder-accounts','bid-cache']));
+ assert.notDeepEqual(scriptVersionLabels(['bidder-rules']),scriptVersionLabels(['bidder-rules','bid-cache']),'saved bid caching narrows the versions');
 });
 
 test('the TEST Bid caching view names the script that applies bid caching, never "or later"',async()=>{
