@@ -149,8 +149,9 @@ export function readPinnedSiteRuntime(args,bucket){
 }
 export async function buildArtifactCandidate(args){
   const descriptor=descriptorForPin(args.pin);
-  // Saved settings that would reuse bids need a runtime with the bid-cache capability, for every engine.
-  requireSupportedCacheGenerator(JSON.parse(args.snapshot.config.config_json),descriptor);
+  // Saved settings that would reuse bids need a runtime with the bid-cache capability, for every engine. The saved
+  // bidder rows only word the refusal for the site's bidder accounts.
+  requireSupportedCacheGenerator(JSON.parse(args.snapshot.config.config_json),descriptor,args.snapshot.bidders??[]);
   previewInput(args.snapshot,descriptor,args.buildTimestamp,args.takeOver);
   return descriptor.id===combined324.id?combined324Candidate(args):descriptor.id===lazy3222.id?lazy3222Candidate(args):descriptor.id===cache323.id?cache323Candidate(args):descriptor.id===accounts3221.id?accounts3221Candidate(args):descriptor.id===patch3212.id?patch3212Candidate(args):descriptor.id===patch3211.id?patch3211Candidate(args):descriptor.id===rules322.id?rules322Candidate(args):descriptor.id===contextual321.id?contextual321Candidate(args):descriptor.id===combined3201.id?combined3201Candidate(args):descriptor.id===codes3191.id?codes3191Candidate(args):descriptor.id===maps320.id?maps320Candidate(args):descriptor.id===geo319.id?geo319Candidate(args):descriptor.id===geo318.id?geo318Candidate(args):descriptor.id===conditional317.id?conditional317Candidate(args):descriptor.id===patch3162.id?patch3162Candidate(args):descriptor.id===patch3161.id?patch3161Candidate(args):descriptor.id===stable316.id?stable316Candidate(args):descriptor.id===revenueV3.id?revenueV3Candidate(args):descriptor.id===revenueV2.id?revenueV2Candidate(args):descriptor.id===revenue.id?revenueCandidate(args):descriptor.id===readiness.id?readinessCandidate(args):descriptor.id===demand.id?demandCandidate(args):descriptor.id===reporting.id?reportingCandidate(args):descriptor.id===creative.id?creativeCandidate(args):descriptor.id===next.id?positionsCandidate(args):referenceCandidate(args);
 }

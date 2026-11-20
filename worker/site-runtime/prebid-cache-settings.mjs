@@ -2,6 +2,7 @@
 import {CACHE_POSITIONS,hasBidCache} from '../experiments/position-cache-settings.mjs';
 import {runtimeSupportsBidCache} from '../../shared/bid-cache/eligibility.mjs';
 import {validateAdUnitCode} from '../../shared/gam/ad-unit-code.mjs';
+import {scriptVersionsWith,releaseLabel,versionList,accountsNeeding,rulesNeeded,neededCapabilities,CAPABILITY_NAMES} from './script-versions.mjs';
 export {hasBidCache};
 export const DEFAULT_BID_CACHE = Object.freeze({enabled:false,maxBidAgeSeconds:60});
 /** The most position overrides one site can save; each names one of its own ad units. */
@@ -61,9 +62,41 @@ export function settingsForScript(config,refreshSeconds) {
     ...(bidCache.enabled||bidCache.positionOverrides?{maxBidAgeSeconds:bidCache.maxBidAgeSeconds}:{}),
     ...(bidCache.positionOverrides?{positionOverrides:bidCache.positionOverrides}:{})};
 }
-export const BID_CACHE_GENERATOR_MESSAGE = 'Bid caching needs a compatible script version. Select 3.24.0 (Preview) in Script setup and save; your bid cache settings are kept. '
-  + 'This version combines bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
-  + 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.';
+/** The script versions that apply bid caching together with the site's other saved options that only some scripts
+ * apply (active bidder accounts with an alias or their own SChain, enabled bidder rules), by the naming rule in
+ * script-versions.mjs: at most two, the smallest step and the newest, without runtime notices. Demand → Prebid, the
+ * position bid cache dialog and Generate's refusal all name these, read from the registry, so a new release or notice
+ * changes them together. `bidders` are the saved bidder rows; without them (the older generation routes, which never
+ * apply bidder accounts) accounts are not counted. Unreadable account rows are left to the guards that refuse them. */
+export function bidCacheScripts(config,bidders,history,notices) {
+  return scriptVersionsWith(cacheCapabilities(config,bidders),history,notices);
+}
+function cacheCapabilities(config,bidders) {
+  let accounts=[];
+  if(bidders)try{accounts=accountsNeeding(config,{bidders});}catch{}
+  return neededCapabilities({accounts,rules:rulesNeeded(config),cache:true});
+}
+/** ['3.24.0 (Preview)', '3.26.0 (Preview)'] for the panels. */
+export const bidCacheScriptVersions=(config,bidders,history,notices)=>bidCacheScripts(config,bidders,history,notices).map(releaseLabel);
+const KEEP_SCRIPT='turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.';
+/** Generate's refusal when saved settings would reuse bids and the selected script cannot apply bid caching. It names
+ * the versions of bidCacheScripts and says what every one of them combines bid caching with. */
+export function bidCacheGeneratorMessage(config={},bidders,history,notices) {
+  const needed=cacheCapabilities(config,bidders),releases=scriptVersionsWith(needed,history,notices);
+  if(!releases.length){
+    return `Bid caching needs a compatible script version, but no available script version applies ${versionList(needed.map(capability=>CAPABILITY_NAMES[capability]),'and')}${needed.length>1?' together':''}. Your bid cache settings are kept. `
+      +`To use this script version, ${KEEP_SCRIPT}`;
+  }
+  // Only what every named version has: bidder accounts and bidder rules from their capabilities, and the cache checks
+  // that 3.23.0 lacks (it has a runtime notice, so it is never named).
+  const combined=['bidder-accounts','bidder-rules'].filter(capability=>releases.every(release=>release.capabilities.includes(capability))).map(capability=>CAPABILITY_NAMES[capability]);
+  return `Bid caching needs a compatible script version. Select ${versionList(releases.map(releaseLabel),'or')} in Script setup and save; your bid cache settings are kept. `
+    + `${releases.length>1?'Both versions combine':'This version combines'} bid caching with ${versionList([...combined,'the current native activity and floor checks'],'and')}. `
+    + `To keep this script version instead, ${KEEP_SCRIPT}`;
+}
+/** The refusal for a site whose only such saved option is bid caching. Generate words it for the site's saved
+ * options (bidCacheGeneratorMessage); kept for callers that compare with that case. */
+export const BID_CACHE_GENERATOR_MESSAGE = bidCacheGeneratorMessage();
 /** Saved cache settings that would reuse bids: Prebid on, and the site default or a position override on.
  * An Off override alone needs no capability: without bid caching every position already uses its current
  * auction only. */
@@ -73,7 +106,8 @@ export function bidCacheActive(config) {
 }
 /** Saved cache settings that would reuse bids are applied only by a runtime with the 'bid-cache'
  * capability, never silently ignored. Without a descriptor (older generators) such settings are
- * always refused. */
-export function requireSupportedCacheGenerator(config, descriptor) {
-  if(bidCacheActive(config) && !runtimeSupportsBidCache(descriptor))throw Object.assign(Error(BID_CACHE_GENERATOR_MESSAGE),{status:409});
+ * always refused. `bidders` (the saved bidder rows) only word the refusal for the site's saved
+ * bidder accounts; they never change whether it is refused. */
+export function requireSupportedCacheGenerator(config, descriptor, bidders) {
+  if(bidCacheActive(config) && !runtimeSupportsBidCache(descriptor))throw Object.assign(Error(bidCacheGeneratorMessage(config,bidders)),{status:409});
 }

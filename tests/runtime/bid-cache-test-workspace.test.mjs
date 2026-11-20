@@ -6,7 +6,7 @@ import {unzipSync} from 'fflate';
 import worker from '../../worker/test-workspace/index.mjs';
 import {workspaceStore,ORIGIN,TEST_EMAIL,TEST_PASSWORD} from '../support/test-workspace-store.mjs';
 import {enableTestPrebid,selectTestRuntime} from '../support/test-bid-cache-site.mjs';
-import {BID_CACHE_GENERATOR_MESSAGE} from '../../worker/site-runtime/prebid-cache-settings.mjs';
+import {BID_CACHE_GENERATOR_MESSAGE,bidCacheScriptVersions} from '../../worker/site-runtime/prebid-cache-settings.mjs';
 import {TEST_BID_CACHE_GENERATOR_MESSAGE,TEST_BID_CACHE_BIDDER_RULES_MESSAGE,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE} from '../../worker/test-workspace/bid-cache-messages.mjs';
 import {TEST_BID_CACHE_GENERATOR_MESSAGE as SITE_WORKSPACE_MESSAGE} from '../../worker/test-workspace/site-workspace.mjs';
 import {getPrebidSettings,savePrebidSettings} from '../../worker/test-workspace/prebid-settings.mjs';
@@ -230,14 +230,20 @@ test('the TEST Bidder rules view and Prebid editor name the versions for their o
  assert.notDeepEqual(scriptVersionLabels(['bidder-rules']),scriptVersionLabels(['bidder-rules','bid-cache']),'saved bid caching narrows the versions');
 });
 
-test('the TEST Bid caching view names the script that applies bid caching, never "or later"',async()=>{
+test('the TEST Bid caching view names the scripts that apply bid caching, never "or later"',async()=>{
  const f=await fixture();await enablePrebid(f);
  // 3.23.0 (selected by the TEST Prebid editor helper) applies bid caching; the panels then say "the selected script".
- const capable=(await f.req(MODE)).data;
- assert.equal(capable.runtimeSupportsBidCache,true);assert.equal(capable.bidCacheScriptVersion,'3.24.0 (Preview)');
+ // The versions named otherwise come from the registry, as Generate's refusal names them (on TEST: 3.24.0 (Preview)).
+ const capable=(await f.req(MODE)).data,named=bidCacheScriptVersions(config(f),[]);
+ assert.ok(named.length>=1&&named.length<=2,named.join(', '));
+ assert.equal(capable.runtimeSupportsBidCache,true);assert.deepEqual(capable.bidCacheScriptVersions,named);
  // The first version with bid caching stays as it is (3.23.0, which has a runtime notice).
  assert.equal(capable.bidCacheRuntimeVersion,'3.23.0');
  await select(f,'3.21.2',true);
  const earlier=(await f.req(MODE)).data;
- assert.equal(earlier.runtimeSupportsBidCache,false);assert.equal(earlier.bidCacheScriptVersion,'3.24.0 (Preview)');
+ assert.equal(earlier.runtimeSupportsBidCache,false);assert.deepEqual(earlier.bidCacheScriptVersions,named);
+ // With bid caching saved, the TEST Generate reason names the same versions.
+ assert.equal((await f.req(MODE,{enabled:true,revision:earlier.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
+ const blocked=(await f.req('/test-api/site-packages')).data;
+ assert.equal(blocked.error,TEST_BID_CACHE_GENERATOR_MESSAGE);assert.ok(blocked.error.startsWith(`Bid caching needs a compatible script version. Select ${named.length>1?named.slice(0,-1).join(', ')+' or '+named.at(-1):named[0]} in Script setup and save;`),blocked.error);
 });
