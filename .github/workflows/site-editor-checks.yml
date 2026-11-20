@@ -79,6 +79,8 @@ jobs:
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/contextual-signals-*.test.mjs
       - name: Reproduce and prevent the independent audit failures
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/audit-size-map-selection.test.mjs tests/runtime/consent-storage3211.test.mjs tests/runtime/contextual-rtd-ownership.test.mjs tests/runtime/size-map-references.test.mjs tests/runtime/runtime3211-package-qa.test.mjs tests/runtime/boot3212.test.mjs tests/runtime/runtime3212-package-qa.test.mjs
+      - name: Verify retention evidence metrics and completed-artifact cleanup boundaries
+        run: PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tests/runtime -p 'test_retention430_*.py'
       - name: 3.23.0 bid caching, package QA and the policy in the whole generated ads.min.js (node:vm, synthetic bids)
         run: node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/runtime323-package-qa.test.mjs tests/runtime/bid-cache323.test.mjs tests/runtime/bid-cache-eligibility.test.mjs
       - name: Combined admission, request reporting and immutable-source regressions
