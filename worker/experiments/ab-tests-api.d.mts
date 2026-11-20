@@ -1,4 +1,5 @@
 /** The caller authenticates, checks the origin and owns the selected site's boundary. */
+export type { MeasurementReport, MeasurementPlan, MeasurementPlanListing, MeasurementPlanDetail, GamReportPreview } from './ab-measurement-contracts.mjs';
 export type AbSavedPackage = {
   files: Record<string, Uint8Array>;
   release: {

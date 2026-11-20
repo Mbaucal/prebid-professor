@@ -1,5 +1,6 @@
 import {checkAbCompatibility} from './ab-bundle.mjs';
 import {AB_LIMITS,addAbTestEvent,changeAbTestDeletion,createAbTest,listAbTests,proposeTestId,readAbRecordBytes,readAbTest,readAbZip} from './ab-store.mjs';
+import {abMeasurementResponse} from './ab-measurement-api.mjs';
 
 /* The A/B tests API of one site (MBA-416), shared by both lines. The caller mounts it under
  * `base` after its own host, sign-in, method and same-origin checks, and passes the bucket, the
@@ -74,6 +75,8 @@ function savedIds(body,testOnly){
 export async function abTestsResponse(request,{bucket,site,actor,base,headers,testOnly=false,readVersion,listVersions,current,defaults}){
   const url=new URL(request.url),path=url.pathname;
   if(path!==base&&!path.startsWith(base+'/'))return null;
+  const measurement=await abMeasurementResponse(request,{bucket,site,actor,base,headers,readVersion});
+  if(measurement)return measurement;
   const rest=path.slice(base.length),item=rest.match(/^\/(abx-[a-f0-9]{64})(?:\/(download|record|events))?$/);
   const route=rest===''?{name:'list',methods:['GET','POST']}:rest==='/check'?{name:'check',methods:['POST']}
     :item?{name:item[2]??'item',id:item[1],methods:item[2]==='events'?['POST']:item[2]?['GET']:['GET','PUT','DELETE']}:null;
