@@ -4,6 +4,7 @@ import {baseReadable, previousArchiveBase64, preparedTemplates} from '../../.gen
 import {buildConfigurableABPackage} from '../../scripts/configurable-ab-package.mjs';
 import {sha256} from '../../scripts/static-aa-package.mjs';
 import {DEFAULT_PACKAGE_SETTINGS, validatePackageSettings} from '../experiments/package-settings-v1.mjs';
+import {AB_HISTORY_PAGE_SIZE} from '../experiments/ab-history-contracts.mjs';
 
 const ID = /^tanjug-ab-2\.0\.0-[a-f0-9]{64}$/;
 const BASELINE = 'tanjug-aa-1.0.2';
@@ -68,8 +69,8 @@ export async function readGeneratedAbHistory(env,site,id,{download=false}={}) {
   return {record,deletedAt:marker?.deletedAt??null,...(download?{bytes}:{})};
 }
 export async function generatedAbHistoryPage(env,site,cursor) {
-  const prefix=root(site)+'records/',page=await env.BUILDS.list({prefix,limit:5,...(cursor?{cursor}:{})});
-  check(Array.isArray(page.objects)&&page.objects.length<=5,'Historical page exceeds its read limit.');
+  const prefix=root(site)+'records/',page=await env.BUILDS.list({prefix,limit:AB_HISTORY_PAGE_SIZE,...(cursor?{cursor}:{})});
+  check(Array.isArray(page.objects)&&page.objects.length<=AB_HISTORY_PAGE_SIZE,'Historical page exceeds its read limit.');
   const rows=[];
   for(const object of page.objects){
     const id=object.key.slice(prefix.length).replace(/\.json$/,'');

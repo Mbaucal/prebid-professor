@@ -4,6 +4,7 @@ import {baseReadable,previousArchiveBase64,preparedTemplates} from '../../.gener
 import {buildSavedScript,buildSavedTest,BASELINE_SHA} from '../../scripts/saved-script-package.mjs';
 import {sha256} from '../../scripts/static-aa-package.mjs';
 import {SCRIPT_ID,TEST_ID,displayName,scriptSettings} from '../experiments/saved-scripts-v1.mjs';
+import {AB_HISTORY_PAGE_SIZE} from '../experiments/ab-history-contracts.mjs';
 
 import {supportsNamedScripts, savedPrebidSettings, settingsForScript} from './prebid-cache-settings.mjs';
 
@@ -69,8 +70,8 @@ export async function scriptLibraryHistoryPage(env,site,kind,cursor) {
   const prefix=key(site,kind,'','json').slice(0,-5);
   // Each row verifies its original record, deletion marker and bounded ZIP.
   // Keep the initial three-collection history request within a small I/O/byte budget.
-  const page=await env.BUILDS.list({prefix,limit:5,...(cursor?{cursor}:{})});
-  check(Array.isArray(page.objects)&&page.objects.length<=5,'Historical page exceeds its read limit.');
+  const page=await env.BUILDS.list({prefix,limit:AB_HISTORY_PAGE_SIZE,...(cursor?{cursor}:{})});
+  check(Array.isArray(page.objects)&&page.objects.length<=AB_HISTORY_PAGE_SIZE,'Historical page exceeds its read limit.');
   const rows=[];
   for(const object of page.objects){
     const id=object.key.slice(prefix.length).replace(/\.json$/,'');
