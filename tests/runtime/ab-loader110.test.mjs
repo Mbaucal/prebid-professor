@@ -59,9 +59,9 @@ test('bounded memory drops observations honestly and never changes serving state
   assert.equal(value.events.length,64);assert.equal(value.droppedEvents,30);assert.equal(value.assignment.variant,'B');assert.equal(p.starts.length,1);assert.equal(p.state().variant,'B');
 });
 
-test('new default is 1.1, explicit old compositions retain separate byte identities and unchanged arms',async()=>{
+test('explicit 1.1.0 compositions retain separate byte identities and unchanged arms',async()=>{
   const a=await syntheticDraft(),b=await syntheticDraft({runtimeVersion:'9.0.1',script:'window.arm="B";'}),input={site:'test-site',a,b,testId:'memory_1',name:'Memory observation',trafficBPercent:50};
-  const now=await composeAbBundle(input),previousBundle=await composeAbBundle({...input,loaderVersion:'1.0.2'}),legacy=await composeAbBundle({...input,loaderVersion:'1.0.1'});
+  const now=await composeAbBundle({...input,loaderVersion:'1.1.0'}),previousBundle=await composeAbBundle({...input,loaderVersion:'1.0.2'}),legacy=await composeAbBundle({...input,loaderVersion:'1.0.1'});
   assert.equal(now.record.loader.version,'1.1.0');assert.equal(previousBundle.record.loader.version,'1.0.2');assert.equal(legacy.record.loader.version,'1.0.1');
   assert.notEqual(now.id,previousBundle.id);assert.notEqual(now.zipSha256,previousBundle.zipSha256);
   assert.deepEqual(now.files[now.record.arms.A.path],previousBundle.files[previousBundle.record.arms.A.path]);

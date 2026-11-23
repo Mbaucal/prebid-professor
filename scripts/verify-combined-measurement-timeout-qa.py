@@ -1,6 +1,6 @@
 """Two combined MBA-58/402 probes. Native Prebid, mock GPT, all demand local.
 
-Exact saved 3.26 arm/SRI bytes run through loader1.1.0. Memory exports are
+Exact saved 3.26 arm/SRI bytes run through loader1.1.1 with its v2 ledger. Memory exports are
 inspected offline; no collector, publisher activation or paid request is used.
 """
 import hashlib,json,os,subprocess,sys,traceback
@@ -94,7 +94,7 @@ def run(browser,name,manifest,files):
    advance(33000);pump(lambda:Counter(slot['code'] for row in state()['gam'] for slot in row['slots'])=={'Billboard':2,'P1':2},'Natural refresh did not complete exactly once per position')
   observed=state();result['observed']=observed;result['measurement']=observed['measurement']
   check('No uncaught error or unexpected/measurement HTTP request',not result['errors'] and not result['blocked'])
-  check('Current loader1.1 and explicit3.26 policy both executed',observed['loader']['loader']=='1.1.0' and observed['runtime']['siteId']==manifest['site'] and observed['policy']['enabled'])
+  check('Current loader1.1.1 and explicit3.26 policy both executed',observed['loader']['loader']=='1.1.1' and observed['runtime']['siteId']==manifest['site'] and observed['policy']['enabled'])
   ledger=observed['measurement'];events=ledger['events'];execution=[event['arm'] for event in events if event['type']=='runtime-started']
   check('Original randomized assignment remains B',ledger['assignment']['variant']=='B' and observed['loader']['originalVariant']=='B')
   check('Ledger remains bounded memory-only with unknown collection coverage',ledger['collection']=='memory-only' and ledger['coverage']=='unknown' and ledger['consentPolicy']=='native-runtime-unchanged' and len(events)<=64 and ledger['droppedEvents']==0)
@@ -124,7 +124,7 @@ def run(browser,name,manifest,files):
 
 report={'passed':False,'cases':[],'scope':'Local saved packages + pinned native Prebid/mock GPT; no collector, paid traffic, real GAM or revenue evidence.'}
 try:
- manifest=json.loads((OUT/'manifest.json').read_text());assert manifest['record']['loader']['version']=='1.1.0'
+ manifest=json.loads((OUT/'manifest.json').read_text());assert manifest['record']['loader']['version']=='1.1.1'
  files={}
  for name,digest in manifest['files'].items():
   path=(OUT/name).resolve();assert path.is_relative_to(OUT);data=path.read_bytes();assert hashlib.sha256(data).hexdigest()==digest,name;files[name]=data

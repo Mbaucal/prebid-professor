@@ -15,8 +15,8 @@ test.before(async()=>{
   b=await syntheticDraft({runtimeVersion:'9.0.1',script:'window.arm="B";',note:'Candidate'});
 });
 const input=()=>({site,actor,a,b,name:'Upgrade retry',testId:'upgrade_retry',trafficBPercent:50});
-async function oldSave(){
-  const r2=memoryR2(),bundle=await composeAbBundle({...input(),loaderVersion:'1.0.1'});
+async function oldSave(loaderVersion='1.0.1'){
+  const r2=memoryR2(),bundle=await composeAbBundle({...input(),loaderVersion});
   const record={...bundle.record,createdBy:actor.email,createdAt:'2026-11-18T00:00:00.000Z'};
   async function put(key,bytes,kind,metadata={}){
     const sha256=hash(bytes);
@@ -35,13 +35,15 @@ async function refuses(promise,code){
 }
 
 test('a lost Save reply followed by a loader upgrade returns the exact committed old test without any write',async()=>{
-  const {r2,bundle,record}=await oldSave(),before=snapshot(r2),puts=r2.log.puts.length;
-  const current=await composeAbBundle(input());assert.notEqual(current.id,record.id);assert.notEqual(current.record.loader.version,record.loader.version);
-  r2.faults.list=()=>{throw Error('A completed retry must not need quota admission');};
-  const result=await createAbTest(r2.bucket,input());
-  assert.equal(result.created,false);assert.deepEqual(result.record,record);assert.equal(result.deletedAt,null);
-  assert.equal(r2.log.puts.length,puts);assert.deepEqual(snapshot(r2),before);
-  assert.deepEqual((await readAbZip(r2.bucket,site,record.id)).bytes,bundle.zip);
+  for(const version of ['1.0.1','1.0.2','1.1.0']){
+    const {r2,bundle,record}=await oldSave(version),before=snapshot(r2),puts=r2.log.puts.length;
+    const current=await composeAbBundle(input());assert.equal(current.record.loader.version,'1.1.1');assert.notEqual(current.id,record.id);
+    r2.faults.list=()=>{throw Error('A completed retry must not need quota admission');};
+    const result=await createAbTest(r2.bucket,input());
+    assert.equal(result.created,false);assert.deepEqual(result.record,record);assert.equal(result.deletedAt,null);
+    assert.equal(r2.log.puts.length,puts);assert.deepEqual(snapshot(r2),before);
+    assert.deepEqual((await readAbZip(r2.bucket,site,record.id)).bytes,bundle.zip);
+  }
 });
 
 test('cross-version recovery preserves trash state and never restores or rewrites a saved ZIP',async()=>{
