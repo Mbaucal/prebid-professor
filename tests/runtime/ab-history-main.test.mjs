@@ -188,3 +188,20 @@ test('MAIN packages with the same settings ignore generated release IDs in their
   assert.equal(retry.created,false);assert.deepEqual(retry.record,historical);assert.equal(retry.record.bundle.zipSha256,saved.record.bundle.zipSha256);
   assert.equal(state(),before,'a retry preserves the original historical record, ZIP and source bytes');
 });
+
+test('unnamed configurable pilots get stable distinguishable history labels for empty or whitespace notes',async()=>{
+  const endpoint='/api/publishers/tanjug/ab-experiments',initial=await h.json(endpoint),saved=[];
+  for(const [notes,trafficBPercent] of [['',49],[' \t ',48]]){
+    const settings={...DEFAULT_PACKAGE_SETTINGS,trafficBPercent};
+    const result=await h.json(endpoint,{method:'POST',body:{revision:initial.revision,settings,notes}},201);
+    assert.equal(result.package.notes,'');saved.push(result.package);
+  }
+  const before=state(),rows=(await get()).value.sections.generatedTests.items;
+  for(const item of saved){
+    const row=rows.find(value=>value.id===item.release);assert(row);
+    assert.equal(row.name,`Earlier A/B package ${item.release.slice(-8)}`);
+    assert.equal(row.state,'stored');assert.equal(row.testId,null);assert(row.downloadUrl);
+  }
+  assert.equal(new Set(saved.map(item=>rows.find(row=>row.id===item.release).name)).size,2);
+  assert.equal(state(),before,'reading fallback labels never rewrites historical records or archives');
+});

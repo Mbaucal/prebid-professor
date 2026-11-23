@@ -16,7 +16,7 @@ function historyRow(site,collection,value){
   const record=value.record;
   // All three accepted legacy constructors pin this runtime and include the same
   // verified Prebid 11.34 file. GAM-only built-in packages use the separate generic list.
-  const row={...base,name:record.name||record.notes?.trim()||'Earlier A/B package',createdAt:record.createdAt,
+  const row={...base,name:record.name||record.notes?.trim()||`Earlier A/B package ${value.id.slice(-8)}`,createdAt:record.createdAt,
     deletedAt:value.deletedAt,state:'stored',reason:null,runtimeVersion:'3.9.1',prebidVersion:'11.34.0',
     bytes:record.bytes,sha256:record.archiveSha256,
     downloadUrl:value.deletedAt?null:`/api/publishers/${site}/ab-tests/history/${collection}/${value.id}/download`};
