@@ -162,7 +162,7 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
     if(saved.created){setName('');setTestIdEdited(false);setResult(null);}
     await load();
     if(workspace&&saved.record.id)setMeasurement(saved.record.id);
-    return saved.created?`A/B test "${saved.record.name}" saved. Download its ZIP below.`
+    return saved.created?`A/B test "${saved.record.name}" saved. ${workspace?'Download its ZIP in Saved A/B tests.':'Download its ZIP below.'}`
       :saved.deletedAt?'This A/B test is already saved and is in Deleted A/B tests. Restore it there. Nothing new was stored.'
       :'This A/B test is already saved. Nothing new was stored.';
   }
