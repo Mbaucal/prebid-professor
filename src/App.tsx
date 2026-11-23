@@ -21,6 +21,7 @@ import ReleasesPanel from './components/ReleasesPanel';
 import SiteTestPagePanel from './components/SiteTestPagePanel';
 import MockupBuilderPanel from './components/MockupBuilderPanel';
 import MonitoringReadonlyPanel from './components/MonitoringReadonlyPanel';
+import SiteMeasurementPanel from './components/SiteMeasurementPanel';
 import type {
   HealthResponse,
   PublisherAccount,
@@ -121,6 +122,7 @@ export default function App() {
   const [hierarchyError, setHierarchyError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [configEntry, setConfigEntry] = useState<'ad-units' | 'generator-profiles' | 'demand-mode'>('generator-profiles');
+  const [measurementEntry,setMeasurementEntry]=useState<{siteId:string;experimentId:string}|null>(null);
   const [modal, setModal] = useState<ModalMode>(null);
   const [publisherForm, setPublisherForm] = useState<PublisherForm>(emptyPublisherForm);
   const [siteForm, setSiteForm] = useState<SiteForm>(emptySiteForm);
@@ -597,10 +599,14 @@ export default function App() {
               else { setConfigEntry(destination === 'demand' ? 'demand-mode' : 'generator-profiles'); setActiveTab('Config'); }
             }}
             onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)}
+            onOpenMeasurement={experimentId=>{setMeasurementEntry(experimentId?{siteId:site.id,experimentId}:null);setActiveTab('Measurement');}}
             publisherId={site.id}
             siteName={site.name}
           />
         ) : null}
+        {activeTab === 'Measurement' && site ? <SiteMeasurementPanel key={site.id} publisherId={site.id} siteName={site.name}
+          preferredExperimentId={measurementEntry?.siteId===site.id?measurementEntry.experimentId:undefined}
+          /> : null}
         {activeTab === 'Test page' && site ? <SiteTestPagePanel key={site.id} publisherId={site.id} /> : null}
         {activeTab === 'Export' && site ? <ExportPanel publisherId={site.id} site={site} /> : null}
         {activeTab === 'Mockup' && site ? <MockupBuilderPanel publisherId={site.id} siteName={site.name} /> : null}
@@ -611,7 +617,7 @@ export default function App() {
         {activeTab === 'Ads.txt' && site ? (
           <AdsTxtPanel onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)} site={site} />
         ) : null}
-        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Test page' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Monitoring' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
+        {activeTab !== 'Overview' && activeTab !== 'Config' && activeTab !== 'Prebid.js' && activeTab !== 'Releases' && activeTab !== 'Measurement' && activeTab !== 'Test page' && activeTab !== 'Export' && activeTab !== 'Mockup' && activeTab !== 'Monitoring' && activeTab !== 'Debug' && activeTab !== 'Ads.txt'
           ? renderPlaceholder(activeTab)
           : null}
         </WorkspaceContent>

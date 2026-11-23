@@ -15,6 +15,7 @@ import type { Bidder } from '../shared/types';
 type Props = {
   publisherId: string;
   siteName: string;
+  onChanged?: () => void | Promise<void>;
 };
 
 type ModuleGroup = {
@@ -222,7 +223,7 @@ function triggerDownload(content: string, fileName: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
+export default function PrebidBuildsPanel({ publisherId, siteName, onChanged }: Props) {
   const [bidders, setBidders] = useState<Bidder[]>([]);
   const [builds, setBuilds] = useState<StoredBuild[]>([]);
   const [loading, setLoading] = useState(true);
@@ -411,6 +412,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
       );
       await load();
       resetSelectedBuild();
+      await onChanged?.();
       if (payload.warnings?.length) setError(payload.warnings.join(' · '));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'The build could not be uploaded.');
@@ -428,6 +430,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
         { method: 'POST' },
       );
       await load();
+      await onChanged?.();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'The build could not be activated.');
     } finally {
@@ -444,6 +447,7 @@ export default function PrebidBuildsPanel({ publisherId, siteName }: Props) {
         { method: 'DELETE', headers: {'x-confirm-delete':build.id} },
       );
       await load();
+      await onChanged?.();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'The build could not be deleted.');
       throw requestError;

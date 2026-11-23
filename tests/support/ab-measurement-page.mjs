@@ -4,7 +4,7 @@ import * as current from '../../worker/experiments/ab-loader-1.1.0.mjs';
 
 const registry=JSON.parse(readFileSync(new URL('../../worker/experiments/ab-loader-registry.json',import.meta.url),'utf8'));
 const arm=side=>({release:'builtin-release-'+side.toLowerCase().repeat(64),name:side,runtimeVersion:'3.25.1',path:'r/builtin-release-'+side.toLowerCase().repeat(64)+'/ads.js',sha256:'a'.repeat(64),integrity:'sha384-'+'A'.repeat(64)});
-export function loaderMeasurementPage({L=current,keywords,existing={},slots=[],ready=true,search='',crypto=true,lockedGuard=false,failSet=null,lockedService=false,random=4294967295}={}){
+export function loaderMeasurementPage({L=current,keywords,existing={},slots=[],ready=true,search='',crypto=true,lockedGuard=false,failSet=null,lockedService=false,random=4294967295,trafficBPercent=100}={}){
   let now=0,sequence=0;const timers=new Map(),scripts=[],starts=[],calls=[],values=new Map(Object.entries(existing).map(([k,v])=>[k,[].concat(v)]));
   const service={getTargeting(key){return values.get(key)?.slice()??[];},setTargeting(key,value){calls.push({kind:'set',receiver:this,args:[...arguments]});if(key===failSet)throw Error('injected label failure');values.set(key,[].concat(value));return this;},clearTargeting(key){calls.push({kind:'clear',receiver:this,args:[...arguments]});if(arguments.length)values.delete(key);else values.clear();return this;}};
   const nativeSet=service.setTargeting,nativeClear=service.clearTargeting;
@@ -28,7 +28,7 @@ export function loaderMeasurementPage({L=current,keywords,existing={},slots=[],r
   if(keywords)sandbox.adsKeywords=keywords;
   sandbox.window=sandbox;vm.createContext(sandbox);
   if(lockedGuard)Object.defineProperty(sandbox,'__TESSERA_RUNTIME_STARTED',{value:undefined,writable:true,configurable:false});
-  const config={schema:L.AB_LOADER_CONFIG_SCHEMA,...(L.AB_LOADER_VERSION==='1.1.0'?{site:'memory-site'}:{}),id:'abx-'+'c'.repeat(64),testId:'loader_memory',name:'Loader protection',trafficBPercent:100,arms:{A:arm('A'),B:arm('B')},loader:{version:L.AB_LOADER_VERSION,sha256:registry[L.AB_LOADER_VERSION].sha256}};
+  const config={schema:L.AB_LOADER_CONFIG_SCHEMA,...(L.AB_LOADER_CONFIG_SCHEMA==='tessera-ab-loader-config-2'?{site:'memory-site'}:{}),id:'abx-'+'c'.repeat(64),testId:'loader_memory',name:'Loader protection',trafficBPercent,arms:{A:arm('A'),B:arm('B')},loader:{version:L.AB_LOADER_VERSION,sha256:registry[L.AB_LOADER_VERSION].sha256}};
   vm.runInContext(L.renderAbLoader(config),sandbox);
   return {sandbox,document,scripts,starts,timers,calls,service,nativeSet,nativeClear,values,
     measurement(){document.currentScript=null;return JSON.parse(JSON.stringify(sandbox.__tesseraAbLoader.measurement()));},

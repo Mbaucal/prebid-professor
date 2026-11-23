@@ -22,6 +22,19 @@ test('a deep link resolves its real hierarchy identity and survives canonical se
   assert.equal(resolve(new URL(url,'https://tessera.invalid').search).site.id,'site-a2');
   assert.equal(resolve(new URL(url,'https://tessera.invalid').search).navigation.tab,'Config');
 });
+test('Measurement links keep the selected site and agency, without changing earlier tab URLs',()=>{
+  const selected=resolve('?site=site-a2&tab=measurement&agency=north');
+  assert.equal(selected.error,null);assert.equal(selected.navigation.tab,'Measurement');assert.equal(selected.site.id,'site-a2');
+  const url=dashboardURL('https://tessera.invalid/dashboard',selected.navigation);
+  assert.equal(url,'/dashboard?section=publishers&publisher=publisher-a&site=site-a2&tab=measurement&agency=north');
+  assert.equal(resolve(new URL(url,'https://tessera.invalid').search).navigation.tab,'Measurement');
+  for(const [key,label] of [['releases','Releases'],['test-page','Test page'],['export','Export'],['mockup','Mockup'],['monitoring','Monitoring'],['debug','Debug'],['ads-txt','Ads.txt']]){
+    const old=resolve('?site=site-a2&tab='+key);assert.equal(old.error,null);assert.equal(old.navigation.tab,label);
+    assert.match(dashboardURL('https://tessera.invalid/',old.navigation),new RegExp('tab='+key+'$'));
+  }
+  assert.match(resolve('?tab=measurement').error,/selected site/);
+  assert.match(resolve('?site=site-a2&tab=measurement&agency=south').error,/outside this agency/);
+});
 test('unknown, deleted and mismatched identities cannot fall back to the first site',()=>{
   for(const query of ['?site=deleted&tab=config','?publisher=deleted','?publisher=publisher-b&site=site-a2','?tab=config']){
     const state=resolve(query);assert(state.error,query);assert.equal(state.site,null);assert.equal(state.publisher,null);

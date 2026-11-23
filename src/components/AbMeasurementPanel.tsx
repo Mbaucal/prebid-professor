@@ -3,7 +3,7 @@ import {AB_GAM_COLUMNS,AB_GAM_CSV_LIMIT} from '../../worker/experiments/ab-measu
 import type {GamReportPreview,MeasurementPlanDetail,MeasurementPlanListing,MeasurementReport} from '../../worker/experiments/ab-measurement-contracts.mjs';
 import './ab-measurement.css';
 
-type Props={endpoint:string;experimentId:string;testId:string;disabled?:boolean};
+type Props={endpoint:string;experimentId:string;testId:string;disabled?:boolean;expanded?:boolean};
 type Action='plan'|'template'|'upload'|'preview'|'';
 const emptyReport:MeasurementReport={networkCode:'',inventoryPath:'',startDate:'',endDate:'',currency:'',timeZone:'UTC',revenueBasis:'unknown',revenueMetric:'total'};
 const basis=(value:MeasurementReport['revenueBasis'])=>value==='unknown'?'Unknown':value==='gross'?'Gross':'Net';
@@ -21,6 +21,7 @@ function download(bytes:BlobPart,type:string,name:string){
 /** Each saved experiment has its own lazily opened report view. CSV and review results live only in React memory. */
 export default function AbMeasurementPanel(props:Props){
   const [opened,setOpened]=useState(false);
+  if(props.expanded)return <MeasurementContent key={props.endpoint} {...props}/>;
   return <details className="ab-measurement-disclosure" onToggle={event=>{if(event.currentTarget.open)setOpened(true);}}>
     <summary>Measurement and GAM report</summary>
     {opened?<MeasurementContent key={props.endpoint} {...props}/>:null}

@@ -1,0 +1,16 @@
+.site-measurement-panel{margin-top:0;min-width:0}
+.site-measurement-panel>select{width:100%;max-width:100%;min-width:0}
+.site-measurement-panel .site-measurement-test{border-top:1px solid #d7dfec;margin-top:22px;padding-top:4px;min-width:0}
+.site-measurement-panel .site-measurement-empty{border:1px solid #d7dfec;border-radius:10px;padding:4px 18px 18px;margin-top:18px;background:#fafbfd}
+.site-measurement-panel .site-measurement-empty h3{margin-top:14px}
+.site-measurement-panel>.ab-tests-panel{padding:0;border:0;margin-top:22px;box-shadow:none}
+.measurement-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.historical-ab-tests,.ab-source-versions{border-top:1px solid #d7dfec;margin-top:24px;padding-top:16px;min-width:0}
+.ab-source-versions>summary{font-weight:700;cursor:pointer;padding:8px 0}
+.ab-source-versions>.script-setup{margin-top:16px}
+.ab-source-setup{border:0;padding:0;margin:16px 0;min-width:0}
+.ab-tests-selected-source{font-size:.88rem;line-height:1.5;margin:8px 0 0;overflow-wrap:anywhere}
+.historical-ab-item code{overflow-wrap:anywhere;white-space:normal}
+.historical-ab-item>details{margin-top:12px}
+.measurement-prebid-setup{border:1px solid #d7dfec;padding:16px;border-radius:12px;margin:18px 0;min-width:0}
+#ab-tests-new{scroll-margin-top:28px}

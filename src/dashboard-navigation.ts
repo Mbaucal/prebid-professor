@@ -2,11 +2,11 @@ import type { PublisherAccount } from './shared/types';
 import type { Organization } from './organization';
 
 export const globalSections = ['Publishers', 'Agencies', 'Releases', 'Prebid builds', 'API integracije', 'Audit log', 'Settings'] as const;
-export const siteTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Test page', 'Export', 'Mockup', 'Monitoring', 'Debug', 'Ads.txt'] as const;
+export const siteTabs = ['Overview', 'Config', 'Prebid.js', 'Releases', 'Measurement', 'Test page', 'Export', 'Mockup', 'Monitoring', 'Debug', 'Ads.txt'] as const;
 export type GlobalSection = (typeof globalSections)[number];
 export type PublisherTab = (typeof siteTabs)[number];
 const sectionKeys = ['publishers', 'agencies', 'releases', 'prebid-builds', 'integrations', 'audit-log', 'settings'];
-const tabKeys = ['overview', 'config', 'prebid', 'releases', 'test-page', 'export', 'mockup', 'monitoring', 'debug', 'ads-txt'];
+const tabKeys = ['overview', 'config', 'prebid', 'releases', 'measurement', 'test-page', 'export', 'mockup', 'monitoring', 'debug', 'ads-txt'];
 const keys = ['section', 'publisher', 'site', 'tab', 'agency'] as const;
 
 export type DashboardNavigation = {

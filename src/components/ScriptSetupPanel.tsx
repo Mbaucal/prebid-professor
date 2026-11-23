@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { publicRuntimeChoices, publicRuntimeHistory, runtimeLabel } from '../site-workspace/runtime-labels';
 import { runtimeNotice, runtimeNoticeSuffix, runtimeNoticeText } from '../site-workspace/runtime-notices';
 import '../site-workspace/runtime.css';
@@ -31,23 +31,26 @@ function currentRuntime(state: State) {
 type Props = {
   publisherId: string; endpoint?: string; onChanged?: () => void | Promise<void>;
   onOpenPrebid?: () => void; onContinue?: () => void;
+  refreshKey?: number; onDirtyChange?: (dirty:boolean) => void; preserveChoicesOnReload?: boolean;
 };
 
 export default function ScriptSetupPanel(props: Props) {
   return <SetupEditor key={`${props.publisherId}:${props.endpoint ?? 'site'}`} {...props} />;
 }
 
-function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinue }: Props) {
+function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinue, refreshKey=0, onDirtyChange, preserveChoicesOnReload=false }: Props) {
   const url = endpoint ?? `/api/publishers/${encodeURIComponent(publisherId)}/builtin-site-settings`;
   const [state, setState] = useState<State | null>(null);
   const [prebid, setPrebid] = useState(false);
   const [selection, setSelection] = useState<Pin | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [stale, setStale] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const noticeId = useId();
   const summaryId = useId();
+  const loaded=useRef(false);
 
   async function request(body?: unknown): Promise<State> {
     const response = await fetch(url, {
@@ -59,16 +62,18 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
     if (!response.ok) throw new Error(data.error || 'Script setup could not be loaded.');
     return data;
   }
-  function accept(next: State) {
-    setState(next); setPrebid(next.enablePrebid);
-    setSelection(next.selected ?? currentRuntime(next)?.pin ?? null);
+  function accept(next: State,preserve=false) {
+    loaded.current=true;
+    setState(next); setPrebid(previous=>preserve?previous:next.enablePrebid);
+    setSelection(previous=>preserve&&previous?previous:next.selected ?? currentRuntime(next)?.pin ?? null);
     setStale(false);
   }
   useEffect(() => {
     let active = true;
-    request().then(next => { if (active) accept(next); }).catch(e => { if (active) setError(e.message); });
+    setLoading(true);setError('');
+    request().then(next => { if (active) accept(next,loaded.current); }).catch(e => { if (active) setError(e.message); }).finally(()=>{if(active)setLoading(false);});
     return () => { active = false; };
-  }, [url]);
+  }, [url,refreshKey]);
   const current = state ? currentRuntime(state) : undefined;
   const choices = state ? publicRuntimeChoices(state.runtimes) : [];
   const savedRuntime = state?.selected && state.runtimes.find(item => samePin(item.pin, state.selected));
@@ -85,6 +90,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
   const changedVersion = Boolean(state && !samePin(selection, state.selected));
   const blockedBuild = prebid && (state?.prebid.status === 'missing' || state?.prebid.status === 'ambiguous');
   const dirty = state && (prebid !== state.enablePrebid || changedVersion);
+  useEffect(()=>{onDirtyChange?.(Boolean(dirty||busy||stale||loading||!state));},[dirty,busy,stale,loading,state,onDirtyChange]);
   async function save() {
     if (!state || !selected || unavailable || busy) return;
     setBusy(true); setError(''); setMessage('');
@@ -100,7 +106,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
   }
   async function reload() {
     setBusy(true); setError(''); setMessage('');
-    try { accept(await request()); } catch (e) { setError(e instanceof Error ? e.message : 'Could not reload.'); }
+    try { accept(await request(),preserveChoicesOnReload);if(preserveChoicesOnReload){setMessage('Saved setup reloaded. Your requested script version and mode are kept; review them before saving.');await onChanged?.();} } catch (e) { setError(e instanceof Error ? e.message : 'Could not reload.'); }
     finally { setBusy(false); }
   }
   return <section className="site-runtime-panel script-setup" aria-label="Script setup">

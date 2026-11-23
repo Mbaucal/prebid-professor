@@ -30,7 +30,7 @@ jobs:
       - name: Build MAIN and verify immutable experiment contracts
         run: |
           node scripts/isolated-toolchain.mjs build
-          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-loader*.test.mjs tests/runtime/ab-bundle.test.mjs tests/runtime/ab-store*.test.mjs tests/runtime/ab-tests-api.test.mjs tests/runtime/ab-main-package3251.test.mjs tests/runtime/ab-tests-main.test.mjs tests/runtime/ab-measurement*.test.mjs tests/runtime/ab-memory-adversarial-qa.test.mjs
+          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-loader*.test.mjs tests/runtime/ab-bundle.test.mjs tests/runtime/ab-store*.test.mjs tests/runtime/ab-tests-api.test.mjs tests/runtime/ab-main-package3251.test.mjs tests/runtime/ab-tests-main.test.mjs tests/runtime/ab-history-main.test.mjs tests/runtime/ab-measurement*.test.mjs tests/runtime/ab-memory-adversarial-qa.test.mjs
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/verify-ab-tests-main-workerd.mjs
       - name: Install pinned browser tools
         run: |
@@ -40,10 +40,16 @@ jobs:
         run: |
           python scripts/verify-ab-tests-main-ui.py
           python scripts/verify-ab-measurement-main-ui.py
+          python scripts/verify-measurement-navigation-ui.py
+          python scripts/verify-experiments-workspace-ui.py
       - name: Verify native 3.25.1 delivery, consent and failure recovery
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-ab-loader-main-browser.mjs .generated/ab-loader-main-browser
           python scripts/verify-ab-loader-main-browser.py .generated/ab-loader-main-browser
+      - name: Verify slow-arm recovery with bounded real browser transport
+        run: |
+          node scripts/prepare-ab-loader111-transport-qa.mjs .generated/ab-loader-main-browser .generated/ab-loader111-transport-qa
+          python scripts/verify-ab-loader111-transport-qa.py .generated/ab-loader111-transport-qa --ci
       - name: Verify reserved targeting and late-arm ownership on pinned real GPT
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-ab-loader-real-gpt.mjs
@@ -60,8 +66,11 @@ jobs:
           path: |
             .generated/ab-tests-main-ui/**
             .generated/ab-measurement-main-ui/**
+            .generated/measurement-navigation-ui/**
+            .generated/experiments-workspace-ui/**
             .generated/ab-tests-main-workerd/**
             .generated/ab-loader-main-browser/**
+            .generated/ab-loader111-transport-qa/**
             .generated/ab-loader-real-gpt/**
             .generated/combined-measurement-timeout-qa/**
             .generated/runtime324-prebid/11.34.0/manifest.json
