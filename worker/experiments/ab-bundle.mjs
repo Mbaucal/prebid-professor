@@ -164,7 +164,7 @@ const DIFF=[
 ];
 // config.json paths left out of otherSettings: build stamps and the script pin differ on every
 // build, the prebid check compares the Prebid.js file itself, and DIFF above reports the rest.
-const NOT_OTHER=new Set(['runtime','prebidBuild','bidCache','core.buildVersion','core.generatorProfileId','options.buildTimestamp',
+const NOT_OTHER=new Set(['runtime','prebidBuild','bidCache','version','core.buildVersion','core.generatorProfileId','options.buildTimestamp',
   'core.globalRefresh','options.floors','core.bidders','core.bidderSlotParams','core.bidderDeviceParams','core.bidderAdUnitParams',
   'core.defaultTimeout','core.atfTimeout','core.btfTimeout','core.stickyTimeout']);
 // Values DIFF reports only in part: compare what is left.

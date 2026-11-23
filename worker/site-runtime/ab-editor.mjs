@@ -41,9 +41,10 @@ function summary(record) {
 async function readRecord(env,site,release,{allowDeleted=false}={}) {
   if(!allowDeleted)check(!await deletedPackage(env.BUILDS,trashKey(site,release)),'This package was deleted. Restore it from Deleted packages first.',410);
   const object=await env.BUILDS.get(metaKey(site,release));
-  check(object && object.size<32768,'Saved package not found.',404);
+  check(object,'Saved package not found.',404);
+  check(Number.isSafeInteger(object.size)&&object.size>0&&object.size<32768,'Saved package metadata exceeds its limit.');
   const bytes=Buffer.from(await object.arrayBuffer());
-  check(sha256(bytes)===object.customMetadata?.sha256,'Saved metadata checksum differs.');
+  check(bytes.length===object.size&&sha256(bytes)===object.customMetadata?.sha256,'Saved metadata checksum differs.');
   const record=JSON.parse(bytes.toString('utf8'));
   check(record.siteId===site && record.release===release && record.baseline===BASELINE,'Saved package identity differs.');
   summary(record);return record;
@@ -55,6 +56,34 @@ async function archive(env,site,record) {
   const bytes=Buffer.from(await object.arrayBuffer());
   check(bytes.length===record.bytes && sha256(bytes)===record.archiveSha256,'Saved ZIP checksum differs.');
   return bytes;
+}
+/** Read-only history keeps the original site identity even after its current configuration changes. */
+export async function readGeneratedAbHistory(env,site,id,{download=false}={}) {
+  check(ID.test(id),'Unknown package.',404);
+  const record=await readRecord(env,site,id,{allowDeleted:true});
+  const marker=await deletedPackage(env.BUILDS,trashKey(site,id));
+  if(marker)check(marker.id===id&&marker.sha256===record.archiveSha256,'Deleted package differs.');
+  if(download)check(!marker,'This package was deleted. Restore it before downloading.',410);
+  const bytes=await archive(env,site,record);
+  return {record,deletedAt:marker?.deletedAt??null,...(download?{bytes}:{})};
+}
+export async function generatedAbHistoryPage(env,site,cursor) {
+  const prefix=root(site)+'records/',page=await env.BUILDS.list({prefix,limit:5,...(cursor?{cursor}:{})});
+  check(Array.isArray(page.objects)&&page.objects.length<=5,'Historical page exceeds its read limit.');
+  const rows=[];
+  for(const object of page.objects){
+    const id=object.key.slice(prefix.length).replace(/\.json$/,'');
+    try{
+      check(ID.test(id)&&object.key===metaKey(site,id),'Saved package index differs.');
+      rows.push({id,...await readGeneratedAbHistory(env,site,id)});
+    }catch(error){rows.push({id,error:[404,409,410].includes(error?.status)?error.message:'Could not read this saved package. Retry.'});}
+  }
+  return {rows,nextCursor:page.truncated?page.cursor:null};
+}
+export async function acceptedAbBaseline(env,site,{download=false}={}) {
+  if(!supports(await readSite(env,site)))return null;
+  const bytes=pinned();check(sha256(bytes)===ARCHIVE_SHA,'Accepted baseline checksum differs.');
+  return {id:BASELINE,bytes:bytes.length,sha256:ARCHIVE_SHA,...(download?{archive:bytes}:{})};
 }
 
 async function putOnce(env,key,bytes,customMetadata,contentType) {
