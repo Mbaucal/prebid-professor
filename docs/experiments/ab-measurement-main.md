@@ -1,23 +1,43 @@
 # Review GAM results for a saved A/B test
 
-Open **Publishers → publisher → site → Measurement**, then choose a **Saved A/B
-test**. The site's Measurement tab is available independently of its release
-workflow. **Open measurement** on a saved test in Releases opens that test here.
-The test, its original scripts and its ZIP remain immutable. Preparing a report
-does not publish a script or change Google Ad Manager.
+Open **Publishers → publisher → site → Measurement**. This workspace shows
+saved A/B tests directly, with their TestId, both source scripts, saved loader
+version and download actions. Open **Review GAM report** on a test to prepare
+and review its report in the same page. A saved test or a live mark does not
+prove which ZIP is deployed.
 
-The selected test displays its name, saved date, traffic split, both script
-versions and its **TestId**. Tessera proposes a TestId in the new A/B test form;
-the operator can edit it before saving. Saving reserves it for that test on that
-site. GAM uses the exact `TestId` with `Variant=A|B` to distinguish results from
-other tests. Set up reporting for both keys and the exact values before traffic
-is collected. This does not fetch results automatically; upload the matching
-report below. A saved test or a live mark does not prove which ZIP is deployed.
+**Earlier A/B tests** lists the original named tests, configurable pilot packages
+and accepted A/A baseline where available. Original ZIP downloads are verified;
+no files are converted. Older standalone scripts have no A/B labels, while older
+tests may carry only Variant. These records cannot acquire TestId or new
+instrumentation retroactively, and are not generic source packages.
 
-Earlier pilot ZIPs are not generic saved A/B tests and are not automatically
-converted by this view. Opening Measurement does not alter site settings or
-retrofit TestId into an existing pilot. If no saved tests are listed, inspect
-Releases and the currently deployed package before preparing a new test.
+To prepare a new test without leaving Measurement:
+
+1. Open **Save a script version**. When no source versions exist this opens
+   automatically. Choose the **Script version** and mode, then explicitly save
+   the setup. This changes the future generator configuration; deployed files
+   remain unchanged. Missing Prebid setup can be completed in the inline
+   **Prebid.js setup** workspace.
+2. Enter a **Version name** and use **Generate and save package** to snapshot the
+   current Config. Repeat for the other source. New versions fill the first
+   empty A/B choice; existing choices and entered test details are kept. A
+   response failure may follow a completed save: reload source versions and
+   inspect the saved choices before creating another copy.
+3. Choose the saved sources in **New A/B test**, enter its name and proposed
+   TestId, check compatibility and save. Runtime versions and saved source
+   versions are distinct: choosing a runtime does not itself create a snapshot.
+4. Download the complete A/B ZIP and follow its installation instructions.
+   Saving or downloading is separate from deployment. The included loader
+   selects an arm using the saved split; it has no separate manual setup.
+
+Tessera proposes TestId in the new test form and reserves it when saved. The
+exact TestId with Variant=A|B distinguishes a test in GAM. Prepare reporting for
+both keys and exact values before collecting traffic. Results are imported from
+a matching GAM CSV; they are not fetched automatically. Comparing different ad
+logic with the same loader does not isolate the loader's own effect on revenue.
+
+## Review a saved test's report
 
 1. Prepare a reporting plan for the exact saved test. Confirm the reporting
    dates, currency, GAM time zone, revenue basis and revenue metric. The network
@@ -61,7 +81,7 @@ uses measurable impressions as its denominator. None of these is page RPM.
 
 ## Assignment diagnostics and readiness
 
-New A/B bundles use loader **1.1.0**, with a versioned, bounded, page-local
+New A/B bundles use a versioned, bounded, page-local
 assignment/outcome ledger. It keeps the original random group separate from the
 script that executes, control fallback, exclusions and load failures. It sends
 no external measurement request and adds no persistent visitor identifier.

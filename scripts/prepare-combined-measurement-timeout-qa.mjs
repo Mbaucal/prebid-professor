@@ -50,7 +50,7 @@ try{
  assert(JSON.parse(new TextDecoder().decode(B.files['config.json'])).bidCache);
  const before=JSON.stringify(f.sqlite.prepare('SELECT * FROM publisher_configs').all());
  const stored=await createAbTest(r2.bucket,{site:SITE,actor:{email:ACTOR},a:A,b:B,name:'Combined native326 and memory ledger',testId:'combined326_1',trafficBPercent:100});
- assert.equal(stored.record.loader.version,'1.1.0');assert.equal(stored.record.loader.sha256,'87d6c6be15e2b64cde17edad3e3fcd51c105b1b3d5ffcaa8e00596cb738add70');
+ assert.equal(stored.record.loader.version,'1.1.1');assert.equal(stored.record.loader.sha256,'81a1e8eee06a26a97eb65c7c0199e21508b6721bac3d3adecddd49ff3e7dd113');
  const plan=await createMeasurementPlan(r2.bucket,{site:SITE,id:stored.record.id,actor:{email:ACTOR},readVersion:id=>readPackage(f.env,SITE,id),report:{networkCode:'999',inventoryPath:'/999/'+SITE+'/',startDate:'2026-11-20',endDate:'2026-11-20',currency:'EUR',timeZone:'UTC',revenueBasis:'net',revenueMetric:'total'}});
  const archive=await readAbZip(r2.bucket,SITE,stored.record.id),files=unzipSync(archive.bytes),written={};
  await mkdir(out,{recursive:true});

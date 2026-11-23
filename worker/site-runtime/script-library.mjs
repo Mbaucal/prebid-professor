@@ -4,6 +4,7 @@ import {baseReadable,previousArchiveBase64,preparedTemplates} from '../../.gener
 import {buildSavedScript,buildSavedTest,BASELINE_SHA} from '../../scripts/saved-script-package.mjs';
 import {sha256} from '../../scripts/static-aa-package.mjs';
 import {SCRIPT_ID,TEST_ID,displayName,scriptSettings} from '../experiments/saved-scripts-v1.mjs';
+import {AB_HISTORY_PAGE_SIZE} from '../experiments/ab-history-contracts.mjs';
 
 import {supportsNamedScripts, savedPrebidSettings, settingsForScript} from './prebid-cache-settings.mjs';
 
@@ -35,8 +36,9 @@ function summary(record) {
 async function recordAt(env,site,kind,id,{allowDeleted=false}={}) {
   if(!allowDeleted)check(!await deletedPackage(env.BUILDS,trashKey(site,kind,id)),'This version was deleted. Restore it from Deleted scripts and tests first.',410);
   check(validId(kind,id),'Unknown saved version.',404);
-  const object=await env.BUILDS.get(key(site,kind,id,'json'));check(object&&object.size<32768,'Saved version not found.',404);
-  const bytes=Buffer.from(await object.arrayBuffer());check(sha256(bytes)===object.customMetadata?.sha256,'Saved version metadata checksum differs.');
+  const object=await env.BUILDS.get(key(site,kind,id,'json'));check(object,'Saved version not found.',404);
+  check(Number.isSafeInteger(object.size)&&object.size>0&&object.size<32768,'Saved version metadata exceeds its limit.');
+  const bytes=Buffer.from(await object.arrayBuffer());check(bytes.length===object.size&&sha256(bytes)===object.customMetadata?.sha256,'Saved version metadata checksum differs.');
   const record=JSON.parse(bytes.toString());
   check(record.siteId===site&&record.collection===kind&&record.id===id&&record.baseline===BASELINE_SHA,'Saved version identity differs.');
   summary(record);check(record.manifest?.id===id&&record.manifest.baseline===BASELINE_SHA&&record.manifest.name===record.name,'Saved manifest differs.');
@@ -51,6 +53,34 @@ async function list(env,site,kind,cursor) {
   const rows=await Promise.all(page.objects.map(async o=>{const s=JSON.parse(o.customMetadata?.summary||'null');check(o.key===key(site,kind,s?.id,'json'),'Saved version index differs.');return {...summary(s),deletedAt:(await deletedPackage(env.BUILDS,trashKey(site,kind,s.id)))?.deletedAt??null};}));
   rows.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
   return {collection:kind,items:rows.filter(r=>!r.deletedAt),deleted:rows.filter(r=>r.deletedAt),nextCursor:page.truncated?page.cursor:null};
+}
+/** Historical reads deliberately do not depend on today's site settings or generator eligibility.
+ * The authenticated caller supplies the site; every key, record and ZIP remains scoped to it. */
+export async function readScriptLibraryHistory(env,site,kind,id,{download=false}={}) {
+  check(['scripts','tests'].includes(kind)&&validId(kind,id),'Unknown saved version.',404);
+  const record=await recordAt(env,site,kind,id,{allowDeleted:true});
+  const marker=await deletedPackage(env.BUILDS,trashKey(site,kind,id));
+  if(marker)check(marker.id===id&&marker.sha256===record.archiveSha256,'Deleted version differs.');
+  if(download)check(!marker,'This version was deleted. Restore it before downloading.',410);
+  const bytes=await archiveAt(env,site,record);
+  return {record,deletedAt:marker?.deletedAt??null,...(download?{bytes}:{})};
+}
+export async function scriptLibraryHistoryPage(env,site,kind,cursor) {
+  check(['scripts','tests'].includes(kind),'Unknown historical collection.',404);
+  const prefix=key(site,kind,'','json').slice(0,-5);
+  // Each row verifies its original record, deletion marker and bounded ZIP.
+  // Keep the initial three-collection history request within a small I/O/byte budget.
+  const page=await env.BUILDS.list({prefix,limit:AB_HISTORY_PAGE_SIZE,...(cursor?{cursor}:{})});
+  check(Array.isArray(page.objects)&&page.objects.length<=AB_HISTORY_PAGE_SIZE,'Historical page exceeds its read limit.');
+  const rows=[];
+  for(const object of page.objects){
+    const id=object.key.slice(prefix.length).replace(/\.json$/,'');
+    try{
+      check(validId(kind,id)&&object.key===key(site,kind,id,'json'),'Saved version index differs.');
+      rows.push({id,...await readScriptLibraryHistory(env,site,kind,id)});
+    }catch(error){rows.push({id,error:[404,409,410].includes(error?.status)?error.message:'Could not read this saved version. Retry.'});}
+  }
+  return {rows,nextCursor:page.truncated?page.cursor:null};
 }
 async function bodyOf(request) {
   check(request.headers.get('content-type')?.split(';')[0]==='application/json','Send JSON settings.',415);

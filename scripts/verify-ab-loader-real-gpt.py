@@ -17,7 +17,7 @@ OUT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / '.generated/a
 ORIGIN = 'https://reporting.example.invalid'
 NOW = datetime(2026, 11, 20, 1, tzinfo=timezone.utc)
 CASES = ['clean-first-and-refresh', 'early-keywords', 'set-config-during-cmp',
-         'slot-reserved-before-dispatch', 'expired-b-before-a', 'expired-b-after-a',
+         'slot-reserved-before-dispatch', 'deadline-b-wins', 'deadline-control-wins',
          'publisher-gpt-labels', 'late-setter-and-refresh']
 
 SETUP = r'''
@@ -131,7 +131,7 @@ def case(browser, name, manifest, files, gpt):
             observe_startup()
             side = next(side for side, value in paths.items() if path == value)
             result['servedArms'].append(side)
-            if name.startswith('expired-b-'):
+            if name.startswith('deadline-'):
                 held[side] = request
             else:
                 request.fulfill(content_type='application/javascript', headers={'access-control-allow-origin': '*'}, body=files[path[1:]])
@@ -169,24 +169,24 @@ def case(browser, name, manifest, files, gpt):
         page.add_init_script(SETUP.replace('%OPTIONS%', json.dumps(options)))
         page.goto(ORIGIN + '/fixture', wait_until='domcontentloaded')
         pump(page, lambda: page.evaluate('!!window.__tesseraAbLoader'), 'Loader did not initialize')
-        if name.startswith('expired-b-'):
+        if name.startswith('deadline-'):
             pump(page, lambda: 'B' in held, 'Assigned B was not requested')
             advance(page, manifest['armDeadlineMs'])
             pump(page, lambda: 'A' in held, 'Arm deadline did not request control A')
             pending = snapshot('control-A-pending')
             check(result, not pending['state']['runtimeStarted'] and not result['wire'], 'Fallback starts no runtime/request while A is pending')
-            order = ['B', 'A'] if name == 'expired-b-before-a' else ['A', 'B']
+            order = ['B', 'A'] if name == 'deadline-b-wins' else ['A', 'B']
             for side in order:
                 held[side].fulfill(content_type='application/javascript', headers={'access-control-allow-origin': '*'}, body=files[paths[side][1:]])
                 page.wait_for_timeout(50)
                 advance(page, 1500)
                 point = snapshot('released-' + side)
-                if side == 'B' and order[0] == 'B':
-                    check(result, not point['state']['runtimeStarted'] and not result['wire'], 'Retired B cannot start before A')
+                if side == order[0]:
+                    check(result, point['state']['runtimeStarted'] and point['state']['executionArm']==side and len(result['wire'])==1, 'First valid eligible arm starts and sends exactly one GAM request')
             state = page.evaluate('AdVariant.snapshot()')
-            check(result, state['fallback'] and state['scriptRelease'] == manifest['arms']['A']['release'], 'Fallback executes control A')
-            check(result, state['blockedLateArmStarts'] >= 1, 'Late B was stopped by the immutable native guard')
-            check(result, len(result['wire']) == 1, 'Late B creates no duplicate GAM request')
+            check(result, state['fallback']==(order[0]=='A') and state['scriptRelease']==manifest['arms'][order[0]]['release'], 'Actual winner and fallback match the first valid arm')
+            check(result, state['blockedLateArmStarts'] >= 1, 'Competing late arm was stopped by the immutable native guard')
+            check(result, len(result['wire']) == 1, 'Competing arm creates no duplicate GAM request')
         else:
             pump(page, lambda: page.evaluate('!!window.__TESSERA_RUNTIME_STARTED'), 'Native runtime did not start')
             if name == 'set-config-during-cmp':
@@ -211,14 +211,14 @@ def case(browser, name, manifest, files, gpt):
         result['refresh'] = page.evaluate('__refresh')
         result['nativeStarts'] = page.evaluate('__nativeStarts')
         check(result, len(result['nativeStarts']) == 1, 'Exactly one immutable native runtime starts')
-        if name.startswith('expired-b-'):
-            check(result, result['nativeStarts'][0]['side'] == 'A', 'Only control A reaches its startup assignment')
+        if name.startswith('deadline-'):
+            check(result, result['nativeStarts'][0]['side'] == order[0], 'Only the first valid arm reaches its startup assignment')
         check(result, not result['errors'], 'No uncaught browser errors')
         check(result, bool(result['wire']), 'Actual GAM serialization was captured')
         for request in result['wire']:
             check(result, request['page'].get('publisher_key') == ['preserved'], 'Unrelated publisher page targeting survives')
             check(result, set(request['slots']) == {'Billboard', 'P1'}, 'Both native slot positions reach GAM')
-        measured = name in ['clean-first-and-refresh', 'expired-b-before-a', 'expired-b-after-a']
+        measured = name in ['clean-first-and-refresh', 'deadline-b-wins', 'deadline-control-wins']
         if measured:
             for request in result['wire']:
                 check(result, request['page'].get('Variant') == ['B'] and request['page'].get('TestId') == [manifest['testId']], 'GAM carries exactly the assigned Variant and TestId')
@@ -263,7 +263,7 @@ def main():
     try:
         manifest = json.loads((OUT / 'manifest.json').read_text())
         assert manifest['schemaVersion'] == 1 and manifest['runtime']['runtimeVersion'] == '3.25.1'
-        assert manifest['loader']['version'] == '1.1.0' and manifest['assigned'] == 'B'
+        assert manifest['loader']['version'] == '1.1.1' and manifest['assigned'] == 'B'
         report['loader'] = manifest['loader']
         report['fixtureManifestSha256'] = sha256((OUT / 'manifest.json').read_bytes())
         files = {}

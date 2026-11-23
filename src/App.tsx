@@ -599,14 +599,14 @@ export default function App() {
               else { setConfigEntry(destination === 'demand' ? 'demand-mode' : 'generator-profiles'); setActiveTab('Config'); }
             }}
             onChanged={() => loadHierarchy(publisher?.id, site.id, navigationRequest)}
-            onOpenMeasurement={experimentId=>{setMeasurementEntry({siteId:site.id,experimentId});setActiveTab('Measurement');}}
+            onOpenMeasurement={experimentId=>{setMeasurementEntry(experimentId?{siteId:site.id,experimentId}:null);setActiveTab('Measurement');}}
             publisherId={site.id}
             siteName={site.name}
           />
         ) : null}
-        {activeTab === 'Measurement' && site ? <SiteMeasurementPanel key={site.id} publisherId={site.id}
+        {activeTab === 'Measurement' && site ? <SiteMeasurementPanel key={site.id} publisherId={site.id} siteName={site.name}
           preferredExperimentId={measurementEntry?.siteId===site.id?measurementEntry.experimentId:undefined}
-          onOpenReleases={()=>setActiveTab('Releases')}/> : null}
+          /> : null}
         {activeTab === 'Test page' && site ? <SiteTestPagePanel key={site.id} publisherId={site.id} /> : null}
         {activeTab === 'Export' && site ? <ExportPanel publisherId={site.id} site={site} /> : null}
         {activeTab === 'Mockup' && site ? <MockupBuilderPanel publisherId={site.id} siteName={site.name} /> : null}

@@ -39,7 +39,7 @@ def read_bundle(name):
     record = json.loads((fixtures / 'bundles' / name / 'record.json').read_text())
     data = (fixtures / 'bundles' / name / 'bundle.zip').read_bytes()
     assert sha256(data) == record['bundle']['zipSha256'] == manifest['bundles'][name]['zipSha256'], ('ZIP checksum', name)
-    assert record['loader'] == manifest['bundles'][name]['loader'] and record['loader']['version'] == '1.1.0', ('guarded loader pin', name)
+    assert record['loader'] == manifest['bundles'][name]['loader'] and record['loader']['version'] == '1.1.1', ('pending-arm loader pin', name)
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         files = {info.filename: archive.read(info) for info in archive.infolist()}
     assert sorted(files) == [entry['path'] for entry in record['bundle']['files']], ('bundle file list', name, sorted(files))
@@ -314,20 +314,19 @@ def run(browser, case, width):
             wait_until(page, "__tesseraAbLoader.snapshot().armStatus==='loading'")
             advance(page, 9000)
             assert any(row['path']==ARM['A'] for row in cdn.log),'Timeout must request control A'
-            if case.get('releaseAfterA'):
-                cdn.holds[ARM['A']].set()
-                wait_until(page,SETTLED)
-                advance(page,2000)
-                assert page.evaluate('!!window.__TESSERA_RUNTIME_STARTED && __testAds.observations.requests.length===2'),'Control A must really start before expired B returns'
-            cdn.holds[ARM['B']].set()
+            first='A' if case.get('releaseAfterA') else 'B'
+            second='B' if first=='A' else 'A'
+            cdn.holds[ARM[first]].set()
+            wait_until(page,"__tesseraAbLoader.snapshot().executionArm==='"+first+"'")
+            advance(page,2000)
+            assert page.evaluate('!!window.__TESSERA_RUNTIME_STARTED && __testAds.observations.requests.length===2'),'The first valid arm must really start before the competing response'
+            cdn.holds[ARM[second]].set()
             wait_until(page,"__tesseraAbLoader.snapshot().blockedLateArmStarts>=1",seconds=5)
             before_control=page.evaluate('({started:!!window.__TESSERA_RUNTIME_STARTED,bids:(pbjs.getEvents?.()||[]).filter(e=>e.eventType===\'bidRequested\').length,gam:__testAds.observations.requests.length,snapshot:__tesseraAbLoader.snapshot()})')
-            if not case.get('releaseAfterA'):
-                assert before_control['started'] is False and before_control['bids']==0 and before_control['gam']==0,before_control
-            else:
-                assert before_control['started'] is True and before_control['gam']==2,before_control
+            assert before_control['started'] is True and before_control['gam']==2,before_control
+            assert before_control['snapshot']['executionArm']==first,before_control
+            assert before_control['snapshot']['fallback']==(first=='A'),before_control
             assert before_control['snapshot']['blockedLateArmStarts']>=1,before_control
-            cdn.holds[ARM['A']].set()
         if case.get('lateKeywords'):
             wait_until(page,"__tesseraAbLoader.snapshot().armStatus==='loading'")
             page.evaluate("window.__publisherWordsOriginal=window.adsKeywords={Variant:['publisher-A','publisher-B'],TestId:['existing-1','existing-2'],section:['news','sports']}")
@@ -443,7 +442,10 @@ def assigned(variant, side=None, refresh=False):
                scriptRelease=record['arms'][side]['release'], testId=record['testId'], runtimeStarted=True)
         assert ev['state']['adVariant'] == ev['state']['loader']
         assert ev['state']['draws'] == 1, 'Only the loader allocation is forced'
-        assert arm_log(ev) == [('/' + record['arms'][side]['path'], 200)], arm_log(ev)
+        expected=[(ARM['B'],200),(ARM['A'],200)] if case.get('lateArm') else [('/' + record['arms'][side]['path'], 200)]
+        assert arm_log(ev) == expected, arm_log(ev)
+        if case.get('lateArm'):
+            assert ev['state']['loader']['fallbackRequested'] is True and ev['state']['loader']['blockedLateArmStarts']>=1
         arm_element(ev, record, side)
         labelled(ev, variant, record['testId'])
         ran(ev, actual, refresh)
@@ -638,8 +640,8 @@ CASES = [
     {'name':'arm wins before old tag','bundle':'ab','draw':4294967295,'slow':{'/direct/ads.js':0.5},'head':tags('prebid','loader','direct'),'check':assigned('B')},
     {'name':'B 404 falls back to A, labels remain B','bundle':'ab','draw':4294967295,'missing':[ARM['B']],'head':tags('prebid','loader'),'refresh':True,'lazy':True,'check':fallback},
     {'name':'B SRI failure falls back to A, labels remain B','bundle':'ab','draw':4294967295,'tamper':[ARM['B']],'head':tags('prebid','loader'),'refresh':True,'lazy':True,'allow':[SRI_ERROR],'require':[SRI_ERROR],'check':fallback},
-    {'name':'B deadline and expired B before held A','bundle':'ab','draw':4294967295,'hold':[ARM['B'],ARM['A']],'lateArm':True,'head':tags('prebid','loader'),'check':fallback},
-    {'name':'B deadline and expired B after A started','bundle':'ab','draw':4294967295,'hold':[ARM['B'],ARM['A']],'lateArm':True,'releaseAfterA':True,'head':tags('prebid','loader'),'check':fallback},
+    {'name':'B deadline still permits B to win before held control','bundle':'ab','draw':4294967295,'hold':[ARM['B'],ARM['A']],'lateArm':True,'head':tags('prebid','loader'),'check':assigned('B')},
+    {'name':'control wins and blocks pending B after its deadline','bundle':'ab','draw':4294967295,'hold':[ARM['B'],ARM['A']],'lateArm':True,'releaseAfterA':True,'head':tags('prebid','loader'),'check':fallback},
     {'name':'A terminal 404 retries once and clears timers','bundle':'ab','missing':[ARM['A']],'head':tags('prebid','loader'),'wait':24000,'check':no_arm},
     {'name':'successful A clears deadline timers','bundle':'ab','head':tags('prebid','loader'),'wait':20000,'check':assigned('A')},
     {'name':'early multivalue publisher keyword conflict','bundle':'ab','draw':4294967295,'head':["<script>window.__publisherWordsOriginal=window.adsKeywords={Variant:['publisher-A','publisher-B'],TestId:['existing-1','existing-2'],section:['news','sports']}</script>"]+tags('prebid','loader'),'check':keyword_conflict},

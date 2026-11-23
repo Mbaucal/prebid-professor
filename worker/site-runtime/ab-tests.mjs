@@ -1,5 +1,6 @@
 import {abTestsResponse} from '../experiments/ab-tests-api.mjs';
 import {readPackage} from './releases.mjs';
+import {abHistoryResponse} from './ab-history.mjs';
 
 const SITE=/^[a-z0-9][a-z0-9-]{0,97}$/;
 const RELEASE=/^builtin-release-[a-f0-9]{64}$/;
@@ -16,6 +17,8 @@ export async function mainAbTestsResponse(request,env,site,actor){
     if(!env.DB||!env.BUILDS)return json('A/B storage is unavailable. Retry.',503);
     const db=env.DB.withSession('first-primary');
     if(!await db.prepare('SELECT id FROM publishers WHERE id=?').bind(site).first())return json('Site not found.',404);
+    const history=await abHistoryResponse(request,env,site);
+    if(history)return history;
     const readVersion=async(id,options)=>{
       if(!RELEASE.test(id))fail('Saved built-in release not found.',404);
       return readPackage(env,site,id,options);
@@ -28,12 +31,19 @@ export async function mainAbTestsResponse(request,env,site,actor){
       const rows=await db.prepare("SELECT id,notes,status,created_at FROM releases WHERE publisher_id=? AND version LIKE 'builtin-release-%' AND status<>'failed' ORDER BY CASE WHEN status='production' THEN 0 ELSE 1 END,created_at DESC,id DESC LIMIT 50").bind(site).all();
       const available=[];
       for(const row of rows.results){
-        const pkg=await readVersion(row.id,{requestedFile:'manifest.json'});
-        available.push({id:row.id,name:row.notes?.trim()||'Generated package',createdAt:row.created_at,
-          runtimeVersion:pkg.manifest.runtime.runtimeVersion,prebidVersion:pkg.manifest.prebidBuild?.version??null,state:'stored'});
+        try{
+          const pkg=await readVersion(row.id,{requestedFile:'manifest.json'});
+          available.push({id:row.id,name:row.notes?.trim()||'Generated package',createdAt:row.created_at,
+            runtimeVersion:pkg.manifest.runtime.runtimeVersion,runtimeSha256:pkg.manifest.runtime.runtimeSha256,
+            prebidVersion:pkg.manifest.prebidBuild?.version??null,state:'stored'});
+        }catch(error){
+          available.push({id:row.id,name:row.notes?.trim()||'Generated package',createdAt:row.created_at,
+            runtimeVersion:null,runtimeSha256:null,prebidVersion:null,state:'unavailable',
+            unavailableReason:[404,409].includes(error?.status)?error.message:'This saved version could not be read. Reload to retry.'});
+        }
       }
       const selected=published.results[0]?.id;
-      return {available,current:available.some(v=>v.id===selected)?selected:null};
+      return {available,current:available.some(v=>v.id===selected&&v.state==='stored')?selected:null};
     })();
     const response=await abTestsResponse(request,{
       bucket:env.BUILDS,site,actor:{email:actor},base:`/api/publishers/${site}/ab-tests`,headers,

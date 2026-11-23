@@ -8,12 +8,15 @@ const TOP='arms,assignment,collection,consentPolicy,coverage,createdAt,droppedEv
 const EVENTS={assignment:['variant'],'script-requested':['arm'],'script-loaded':['arm'],'runtime-started':['arm'],
   'arm-failed':['arm','reason'],fallback:['fromArm','toArm','reason'],exclusion:['reason','phase'],
   'terminal-failure':['arm','reason'],'qa-forced':['arm'],'random-unavailable':[],'duplicate-loader':[]};
+const EVENTS_V2={...EVENTS,'arm-deadline':['arm'],'control-retry':['arm','reason'],'fallback-requested':['fromArm','toArm','reason']};
 const exact=(value,keys)=>isRecord(value)&&Object.keys(value).sort().join(',')===[...keys].sort().join(',');
 const side=value=>value==='A'||value==='B';
 function instant(value){return typeof value==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;}
 export function validateAbMemoryMeasurement(plan,value){
   assertReportPlan(plan);
-  check(exact(value,TOP.split(','))&&value.schemaVersion===1&&value.kind===AB_MEASUREMENT_KIND,'Use a complete memory measurement export.');
+  check(exact(value,TOP.split(','))&&(value.schemaVersion===1||value.schemaVersion===2)&&value.kind===AB_MEASUREMENT_KIND,'Use a complete memory measurement export.');
+  const modern=value.schemaVersion===2;
+  check(modern?value.loader?.version==='1.1.1':value.loader?.version!=='1.1.1','Memory schema does not match the saved loader version.');
   check(value.site===plan.site&&value.experimentId===plan.experimentId&&value.testId===plan.testId&&value.trafficBPercent===plan.trafficBPercent&&canonical(value.loader)===canonical(plan.loader),'Measurement belongs to another saved experiment.');
   const pins=Object.fromEntries(['A','B'].map(key=>[key,{release:plan.arms[key].release,scriptSha256:plan.arms[key].scriptSha256}]));
   check(canonical(value.arms)===canonical(pins),'Measurement script pins differ from the reporting plan.');
@@ -21,19 +24,41 @@ export function validateAbMemoryMeasurement(plan,value){
   check((value.pageId===null||typeof value.pageId==='string'&&/^[a-f0-9]{32}$/.test(value.pageId))&&instant(value.createdAt),'Invalid page observation identity.');
   check(Number.isSafeInteger(value.droppedEvents)&&value.droppedEvents>=0&&Array.isArray(value.events)&&value.events.length<=64,'Invalid bounded memory event sequence.');
   check(value.assignment===null||exact(value.assignment,['variant','at'])&&side(value.assignment.variant)&&instant(value.assignment.at),'Invalid original assignment.');
-  let assignment=null,execution=null,preAssignmentTerminal=false;
+  let assignment=null,execution=null,preAssignmentTerminal=false,terminal=false,fallbackCount=0,retryCount=0,fallbackRequestCount=0,excluded=false;
+  const requested={A:0,B:0},deadlines={A:0,B:0},failed={A:0,B:0};
   for(let index=0;index<value.events.length;index++){
-    const row=value.events[index],fields=EVENTS[row?.type];
+    const row=value.events[index],fields=(modern?EVENTS_V2:EVENTS)[row?.type];
     check(fields&&exact(row,['seq','at','type',...fields])&&row.seq===index+1&&instant(row.at),'Invalid memory event.');
     for(const key of ['variant','arm','fromArm','toArm'])if(key in row)check(side(row[key]),'Invalid observed arm.');
     if('reason' in row)check(typeof row.reason==='string'&&/^[a-z-]{1,64}$/.test(row.reason),'Invalid observation reason.');
     if(row.type==='assignment'){check(!assignment&&!preAssignmentTerminal&&value.assignment&&row.variant===value.assignment.variant,'The original assignment changed or followed excluded/QA traffic.');assignment=row.variant;}
-    if(row.type==='runtime-started'){check(execution===null&&(!value.assignment||assignment),'More than one runtime or execution before assignment was observed.');execution=row.arm;}
-    if(row.type==='fallback')check(assignment&&row.toArm==='A','Fallback must retain its original assignment and use control A.');
-    if(row.type==='exclusion'){check(row.phase===(assignment?'after-assignment':'before-assignment'),'Exclusion phase does not match the assignment sequence.');if(!assignment)preAssignmentTerminal=true;}
+    if(modern&&row.type==='script-requested'){
+      check(execution===null&&!terminal&&requested.A+requested.B<2,'More than two requests or a request after execution/terminal failure was observed.');requested[row.arm]++;
+    }
+    if(modern&&row.type==='script-loaded')check(requested[row.arm]>failed[row.arm]&&(execution===row.arm||!excluded||row.arm==='A'),'A loaded script was never requested or has already failed.');
+    if(modern&&row.type==='arm-deadline'){
+      check(execution===null&&!terminal&&deadlines[row.arm]<requested[row.arm]&&failed[row.arm]<requested[row.arm]&&(!excluded||row.arm==='A'),'A deadline does not match a pending script request.');deadlines[row.arm]++;
+    }
+    if(modern&&row.type==='arm-failed'){
+      check(execution===null&&!terminal&&failed[row.arm]<requested[row.arm],'A failed arm does not match a pending script request.');failed[row.arm]++;
+    }
+    if(modern&&row.type==='control-retry')check(assignment==='A'&&row.arm==='A'&&requested.A===1&&execution===null&&++retryCount===1,'A control retry must retain assigned A and happen once.');
+    if(modern&&row.type==='fallback-requested')check(assignment==='B'&&row.fromArm==='B'&&row.toArm==='A'&&requested.B===1&&execution===null&&++fallbackRequestCount===1,'A fallback request must retain assigned B and happen once.');
+    if(row.type==='runtime-started'){
+      check(execution===null&&(!value.assignment||assignment)&&(!modern||!terminal&&requested[row.arm]>failed[row.arm]&&(!excluded||row.arm==='A')),'More than one runtime or execution before assignment/request, or after failure, was observed.');execution=row.arm;
+    }
+    if(row.type==='fallback'){
+      check(assignment&&row.toArm==='A','Fallback must retain its original assignment and use control A.');
+      if(modern)check(assignment==='B'&&row.fromArm==='B'&&execution==='A'&&++fallbackCount===1,'An actual fallback must execute A for assigned B exactly once.');
+    }
+    if(row.type==='exclusion'){check(row.phase===(assignment?'after-assignment':'before-assignment'),'Exclusion phase does not match the assignment sequence.');if(!assignment)preAssignmentTerminal=true;excluded=true;}
+    if(modern&&row.type==='terminal-failure'){
+      check(execution===null&&!terminal&&requested.A+requested.B>0&&failed.A+(excluded?requested.B:failed.B)>=requested.A+requested.B,'A terminal failure cannot discard a pending arm or follow execution.');terminal=true;
+    }
     if(row.type==='qa-forced'||row.type==='random-unavailable'){check(!assignment,'QA-forced/random-unavailable traffic cannot be a randomized assignment.');preAssignmentTerminal=true;}
   }
   check((assignment===null)===(value.assignment===null),'Original assignment is missing from the event sequence.');
+  if(modern&&assignment==='B'&&execution==='A'&&value.droppedEvents===0)check(fallbackCount===1,'An executed control fallback is missing its observation.');
   return value;
 }
 
