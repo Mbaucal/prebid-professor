@@ -49,7 +49,7 @@ function SiteMeasurementContent({publisherId,preferredExperimentId,onOpenRelease
       :!listing.tests.length?<div className="site-measurement-empty">
         <h3>No saved A/B tests to measure</h3>
         <p>This view uses A/B tests saved from two built-in packages. Earlier pilot A/B ZIPs are not included and are not converted automatically. Some earlier pilots send Variant only; this view cannot add TestId to an already deployed ZIP. Opening Measurement does not change a deployed test or site settings.</p>
-        {listing.deleted.length?<p>This site has deleted A/B tests. Restore a test in Releases to review it here.</p>:null}
+        {listing.deleted.length?<p>Deleted A/B tests are not included in this list.</p>:null}
         {onOpenReleases?<button type="button" onClick={onOpenReleases}>Open Releases</button>:null}
       </div>:<>
         <label htmlFor={selectId}>Saved A/B test</label>
