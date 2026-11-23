@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 
 import type {ScriptSettings as Settings} from '../../worker/experiments/saved-script-settings.mjs';
-import type {AbHistoryCollection as Collection,AbHistoryListing as History,AbHistoryRow as Row} from '../../worker/site-runtime/ab-history.mjs';
+import type {AbHistoryCollection as Collection,AbHistoryListing as History,AbHistoryRow as Row} from '../../worker/experiments/ab-history-contracts.mjs';
 
 const collections:Collection[]=['namedTests','generatedTests','scripts'];
 const label=(kind:Collection)=>kind==='scripts'?'Earlier saved scripts':kind==='namedTests'?'Named A/B tests':'Earlier generated A/B tests';
