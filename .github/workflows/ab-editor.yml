@@ -46,6 +46,10 @@ jobs:
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-ab-loader-main-browser.mjs .generated/ab-loader-main-browser
           python scripts/verify-ab-loader-main-browser.py .generated/ab-loader-main-browser
+      - name: Verify slow-arm recovery with bounded real browser transport
+        run: |
+          node scripts/prepare-ab-loader111-transport-qa.mjs .generated/ab-loader-main-browser .generated/ab-loader111-transport-qa
+          python scripts/verify-ab-loader111-transport-qa.py .generated/ab-loader111-transport-qa --ci
       - name: Verify reserved targeting and late-arm ownership on pinned real GPT
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-ab-loader-real-gpt.mjs
@@ -66,6 +70,7 @@ jobs:
             .generated/experiments-workspace-ui/**
             .generated/ab-tests-main-workerd/**
             .generated/ab-loader-main-browser/**
+            .generated/ab-loader111-transport-qa/**
             .generated/ab-loader-real-gpt/**
             .generated/combined-measurement-timeout-qa/**
             .generated/runtime324-prebid/11.34.0/manifest.json
