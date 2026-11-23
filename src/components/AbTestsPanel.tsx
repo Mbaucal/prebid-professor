@@ -19,7 +19,7 @@ type CheckResult = {compatible:boolean;refusal:{code:string;check:string|null;me
 type AbEvent = {seq:number;type:'marked-live'|'marked-stopped';at:string;by:string};
 type Detail = {record:{name:string;testId:string;arms:{A:Arm;B:Arm};bundle:{files:Array<{path:string;bytes:number;sha256:string}>;zipSha256:string}};
   recordSha256:string;deletedAt:string|null;events:AbEvent[]};
-type Props = {publisherId:string;endpoint:string;testOnly?:boolean;refreshKey?:number};
+type Props = {publisherId:string;endpoint:string;testOnly?:boolean;refreshKey?:number;onOpenMeasurement?:(id:string)=>void};
 
 const TEST_ID = /^[a-z0-9_]{1,24}$/;
 const STOP_TEST = "To stop a test, restore version A's exact saved package at the same script URL, or roll back the Pages deployment to the approved control version. When using A's saved ZIP, serve ads.min.js as ads.js and keep its other delivery files unchanged. Then use Mark stopped.";
@@ -52,7 +52,7 @@ export default function AbTestsPanel(props:Props){
   return <SiteAbTestsPanel key={`${props.publisherId}:${props.endpoint}`} {...props}/>;
 }
 
-function SiteAbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Props){
+function SiteAbTestsPanel({endpoint,testOnly=false,refreshKey=0,onOpenMeasurement}:Props){
   const [data,setData]=useState<Listing|null>(null),[loadError,setLoadError]=useState(''),[attempt,setAttempt]=useState(0);
   const [details,setDetails]=useState<Record<string,Detail|{error:string}>>({});
   const [name,setName]=useState(''),[testId,setTestId]=useState(''),[testIdEdited,setTestIdEdited]=useState(false);
@@ -223,7 +223,7 @@ function SiteAbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Props){
         <div className="ab-tests-field"><label htmlFor="ab-test-id">TestId</label>
           <input id="ab-test-id" required maxLength={24} pattern="[a-z0-9_]{1,24}" value={testId} disabled={busy} aria-describedby="ab-test-id-help"
             onChange={e=>{setTestId(e.target.value);setTestIdEdited(true);}}/>
-          <p id="ab-test-id-help" className="ab-tests-help">Lowercase letters, digits and _. Each TestId is used once on this site and stays reserved.</p></div>
+          <p id="ab-test-id-help" className="ab-tests-help">Tessera suggests this ID automatically. It identifies this test in GAM alongside Variant A or B. Each TestId is used once on this site and stays reserved. Use lowercase letters, digits and _.</p></div>
         <div className="ab-tests-field"><label htmlFor="ab-version-a">Version A</label>
           <select id="ab-version-a" value={a} disabled={busy} aria-describedby={data.current&&a===data.current?'ab-version-a-current':undefined} onChange={e=>setA(e.target.value)}>{options(a)}</select>
           {data.current&&a===data.current?<p id="ab-version-a-current" className="ab-tests-help">Current Tessera production version</p>:null}</div>
@@ -257,6 +257,7 @@ function SiteAbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Props){
     </form>
 
     <h3>Saved A/B tests</h3>
+    <p className="ab-tests-help">Tessera includes the loader in the ZIP as /ads.js. It selects A or B using the saved traffic split and loads that test's script. There is no separate loader to configure.</p>
     <p className="ab-tests-help">Download the A/B ZIP and upload all of its files, unchanged, as one Pages deployment at your existing script URL. Saving or downloading a test does not publish it.</p>
     <p className="ab-tests-help">Follow the saved package's installation instructions and keep the approved CMP and GPT setup. For Prebid-enabled versions, load the bundle's verified shared prebid.js before /ads.js; GAM-only bundles do not need Prebid. An older pilot may have loaded Prebid itself, so check the page setup before replacing it.</p>
     <p className="ab-tests-help">Mark live and Mark stopped only record what you have done on your site; they do not publish or stop delivery.</p>
@@ -293,7 +294,8 @@ function SiteAbTestsPanel({endpoint,testOnly=false,refreshKey=0}:Props){
           <div><dt>Version B</dt><dd className="ab-tests-name">{loaded.record.arms.B.name}</dd></div>
           <div><dt>Files</dt><dd><ul>{loaded.record.bundle.files.map(file=><li key={file.path}><code>{file.path}</code> · {file.bytes} bytes</li>)}</ul></dd></div>
         </dl>:<p>Reading test details…</p>}</details>
-        <AbMeasurementPanel endpoint={`${endpoint}/${test.id}/measurement/plans`} experimentId={test.id} testId={test.testId} disabled={busy}/>
+        {onOpenMeasurement?<button type="button" disabled={busy} onClick={()=>onOpenMeasurement(test.id)}>Open measurement</button>
+          :<AbMeasurementPanel endpoint={`${endpoint}/${test.id}/measurement/plans`} experimentId={test.id} testId={test.testId} disabled={busy}/>}
       </article>;
     })}
     {data.deleted.length?<details className="ab-tests-deleted"><summary>Deleted A/B tests</summary>

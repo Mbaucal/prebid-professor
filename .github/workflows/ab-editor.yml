@@ -40,6 +40,7 @@ jobs:
         run: |
           python scripts/verify-ab-tests-main-ui.py
           python scripts/verify-ab-measurement-main-ui.py
+          python scripts/verify-measurement-navigation-ui.py
       - name: Verify native 3.25.1 delivery, consent and failure recovery
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-ab-loader-main-browser.mjs .generated/ab-loader-main-browser
@@ -60,6 +61,7 @@ jobs:
           path: |
             .generated/ab-tests-main-ui/**
             .generated/ab-measurement-main-ui/**
+            .generated/measurement-navigation-ui/**
             .generated/ab-tests-main-workerd/**
             .generated/ab-loader-main-browser/**
             .generated/ab-loader-real-gpt/**

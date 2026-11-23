@@ -9,6 +9,7 @@ type Props = {
   publisherId: string;
   siteName: string;
   onNavigate?: (destination: 'prebid' | 'versions' | 'demand') => void;
+  onOpenMeasurement?: (id:string) => void;
   onChanged?: () => void | Promise<void>;
 };
 
@@ -455,5 +456,5 @@ export default function ReleasesPanel(props:Props){
  useEffect(()=>{let active=true;setBuiltin(null);setWorkflowError(false);fetch(`/api/publishers/${encodeURIComponent(props.publisherId)}/builtin-site-settings`,{credentials:'same-origin',cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json() as Promise<{releaseWorkflow:'builtin'|'legacy'}>;}).then(s=>{if(active)setBuiltin(s.releaseWorkflow==='builtin');}).catch(()=>{if(active)setWorkflowError(true);});return()=>{active=false;};},[props.publisherId]);
  if(workflowError)return <p role="alert">Release settings could not be loaded. Reload this site before generating.</p>;
  if(builtin===null)return <p>Loading release workflow…</p>;
- return builtin?<SitePackagesPanel key={props.publisherId} publisherId={props.publisherId} onChanged={props.onChanged} onNavigate={props.onNavigate}/>:<><LegacyReleasesPanel {...props}/><ScriptLibraryPanel key={props.publisherId} publisherId={props.publisherId} onOpenDemand={props.onNavigate?()=>props.onNavigate!('demand'):undefined}/></>;
+ return builtin?<SitePackagesPanel key={props.publisherId} publisherId={props.publisherId} onChanged={props.onChanged} onNavigate={props.onNavigate} onOpenMeasurement={props.onOpenMeasurement}/>:<><LegacyReleasesPanel {...props}/><ScriptLibraryPanel key={props.publisherId} publisherId={props.publisherId} onOpenDemand={props.onNavigate?()=>props.onNavigate!('demand'):undefined}/></>;
 }
