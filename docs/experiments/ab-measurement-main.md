@@ -1,8 +1,23 @@
 # Review GAM results for a saved A/B test
 
-Open the site's **A/B tests**, then open **Measurement** for the saved test. The
-test, its original scripts and its ZIP remain immutable. Preparing a report does
-not publish a script or change Google Ad Manager.
+Open **Publishers → publisher → site → Measurement**, then choose a **Saved A/B
+test**. The site's Measurement tab is available independently of its release
+workflow. **Open measurement** on a saved test in Releases opens that test here.
+The test, its original scripts and its ZIP remain immutable. Preparing a report
+does not publish a script or change Google Ad Manager.
+
+The selected test displays its name, saved date, traffic split, both script
+versions and its **TestId**. Tessera proposes a TestId in the new A/B test form;
+the operator can edit it before saving. Saving reserves it for that test on that
+site. GAM uses the exact `TestId` with `Variant=A|B` to distinguish results from
+other tests. Set up reporting for both keys and the exact values before traffic
+is collected. This does not fetch results automatically; upload the matching
+report below. A saved test or a live mark does not prove which ZIP is deployed.
+
+Earlier pilot ZIPs are not generic saved A/B tests and are not automatically
+converted by this view. Opening Measurement does not alter site settings or
+retrofit TestId into an existing pilot. If no saved tests are listed, inspect
+Releases and the currently deployed package before preparing a new test.
 
 1. Prepare a reporting plan for the exact saved test. Confirm the reporting
    dates, currency, GAM time zone, revenue basis and revenue metric. The network
@@ -51,6 +66,13 @@ assignment/outcome ledger. It keeps the original random group separate from the
 script that executes, control fallback, exclusions and load failures. It sends
 no external measurement request and adds no persistent visitor identifier.
 Existing loader versions and saved ZIPs retain their original bytes.
+
+Tessera includes the loader as `/ads.js` inside the A/B ZIP; there is no separate
+loader configuration step. It chooses A or B using the saved traffic split and
+loads that test's saved script. Saving or downloading does not deploy the ZIP.
+Upload all extracted files unchanged as one Pages deployment, preserving their
+folders and the approved page installation. Prebid-enabled packages require the
+verified shared `prebid.js` before `/ads.js`; keep the approved CMP and GPT setup.
 
 On a page using the new bundle, inspect the copied ledger with
 `window.__tesseraAbLoader.measurement()` or `window.AdVariant.measurement()`.

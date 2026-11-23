@@ -1,0 +1,5 @@
+.site-measurement-panel{margin-top:0;min-width:0}
+.site-measurement-panel>select{width:100%;max-width:100%;min-width:0}
+.site-measurement-panel .site-measurement-test{border-top:1px solid #d7dfec;margin-top:22px;padding-top:4px;min-width:0}
+.site-measurement-panel .site-measurement-empty{border:1px solid #d7dfec;border-radius:10px;padding:4px 18px 18px;margin-top:18px;background:#fafbfd}
+.site-measurement-panel .site-measurement-empty h3{margin-top:14px}
