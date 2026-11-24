@@ -316,8 +316,10 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
     })}
   </>:null;
   return <section id="ab-tests" ref={section} className="site-runtime-panel ab-tests-panel" aria-labelledby="ab-tests-title" data-ab-busy={busy?true:undefined}>
-    <h2 id="ab-tests-title">A/B tests</h2>
-    {workspace?<a className="button" href={availableVersions.length<2?'#ab-source-versions':'#ab-tests-new'}>Create A/B test</a>:null}
+    {workspace?<header className="ab-tests-heading">
+      <h2 id="ab-tests-title">A/B tests</h2>
+      <a className="button secondary ab-tests-create" href={availableVersions.length<2?'#ab-source-versions':'#ab-tests-new'}>Create A/B test</a>
+    </header>:<h2 id="ab-tests-title">A/B tests</h2>}
     <p>Compare two saved versions on your site. Each page view gets version A or version B. A saved test never changes.</p>
     {workspace?<>{savedTests}{history}<AbSourceVersionsPanel publisherId={publisherId} siteName={siteName??publisherId} availableVersions={data?availableVersions.length:null} disabled={busy} onSaved={sourceSaved} onReload={load}/></>:null}
     {loadError?<p role="alert" className="runtime-error">{loadError} <button onClick={()=>setAttempt(n=>n+1)}>Reload A/B tests</button></p>
