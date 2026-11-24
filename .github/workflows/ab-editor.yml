@@ -42,6 +42,7 @@ jobs:
           python scripts/verify-ab-measurement-main-ui.py
           python scripts/verify-measurement-navigation-ui.py
           python scripts/verify-experiments-workspace-ui.py
+          python scripts/verify-measurement-layout-ui.py
       - name: Verify native 3.25.1 delivery, consent and failure recovery
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-ab-loader-main-browser.mjs .generated/ab-loader-main-browser
@@ -68,6 +69,7 @@ jobs:
             .generated/ab-measurement-main-ui/**
             .generated/measurement-navigation-ui/**
             .generated/experiments-workspace-ui/**
+            .generated/measurement-layout-ui/**
             .generated/ab-tests-main-workerd/**
             .generated/ab-loader-main-browser/**
             .generated/ab-loader111-transport-qa/**

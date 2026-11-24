@@ -1,6 +1,9 @@
 /* A/B tests panel (AbTestsPanel.tsx). Every rule is scoped to .ab-tests-panel; buttons, inputs and .runtime-error come
    from the workspace styles. Long names, ids and values wrap, and the summary table scrolls inside its own box. */
 .ab-tests-panel{margin-top:24px}
+.ab-tests-panel .ab-tests-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px}
+.ab-tests-panel .ab-tests-heading h2{margin:0;min-width:0}
+.ab-tests-panel .ab-tests-create{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;max-width:100%;font:inherit;line-height:1.4;text-align:center;text-decoration:none;overflow-wrap:anywhere}
 .ab-tests-panel h3{margin:28px 0 8px}
 .ab-tests-panel h4{margin:16px 0 8px}
 .ab-tests-panel .ab-tests-form{border:1px solid #d7dfec;border-radius:12px;padding:20px;margin:16px 0;min-width:0;background:#fafbfd}
