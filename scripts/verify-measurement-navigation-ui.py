@@ -112,8 +112,11 @@ try:
     tab('Releases').click();current('beta-site','Releases')
     saved=page.get_by_role('article',name='A/B test: '+beta['name'],exact=True);expect(saved).to_be_visible()
     saved.get_by_role('button',name='Open measurement',exact=True).click();current('beta-site')
-    expect(field('Saved reporting plan')).to_be_visible()
     selected_article=page.get_by_role('article',name='A/B test: '+beta['name'],exact=True)
+    expect(selected_article.locator('.detailed-gam-report')).to_be_visible()
+    expect(selected_article.get_by_role('button',name='Detailed report',exact=True)).to_have_attribute('aria-pressed','true')
+    selected_article.get_by_role('button',name='Daily summary',exact=True).click()
+    expect(field('Saved reporting plan')).to_be_visible()
     expect(selected_article.locator('.ab-tests-arms')).to_contain_text('Version A · 3.25.1');expect(selected_article.locator('.ab-tests-arms')).to_contain_text('Version B · 3.25.1')
     check(f'{width}: Releases link opens exact saved test and both script versions',True)
     # Refresh, browser traversal and direct links retain the actual publisher/site/tab.
