@@ -147,7 +147,7 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
   const available=(id:string)=>Boolean(data?.versions.some(version=>version.id===id&&version.state!=='unavailable'));
   const canSave=Boolean(checked?.compatible&&available(a)&&available(b)&&name.trim()&&TEST_ID.test(testId)&&trafficValue!==null);
   async function check(){
-    const response=await request('/check',{method:'POST',body:{a,b}});
+    const response=await request('/check',{method:'POST',body:{a,b,...(!testOnly?{reportingKey:'VersionId'}:{})}});
     if(!response.ok)throw await failure(response,'Could not check these versions.');
     setResult({pair,check:await response.json() as CheckResult});
   }
