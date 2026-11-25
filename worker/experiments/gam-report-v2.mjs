@@ -68,15 +68,15 @@ export async function previewGamReportV2(plan,input,now=Date.now()){
   const sourceHeaders=columns.map(key=>report.sourceColumns[key]);
   check(headers.length===sourceHeaders.length&&headers.every(header=>sourceHeaders.includes(header)),'Use the exact mapped source headers, without unknown extra columns.');
   const offsets=Object.fromEntries(columns.map(key=>[key,headers.indexOf(report.sourceColumns[key])])),rows=[],seen=new Set(),days=new Set();
-  const start=reportDate(report.startDate),end=reportDate(report.endDate);
+  const start=reportDate(report.startDate),end=reportDate(report.endDate),orderIds=new Set(report.scope.orderIds),lineItemIds=new Set(report.scope.lineItemIds);
   for(const cells of matrix){
     const raw=Object.fromEntries(columns.map(key=>[key,cells[offsets[key]]])),stamp=reportDate(raw.date);
     check(stamp>=start&&stamp<=end,'CSV contains a date outside the saved report period.');
     check(raw.VersionId===plan.versionId,'CSV VersionId does not match this saved experiment.');
     check(raw.Variant==='A'||raw.Variant==='B','CSV Variant must be exactly A or B.');
     const dimensions=Object.fromEntries(report.dimensions.map(key=>[key,dimensionV2(key,raw[key])]));
-    if(report.scope.orderIds.length)check(report.scope.orderIds.includes(dimensions.orderId),'CSV Order ID is outside the declared scope.');
-    if(report.scope.lineItemIds.length)check(report.scope.lineItemIds.includes(dimensions.lineItemId),'CSV Line item ID is outside the declared scope.');
+    if(orderIds.size)check(orderIds.has(dimensions.orderId),'CSV Order ID is outside the declared scope.');
+    if(lineItemIds.size)check(lineItemIds.has(dimensions.lineItemId),'CSV Line item ID is outside the declared scope.');
     const tuple=JSON.stringify([raw.date,raw.VersionId,raw.Variant,...report.dimensions.map(key=>dimensions[key])]);
     check(!seen.has(tuple),'Duplicate full report grain. Remove totals, overlapping rows or duplicate exports.');seen.add(tuple);days.add(raw.date+':'+raw.Variant);
     const row={date:raw.date,variant:raw.Variant,dimensions,...Object.fromEntries(numericKeys.map(key=>[key,null])),revenueMicros:null};
