@@ -45,7 +45,7 @@ test('unsupported GAM identity keys and untrusted origins refuse before writing 
   const state=h.persistent(),puts=h.r2.log.puts.length;
   for(const endpoint of [base,base+'/check']){
     const r=await h.request(endpoint,{method:'POST',body:{...input('invalid_key'),reportingKey:'versionid'}});
-    assert.equal(r.status,422);assert.match((await r.json()).error,/identity|reporting|VersionId/i);
+    assert.equal(r.status,400);assert.match((await r.json()).error,/identity|reporting|VersionId/i);
   }
   const foreign=await h.request(base,{method:'POST',origin:'https://foreign.example.invalid',body:{...input('foreign_key'),reportingKey:'VersionId'}});
   assert.equal(foreign.status,403);assert.equal(h.r2.log.puts.length,puts);assert.equal(h.persistent(),state);
