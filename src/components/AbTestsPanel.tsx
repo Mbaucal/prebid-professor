@@ -229,7 +229,7 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
         <div className="ab-tests-field"><label htmlFor="ab-test-id">Version ID</label>
           <input id="ab-test-id" required maxLength={24} pattern="[a-z0-9_]{1,24}" value={testId} disabled={busy} aria-describedby="ab-test-id-help"
             onChange={e=>{setTestId(e.target.value);setTestIdEdited(true);}}/>
-          <p id="ab-test-id-help" className="ab-tests-help">Tessera suggests this package ID automatically. It identifies the package alongside Variant A or B and stays reserved on this site. New packages use the GAM key VersionId; earlier packages keep TestId. Use lowercase letters, digits and _.</p></div>
+          <p id="ab-test-id-help" className="ab-tests-help">Tessera suggests this package ID automatically. It identifies the package alongside Variant A or B and stays reserved on this site. {testOnly?'Packages in this TEST workspace use the GAM key TestId.':'New packages use the GAM key VersionId; earlier packages keep TestId.'} Use lowercase letters, digits and _.</p></div>
         <div className="ab-tests-field"><label htmlFor="ab-version-a">Version A</label>
           <select id="ab-version-a" value={a} disabled={busy||!availableVersions.length} aria-describedby={data.current&&a===data.current?'ab-version-a-current':undefined} onChange={e=>setA(e.target.value)}>{options(a)}</select>
           {data.current&&a===data.current?<p id="ab-version-a-current" className="ab-tests-help">Current Tessera production version</p>:null}{workspace?sourceDescription(a):null}</div>
