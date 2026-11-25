@@ -204,7 +204,7 @@ try:
         name.focus()
         name.press_sequentially('Keyboard layout check')
         name.press('Tab')
-        expect(form.get_by_label('TestId', exact=True)).to_be_focused()
+        expect(form.get_by_label('Version ID', exact=True)).to_be_focused()
         check(f'{case_name}: A/B field Tab order remains usable')
         fields_geometry()
         form.scroll_into_view_if_needed()

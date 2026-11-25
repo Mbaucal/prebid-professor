@@ -52,6 +52,7 @@ try:
     def choose_test(item):
      article=page.get_by_role('article',name='A/B test: '+item['name'],exact=True)
      if not article.get_by_role('region',name='Measurement and GAM report',exact=True).count():article.get_by_role('button',name='Review GAM report',exact=True).click()
+     article.get_by_role('button',name='Daily summary',exact=True).click()
      return article
     def measurement():return page.get_by_role('region',name='Measurement and GAM report',exact=True)
     def field(label):return measurement().get_by_label(label,exact=True)
@@ -123,7 +124,7 @@ try:
     # Neither an empty builtin site nor an earlier pilot is silently migrated or fabricated into a test.
     for site in ['empty-site','legacy-site']:
      choose(site);tab('Measurement').click();current(site)
-     expect(page.get_by_text('No TestId A/B tests saved yet. Earlier packages are listed below.',exact=True)).to_be_visible()
+     expect(page.get_by_text('No A/B packages saved yet. Earlier packages are listed below.',exact=True)).to_be_visible()
      expect(saved_cards()).to_have_count(0);expect(measurement()).to_have_count(0)
      expect(page.get_by_label('Test name',exact=True)).to_be_visible()
      check(f'{width} {site}: source creation is available inline without leaving Measurement',page.locator('.ab-source-versions').count()==1)
