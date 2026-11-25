@@ -1,6 +1,7 @@
 import {checkAbCompatibility} from './ab-bundle.mjs';
 import {AB_LIMITS,addAbTestEvent,changeAbTestDeletion,createAbTest,listAbTests,proposeTestId,readAbRecordBytes,readAbTest,readAbZip} from './ab-store.mjs';
 import {abMeasurementResponse} from './ab-measurement-api.mjs';
+import {gamReportV2Response} from './gam-report-v2-api.mjs';
 
 /* The A/B tests API of one site (MBA-416), shared by both lines. The caller mounts it under
  * `base` after its own host, sign-in, method and same-origin checks, and passes the bucket, the
@@ -18,7 +19,7 @@ const DRAFT=/^builtin-draft-[a-f0-9]{64}$/,SAVED=/^builtin-(?:draft|release)-[a-
 const CURSOR=/^[A-Za-z0-9_=+/.-]{1,1024}$/;
 const CONTROL=/[\u0000-\u001f\u007f-\u009f]/;
 const MAX_BODY=4096;
-const CREATE_FIELDS=['a','b','name','testId','trafficBPercent'];
+const CREATE_FIELDS=['a','b','name','testId','trafficBPercent','reportingKey'];
 // A storage fault can come after a write (the TestId claim, an event), so these never say that nothing was changed.
 const UNEXPECTED='The A/B test could not be read or saved. Retry.';
 // A failed create is completed by the same values: they give the same test id, which reuses its TestId claim.
@@ -75,6 +76,8 @@ function savedIds(body,testOnly){
 export async function abTestsResponse(request,{bucket,site,actor,base,headers,testOnly=false,readVersion,listVersions,current,defaults}){
   const url=new URL(request.url),path=url.pathname;
   if(path!==base&&!path.startsWith(base+'/'))return null;
+  const detailed=await gamReportV2Response(request,{bucket,site,actor,base,headers,readVersion});
+  if(detailed)return detailed;
   const measurement=await abMeasurementResponse(request,{bucket,site,actor,base,headers,readVersion});
   if(measurement)return measurement;
   const rest=path.slice(base.length),item=rest.match(/^\/(abx-[a-f0-9]{64})(?:\/(download|record|events))?$/);
@@ -99,6 +102,7 @@ export async function abTestsResponse(request,{bucket,site,actor,base,headers,te
     }
     if(route.name==='check'){
       const body=await jsonBody(request,CREATE_FIELDS),[a,b]=savedIds(body,testOnly);
+      if(body.reportingKey!==undefined&&!['TestId','VersionId'].includes(body.reportingKey))fail(400,'Choose TestId or VersionId reporting identity.',{code:'invalid-request'});
       const packages={},arms={A:null,B:null};let missing=null;
       for(const [side,id] of [['A',a],['B',b]]){
         if(side==='B'&&b===a){packages.B=packages.A;arms.B=arms.A;continue;}
@@ -106,14 +110,15 @@ export async function abTestsResponse(request,{bucket,site,actor,base,headers,te
         catch(error){if(error?.code!=='package-missing')throw error;missing??=error;}
       }
       if(missing)return respond({compatible:false,refusal:{code:missing.code,check:missing.check,message:missing.message},checks:[],warnings:[],configDiff:null,arms});
-      return respond({...await checkAbCompatibility({site,a:packages.A,b:packages.B}),arms});
+      return respond({...await checkAbCompatibility({site,a:packages.A,b:packages.B,...(body.reportingKey==='VersionId'?{loaderVersion:'1.2.0'}:{})}),arms});
     }
     if(route.name==='list'){
       const body=await jsonBody(request,CREATE_FIELDS);
+      if(body.reportingKey!==undefined&&!['TestId','VersionId'].includes(body.reportingKey))fail(400,'Choose TestId or VersionId reporting identity.',{code:'invalid-request'});
       if(typeof body.name==='string'&&CONTROL.test(body.name))fail(400,'Use a test name without line breaks, tabs or other control characters.',{code:'invalid-request'});
       const [a,b]=savedIds(body,testOnly);
       const A=await readSaved(readVersion,a,'A'),B=b===a?A:await readSaved(readVersion,b,'B');
-      const result=await createAbTest(bucket,{site,actor,a:A,b:B,name:typeof body.name==='string'?body.name.trim():body.name,testId:body.testId,trafficBPercent:body.trafficBPercent});
+      const result=await createAbTest(bucket,{site,actor,a:A,b:B,name:typeof body.name==='string'?body.name.trim():body.name,testId:body.testId,trafficBPercent:body.trafficBPercent,reportingKey:body.reportingKey});
       return result.created?respond({created:true,record:result.record,recordSha256:result.recordSha256},201)
         :respond({created:false,record:result.record,recordSha256:result.recordSha256,deletedAt:result.deletedAt});
     }

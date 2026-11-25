@@ -22,7 +22,7 @@ export type GamReportV2Defaults=Omit<GamReportV2Input,'networkCode'|'inventoryPa
 };
 export type GamReportV2Plan={
   schemaVersion:2;kind:'tessera-gam-report-plan-v2';id:string;site:string;experimentId:string;
-  versionId:string;identityKey:'TestId';recordSha256:string;zipSha256:string;
+  versionId:string;identityKey:'TestId'|'VersionId';recordSha256:string;zipSha256:string;
   loader:{version:string;sha256:string};trafficBPercent:number;
   arms:{A:{release:string;runtimeVersion:string;scriptSha256:string;runtimeSha256:string};B:{release:string;runtimeVersion:string;scriptSha256:string;runtimeSha256:string}};
   prebidSha256:string|null;report:GamReportV2Input;
@@ -46,7 +46,7 @@ export type GamReportV2Totals={
 export type GamReportV2BreakdownGroup={value:string;A:GamReportV2Totals;B:GamReportV2Totals};
 export type GamReportV2Breakdown={dimension:GamReportV2Dimension;groupCount:number;groups:GamReportV2BreakdownGroup[];other:{groupCount:number;A:GamReportV2Totals;B:GamReportV2Totals}|null};
 export type GamReportV2Preview={
-  schemaVersion:2;kind:'tessera-gam-report-preview-v2';planId:string;experimentId:string;versionId:string;identityKey:'TestId';
+  schemaVersion:2;kind:'tessera-gam-report-preview-v2';planId:string;experimentId:string;versionId:string;identityKey:'TestId'|'VersionId';
   period:Pick<GamReportV2Input,'startDate'|'endDate'|'timeZone'>;
   source:Pick<GamReportV2Input,'currency'|'revenueBasis'|'revenueMetric'|'metricFamily'|'purpose'|'scope'|'dimensions'|'metrics'|'sourceColumns'|'compatibilityMode'>&{
     format:'tessera-gam-detailed-v2';csvSha256:string;gamReportSourceVerified:false;scopeDeclaration:'operator';
