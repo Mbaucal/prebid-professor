@@ -30,7 +30,7 @@ jobs:
       - name: Build MAIN and verify immutable experiment contracts
         run: |
           node scripts/isolated-toolchain.mjs build
-          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-loader*.test.mjs tests/runtime/ab-bundle.test.mjs tests/runtime/ab-store*.test.mjs tests/runtime/ab-tests-api.test.mjs tests/runtime/ab-main-package3251.test.mjs tests/runtime/ab-tests-main.test.mjs tests/runtime/ab-history-main.test.mjs tests/runtime/ab-measurement*.test.mjs tests/runtime/ab-memory-adversarial-qa.test.mjs
+          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-loader*.test.mjs tests/runtime/ab-bundle.test.mjs tests/runtime/ab-store*.test.mjs tests/runtime/ab-tests-api.test.mjs tests/runtime/ab-main-package3251.test.mjs tests/runtime/ab-tests-main.test.mjs tests/runtime/ab-history-main.test.mjs tests/runtime/ab-measurement*.test.mjs tests/runtime/ab-memory-adversarial-qa.test.mjs tests/runtime/gam-report-v2*.test.mjs tests/runtime/ab-version-id-main.test.mjs
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/verify-ab-tests-main-workerd.mjs
       - name: Install pinned browser tools
         run: |
@@ -43,6 +43,7 @@ jobs:
           python scripts/verify-measurement-navigation-ui.py
           python scripts/verify-experiments-workspace-ui.py
           python scripts/verify-measurement-layout-ui.py
+          python scripts/verify-gam-report-v2-ui.py
       - name: Verify native 3.25.1 delivery, consent and failure recovery
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-ab-loader-main-browser.mjs .generated/ab-loader-main-browser
@@ -55,6 +56,8 @@ jobs:
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-ab-loader-real-gpt.mjs
           python scripts/verify-ab-loader-real-gpt.py
+          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-ab-loader120-real-gpt.mjs
+          python scripts/verify-ab-loader120-real-gpt.py
       - name: Verify measurement ledger with native adaptive timeout, fresh auctions and bid cache
         run: |
           node scripts/build-runtime324-prebid.mjs --version 11.34.0
@@ -70,10 +73,12 @@ jobs:
             .generated/measurement-navigation-ui/**
             .generated/experiments-workspace-ui/**
             .generated/measurement-layout-ui/**
+            .generated/gam-report-v2-ui/**
             .generated/ab-tests-main-workerd/**
             .generated/ab-loader-main-browser/**
             .generated/ab-loader111-transport-qa/**
             .generated/ab-loader-real-gpt/**
+            .generated/ab-loader120-real-gpt/**
             .generated/combined-measurement-timeout-qa/**
             .generated/runtime324-prebid/11.34.0/manifest.json
           if-no-files-found: error

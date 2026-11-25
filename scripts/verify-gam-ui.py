@@ -85,7 +85,7 @@ try:
         before_reporting=len(requests)
         page.get_by_role('button',name='Pripremi GAM reporting',exact=True).click()
         expect(page.get_by_role('button',name='Key-values',exact=True)).to_have_attribute('aria-current','page')
-        expect(page.locator('.gam-kv-selected-count')).to_have_text('13 ključeva · 283 vrednosti')
+        expect(page.locator('.gam-kv-selected-count')).to_have_text('14 ključeva · 283 vrednosti')
         assert all(r['method']=='GET' for r in requests[before_reporting:])
         page.get_by_role('button',name='Poništi izbor',exact=True).click()
         reporting_preview_button=page.get_by_role('button',name='Proveri izabrane key-values u GAM-u',exact=True)
@@ -104,7 +104,7 @@ try:
         expect(reporting_preview_button).to_be_disabled()
         expect(page.locator('.gam-kv-key').filter(has=page.get_by_role('checkbox',name='Uključi ključ refresh_count',exact=True))).to_contain_text('Proveri unos')
         page.get_by_label('Dodatne vrednosti za refresh_count',exact=True).fill('1, 2, 2')
-        expect(page.locator('.gam-kv-selected-count')).to_have_text('13 ključeva · 285 vrednosti')
+        expect(page.locator('.gam-kv-selected-count')).to_have_text('14 ključeva · 285 vrednosti')
         expect(page.locator('.gam-kv-key').filter(has=page.get_by_role('checkbox',name='Uključi ključ refresh_count',exact=True))).to_contain_text('3 izabrano')
         page.get_by_role('button',name='Izaberi sve',exact=True).click()
         page.get_by_text('Vrednosti za geo_country · pripremljena lista',exact=True).click()
@@ -112,7 +112,7 @@ try:
         expect(page.get_by_role('checkbox',name='geo_country: RS',exact=True)).to_be_checked()
         page.get_by_role('button',name='Bez vrednosti za geo_country',exact=True).click()
         page.get_by_role('checkbox',name='geo_country: RS',exact=True).check()
-        expect(page.locator('.gam-kv-selected-count')).to_have_text('13 ključeva · 34 vrednosti')
+        expect(page.locator('.gam-kv-selected-count')).to_have_text('14 ključeva · 34 vrednosti')
         page.get_by_role('button',name='Izaberi sve',exact=True).click()
         reporting_submitted=[];reporting_progress=[]
         # Context rendering is a display-only DTO addition here. The MAIN shell
@@ -134,7 +134,7 @@ try:
             reporting_submitted.append(data)
             assert data['mode']=='reporting' and data['networkCode']=='123456'
             assert data['reportingWritePolicy']=='add_only'
-            assert len(data['reportingSelection'])==13
+            assert len(data['reportingSelection'])==14
             assert sum(len(key['values']) for key in data['reportingSelection'])==283
             assert all('values' in key for key in data['reportingSelection'])
             expect(reporting_preview_button).to_be_disabled()
@@ -170,22 +170,22 @@ try:
         assert len(reporting_submitted)==1
         assert all(not r['url'].endswith(('/start','/step','/check')) for r in requests[before_reporting:])
         reporting_review=page.locator('.gam-kv-status')
-        expect(reporting_review).to_contain_text('13 ključeva · 283 vrednosti u sačuvanom izboru')
+        expect(reporting_review).to_contain_text('14 ključeva · 283 vrednosti u sačuvanom izboru')
         related_context=page.get_by_role('complementary',name='Postojeći oglasni posao — samo čitanje',exact=True)
         expect(related_context).to_contain_text('Dodavanje key-values ne menja postojeći Prebid posao')
         expect(related_context).to_contain_text(independent_ad_context['id'])
         expect(related_context).to_contain_text('Kreativi: 19700 / 40000')
         assert related_context.get_by_role('button').count()==0
         assert page.locator('.gam-kv-blocker').count()==0
-        assert page.locator('.gam-kv-results .gam-kv-result-key').count()==13
-        reporting_confirm=page.get_by_role('checkbox',name='Potvrđujem dodavanje nedostajućih stavki iz izbora 13 ključeva i 283 vrednosti u GAM mreži 123456. Postojeća podešavanja ostaju bez izmene.',exact=True)
+        assert page.locator('.gam-kv-results .gam-kv-result-key').count()==14
+        reporting_confirm=page.get_by_role('checkbox',name='Potvrđujem dodavanje nedostajućih stavki iz izbora 14 ključeva i 283 vrednosti u GAM mreži 123456. Postojeća podešavanja ostaju bez izmene.',exact=True)
         reporting_create=page.get_by_role('button',name='Pokreni pripremu key-values',exact=True)
         expect(reporting_create).to_be_disabled()
         assert 'line itema' not in reporting_confirm.locator('..').inner_text()
         reporting_confirm.check()
         reporting_create.click()
         page.get_by_role('heading',name='Priprema je završena',exact=True).wait_for(timeout=60000)
-        expect(page.locator('.gam-kv-results')).to_contain_text('13 kreirano · 0 već postoji — bez izmene')
+        expect(page.locator('.gam-kv-results')).to_contain_text('14 kreirano · 0 već postoji — bez izmene')
         assert reporting_progress
         expect(related_context).to_contain_text(independent_ad_context['id'])
         expect(reporting_review).to_have_class('gam-card gam-kv-status success')
@@ -199,7 +199,7 @@ try:
         assert reporting_completed['reporting']['writePolicy']=='add_only'
         assert reporting_completed['executionAllowed'] is True
         assert all(reporting_completed['counts'][kind]['total']==0 for kind in ['advertiser','order','creative','lineItem','association'])
-        assert reporting_completed['counts']['key']['done']==13
+        assert reporting_completed['counts']['key']['done']==14
         assert reporting_completed['counts']['value']['done']==283
         for width,height,label in [(1440,1080,'desktop'),(390,844,'mobile')]:
             page.set_viewport_size({'width':width,'height':height})
@@ -243,7 +243,7 @@ try:
         start_count=sum(r['url'].endswith('/start') for r in requests)
         page.get_by_role('button',name='Pokreni i napravi',exact=True).click()
         page.get_by_role('heading',name='Spremno za potvrdu',exact=True).wait_for()
-        expect(page.locator('.gam-li-reporting')).to_contain_text('13 ključeva · 283 unapred definisanih vrednosti')
+        expect(page.locator('.gam-li-reporting')).to_contain_text('14 ključeva · 283 unapred definisanih vrednosti')
         expect(page.get_by_role('button',name='Pokreni i napravi',exact=True)).to_be_enabled()
         assert paused and sum(r['url'].endswith('/start') for r in requests)==start_count
         page.unroute('**/line-items/jobs/*/review',pause_review)
@@ -532,7 +532,7 @@ try:
         origin_result=page.locator('.gam-kv-result-key').filter(has=page.locator('summary code').get_by_text('aq_bid_origin',exact=True))
         expect(origin_result).to_contain_text('Već postoji')
         assert 'Reporting za dopunu' not in origin_result.inner_text()
-        expect(page.locator('.gam-kv-totals')).to_contain_text('13 već postoji — bez izmene')
+        expect(page.locator('.gam-kv-totals')).to_contain_text('14 već postoji — bez izmene')
         for width,height,label in [(1440,1080,'desktop'),(390,844,'mobile')]:
             page.set_viewport_size({'width':width,'height':height})
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
@@ -553,7 +553,7 @@ try:
         page.get_by_role('button',name='Nastavi posao',exact=True).click()
         page.get_by_role('heading',name='Priprema je završena',exact=True).wait_for()
         assert [a['action'] for a in reporting_actions]==['review','review','start','check','step']
-        expect(page.locator('.gam-kv-totals')).to_contain_text('13 već postoji — bez izmene')
+        expect(page.locator('.gam-kv-totals')).to_contain_text('14 već postoji — bez izmene')
         assert page.get_by_text('Sve izabrano već postoji. Nije bilo novih upisa u GAM.',exact=True).count()==0
         # Legacy standalone history is read-only even if a stale canStart says true.
         legacy=deepcopy(reporting_ready)

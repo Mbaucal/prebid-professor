@@ -1,9 +1,10 @@
 import {useEffect,useId,useRef,useState} from 'react';
 import {AB_GAM_COLUMNS,AB_GAM_CSV_LIMIT} from '../../worker/experiments/ab-measurement-contracts.mjs';
 import type {GamReportPreview,MeasurementPlanDetail,MeasurementPlanListing,MeasurementReport} from '../../worker/experiments/ab-measurement-contracts.mjs';
+import DetailedGamReportPanel from './DetailedGamReportPanel';
 import './ab-measurement.css';
 
-type Props={endpoint:string;experimentId:string;testId:string;disabled?:boolean;expanded?:boolean};
+type Props={endpoint:string;experimentId:string;testId:string;identityKey?:'TestId'|'VersionId';disabled?:boolean;expanded?:boolean};
 type Action='plan'|'template'|'upload'|'preview'|'';
 const emptyReport:MeasurementReport={networkCode:'',inventoryPath:'',startDate:'',endDate:'',currency:'',timeZone:'UTC',revenueBasis:'unknown',revenueMetric:'total'};
 const basis=(value:MeasurementReport['revenueBasis'])=>value==='unknown'?'Unknown':value==='gross'?'Gross':'Net';
@@ -21,14 +22,26 @@ function download(bytes:BlobPart,type:string,name:string){
 /** Each saved experiment has its own lazily opened report view. CSV and review results live only in React memory. */
 export default function AbMeasurementPanel(props:Props){
   const [opened,setOpened]=useState(false);
-  if(props.expanded)return <MeasurementContent key={props.endpoint} {...props}/>;
+  if(props.expanded)return <ReportViews key={props.endpoint} {...props}/>;
   return <details className="ab-measurement-disclosure" onToggle={event=>{if(event.currentTarget.open)setOpened(true);}}>
     <summary>Measurement and GAM report</summary>
-    {opened?<MeasurementContent key={props.endpoint} {...props}/>:null}
+    {opened?<ReportViews key={props.endpoint} {...props}/>:null}
   </details>;
 }
 
-function MeasurementContent({endpoint,experimentId,testId,disabled=false}:Props){
+function ReportViews(props:Props){
+  const [mode,setMode]=useState<'detailed'|'summary'>('detailed'),[summaryOpened,setSummaryOpened]=useState(false);
+  return <div className="ab-measurement-views">
+    <div className="runtime-actions" role="group" aria-label="GAM report format">
+      <button type="button" aria-pressed={mode==='detailed'} disabled={props.disabled} onClick={()=>setMode('detailed')}>Detailed report</button>
+      <button type="button" aria-pressed={mode==='summary'} disabled={props.disabled} onClick={()=>{setSummaryOpened(true);setMode('summary');}}>Daily summary</button>
+    </div>
+    <div hidden={mode!=='detailed'}><DetailedGamReportPanel endpoint={props.endpoint.replace(/\/measurement\/plans$/,'/measurement/v2/plans')} experimentId={props.experimentId} versionId={props.testId} identityKey={props.identityKey} disabled={props.disabled}/></div>
+    {summaryOpened?<div hidden={mode!=='summary'}><MeasurementContent {...props}/></div>:null}
+  </div>;
+}
+
+function MeasurementContent({endpoint,experimentId,testId,identityKey,disabled=false}:Props){
   const prefix=useId(),active=useRef(true),listTicket=useRef(0),detailTicket=useRef(0),previewTicket=useRef(0),fileTicket=useRef(0);
   const initialized=useRef(false),operation=useRef<Action>(''),fileInput=useRef<HTMLInputElement>(null),noticeRef=useRef<HTMLParagraphElement>(null);
   const reviewRef=useRef<HTMLElement>(null),previewErrorRef=useRef<HTMLParagraphElement>(null);
@@ -186,13 +199,13 @@ function MeasurementContent({endpoint,experimentId,testId,disabled=false}:Props)
       {detail&&context?<>
         <h5>Selected report context</h5>
         <dl className="ab-measurement-context">
-          <div><dt>Experiment</dt><dd><code>{testId}</code> · {detail.plan.id.slice(-8)}</dd></div>
+          <div><dt>Version ID</dt><dd><code>{testId}</code> · {detail.plan.id.slice(-8)}</dd></div>
           <div><dt>Network / inventory</dt><dd>{context.networkCode} · <code>{context.inventoryPath}</code></dd></div>
           <div><dt>Period</dt><dd>{context.startDate} – {context.endDate} · {context.timeZone}</dd></div>
           <div><dt>Revenue</dt><dd>{context.currency} · {basis(context.revenueBasis)} · {metric(context.revenueMetric)}</dd></div>
         </dl>
         <details><summary>GAM export guidance</summary><ol>
-          <li>Use the selected network, inventory and complete date range. Filter by <code>TestId={testId}</code> and include both <code>Variant=A</code> and <code>Variant=B</code>.</li>
+          <li>Use the selected network, inventory and complete date range. Filter the package's GAM key <code>{identityKey??'TestId'}={testId}</code> and include both <code>Variant=A</code> and <code>Variant=B</code>. The daily-summary CSV keeps its normalized <code>TestId</code> column for compatibility; enter this same Version ID there.</li>
           <li>Use the selected currency, time zone, revenue metric and gross/net basis. Verify those settings against the original GAM report; the CSV alone does not prove the source.</li>
           <li>Break down TestId and Variant together in each daily row. Never sum separate or overlapping Key-values rows. Export one daily row per variant; remove totals and extra dimensions, and do not combine overlapping inventory or multiple reports.</li>
           <li>Use the exact template columns. Impressions and revenue are required in every row. Counts use whole numbers without separators; revenue uses a decimal point and up to six decimal places. For unavailable ad request/response or measurable/viewable counts, leave both cells in that pair blank. Missing rows are unknown, not zero.</li>

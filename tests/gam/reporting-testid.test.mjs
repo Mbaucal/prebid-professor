@@ -56,7 +56,7 @@ const savedKey=id=>`api-integrations/gam/line-items/v1/jobs/${id}.json`;
 test('catalog exposes selectable predefined TestId without fake/default values or another numeric open key',async()=>{
   const f=trafficFixture();f.client.network=async()=>assert.fail('Catalog is read-only and needs no Google connection');
   const response=await request(f,'/key-values/catalog');assert.equal(response.status,200);
-  assert.equal(response.data.keys.length,13);
+  assert.equal(response.data.keys.length,14);
   assert.deepEqual(response.data.keys.find(row=>row.key==='TestId'),{
     key:'TestId',type:'PREDEFINED',reportableType:'ON',values:[],openDomain:false,valueInput:'test-id'});
   assert.deepEqual(OPEN_REPORTING_KEYS,['refresh_count','refresh_interval','aq_bid_count','aq_bidder_count']);
@@ -131,7 +131,7 @@ test('old materialized jobs are not upgraded when the current catalog adds TestI
   const f=await setup(),response=await request(f,'/line-items/preview',{mode:'reporting',networkCode:'123456'});
   assert.equal(response.status,201);let j=response.data;
   const key=savedKey(j.id),raw=JSON.parse(f.env.BUILDS.data.get(key).body);
-  raw.plan.reporting.keys=raw.plan.reporting.keys.filter(row=>row.key!=='TestId');
+  raw.plan.reporting.keys=raw.plan.reporting.keys.filter(row=>!['TestId','VersionId'].includes(row.key));
   const before=JSON.stringify(raw.plan);await f.env.BUILDS.put(key,JSON.stringify(raw));
   j=(await request(f,`/line-items/jobs/${j.id}`)).data;
   for(let n=0;j.status==='reviewing'&&n<20;n++)j=await action(f,j,'review');

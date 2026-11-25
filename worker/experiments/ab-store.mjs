@@ -157,9 +157,10 @@ async function recoverClaimedTest(bucket,site,testId,candidate){
 /** Composes and stores one A/B test. a and b are saved packages as readPackage returns them.
  * Everything that can refuse runs before the first put, and the record is written last.
  * Returns {created, record, recordSha256, deletedAt}. Throws Error {status, code, check?}. */
-export async function createAbTest(bucket,{site,actor,a,b,name,testId,trafficBPercent,now=new Date()}){
+export async function createAbTest(bucket,{site,actor,a,b,name,testId,trafficBPercent,reportingKey,now=new Date()}){
   if(typeof actor?.email!=='string'||!actor.email)throw new TypeError('An authenticated actor is required.');
-  const bundle=await composeAbBundle({site,a,b,trafficBPercent,testId,name});
+  if(reportingKey!==undefined&&reportingKey!=='TestId'&&reportingKey!=='VersionId')throw Object.assign(new Error('Choose TestId or VersionId as the GAM identity key.'),{status:422,code:'invalid-request'});
+  const bundle=await composeAbBundle({site,a,b,trafficBPercent,testId,name,...(reportingKey==='VersionId'?{loaderVersion:'1.2.0'}:{})});
   const id=bundle.id,record={...bundle.record,createdBy:actor.email,createdAt:now.toISOString()};
   const recordBytes=encode.encode(JSON.stringify(record,null,2)+'\n');
   checkSizes(bundle,recordBytes);

@@ -117,7 +117,7 @@ try {
   const catalogEvents=events.length;
   const catalogResponse=await call('/key-values/catalog');
   assert.equal(catalogResponse.status,200,JSON.stringify(catalogResponse.data));
-  assert.equal(catalogResponse.data.keys.length,13);
+  assert.equal(catalogResponse.data.keys.length,14);
   assert.equal(catalogResponse.data.keys.reduce((sum,key)=>sum+key.values.length,0),283);
   checked('Compiled authenticated Key-values catalog needs no connection or Google read',events.length===catalogEvents);
   const crossOrigin = await mf.dispatchFetch(origin + apiPath + '/connect', {method:'POST',
@@ -259,7 +259,7 @@ try {
     const children=[].concat(item.targeting.customTargeting.children);
     return children.length===1&&String(children[0].keyId)===priceKey.id;
   }));
-  checked('Compiled ad setup provisions all twelve reporting keys and 283 known values without adding line-item criteria');
+  checked('Compiled ad setup provisions all fourteen reporting keys and 283 known values without adding line-item criteria');
   const count=traffic.calls.length;
   await trafficJob({...defaults.data.draft,ranges:[{from:'0.01',to:'0.03',step:'0.01'}],creative:{...defaults.data.draft.creative,copies:2}});
   checked('Native SOAP replay reuses matching entities without new writes',traffic.calls.length===count);
@@ -321,7 +321,7 @@ try {
   }
   assert.equal(reportingJob.canStart,true,JSON.stringify(reportingJob));
   assert.equal(reportingJob.reporting.writePolicy,'add_only');
-  assert.equal(reportingJob.counts.key.update,0);assert.equal(reportingJob.counts.key.done,13);
+  assert.equal(reportingJob.counts.key.update,0);assert.equal(reportingJob.counts.key.done,14);
   assert.equal(reportingJob.counts.value.new,3);assert.equal(reportingJob.counts.value.existing,283);
   assert.equal(traffic.calls.length,beforeReporting);assert.deepEqual(reportingKey,originalKey);
   checked('Compiled standalone preview is read-only and preserves an existing OFF key without proposing updates');

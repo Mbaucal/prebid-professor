@@ -1,0 +1,10 @@
+import type {AbSavedPackage} from './ab-tests-api.mjs';
+import type {GamReportV2Created,GamReportV2Detail,GamReportV2Input,GamReportV2Listing,GamReportV2Plan} from './gam-report-v2-contracts.mjs';
+export const GAM_REPORT_V2_PLAN_ID:RegExp;
+export type GamReportV2PlanOptions={site:string;id:string;actor:{email:string};readVersion:(id:string)=>Promise<AbSavedPackage>};
+export function normalizeGamReportV2Input(input:unknown):GamReportV2Input;
+export function assertGamReportV2Plan(plan:unknown):GamReportV2Plan;
+export function gamReportV2PlanIdentity(plan:GamReportV2Plan):string;
+export function createGamReportV2Plan(bucket:R2Bucket,options:GamReportV2PlanOptions&{report:GamReportV2Input;now?:Date}):Promise<GamReportV2Created>;
+export function listGamReportV2Plans(bucket:R2Bucket,options:Omit<GamReportV2PlanOptions,'actor'>):Promise<GamReportV2Listing>;
+export function readGamReportV2Plan(bucket:R2Bucket,options:{site:string;id:string;planId:string}):Promise<GamReportV2Detail>;
