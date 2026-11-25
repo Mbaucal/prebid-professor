@@ -156,7 +156,7 @@ test("review is read only; Prebid creates values, shared creative pool, targetin
   assert.equal(f.calls.length, 0);
   assert.equal(j.counts.lineItem.total, 3);
   const done = await finish(f, await start(f, j));
-  assert.equal(f.db.key.length, 14);
+  assert.equal(f.db.key.length, 15);
   assert.equal(f.db.value.length, 286);
   assert.equal(f.db.creative.length, 2);
   assert.equal(f.db.lineItem.length, 3);

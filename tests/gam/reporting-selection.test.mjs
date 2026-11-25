@@ -15,7 +15,7 @@ const {MemoryBucket}=await load('tests/gam/fixture.mjs');
 const base='/api/integrations/gam',origin='https://selection-qa.invalid',actor='selection-qa@example.invalid';
 const jobPrefix='api-integrations/gam/line-items/v1/jobs/';
 const knownKeys=['refresh_count','refresh_bucket','refresh_interval','refresh_policy','aq_bidder_count',
-  'aq_bid_count','aq_timed_out','aq_bid_origin','aq_first_request','aq_consent_wait','geo_country','Variant','TestId'];
+  'aq_bid_count','aq_timed_out','aq_bid_origin','aq_first_request','aq_consent_wait','geo_country','Variant','TestId','VersionId'];
 const timeValues=['lt_500','500_999','1000_1499','1500_1999','2000_2999','3000_plus'];
 const selection=(...rows)=>({mode:'reporting',networkCode:'123456',reportingSelection:rows});
 
@@ -126,7 +126,7 @@ test('read-only key-values catalog is available without a GAM connection or Goog
 
 test('no explicit selection retains the complete existing default and ordinary-ad contract',()=>{
   for(const input of [{mode:'reporting',networkCode:'123456'},prebidPlan()]) {
-    const p=normalizeLinePlan(input);assert.equal(p.reporting.keys.length,13);
+    const p=normalizeLinePlan(input);assert.equal(p.reporting.keys.length,14);
     assert.equal(p.reporting.keys.reduce((n,key)=>n+key.values.length,0),283);
   }
 });
