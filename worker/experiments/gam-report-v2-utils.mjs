@@ -10,10 +10,11 @@ const ID=/^[1-9]\d{0,19}$/;
 const CONTROL=/[\u0000-\u001f\u007f-\u009f]/;
 // Only exact published metric labels are recognized. Arbitrary source labels remain declarations.
 const KNOWN_HEADERS=new Map([
-  ...[['impressions','impressions'],['revenue','revenue'],['CPM and CPC revenue','revenue'],['clicks','clicks'],['ad requests','adRequests'],['code served count','responsesServed'],['Active View eligible impressions','eligibleImpressions'],['Active View measurable impressions','measurableImpressions'],['Active View viewable impressions','viewableImpressions']].map(([label,key])=>['Total '+label,{family:'total',key}]),
-  ...[['impressions','impressions'],['revenue','revenue'],['CPM and CPC revenue','revenue'],['clicks','clicks'],['Active View eligible impressions','eligibleImpressions'],['Active View measurable impressions','measurableImpressions'],['Active View viewable impressions','viewableImpressions']].map(([label,key])=>['Ad server '+label,{family:'ad-server',key}]),
+  ...[['impressions','impressions'],['revenue','revenue'],['CPM and CPC revenue','revenue'],['clicks','clicks'],['ad requests','adRequests'],['code served count','responsesServed'],['Active View eligible impressions','eligibleImpressions'],['Active View measurable impressions','measurableImpressions'],['Active View viewable impressions','viewableImpressions']].map(([label,key])=>['Total '+label,{family:'total',key,...(key==='revenue'?{revenueMetric:label==='revenue'?'total':'cpm-cpc'}:{})}]),
+  ...[['impressions','impressions'],['revenue','revenue'],['CPM and CPC revenue','revenue'],['clicks','clicks'],['Active View eligible impressions','eligibleImpressions'],['Active View measurable impressions','measurableImpressions'],['Active View viewable impressions','viewableImpressions']].map(([label,key])=>['Ad server '+label,{family:'ad-server',key,...(key==='revenue'?{revenueMetric:label==='revenue'?'total':'cpm-cpc'}:{})}]),
   ...['Ad Exchange','AdSense'].flatMap(prefix=>[['impressions','impressions'],['revenue','revenue'],['clicks','clicks']].map(([label,key])=>[prefix+' '+label,{family:'unsupported-subset',key}])),
   ['Unfilled impressions',{family:'total',key:'unfilledImpressions'}],
+  ['Ad server total revenue',{family:'ad-server',key:'revenue',revenueMetric:'total'}],
 ]);
 
 function selected(value,catalog,label){
@@ -63,6 +64,7 @@ export function normalizeGamReportV2Input(input){
     check(!/^[=+@-]/.test(header.trimStart()),'Source headers cannot begin with spreadsheet formula characters.');
     const known=KNOWN_HEADERS.get(header);
     if(known)check(known.family===input.metricFamily&&known.key===key,'The recognized source metric header contradicts the selected metric family or canonical field.');
+    if(known?.revenueMetric)check(known.revenueMetric===financial.revenueMetric,'The recognized source revenue header contradicts the selected revenue metric.');
   }
   return {...financial,purpose:input.purpose,metricFamily:input.metricFamily,scope,dimensions,metrics,sourceColumns,compatibilityMode};
 }

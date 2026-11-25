@@ -65,6 +65,9 @@ test('explicit GAM headers can arrive in different order; undeclared headers and
   await assert.rejects(previewGamReportV2(plan,{csv:csv(plan,[row('A')]).replace('Total impressions','Ad server impressions')}),/exact mapped source headers/);
   assert.throws(()=>normalizeGamReportV2Input(report({sourceColumns:{...mapping,impressions:'Ad server impressions'}})),/metric family/);
   assert.throws(()=>normalizeGamReportV2Input(report({sourceColumns:{...mapping,VersionId:'Key-values'}})),/Key-values/);
+  assert.throws(()=>normalizeGamReportV2Input(report({sourceColumns:{...mapping,revenue:'Total CPM and CPC revenue'}})),/selected revenue metric/);
+  assert.throws(()=>normalizeGamReportV2Input(report({revenueMetric:'cpm-cpc',sourceColumns:mapping})),/selected revenue metric/);
+  const cpm=normalizeGamReportV2Input(report({revenueMetric:'cpm-cpc',sourceColumns:{...mapping,revenue:'Total CPM and CPC revenue'}}));assert.equal(cpm.revenueMetric,'cpm-cpc');
 });
 
 test('blank selected metrics invalidate only their aggregate and rates, with per-metric coverage',async()=>{
