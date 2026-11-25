@@ -34,7 +34,7 @@ const descriptions:Record<string,string> = {
   refresh_policy:'Putanja zahteva: početni, nova aukcija ili fallback.',
   geo_country:'Oznaka države, na primer RS. Izaberi samo potrebne države.',
   Variant:'A ili B krak eksperimenta.',
-  TestId:'Tačan TestId A/B testa, da bi se rezultati različitih testova razlikovali.',
+  TestId:'Raniji paketi: Version ID poslat pod istorijskim GAM ključem TestId.',
   VersionId:'Version ID objavljenog paketa; novi paketi koriste ovaj ključ uz Variant A ili B.',
 };
 const outcomeNames:Record<Outcome,string> = {
