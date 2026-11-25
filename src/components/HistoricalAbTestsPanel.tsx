@@ -61,7 +61,7 @@ export default function HistoricalAbTestsPanel({endpoint}:{endpoint:string}){
       <p>{row.createdAt?new Date(row.createdAt).toLocaleString():row.id==='tanjug-aa-1.0.2'?'Accepted baseline · save date not recorded':'Save date unavailable'}{row.deletedAt?' · Deleted':''} · {row.runtimeVersion?`script ${row.runtimeVersion}`:'Script version unavailable'}{row.prebidVersion?` · Prebid ${row.prebidVersion}`:''}</p>
       {typeof row.trafficBPercent==='number'?<p>A {100-row.trafficBPercent}% · B {row.trafficBPercent}%</p>:null}
       {row.scripts?<dl className="ab-tests-arms">{(['A','B'] as const).map(side=><div key={side}><dt>Version {side}</dt><dd><strong>{row.scripts![side].name}</strong> · {settings(row.scripts![side].settings)}</dd></div>)}</dl>:row.settings?<p>{settings(row.settings)}</p>:null}
-      <p className="ab-tests-help">{row.reporting==='variant-only'?'Variant-only package.':'Standalone script without A/B labels.'} TestId-based CSV review is unavailable for this earlier version. This record does not confirm which ZIP is deployed.</p>
+      <p className="ab-tests-help">{row.reporting==='variant-only'?'Variant-only package.':'Standalone script without A/B labels.'} Version ID reporting is unavailable for this earlier version. This record does not confirm which ZIP is deployed.</p>
       {row.state==='unavailable'?<p role="alert" className="runtime-error">{row.reason||'This saved version could not be verified.'}</p>:null}
       {row.downloadUrl&&!row.deletedAt?<button type="button" disabled={loading||Boolean(busy)||row.state!=='stored'} onClick={()=>void download(row)}>{busy===row.id?'Reading original ZIP…':'Download original ZIP'}</button>:null}
       <details><summary>Version details</summary><p><code>{row.id}</code></p>{row.sha256?<p>ZIP SHA-256 <code>{row.sha256}</code></p>:null}</details>
@@ -81,7 +81,7 @@ export default function HistoricalAbTestsPanel({endpoint}:{endpoint:string}){
   const count=history?(history.baseline?1:0)+collections.reduce((sum,kind)=>sum+(history.sections[kind]?.items.length??0),0):0;
   return <section className="historical-ab-tests" aria-labelledby="historical-ab-tests-title">
     <div className="measurement-heading"><h3 id="historical-ab-tests-title">Earlier A/B tests</h3><button type="button" disabled={loading||Boolean(busy)} onClick={()=>void load()}>Reload earlier tests</button></div>
-    <p>Previous tests and scripts are kept here with their original files. Create new source versions below to use TestId reporting.</p>
+    <p>Previous tests and scripts are kept here with their original files. Create new source versions below to use Version ID reporting.</p>
     {error?<p role="alert" className="runtime-error">{error} <button type="button" disabled={loading||Boolean(busy)} onClick={()=>void load()}>Retry earlier tests</button></p>:null}
     {loading?<p role="status" className="ab-tests-status">Loading earlier tests…</p>:null}
     {notice?<p role={notice.error?'alert':'status'} className={notice.error?'runtime-error':'ab-tests-status'}>{notice.text}</p>:null}
