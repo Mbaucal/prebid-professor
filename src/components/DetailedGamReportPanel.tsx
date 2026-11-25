@@ -9,6 +9,9 @@ type Notice={text:string;error:boolean};
 const empty:GamReportV2Input={networkCode:'',inventoryPath:'',startDate:'',endDate:'',currency:'',timeZone:'UTC',revenueBasis:'unknown',revenueMetric:'total',purpose:'overall',metricFamily:'total',scope:{orderIds:[],lineItemIds:[]},dimensions:['adUnit','deviceCategory'],metrics:['impressions','revenue','clicks','measurableImpressions','viewableImpressions'],sourceColumns:{},compatibilityMode:'unknown'};
 const requestMetrics:readonly GamReportV2Metric[]=['adRequests','responsesServed','unfilledImpressions'];
 const deliveryDimensions:readonly GamReportV2Dimension[]=['orderId','lineItemId','creativeId'];
+const exampleVersion='example_version_01';
+const exampleReport:GamReportV2Input=withColumns({...empty,networkCode:'999',inventoryPath:'/999/example-site/',startDate:'2026-11-22',endDate:'2026-11-22',currency:'EUR',timeZone:'Europe/Belgrade',revenueBasis:'net',purpose:'prebid',metricFamily:'ad-server',scope:{orderIds:['900001'],lineItemIds:['900002']},dimensions:GAM_REPORT_V2_DIMENSIONS.map(item=>item.key),metrics:['impressions','revenue','clicks','eligibleImpressions','measurableImpressions','viewableImpressions'],compatibilityMode:'off'});
+const exampleValues:Record<GamReportV2Dimension,string>={adUnit:'/999/example-site/rectangle',deviceCategory:'mobile',country:'RS',requestedAdSizes:'300x250',creativeSize:'300x250',orderId:'900001',lineItemId:'900002',creativeId:'900003',hb_bidder:'example_bidder',hb_pb:'1.50',hb_size:'300x250',aq_bid_origin:'fresh',refresh_count:'0',refresh_bucket:'initial',refresh_interval:'initial',refresh_policy:'initial',aq_first_request:'500_999',aq_consent_wait:'lt_500',aq_bidder_count:'3',aq_bid_count:'4',aq_timed_out:'no'};
 const presets:Record<GamReportV2Purpose,{dimensions:GamReportV2Dimension[];metrics:GamReportV2Metric[];metricFamily:GamReportV2Input['metricFamily']}>={
   overall:{dimensions:['adUnit','deviceCategory'],metrics:['impressions','revenue','clicks','measurableImpressions','viewableImpressions'],metricFamily:'total'},
   prebid:{dimensions:['adUnit','lineItemId','aq_bid_origin'],metrics:['impressions','revenue','clicks','measurableImpressions','viewableImpressions'],metricFamily:'ad-server'},
@@ -169,9 +172,17 @@ export default function DetailedGamReportPanel({endpoint,experimentId,versionId,
     }catch(error){if(active.current&&ticket===reviewTicket.current)setPreviewError(error instanceof Error?error.message:'The detailed CSV could not be reviewed. Retry.');}
   }
   function example(){
-    const headers=['date','VersionId','Variant','adUnit','deviceCategory','impressions','revenue','clicks','measurableImpressions','viewableImpressions'];
-    const rows=[headers.join(','),'2026-11-22,example_version_01,A,Example slot,mobile,1000,1.500000,2,800,520','2026-11-22,example_version_01,B,Example slot,mobile,1000,1.520000,2,800,528'];
-    download(rows.join('\r\n')+'\r\n','text/csv','gam-detailed-example-FICTITIOUS-DATA.csv');setNotice({text:'Fictitious example downloaded. Its Version ID and numbers are not live data; use your saved report template for a real import.',error:false});
+    const headers=gamReportV2Columns(exampleReport),rows=[headers.join(',')];
+    for(const variant of ['A','B']){
+      const values:Record<string,string>={date:'2026-11-22',VersionId:exampleVersion,Variant:variant,...exampleValues,impressions:'1000',revenue:variant==='A'?'1.500000':'1.520000',clicks:'2',eligibleImpressions:'900',measurableImpressions:'800',viewableImpressions:variant==='A'?'520':'528'};
+      if(variant==='B'){values.aq_bid_origin='cached';values.refresh_count='1';values.refresh_bucket='r1_3';values.refresh_interval='30';values.refresh_policy='fresh_auction';}
+      rows.push(headers.map(key=>values[key]).join(','));
+    }
+    download(rows.join('\r\n')+'\r\n','text/csv','gam-detailed-prebid-example-FICTITIOUS-DATA.csv');setNotice({text:`Fictitious ${headers.length}-column Prebid example downloaded. Its Version ID, GAM IDs and amounts are invented. Download the matching example setup JSON for its scope and fields; use your saved report template for real data.`,error:false});
+  }
+  function exampleSetup(){
+    const setup={kind:'tessera-gam-report-example',fictitious:true,versionId:exampleVersion,identityKey:'VersionId',report:exampleReport,notes:['All IDs, values and amounts are invented; this is not a GAM export.','This example describes a Prebid-only delivery subset, not total site revenue or page RPM.','For a real report, use a real saved package Version ID and its actual GAM key, network, inventory, exact Prebid order/line-item IDs, complete period, currency and revenue basis.','Select only dimensions and metrics actually supported together by your GAM network.','The UI does not import report setup JSON; it documents the matching example CSV configuration.']};
+    download(JSON.stringify(setup,null,2)+'\n','application/json','gam-detailed-prebid-setup-FICTITIOUS-DATA.json');setNotice({text:'Fictitious example setup JSON downloaded. It documents the matching full Prebid CSV; it does not change a saved report, GAM settings or scripts.',error:false});
   }
   const selectedReport=detail?.plan.report,selectedBreakdown=preview?.breakdowns.find(item=>item.dimension===breakdown);
   const progress=busy==='save'?'Saving detailed report…':busy==='template'?'Downloading detailed CSV template…':busy==='file'?'Reading detailed CSV…':busy==='review'?'Reviewing detailed GAM CSV…':'';
@@ -181,7 +192,8 @@ export default function DetailedGamReportPanel({endpoint,experimentId,versionId,
     <p>Choose the report’s purpose, exact filters, dimensions and raw metrics. A saved setup keeps its scope fixed; it does not change GAM or publish scripts.</p>
     <p>Version ID <code>{versionId}</code>{knownIdentityKey?<> · GAM key <code>{knownIdentityKey}</code>.</>:'. The saved report confirms the GAM key used by this package.'} Both A and B belong to this package version.</p>
     <p className="ab-tests-note">Filters are your declaration of the GAM export. The file does not authenticate its source. Page RPM, uplift and a winner remain unavailable.</p>
-    <button type="button" disabled={locked} onClick={example}>Download fictitious detailed CSV example</button>
+    <p className="ab-tests-help">The full Prebid example includes serving IDs, bid origin, refresh and timing labels, plus raw performance counts. Its configuration is documented in the matching setup JSON. All example data is invented.</p>
+    <div className="runtime-actions"><button type="button" disabled={locked} onClick={example}>Download fictitious detailed CSV example</button><button type="button" disabled={locked} onClick={exampleSetup}>Download fictitious report setup JSON</button></div>
     {listError?<p role="alert" className="runtime-error">{listError} <button type="button" disabled={locked} onClick={()=>setReload(value=>value+1)}>Reload detailed reports</button></p>:!listing?<p role="status">Loading detailed reports…</p>:<>
       <label htmlFor={field('saved')}>Saved detailed report</label>
       <select id={field('saved')} value={selected} disabled={locked||!listing.plans.length} onChange={event=>choose(event.target.value)}>
