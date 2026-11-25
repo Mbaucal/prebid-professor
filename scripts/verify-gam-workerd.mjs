@@ -259,7 +259,7 @@ try {
     const children=[].concat(item.targeting.customTargeting.children);
     return children.length===1&&String(children[0].keyId)===priceKey.id;
   }));
-  checked('Compiled ad setup provisions all twelve reporting keys and 283 known values without adding line-item criteria');
+  checked('Compiled ad setup provisions all fourteen reporting keys and 283 known values without adding line-item criteria');
   const count=traffic.calls.length;
   await trafficJob({...defaults.data.draft,ranges:[{from:'0.01',to:'0.03',step:'0.01'}],creative:{...defaults.data.draft.creative,copies:2}});
   checked('Native SOAP replay reuses matching entities without new writes',traffic.calls.length===count);
