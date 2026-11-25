@@ -219,8 +219,9 @@ export function abTestIdentity(record){
 }
 /** Presentation/export identity comes from the saved loader, including an old recovered package. */
 export function abGamIdentity(record){
-  const version=record?.loader?.version,entry=registry[version];
-  if(!entry||record.loader.sha256!==entry.sha256||!TEST_ID.test(record.testId))
+  const version=record?.loader?.version;
+  const entry=typeof version==='string'&&Object.hasOwn(registry,version)?registry[version]:null;
+  if(!entry||typeof entry.sha256!=='string'||record.loader.sha256!==entry.sha256||typeof record.testId!=='string'||!TEST_ID.test(record.testId))
     invalid('This saved package has no verified GAM identity.');
   return {key:version==='1.2.0'?'VersionId':'TestId',value:record.testId,label:'Version ID'};
 }
