@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {adminAuditStore} from '../support/admin-audit-store.mjs';
 import {getPrebidMode, updatePrebidMode} from '../../worker/prebid-mode.ts';
 import {runtimeCatalog} from '../../worker/test-workspace/runtime-catalog.mjs';
@@ -369,4 +370,24 @@ test('saving bid caching leaves the saved user sync setting as it is', async () 
   const again = await put({enabled: true, revision: (await read(g)).revision, bidCache: {enabled: false, maxBidAgeSeconds: 60}}, g);
   assert.equal(again.status, 200, await again.clone().text());
   assert.deepEqual(g.readConfig().userSync, {syncEnabled: false, userIds: []});
+});
+
+// MAIN always names a bid caching version today (3.26.0 applies every option), so the empty list is checked in the
+// panel source here and with payloads changed in the browser (scripts/verify-bid-cache-settings-ui.py).
+const source = path => readFile(new URL('../../' + path, import.meta.url), 'utf8');
+test('the cache panels check the selected script before the empty list, and the save message agrees with them', async () => {
+  const mode = await source('src/components/PrebidModePanel.tsx'), position = await source('src/components/PositionBidCachePanel.tsx');
+  // A selected script that applies bid caching is said to apply it, also when no corrected version is offered.
+  assert.match(mode, /<p>\{payload\.runtimeSupportsBidCache \? `Applies to new packages generated with the selected script\.\$\{noCacheScript \? ` \$\{NO_CORRECTED_CACHE_SCRIPT\}\.` : ''\}` : noCacheScript \?/);
+  assert.match(position, /<p>\{data\.runtimeSupportsBidCache\?`Applies to the next package generated with the selected script\.\$\{data\.bidCacheScriptVersions\?\.length===0\?` \$\{NO_CORRECTED_CACHE_SCRIPT\}\.`:''\}`:data\.bidCacheScriptVersions\?\.length===0\?/);
+  // With no version to select, neither Demand save message (with or without named scripts) asks to select one, and
+  // neither does the position save message.
+  assert.match(mode, /\? next\.bidCacheScriptVersions\?\.length === 0\s*\/\/[^\n]*\n\s*\? `Prebid settings saved\.\$\{next\.namedScriptLibrary \? ' New named scripts use them\.' : ''\} \$\{noCacheScriptText\(next\)\}; your bid cache settings are kept\.`/);
+  assert.match(position, /next\.bidCacheScriptVersions\?\.length===0\?`Saved\. \$\{noCacheScriptText\(next\)\}\. Your setting is kept\.`/);
+  // Whether a version with a runtime notice still applies bid caching (never named), or none does.
+  for (const panel of [mode, position]) {
+    assert.match(panel, /NO_CORRECTED_CACHE_SCRIPT ?= ?'No corrected compatible bid-cache script is available in this workspace'/);
+    assert.match(panel, /bidCacheNoticedScriptApplies ?=== ?true\s*\?\s*NO_CORRECTED_CACHE_SCRIPT\s*:\s*'No available script version applies bid caching with your other saved options'/);
+    assert.match(panel, /Versions with a runtime notice in Script setup still apply bid caching with your other saved options\./);
+  }
 });
