@@ -40,10 +40,10 @@ export async function packageState(env,site,{testOnly=false}={}){
  const warnings=selected?refreshSummary(previewInput(selected.snapshot,selected.descriptor,'20000101_000000'),saved.units,selected.pin,saved.rules).warnings:[];
  if(setup.userSyncWarning)warnings.push(setup.userSyncWarning);
  // Generate checks the saved settings against the selected script (an adaptive auction timeout, bidder accounts,
- // bidder rules and the other reasons Script setup shows) before bid caching, so such a refusal stays as Generate shows
- // it. Otherwise the saved cache settings are checked against the script version the site selected: the Script setup
- // guidance for bidder accounts and bidder rules comes before the bid caching refusal, and only the bid caching
- // refusal sends the site to Demand.
+ // bidder rules and the other reasons Script setup shows) before bid caching, so a known refusal from that check stays
+ // as Generate shows it. Otherwise the saved cache settings are checked against the script version the site selected:
+ // the Script setup guidance for bidder accounts and bidder rules comes before the bid caching refusal, and only the
+ // bid caching refusal sends the site to Demand.
  const cacheDescriptor=selected?.descriptor??runtimeCatalog.find(r=>r.id===displayPin?.runtimeId&&r.version===displayPin?.runtimeVersion);
  let cacheBlocked=false;if(!refused)try{requireSupportedCacheGenerator(JSON.parse(saved.config.config_json),cacheDescriptor,saved.bidders??[]);}
  catch(e){let guidance=null;try{guidance=scriptGuidance(savedScriptNeeds(saved),cacheDescriptor);}catch{}error=guidance??e.message;cacheBlocked=!guidance;}
