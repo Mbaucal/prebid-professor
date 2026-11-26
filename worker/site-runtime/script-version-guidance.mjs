@@ -3,7 +3,7 @@
  * from the registered release capabilities and runtime notices, so a new release or notice changes the text without
  * an edit here and the text never grows with the number of releases. Only the wording is decided here: which settings
  * a script accepts stays with the existing guards, and generated packages are unchanged. */
-import {scriptVersionsWith,scriptVersionLabels,scriptVersionText,noScriptVersionText,noticedScriptVersionApplies,versionList as list,accountsNeeding,rulesNeeded,timeoutNeeded,neededCapabilities,CAPABILITY_NAMES as NAMES} from './script-versions.mjs';
+import {scriptVersionsWith,scriptVersionLabels,scriptVersionText,noScriptVersionText,noticedScriptVersionApplies,pinnedReleaseApplies,versionList as list,accountsNeeding,rulesNeeded,timeoutNeeded,neededCapabilities,CAPABILITY_NAMES as NAMES} from './script-versions.mjs';
 import {bidCacheActive} from './prebid-cache-settings.mjs';
 
 // The naming rule lives in script-versions.mjs, which the bid caching wording shares; these names stay exported here.
@@ -34,6 +34,12 @@ export function savedScriptVersionLabels(capability,snapshot){
  * applies them. */
 export function savedNoticedScriptApplies(capability,snapshot){
   return noticedScriptVersionApplies(savedCapabilities(capability,snapshot));
+}
+/** Whether the saved script applies the same options as savedScriptVersionLabels. With no version named, the panels
+ * then say that the selected script applies them instead of that none does. */
+export function savedSelectedScriptApplies(capability,snapshot){
+  let pin=null;try{pin=JSON.parse(snapshot.config.config_json)?.builtinRuntimeSelection?.runtime;}catch{}
+  return pinnedReleaseApplies(pin,savedCapabilities(capability,snapshot));
 }
 function savedCapabilities(capability,snapshot){
   let needs;

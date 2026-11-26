@@ -345,3 +345,58 @@ test('the Bidder rules and Bidders payloads name the versions for their option p
     assert.equal(bidders.accountNoticedScriptApplies,noticedApplies([...new Set(['bidder-accounts',...needs])]),label);
   }
 });
+
+test('the Bidders payload says whether the selected script applies bidder accounts with the saved options',async()=>{
+  const {listBidders}=await import('../../worker/bidders.ts');
+  const {pinnedReleaseApplies}=await import('../../worker/site-runtime/script-versions.mjs');
+  // Computed here from the registry: the release the saved pin names has bidder accounts and every other saved option.
+  const applies=(version,needs)=>!!version&&needs.every(capability=>runtimeReleaseHistory.find(r=>r.version===version).capabilities.includes(capability));
+  for(const [options,needs] of [
+    [{cache:true,alias:true,version:'3.24.0'},['bidder-accounts','bid-cache']],
+    [{cache:true,rules:true,alias:true,version:'3.26.0'},['bidder-accounts','bidder-rules','bid-cache']],
+    [{cache:true,rules:true,alias:true,timeout:true,version:'3.25.1'},['bidder-accounts','bidder-rules','bid-cache','adaptive-auction-timeout']],
+    [{cache:true,alias:true,version:'3.23.0'},['bidder-accounts','bid-cache']],
+    [{alias:true,version:'3.22.1'},['bidder-accounts']],
+    [{rules:true,alias:true,version:'3.22.1'},['bidder-accounts','bidder-rules']],
+    [{cache:true,alias:true,version:'3.22.1'},['bidder-accounts','bid-cache']],
+    [{alias:true,version:'3.21.2'},['bidder-accounts']],
+    [{cache:true,alias:true},['bidder-accounts','bid-cache']],
+  ]){
+    const f=savedSite(options),label=JSON.stringify(options);
+    const bidders=await (await listBidders(f.env,'audit-site')).json();
+    assert.equal(bidders.selectedScriptAppliesAccounts,applies(options.version,needs),label);
+    // A selected script with a runtime notice (3.24.0) applies them but is never named.
+    if(options.version==='3.24.0')assert.ok(bidders.selectedScriptAppliesAccounts&&!bidders.accountScriptVersions.some(version=>version.startsWith('3.24.0')),label);
+  }
+  // The pin must match the registry release by id, version and source checksum.
+  const r326=runtimeReleaseHistory.find(r=>r.version==='3.26.0'),pin=pinRuntime(runtimeCatalog.find(r=>r.version==='3.26.0'),{allowPreview:true});
+  assert.equal(pinnedReleaseApplies(pin,['bidder-accounts','bid-cache']),true);
+  for(const changed of [{...pin,runtimeSha256:'0'.repeat(64)},{...pin,runtimeId:'tessera-3.25.1'},{...pin,runtimeVersion:'3.25.1'},null,undefined])
+    assert.equal(pinnedReleaseApplies(changed,['bidder-accounts']),false,JSON.stringify(changed));
+  assert.equal(pinnedReleaseApplies(pin,[...r326.capabilities,'future']),false);
+});
+
+test('the account notes in Bidders tell unknown versions from none, and say when the selected script applies accounts',async()=>{
+  const panel=await source('src/components/BiddersPanel.tsx'),client=await source('src/api.ts');
+  // Unknown while loading, after a load failure or without a list: the neutral sentences, never "No available".
+  assert.match(panel,/useState<AccountScripts \| null>\(null\)/);
+  assert.match(panel,/setAccountScripts\(null\)/);
+  assert.doesNotMatch(client,/accountScriptVersions \?\? \[\]/);
+  assert.match(client,/Array\.isArray\(payload\.accountScriptVersions\)/);
+  assert.match(panel,/if \(!scripts\) return 'Aliases and account-specific SChain require a script version that applies bidder accounts with your other saved options\.';/);
+  assert.match(panel,/if \(!scripts\) return 'The new account alias is registered by a script version that applies bidder accounts\.';/);
+  // A named list is unchanged and comes first. With no name, a selected script that applies accounts with the other
+  // saved options is said to apply them, before any denial.
+  const form=panel.indexOf('function accountFormNote'),alias=panel.indexOf('function aliasNote');
+  assert.ok(form>0&&alias>0);
+  for(const [start,named,selected] of [[form,'Aliases and account-specific SChain require script','The selected script applies aliases and account-specific SChain with your other saved options. Save the account, then generate a new package.'],[alias,'The new account alias is registered by script','The new account alias is registered by the selected script.']]){
+    const body=panel.slice(start,panel.indexOf('\n}\n',start));
+    assert.ok(body.indexOf(named)>0&&body.indexOf(named)<body.indexOf('scripts.selectedApplies')&&body.indexOf('scripts.selectedApplies')<body.indexOf('scripts.noticedApplies'),body);
+    assert.ok(body.includes(`return '${selected}';`),selected);
+  }
+  // Known empty: whether a version with a runtime notice still applies them, never naming it.
+  assert.match(panel,/'No corrected script version is offered that applies aliases and account-specific SChain with your other saved options\. Versions with a runtime notice in Script setup still apply them\. You can save the account for a future package\.'/);
+  assert.match(panel,/'No available script version applies aliases and account-specific SChain with your other saved options\. You can save the account for a future package\.'/);
+  assert.match(panel,/'No corrected script version is offered that applies the new alias with your other saved options\. Versions with a runtime notice in Script setup still apply it\.'/);
+  assert.match(panel,/'No available script version applies the new alias with your other saved options\.'/);
+});

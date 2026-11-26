@@ -14,7 +14,7 @@ import { apiError, getActor, json, readJson } from './http';
 import type { DatabaseEnv } from './publishers';
 import { normalizeBidderAccount, normalizeBidderAccounts } from '../shared/bidder-accounts/settings.mjs';
 import { assertCompilerStrings } from './compiler-input-compatibility.mjs';
-import { savedNoticedScriptApplies, savedScriptVersionLabels } from './site-runtime/script-version-guidance.mjs';
+import { savedNoticedScriptApplies, savedScriptVersionLabels, savedSelectedScriptApplies } from './site-runtime/script-version-guidance.mjs';
 
 type BidderRow = {
   id: string;
@@ -274,6 +274,8 @@ export async function listBidders(env: DatabaseEnv, publisherId: string): Promis
   const accountScriptVersions = savedScriptVersionLabels('bidder-accounts', saved);
   // Whether a version with a runtime notice applies them: it is never named, but stays selectable in Script setup.
   const accountNoticedScriptApplies = savedNoticedScriptApplies('bidder-accounts', saved);
+  // Whether the saved script applies them, so the form says so instead of denying it when no version is named.
+  const selectedScriptAppliesAccounts = savedSelectedScriptApplies('bidder-accounts', saved);
 
   return json({
     ok: true,
@@ -282,6 +284,7 @@ export async function listBidders(env: DatabaseEnv, publisherId: string): Promis
     ),
     accountScriptVersions,
     accountNoticedScriptApplies,
+    selectedScriptAppliesAccounts,
   });
 }
 
