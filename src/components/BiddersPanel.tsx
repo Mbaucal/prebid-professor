@@ -623,7 +623,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
               </select><small>{bidderForm.schainMode === 'none' ? 'The wrapper adds no site or intermediary node for this account. The exchange may build its own downstream chain. Use this only when that is the actual selling path.' : bidderForm.schainMode === 'custom' ? 'This complete account-specific configuration replaces the site chain for this account. Use the verified seller IDs in payment order.' : 'This account receives the saved site chain.'}</small></label>
               {bidderForm.schainText.trim() !== emptyBidderForm.schainText.trim() ? <div className="form-options"><p>Custom values are kept when you choose another SChain mode. Invalid custom drafts must be corrected or discarded before saving.</p><button className="button secondary" type="button" disabled={submitting} onClick={() => setBidderForm(current => ({...current, schainText:emptyBidderForm.schainText}))}>Discard custom draft</button></div> : null}
               {bidderForm.schainMode === 'custom' ? <label><span>Custom SChain JSON</span><textarea className="json-textarea" aria-label="Custom SChain JSON" spellCheck={false} value={bidderForm.schainText} onChange={event => setBidderForm(current => ({...current, schainText:event.target.value}))}/><small>Version, completeness and ordered seller nodes. Include only the verified selling path for this account.</small></label> : null}
-              <p className="muted-copy">{accountScripts.length ? `Aliases and account-specific SChain require script ${versionChoice(accountScripts)}. Save the account, then explicitly select ${accountScripts.length > 1 ? 'one of these versions' : 'that version'} in Script setup and generate a new package.` : 'Aliases and account-specific SChain require a script version that applies bidder accounts with your other saved options.'} Existing scripts keep their saved settings.</p>
+              <p className="muted-copy">{accountScripts.length ? `Aliases and account-specific SChain require script ${versionChoice(accountScripts)}. Save the account, then explicitly select ${accountScripts.length > 1 ? 'one of these versions' : 'that version'} in Script setup and generate a new package.` : 'No available script version applies aliases and account-specific SChain with your other saved options. You can save the account for a future package.'} Existing scripts keep their saved settings.</p>
 
               {bidderMode !== 'duplicate' ? (
                 <label>
@@ -650,7 +650,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                     />
                     <span>Copy all slot, device and ad-unit overrides</span>
                   </label>
-                  <p>Base params and the selected SChain settings are copied. The base adapter must be present in the uploaded Prebid build; the new account alias is registered by {accountScripts.length ? `script ${versionChoice(accountScripts)}` : 'a script version that applies bidder accounts'}. Review partner IDs before enabling this account.</p>
+                  <p>Base params and the selected SChain settings are copied. The base adapter must be present in the uploaded Prebid build. {accountScripts.length ? `The new account alias is registered by script ${versionChoice(accountScripts)}.` : 'No available script version applies the new alias with your other saved options.'} Review partner IDs before enabling this account.</p>
                 </div>
               )}
 
