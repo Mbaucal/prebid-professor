@@ -25,7 +25,7 @@ export default function PositionBidCachePanel({publisherId,code,onClose,onSaved,
     const bidCache={...data.prebidMode.bidCache,positionOverrides:{...data.prebidMode.bidCache.positionOverrides}};
     if(choice==='inherit')delete bidCache.positionOverrides[code];else bidCache.positionOverrides[code]=choice==='on';
     const next=await fetchBidCacheSettings(publisherId,{revision:data.revision,enabled:data.prebidMode.enabled,bidCache});
-    accept(next);onSaved(next);setMessage(next.runtimeSupportsBidCache?'Saved. Generate a new package to apply this setting.':`Saved. Select a compatible script in Script setup to apply it.`);
+    accept(next);onSaved(next);setMessage(next.runtimeSupportsBidCache?'Saved. Generate a new package to apply this setting.':next.bidCacheScriptVersions?.length===0?'Saved. No corrected compatible bid-cache script is available in this workspace. Your setting is kept.':'Saved. Select a compatible script in Script setup to apply it.');
   }catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   const inherited=data?.prebidMode.bidCache.enabled??false;
   const effective=choice==='inherit'?inherited:choice==='on';
