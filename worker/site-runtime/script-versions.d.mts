@@ -11,6 +11,7 @@ export function scriptVersionText(capabilities: readonly string[], history?: rea
 export function noticedScriptVersionApplies(capabilities: readonly string[], history?: readonly Release[], notices?: readonly Notice[]): boolean;
 /** The sentences for capabilities that no named version applies, naming no version. */
 export function noScriptVersionText(capabilities: readonly string[], history?: readonly Release[], notices?: readonly Notice[]): string;
+export function pinnedReleaseApplies(pin: unknown, capabilities: readonly string[], history?: readonly (Release & { id: string })[]): boolean;
 export function accountsNeeding(config: Record<string, unknown>, snapshot: { bidders?: unknown[] }): string[];
 export function rulesNeeded(config: unknown): boolean;
 export function timeoutNeeded(config: unknown): boolean;

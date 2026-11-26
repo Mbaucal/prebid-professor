@@ -49,6 +49,12 @@ export function noScriptVersionText(capabilities,history,notices){
     ?`No corrected script version is offered that ${applies}. Versions with a runtime notice in Script setup still apply ${many?'them':'it'}.`
     :`No available script version ${applies}.`;
 }
+/** Whether the registry release a saved pin names (its id, version and source checksum) has every listed capability.
+ * False without a pin or without such a release. Wording only: the guards still decide what the script accepts. */
+export function pinnedReleaseApplies(pin,capabilities,history=runtimeReleaseHistory){
+  const release=history.find(release=>release.id===pin?.runtimeId&&release.version===pin?.runtimeVersion&&release.codeSha256===pin?.runtimeSha256);
+  return !!release&&covers(release,capabilities);
+}
 
 /** Active bidder accounts with an alias or their own SChain (requireBidderAccounts), by account code; none while
  * Prebid is off. Reads the bidder rows of a saved snapshot. */

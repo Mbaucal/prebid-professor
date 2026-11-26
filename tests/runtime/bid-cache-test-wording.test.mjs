@@ -115,3 +115,28 @@ test('the cache panels check the selected script before the empty list, and the 
  // A version with a runtime notice is never named; the panels only say that such versions still apply bid caching.
  for(const panel of [mode,position])assert.match(panel,/Versions with a runtime notice in Script setup still apply bid caching with your other saved options\./);
 });
+
+test('the account notes in Bidders tell unknown versions from none, and say when the selected script applies accounts',async()=>{
+ const panel=await source('src/components/BiddersPanel.tsx'),client=await source('src/api.ts');
+ // Unknown while loading, after a load failure or without a list: the neutral sentences, never "No available".
+ assert.match(panel,/useState<AccountScripts \| null>\(null\)/);
+ assert.match(panel,/setAccountScripts\(null\)/);
+ assert.doesNotMatch(client,/accountScriptVersions \?\? \[\]/);
+ assert.match(client,/Array\.isArray\(payload\.accountScriptVersions\)/);
+ assert.match(panel,/if \(!scripts\) return 'Aliases and account-specific SChain require a script version that applies bidder accounts with your other saved options\.';/);
+ assert.match(panel,/if \(!scripts\) return 'The new account alias is registered by a script version that applies bidder accounts\.';/);
+ // A named list is unchanged and comes first. With no name, a selected script that applies accounts with the other
+ // saved options (3.24.0 with saved bid caching on TEST) is said to apply them, before any denial.
+ const form=panel.indexOf('function accountFormNote'),alias=panel.indexOf('function aliasNote');
+ assert.ok(form>0&&alias>0);
+ for(const [start,named,selected] of [[form,'Aliases and account-specific SChain require script','The selected script applies aliases and account-specific SChain with your other saved options. Save the account, then generate a new package.'],[alias,'The new account alias is registered by script','The new account alias is registered by the selected script.']]){
+  const body=panel.slice(start,panel.indexOf('\n}\n',start));
+  assert.ok(body.indexOf(named)>0&&body.indexOf(named)<body.indexOf('scripts.selectedApplies')&&body.indexOf('scripts.selectedApplies')<body.indexOf('scripts.noticedApplies'),body);
+  assert.ok(body.includes(`return '${selected}';`),selected);
+ }
+ // Known empty: whether a version with a runtime notice still applies them, never naming it.
+ assert.match(panel,/'No corrected script version is offered that applies aliases and account-specific SChain with your other saved options\. Versions with a runtime notice in Script setup still apply them\. You can save the account for a future package\.'/);
+ assert.match(panel,/'No available script version applies aliases and account-specific SChain with your other saved options\. You can save the account for a future package\.'/);
+ assert.match(panel,/'No corrected script version is offered that applies the new alias with your other saved options\. Versions with a runtime notice in Script setup still apply it\.'/);
+ assert.match(panel,/'No available script version applies the new alias with your other saved options\.'/);
+});

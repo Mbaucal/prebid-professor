@@ -348,3 +348,26 @@ test('the Bidder rules and Bidders payloads name the versions for their option p
     }
   }
 });
+
+test('the Bidders payload says whether the selected script applies bidder accounts with the saved options',async()=>{
+  const {listBidders}=await import('../../worker/bidders.ts');
+  // Computed here from the registry: the release the saved pin names has bidder accounts and every other saved option.
+  const applies=(version,needs)=>!!version&&needs.every(capability=>runtimeReleaseHistory.find(r=>r.version===version).capabilities.includes(capability));
+  for(const [options,needs] of [
+    [{cache:true,alias:true,version:'3.24.0'},['bidder-accounts','bid-cache']],
+    [{cache:true,rules:true,alias:true,version:'3.24.0'},['bidder-accounts','bidder-rules','bid-cache']],
+    [{cache:true,alias:true,version:'3.23.0'},['bidder-accounts','bid-cache']],
+    [{alias:true,version:'3.22.1'},['bidder-accounts']],
+    [{rules:true,alias:true,version:'3.22.1'},['bidder-accounts','bidder-rules']],
+    [{cache:true,alias:true,version:'3.22.1'},['bidder-accounts','bid-cache']],
+    [{alias:true,version:'3.21.2'},['bidder-accounts']],
+    [{cache:true,alias:true},['bidder-accounts','bid-cache']],
+  ]){
+    const f=savedSite(options),label=JSON.stringify(options);
+    const bidders=await (await listBidders(f.env,'audit-site')).json();
+    assert.equal(bidders.selectedScriptAppliesAccounts,applies(options.version,needs),label);
+    // 3.24.0 with saved bid caching: no version is named, yet the selected script applies them, so the panel must not
+    // deny it.
+    if(options.version==='3.24.0')assert.deepEqual([bidders.accountScriptVersions,bidders.selectedScriptAppliesAccounts],[[],true],label);
+  }
+});
