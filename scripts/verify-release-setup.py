@@ -14,6 +14,9 @@ legacy='3.22.0 · No 3.21.1+ fixes'
 legacy_warning_start='3.22.0 adds bidder rules but is built on 3.21.0. It does not have the 3.21.1 and 3.21.2 fixes for page and category size maps when no key-value mapping sets a size map, contextual signals with existing Prebid RTD providers, and the TakeOver frequency cap and debug storage before CMP consent.'
 def legacy_warning(current):
     return legacy_warning_start+' 3.22.2 (Preview) has bidder rules with these fixes. '+current+' is the current version.'
+def cache_limit_warning(version,current):
+    return ('With bid caching enabled, '+version+' can stop reusing bids for the rest of a long page visit after its decision history fills or a bid expires during targeting. '
+            'Fresh auctions continue, but the intended cache benefit is reduced. 3.25.1 (Preview) has the cache history and expiry fixes. '+current+' is the current version.')
 def select_fits(select):
     # Closed-select text width against its content box minus the native arrow.
     # Measured in the rendered font, in the admin stack (src/styles.css) and in
@@ -62,27 +65,39 @@ def dashboard_fits(browser):
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
         page.screenshot(path=str(out/'runtime-322-dashboard-inline-mobile.png'),full_page=True)
         inline.screenshot(path=str(out/'runtime-322-dashboard-inline-select.png'))
-        # A saved Preview version that is also selected: the closed select shows "<version> · Preview"
-        # and fits, standalone and inside Releases. The open list keeps "Saved version" on it while
-        # another version is selected. 3.26.0 is the newest version the guidance names on main.
+        # A saved Preview version stays selectable and fits, standalone and inside Releases.
+        # The cache-limited 3.24.0/3.25.0 retain their notice suffix and name the available
+        # 3.25.1 correction. The open list keeps "Saved version" while another version is selected.
         labels=lambda select:select.locator('option').evaluate_all('(items)=>items.map(item=>({label:item.textContent.trim(),value:item.value}))')
-        for saved in ['3.26.0','3.24.0','3.22.2','3.22.1']:
-            label=saved+' · Preview'
+        for saved in ['3.26.0','3.25.1','3.25.0','3.24.0','3.22.2','3.22.1']:
+            limited=saved in ['3.24.0','3.25.0']
+            label=saved+' · Preview'+(' · Limited' if limited else '')
             page.get_by_role('button',name='Configuration',exact=True).click()
             version=panel.get_by_role('combobox',name='Script version',exact=True);version.wait_for()
             version.select_option(next(item['value'] for item in labels(version) if item['label'].startswith(label)))
+            notice=panel.get_by_role('note').filter(has_text='can stop reusing bids')
+            if limited:
+                assert any(item['label'].startswith('3.25.1 · Preview') for item in labels(version))
+                expect(notice).to_have_text(cache_limit_warning(saved,'3.21.2'))
+                expect(version).to_have_accessible_description('Script version '+saved+' · Preview · Unsaved version change '+notice.inner_text())
+            else:
+                expect(notice).to_have_count(0)
             panel.get_by_role('button',name='Save script setup',exact=True).click()
             panel.get_by_role('status').filter(has_text='Script setup saved').wait_for()
             fit=select_fits(version);fits.append({'viewport':390,'context':'Dashboard Script setup','state':'saved '+saved,**fit});assert fit['fits'],fit
             assert version.locator('option:checked').text_content().strip()==label,version.locator('option:checked').text_content()
             # The closed select leaves out the saved marker; screen readers still hear it with the select.
-            expect(version).to_have_accessible_description('Script version '+label+' · Saved version')
+            description='Script version '+saved+' · Preview · Saved version'+(' '+cache_limit_warning(saved,'3.21.2') if limited else '')
+            expect(version).to_have_accessible_description(description)
             page.get_by_role('button',name='Generate and releases',exact=True).click()
             releases.get_by_role('button',name='Change script setup',exact=True).click()
             inline=releases.get_by_role('combobox',name='Script version',exact=True);inline.wait_for()
             fit=select_fits(inline);fits.append({'viewport':390,'context':'Dashboard Releases inline setup','state':'saved '+saved,**fit});assert fit['fits'],fit
             assert inline.locator('option:checked').text_content().strip()==label,inline.locator('option:checked').text_content()
-            expect(inline).to_have_accessible_description('Script version '+label+' · Saved version')
+            expect(inline).to_have_accessible_description(description)
+            if limited:
+                expect(releases.get_by_role('note').filter(has_text='can stop reusing bids')).to_have_text(cache_limit_warning(saved,'3.21.2'))
+                page.screenshot(path=str(out/f'runtime-{saved.replace(".","")}-dashboard-inline-mobile.png'),full_page=True)
             inline.screenshot(path=str(out/f'runtime-{saved.replace(".","")}-dashboard-inline-select.png'))
             inline.select_option(next(item['value'] for item in labels(inline) if item['label']=='3.21.2 · Current version'))
             assert label+' · Saved version' in [item['label'] for item in labels(inline)],labels(inline)
@@ -143,7 +158,7 @@ try:
     version.select_option(by_label[earlier_cache])
     cache_notice=page.get_by_role('note').filter(has_text='3.23.0 adds bid caching')
     cache_notice.wait_for()
-    expect(cache_notice).to_contain_text('3.24.0 (Preview) has bid caching, bidder accounts and rules with these safeguards.')
+    expect(cache_notice).to_contain_text('3.25.1 (Preview) has bid caching, bidder accounts and rules with these safeguards and the cache history and expiry fixes.')
     # The select is described by the line under it (whether the version is saved), then by the notice.
     expect(version).to_have_accessible_description('Script version 3.23.0 · Unsaved version change '+cache_notice.inner_text())
     cache_fit=select_fits(version);fits.append({'viewport':390,'context':'Script setup','state':'earlier-cache',**cache_fit});assert cache_fit['fits'],cache_fit
