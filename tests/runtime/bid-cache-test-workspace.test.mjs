@@ -240,6 +240,11 @@ test('the TEST Bidder rules view and Prebid editor name the versions for their o
  assert.deepEqual(prebid.accountScriptVersions,scriptVersionLabels(['bidder-accounts','bid-cache']));
  // 3.24.0 still applies them with its runtime notice, so the views do not say that no version applies them.
  assert.equal(rules.noticedScriptApplies,true);assert.equal(prebid.accountNoticedScriptApplies,true);
+ // The Prebid editor also says whether the selected script applies them: 3.23.0 has no bidder accounts, 3.24.0 does.
+ assert.equal(prebid.selectedScriptAppliesAccounts,false);
+ await select(f,'3.24.0',true);
+ const selected=(await f.req('/test-api/prebid-settings')).data;
+ assert.deepEqual([selected.accountScriptVersions,selected.accountNoticedScriptApplies,selected.selectedScriptAppliesAccounts],[[],true,true]);
  assert.notDeepEqual(scriptVersionLabels(['bidder-rules']),scriptVersionLabels(['bidder-rules','bid-cache']),'saved bid caching narrows the versions');
 });
 

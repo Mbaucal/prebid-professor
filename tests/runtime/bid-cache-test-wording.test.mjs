@@ -48,6 +48,24 @@ test('the TEST Prebid editor names the account script versions from the server, 
  assert.match(prebidScript,/state\.accountScriptVersions/);
 });
 
+test('the TEST Prebid editor account note follows the payload: named, selected, noticed, none or unknown',async()=>{
+ const {prebidScript}=await import('../../worker/test-workspace/prebid-page.mjs');
+ const start=prebidScript.indexOf('function accountNote('),end=prebidScript.indexOf('\n',start);
+ assert.ok(start>=0,'accountNote is defined');
+ const accountNote=new Function(`${prebidScript.slice(start,end)};return accountNote;`)();
+ const tail=' Saving preparation does not switch the script version.';
+ const cases=[
+  [{accountScriptVersions:['3.22.2 (Preview)'],accountNoticedScriptApplies:false,selectedScriptAppliesAccounts:true},'Account aliases and custom or no-upstream SChain require script 3.22.2 (Preview).'],
+  [{accountScriptVersions:[],accountNoticedScriptApplies:true,selectedScriptAppliesAccounts:true},'The selected script applies account aliases and custom or no-upstream SChain with your other saved options.'],
+  [{accountScriptVersions:[],accountNoticedScriptApplies:true,selectedScriptAppliesAccounts:false},'No corrected script version is offered that applies account aliases and custom or no-upstream SChain with your other saved options. Versions with a runtime notice in Script setup still apply them.'],
+  [{accountScriptVersions:[],accountNoticedScriptApplies:false,selectedScriptAppliesAccounts:false},'No available script version applies account aliases and custom or no-upstream SChain with your other saved options.'],
+  // Unknown: no list in the payload. The note names no version and denies none.
+  [{},'Account aliases and custom or no-upstream SChain require a script version that applies bidder accounts with your other saved options.'],
+ ];
+ for(const [state,expected] of cases)assert.equal(accountNote(state),expected+tail,JSON.stringify(state));
+ assert.match(prebidScript,/el\('account-scripts'\)\.textContent=accountNote\(state\)/);
+});
+
 test('the TEST bid caching messages name the scripts the panels name, from the registry',()=>{
  // The panels and the shared Generate refusal name the versions for the site's saved options, at most two, read from
  // the registry; the TEST messages for bid caching with bidder rules name the versions the panels name for that site.
