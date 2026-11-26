@@ -67,6 +67,7 @@ try:
      button('Review GAM CSV').click()
     # Lazy list load, a visible failure and recovery all use the actual MAIN endpoint.
     mode['hold']=('GET',BASE);article.get_by_text('Measurement and GAM report',exact=True).click()
+    article.get_by_role('button',name='Daily summary',exact=True).click()
     expect(measurement().get_by_text('Loading reporting plans…',exact=True)).to_be_visible();shot('loading')
     pending,_=take_held();pending.fulfill(status=503,content_type='application/json',body=json.dumps({'error':'Synthetic plan list unavailable'}))
     expect(measurement().get_by_role('alert')).to_contain_text('Synthetic plan list unavailable');shot('list-error')
@@ -150,6 +151,7 @@ try:
     page.get_by_role('button',name='Beta site',exact=True).click()
     beta_article=page.get_by_role('article',name='A/B test: '+beta['name'],exact=True);expect(beta_article).to_be_visible()
     beta_article.get_by_text('Measurement and GAM report',exact=True).click()
+    beta_article.get_by_role('button',name='Daily summary',exact=True).click()
     beta_panel=beta_article.get_by_role('region',name='Measurement and GAM report',exact=True)
     expect(beta_panel.get_by_label('Inventory path',exact=True)).to_have_value('/999/beta-site/')
     fulfill(pending,snapshot);page.wait_for_timeout(50)

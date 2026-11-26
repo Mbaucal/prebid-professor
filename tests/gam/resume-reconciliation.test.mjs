@@ -218,7 +218,7 @@ test("an existing ad setup receives only missing reporting metadata, then repeat
   const reviewed = await finishReview(f, await preview(f));
   assert.equal(reviewed.canStart, true);
   assert.equal(reviewed.counts.key.existing, 1);
-  assert.equal(reviewed.counts.key.new, 13);
+  assert.equal(reviewed.counts.key.new, 14);
   assert.equal(reviewed.counts.value.existing, 3);
   assert.equal(reviewed.counts.value.new, 283);
   assert.equal(reviewed.counts.lineItem.existing, 3);
@@ -229,7 +229,7 @@ test("an existing ad setup receives only missing reporting metadata, then repeat
   const done = await finish(f, await start(f, reviewed));
   assert.equal(done.counts.association.existing, 6);
   assert(f.calls.every((call) => ["key", "value"].includes(call.kind)));
-  assert.equal(f.calls.filter((call) => call.kind === "key").flatMap((call) => call.payloads).length, 13);
+  assert.equal(f.calls.filter((call) => call.kind === "key").flatMap((call) => call.payloads).length, 14);
   assert.equal(f.calls.filter((call) => call.kind === "value").flatMap((call) => call.payloads).length, 283);
   assert.deepEqual(Object.fromEntries(adKinds.map((kind) => [kind, f.db[kind]])), existingAds,
     "all pre-existing ad IDs, targeting and metadata must remain byte-for-byte unchanged");

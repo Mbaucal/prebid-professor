@@ -147,14 +147,14 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
   const available=(id:string)=>Boolean(data?.versions.some(version=>version.id===id&&version.state!=='unavailable'));
   const canSave=Boolean(checked?.compatible&&available(a)&&available(b)&&name.trim()&&TEST_ID.test(testId)&&trafficValue!==null);
   async function check(){
-    const response=await request('/check',{method:'POST',body:{a,b}});
+    const response=await request('/check',{method:'POST',body:{a,b,...(!testOnly?{reportingKey:'VersionId'}:{})}});
     if(!response.ok)throw await failure(response,'Could not check these versions.');
     setResult({pair,check:await response.json() as CheckResult});
   }
   async function create(){
     // An uncertain response may follow a committed save. Keep this exact TestId for an idempotent retry.
     setTestIdEdited(true);
-    const response=await request('',{method:'POST',body:{name:name.trim(),testId,a,b,trafficBPercent:trafficValue}});
+    const response=await request('',{method:'POST',body:{name:name.trim(),testId,a,b,trafficBPercent:trafficValue,...(!testOnly?{reportingKey:'VersionId'}:{})}});
     // Reload saved state after a refusal while preserving every submitted value.
     if(!response.ok){const problem=await failure(response,'Could not save the A/B test.');await load().catch(()=>{});throw problem;}
     const saved=await response.json() as {created:boolean;deletedAt?:string|null;record:{name:string;id?:string}};
@@ -197,7 +197,7 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
   async function trash(test:Summary,remove:boolean){
     // Delete only hides the test here; a test marked live keeps running on the site until it is stopped there.
     const detail=details[test.id],live=detail&&'events' in detail&&detail.events.at(-1)?.type==='marked-live';
-    if(remove&&!window.confirm(`Delete A/B test "${test.name}"? It moves to Deleted A/B tests. Its files and TestId ${test.testId} are kept, so you can restore it.`
+    if(remove&&!window.confirm(`Delete A/B test "${test.name}"? It moves to Deleted A/B tests. Its files and Version ID ${test.testId} are kept, so you can restore it.`
       +(live?' This test is marked live. Deleting it does not stop it on your site.':'')))return;
     const response=await request('/'+test.id,{method:remove?'DELETE':'PUT',body:{confirmId:test.id,sha256:test.zipSha256}});
     if(!response.ok)throw await failure(response,remove?'Could not delete the A/B test.':'Could not restore the A/B test.');
@@ -226,10 +226,10 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
       <div className="ab-tests-fields">
         <div className="ab-tests-field"><label htmlFor="ab-test-name">Test name</label>
           <input id="ab-test-name" required maxLength={data.limits.name} value={name} disabled={busy} onChange={e=>setName(e.target.value)} placeholder="For example: Bid cache on"/></div>
-        <div className="ab-tests-field"><label htmlFor="ab-test-id">TestId</label>
+        <div className="ab-tests-field"><label htmlFor="ab-test-id">Version ID</label>
           <input id="ab-test-id" required maxLength={24} pattern="[a-z0-9_]{1,24}" value={testId} disabled={busy} aria-describedby="ab-test-id-help"
             onChange={e=>{setTestId(e.target.value);setTestIdEdited(true);}}/>
-          <p id="ab-test-id-help" className="ab-tests-help">Tessera suggests this ID automatically. It identifies this test in GAM alongside Variant A or B. Each TestId is used once on this site and stays reserved. Use lowercase letters, digits and _.</p></div>
+          <p id="ab-test-id-help" className="ab-tests-help">Tessera suggests this package ID automatically. It identifies the package alongside Variant A or B and stays reserved on this site. {testOnly?'Packages in this TEST workspace use the GAM key TestId.':'New packages use the GAM key VersionId; earlier packages keep TestId.'} Use lowercase letters, digits and _.</p></div>
         <div className="ab-tests-field"><label htmlFor="ab-version-a">Version A</label>
           <select id="ab-version-a" value={a} disabled={busy||!availableVersions.length} aria-describedby={data.current&&a===data.current?'ab-version-a-current':undefined} onChange={e=>setA(e.target.value)}>{options(a)}</select>
           {data.current&&a===data.current?<p id="ab-version-a-current" className="ab-tests-help">Current Tessera production version</p>:null}{workspace?sourceDescription(a):null}</div>
@@ -241,7 +241,7 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
           <p id="ab-traffic-split" className="ab-tests-help">{trafficValue===null?'Use a whole number from 0 to 100.':`A: ${100-trafficValue}% · B: ${trafficValue}%`}</p></div>
       </div>
       {a&&a===b?<p className="ab-tests-note">A/A check: both groups get the same version.</p>:null}
-      <p className="ab-tests-help">The test name, the TestId and both version names are published inside /ads.js. Do not use private notes.</p>
+      <p className="ab-tests-help">The test name, the Version ID and both script version names are published inside /ads.js. Do not use private notes.</p>
       <div className="runtime-actions">
         <button type="button" disabled={busy||!available(a)||!available(b)} onClick={()=>void run('form',check,'Checking compatibility…')}>Check compatibility</button>
         <button type="submit" disabled={busy||!canSave}>Save A/B test</button>
@@ -251,7 +251,7 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
         <p className={checked.compatible?'ab-tests-status':'ab-tests-status ab-tests-refused'} role="status" tabIndex={-1} data-focus-at="form">
           {checked.compatible?'Compatible. These versions can be compared.':`Not compatible: ${checked.refusal?.message??'These versions cannot be compared.'}`}</p>
         {checked.compatible&&!canSave?<p className="ab-tests-help">{!name.trim()?'Enter a test name to save.'
-          :!TEST_ID.test(testId)?'Use 1 to 24 lowercase letters, digits or _ in the TestId to save.':'Use a whole number from 0 to 100 for traffic to save.'}</p>:null}
+          :!TEST_ID.test(testId)?'Use 1 to 24 lowercase letters, digits or _ in the Version ID to save.':'Use a whole number from 0 to 100 for traffic to save.'}</p>:null}
         {checked.warnings.length?<ul className="ab-tests-warnings">{checked.warnings.map(w=><li key={w.code}>{w.message}</li>)}</ul>:null}
         {checked.configDiff?<><h4>Summary of differences</h4>{checked.configDiff.length?<>
           <div className="ab-tests-diff"><table><thead><tr><th scope="col">Setting</th><th scope="col">A</th><th scope="col">B</th></tr></thead>
@@ -278,11 +278,12 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
     <p className="ab-tests-help">{STOP_TEST}</p>
     </>}
     {noticeAt('list')}
-    {!data.tests.length?<p>{workspace?'No TestId A/B tests saved yet. Earlier packages are listed below.':'No A/B tests saved yet.'}</p>:data.tests.map(test=>{
+    {!data.tests.length?<p>{workspace?'No A/B packages saved yet. Earlier packages are listed below.':'No A/B tests saved yet.'}</p>:data.tests.map(test=>{
       const detail=details[test.id],loaded=detail&&'record' in detail?detail:null,last=loaded?.events.at(-1);
+      const identityKey=loaded?(loaded.record.loader?.version==='1.2.0'?'VersionId':'TestId'):undefined;
       return <article key={test.id} className="ab-tests-item" aria-label={`A/B test: ${test.name}`}>
         <h4 className="ab-tests-name">{test.name}</h4>
-        <p>TestId <code>{test.testId}</code> · B {test.trafficBPercent}% · saved {when(test.createdAt)} by <span className="ab-tests-name">{test.createdBy}</span></p>
+        <p>Version ID <code>{test.testId}</code> · B {test.trafficBPercent}% · saved {when(test.createdAt)} by <span className="ab-tests-name">{test.createdBy}</span>{identityKey?<> · GAM key <code>{identityKey}</code></>:null}</p>
         <dl className="ab-tests-arms">{armLine('A',test.arms.A)}{armLine('B',test.arms.B)}</dl>
         {workspace&&loaded?.record.loader?<p>Saved loader <strong>{loaded.record.loader.version}</strong></p>:null}
         {detail&&'error' in detail?<p role="alert" className="runtime-error">{detail.error} <button disabled={busy} onClick={()=>void loadDetail(test.id)}>Retry</button></p>:null}
@@ -299,7 +300,7 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
           {event.type==='marked-live'?'Marked live':'Marked stopped'} {when(event.at)} by <span className="ab-tests-name">{event.by}</span></li>)}</ul>:null}
         <details><summary>GAM setup checklist</summary><ol>
           <li>Key <code>Variant</code> with the values <code>A</code> and <code>B</code>.</li>
-          <li>Key <code>TestId</code> with the value <code>{test.testId}</code>.</li>
+          <li>{identityKey?<>Key <code>{identityKey}</code> with the Version ID value <code>{test.testId}</code>.</>:'Reading the saved package’s GAM identity key…'}</li>
           <li>Turn on reporting for both keys.</li>
           <li>GAM does not report traffic from before this setup.</li>
         </ol></details>
@@ -310,14 +311,16 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
           <div><dt>Version B</dt><dd className="ab-tests-name">{loaded.record.arms.B.name}</dd></div>
           <div><dt>Files</dt><dd><ul>{loaded.record.bundle.files.map(file=><li key={file.path}><code>{file.path}</code> · {file.bytes} bytes</li>)}</ul></dd></div>
         </dl>:<p>Reading test details…</p>}</details>
-        {workspace?<><button type="button" disabled={busy} onClick={()=>setMeasurement(current=>current===test.id?'':test.id)}>{measurement===test.id?'Close GAM report':'Review GAM report'}</button>{measurement===test.id?<AbMeasurementPanel key={test.id} endpoint={`${endpoint}/${test.id}/measurement/plans`} experimentId={test.id} testId={test.testId} disabled={busy} expanded/>:null}</>:onOpenMeasurement?<button type="button" disabled={busy} onClick={()=>onOpenMeasurement(test.id)}>Open measurement</button>
-          :<AbMeasurementPanel endpoint={`${endpoint}/${test.id}/measurement/plans`} experimentId={test.id} testId={test.testId} disabled={busy}/>}
+        {workspace?<><button type="button" disabled={busy||!loaded} onClick={()=>setMeasurement(current=>current===test.id?'':test.id)}>{measurement===test.id?'Close GAM report':'Review GAM report'}</button>{measurement===test.id&&identityKey?<AbMeasurementPanel key={test.id} endpoint={`${endpoint}/${test.id}/measurement/plans`} experimentId={test.id} testId={test.testId} identityKey={identityKey} disabled={busy} expanded/>:null}</>:onOpenMeasurement?<button type="button" disabled={busy} onClick={()=>onOpenMeasurement(test.id)}>Open measurement</button>
+          :identityKey?<AbMeasurementPanel endpoint={`${endpoint}/${test.id}/measurement/plans`} experimentId={test.id} testId={test.testId} identityKey={identityKey} disabled={busy}/>:null}
       </article>;
     })}
   </>:null;
   return <section id="ab-tests" ref={section} className="site-runtime-panel ab-tests-panel" aria-labelledby="ab-tests-title" data-ab-busy={busy?true:undefined}>
-    <h2 id="ab-tests-title">A/B tests</h2>
-    {workspace?<a className="button" href={availableVersions.length<2?'#ab-source-versions':'#ab-tests-new'}>Create A/B test</a>:null}
+    {workspace?<header className="ab-tests-heading">
+      <h2 id="ab-tests-title">A/B tests</h2>
+      <a className="button secondary ab-tests-create" href={availableVersions.length<2?'#ab-source-versions':'#ab-tests-new'}>Create A/B test</a>
+    </header>:<h2 id="ab-tests-title">A/B tests</h2>}
     <p>Compare two saved versions on your site. Each page view gets version A or version B. A saved test never changes.</p>
     {workspace?<>{savedTests}{history}<AbSourceVersionsPanel publisherId={publisherId} siteName={siteName??publisherId} availableVersions={data?availableVersions.length:null} disabled={busy} onSaved={sourceSaved} onReload={load}/></>:null}
     {loadError?<p role="alert" className="runtime-error">{loadError} <button onClick={()=>setAttempt(n=>n+1)}>Reload A/B tests</button></p>
@@ -327,10 +330,10 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
     {!workspace?savedTests:null}
 
     {data.deleted.length?<details className="ab-tests-deleted"><summary>Deleted A/B tests</summary>
-      <p className="ab-tests-help">Deleted tests keep their files and their TestId. Restore a test to download or mark it again.</p>
+      <p className="ab-tests-help">Deleted tests keep their files and their Version ID. Restore a test to download or mark it again.</p>
       {data.deleted.map(test=><article key={test.id} className="ab-tests-item" aria-label={`Deleted A/B test: ${test.name}`}>
         <h4 className="ab-tests-name">{test.name}</h4>
-        <p>TestId <code>{test.testId}</code> · deleted {test.deletedAt?when(test.deletedAt):''}</p>
+        <p>Version ID <code>{test.testId}</code> · deleted {test.deletedAt?when(test.deletedAt):''}</p>
         <div className="runtime-actions"><button disabled={busy} onClick={()=>void run(test.id,()=>trash(test,false),'Restoring A/B test…')}>Restore</button></div>{noticeAt(test.id)}
       </article>)}
     </details>:null}

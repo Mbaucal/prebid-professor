@@ -75,7 +75,7 @@ try:
       field('Version A').scroll_into_view_if_needed()
      page.screenshot(path=str(OUT/f'{name}-{width}.png'))
     def create(name,test_id):
-     field('Test name').fill(name);field('TestId').fill(test_id)
+     field('Test name').fill(name);field('Version ID').fill(test_id)
      field('Version B').select_option(fixture['versions']['alpha-site'][1])
      button('Check compatibility').click();expect(panel.get_by_role('status').filter(has_text='Compatible. These versions can be compared.')).to_be_visible()
      button('Save A/B test').click();expect(article(name)).to_be_visible()
@@ -90,14 +90,14 @@ try:
     expect(panel).to_contain_text('Current Tessera production version');check(f'{width}: production control selected',field('Version A').input_value()==fixture['versions']['alpha-site'][0])
     shot('production-control')
     # Preserve an untouched proposed TestId when the backend commits but its reply is lost.
-    expect(field('TestId')).to_have_value(re.compile(r'^[a-z0-9_]+$'))
-    proposed=field('TestId').input_value();uncertain_name=f'Uncertain comparison {width}'
+    expect(field('Version ID')).to_have_value(re.compile(r'^[a-z0-9_]+$'))
+    proposed=field('Version ID').input_value();uncertain_name=f'Uncertain comparison {width}'
     _,before_uncertain=api(ALPHA);before_count=len(before_uncertain['tests'])
     field('Test name').fill(uncertain_name);field('Version B').select_option(fixture['versions']['alpha-site'][1]);field('Traffic to B (%)').fill('37')
     button('Check compatibility').click();expect(panel.get_by_role('status').filter(has_text='Compatible. These versions can be compared.')).to_be_visible()
     mode['commitFault']=True;button('Save A/B test').click();expect(panel.get_by_role('alert')).to_contain_text('Synthetic response lost after commit')
     shot('uncertain-save-error')
-    expect(field('TestId')).to_have_value(proposed);expect(field('Test name')).to_have_value(uncertain_name)
+    expect(field('Version ID')).to_have_value(proposed);expect(field('Test name')).to_have_value(uncertain_name)
     expect(field('Version A')).to_have_value(fixture['versions']['alpha-site'][0]);expect(field('Version B')).to_have_value(fixture['versions']['alpha-site'][1]);expect(field('Traffic to B (%)')).to_have_value('37')
     _,after_commit=api(ALPHA);assert len(after_commit['tests'])==before_count+1
     committed=next(row for row in after_commit['tests'] if row['testId']==proposed)
@@ -106,13 +106,13 @@ try:
     assert next(row for row in after_retry['tests'] if row['testId']==proposed)['id']==committed['id']
     check(f'{width}: uncertain committed save retries untouched TestId without duplicate experiment',True)
     name=f'MAIN comparison {width}';test_id=f'main_{width}'
-    field('Test name').fill(name);field('TestId').fill(test_id);field('Version B').select_option(fixture['versions']['alpha-site'][1])
+    field('Test name').fill(name);field('Version ID').fill(test_id);field('Version B').select_option(fixture['versions']['alpha-site'][1])
     mode['holdAction']=('POST',ALPHA+'/check');button('Check compatibility').click()
     expect(panel.get_by_text('Checking compatibility…',exact=True)).to_be_visible();expect(button('Check compatibility')).to_be_disabled()
     pending,snapshot=take_held();fulfill(pending,snapshot)
     expect(panel.get_by_role('status').filter(has_text='Compatible. These versions can be compared.')).to_be_visible();check(f'{width}: check progress blocks duplicate action',True)
     mode['failSave']=True;button('Save A/B test').click();expect(panel.get_by_role('alert')).to_contain_text('Synthetic save unavailable')
-    expect(field('Test name')).to_have_value(name);expect(field('TestId')).to_have_value(test_id);shot('save-error')
+    expect(field('Test name')).to_have_value(name);expect(field('Version ID')).to_have_value(test_id);shot('save-error')
     mode['holdAction']=('POST',ALPHA);button('Save A/B test').click()
     expect(panel.get_by_text('Saving A/B test…',exact=True)).to_be_visible();expect(button('Save A/B test')).to_be_disabled()
     pending,snapshot=take_held();created=json.loads(base64.b64decode(snapshot['body']));mode['failDetail']=ALPHA+'/'+created['record']['id'];fulfill(pending,snapshot)

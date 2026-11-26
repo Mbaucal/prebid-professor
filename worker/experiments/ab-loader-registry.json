@@ -18,5 +18,9 @@
   "1.1.1": {
     "sha256": "81a1e8eee06a26a97eb65c7c0199e21508b6721bac3d3adecddd49ff3e7dd113",
     "created": "2026-11-23"
+  },
+  "1.2.0": {
+    "sha256": "b9d4fa8a5850c82a740eb7f4ad98bee267749bed81a68b93aca62de2cbcc372d",
+    "created": "2026-11-25"
   }
 }

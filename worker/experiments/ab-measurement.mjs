@@ -16,7 +16,8 @@ export function validateAbMemoryMeasurement(plan,value){
   assertReportPlan(plan);
   check(exact(value,TOP.split(','))&&(value.schemaVersion===1||value.schemaVersion===2)&&value.kind===AB_MEASUREMENT_KIND,'Use a complete memory measurement export.');
   const modern=value.schemaVersion===2;
-  check(modern?value.loader?.version==='1.1.1':value.loader?.version!=='1.1.1','Memory schema does not match the saved loader version.');
+  const modernLoader=['1.1.1','1.2.0'].includes(value.loader?.version);
+  check(modern?modernLoader:!modernLoader,'Memory schema does not match the saved loader version.');
   check(value.site===plan.site&&value.experimentId===plan.experimentId&&value.testId===plan.testId&&value.trafficBPercent===plan.trafficBPercent&&canonical(value.loader)===canonical(plan.loader),'Measurement belongs to another saved experiment.');
   const pins=Object.fromEntries(['A','B'].map(key=>[key,{release:plan.arms[key].release,scriptSha256:plan.arms[key].scriptSha256}]));
   check(canonical(value.arms)===canonical(pins),'Measurement script pins differ from the reporting plan.');
