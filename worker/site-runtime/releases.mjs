@@ -7,6 +7,7 @@ import { takeOverForBuild } from '../test-workspace/takeover-settings.mjs';
 import { zipSync } from 'fflate';
 import {requireSupportedCacheGenerator} from './prebid-cache-settings.mjs';
 import {savedScriptNeeds,scriptGuidance} from './script-version-guidance.mjs';
+import { knownConfigurationError } from '../runtime/configuration-error.mjs';
 import { siteSetupState } from './setup-state.mjs';
 import { artifactResponseHeaders } from '../artifact-response-headers.ts';
 import { refreshSummary } from './refresh-summary.mjs';
@@ -23,8 +24,9 @@ const type=name=>name.endsWith('.js')?'application/javascript':name.endsWith('.j
 const zip=files=>zipSync(Object.fromEntries(Object.entries(files).map(([n,b])=>[n,[b,{level:0,mtime:new Date(1980,0,1)}]])),{level:0});
 const payload=row=>({id:row.id,version:row.version,status:row.status,notes:row.notes,createdAt:row.created_at,publishedAt:row.published_at});
 export async function packageState(env,site,{testOnly=false}={}){
- const saved=await snapshot(env,site),revision=await digest(saved);let error=null,selected=null;
- try{selected=await readPinnedSiteRuntime({siteId:site,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);}catch(e){error=e.message;}
+ const saved=await snapshot(env,site),revision=await digest(saved);let error=null,selected=null,refused=false;
+ try{selected=await readPinnedSiteRuntime({siteId:site,snapshot:saved,catalog:runtimeCatalog},env.BUILDS);}
+ catch(e){error=e.message;refused=e?.code==='unsupported_configuration'&&knownConfigurationError(e);}
  // A configuration error does not erase a valid saved script choice. Display
  // only a catalog-verified pin; readiness still requires the complete check.
  let displayPin=selected?.pin??null;
@@ -37,11 +39,13 @@ export async function packageState(env,site,{testOnly=false}={}){
  const setup=siteSetupState(saved);if(error&&setup.setupMessage)error=setup.setupMessage;
  const warnings=selected?refreshSummary(previewInput(selected.snapshot,selected.descriptor,'20000101_000000'),saved.units,selected.pin,saved.rules).warnings:[];
  if(setup.userSyncWarning)warnings.push(setup.userSyncWarning);
- // The saved cache settings are checked against the script version the site selected. Generate checks the Script
- // setup guidance for bidder accounts and bidder rules first, so it is shown first here too; only the bid caching
+ // Generate checks the saved settings against the selected script (an adaptive auction timeout, bidder accounts,
+ // bidder rules and the other reasons Script setup shows) before bid caching, so such a refusal stays as Generate shows
+ // it. Otherwise the saved cache settings are checked against the script version the site selected: the Script setup
+ // guidance for bidder accounts and bidder rules comes before the bid caching refusal, and only the bid caching
  // refusal sends the site to Demand.
  const cacheDescriptor=selected?.descriptor??runtimeCatalog.find(r=>r.id===displayPin?.runtimeId&&r.version===displayPin?.runtimeVersion);
- let cacheBlocked=false;try{requireSupportedCacheGenerator(JSON.parse(saved.config.config_json),cacheDescriptor,saved.bidders??[]);}
+ let cacheBlocked=false;if(!refused)try{requireSupportedCacheGenerator(JSON.parse(saved.config.config_json),cacheDescriptor,saved.bidders??[]);}
  catch(e){let guidance=null;try{guidance=scriptGuidance(savedScriptNeeds(saved),cacheDescriptor);}catch{}error=guidance??e.message;cacheBlocked=!guidance;}
  const rows=await db(env).prepare("SELECT * FROM releases WHERE publisher_id=? AND version LIKE ? ORDER BY created_at DESC,id DESC LIMIT 50").bind(site,testOnly?'builtin-draft-%':'builtin-release-%').all();
  // Keep prior production packages reachable after selecting a built-in runtime.

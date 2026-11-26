@@ -225,6 +225,35 @@ test('Script setup on 3.21.2 with bid caching does not offer turning bidder rule
   assert.ok(bidCacheGeneratorMessage(f.readConfig(),[]).includes(`Select ${choice(expectedVersions(['bid-cache']))} in Script setup and save;`));
 });
 
+test('with bid caching saved, Releases show the refusal Script setup and Generate show first',async()=>{
+  // Generate refuses an adaptive timeout before bidder accounts and bidder rules, and both before bid caching.
+  const f=savedSite({rules:true,cache:true,timeout:true,version:'3.21.2'});
+  const state=await siteRuntimeSettings(f.env,'audit-site');
+  assert.match(state.validationIssue,/^Adaptive auction timeout requires script /);
+  const packages=await packageState(f.env,'audit-site');
+  assert.equal(packages.error,state.validationIssue);assert.notEqual(packages.nextStep,'demand');
+  await assert.rejects(generatePackage(f.env,'audit-site','admin@example.invalid',{notes:'',revision:packages.revision}),error=>error.message===state.validationIssue);
+  // The same for every selectable script and saved option: a refusal Script setup shows is the one Releases show.
+  for(const release of selectable.filter(r=>r.capabilities.includes('config-preview'))){
+    for(const options of [{rules:true},{alias:true},{timeout:true},{rules:true,timeout:true},{alias:true,timeout:true},{rules:true,alias:true,timeout:true}]){
+      const g=savedSite({...options,cache:true,version:release.version}),label=JSON.stringify({...options,version:release.version});
+      const issue=(await siteRuntimeSettings(g.env,'audit-site')).validationIssue;
+      if(!issue)continue;
+      const shown=await packageState(g.env,'audit-site');
+      assert.equal(shown.error,issue,label);assert.notEqual(shown.nextStep,'demand',label);
+      await assert.rejects(generatePackage(g.env,'audit-site','admin@example.invalid',{notes:'',revision:shown.revision}),error=>error.message===issue,label);
+      fixtures.splice(fixtures.indexOf(g),1);g.close();
+    }
+  }
+  // Generate words an unknown reason with the generic text, so Releases keep the bid caching refusal for it.
+  const unknown=savedSite({cache:true,version:'3.21.2'}),config=unknown.readConfig();
+  config.runtimeControls.adPositions={Missing:{}};unknown.writeConfig(config);
+  const revision=(await packageState(unknown.env,'audit-site')).revision;
+  await assert.rejects(generatePackage(unknown.env,'audit-site','admin@example.invalid',{notes:'',revision}),error=>error.message===configurationErrorMessage(Error('unknown')));
+  const kept=await packageState(unknown.env,'audit-site');
+  assert.equal(kept.error,bidCacheGeneratorMessage(unknown.readConfig(),[]));assert.equal(kept.nextStep,'demand');
+});
+
 test('versions come from release capabilities: the smallest step and the newest, notices, ties, one release and none',async()=>{
   const {scriptVersionsWith,scriptVersionLabels,scriptVersionText,scriptGuidance}=await import('../../worker/site-runtime/script-version-guidance.mjs');
   // Every named release is bundled in the catalog with the same source, so it can be selected.
