@@ -11,6 +11,8 @@ import {TEST_BID_CACHE_GENERATOR_MESSAGE,TEST_BID_CACHE_BIDDER_RULES_MESSAGE,BID
 import {TEST_BID_CACHE_GENERATOR_MESSAGE as SITE_WORKSPACE_MESSAGE} from '../../worker/test-workspace/site-workspace.mjs';
 import {getPrebidSettings,savePrebidSettings} from '../../worker/test-workspace/prebid-settings.mjs';
 import {scriptVersionLabels} from '../../worker/site-runtime/script-version-guidance.mjs';
+import {runtimeCatalog} from '../../worker/test-workspace/runtime-catalog.mjs';
+import {configurationErrorMessage} from '../../worker/runtime/configuration-error.mjs';
 const MODE='/api/publishers/test-site/prebid-mode';
 const fixtures=[];
 test.before(()=>{globalThis.fetch=()=>assert.fail('No external request in the TEST bid cache flow');});
@@ -194,6 +196,76 @@ test('with bidder rules and bid caching on 3.21.2, every TEST view shows the Scr
  assert.equal((await f.req('/test-api/status')).data.validationIssue,guidance);
  assert.equal((await f.req('/test-api/site-runtime')).data.validationIssue,guidance);
  assert.deepEqual(config(f),before);
+});
+
+test('with bid caching saved, every TEST view shows the refusal Script setup and Generate show first, for every script',async()=>{
+ // Generate checks the saved settings against the selected script (contextual signals, bidder accounts, bidder rules)
+ // before bid caching. Releases, the home page status and both Generate routes show that refusal; only the bare bid
+ // caching refusal sends the site to Demand. Every selectable TEST release, Preview and noticed ones included, with
+ // each combination of the saved options that only some scripts apply. TEST has no adaptive auction timeout.
+ const contextual={schemaVersion:1,enabled:true,sourceKey:'category',gam:{enabled:true},bidders:[],mappings:[{value:'Books',taxonomies:{'iab-content-2.2':['48'],'iab-content-3.0':[]}}]};
+ const combinations=[{},{rules:true},{alias:true},{contextual:true},{rules:true,alias:true},{rules:true,contextual:true},{alias:true,contextual:true},{rules:true,alias:true,contextual:true}];
+ const seen={contextual:0,guidance:0,demand:0,generated:0};
+ for(const {version} of runtimeCatalog){
+  const f=await fixture();await enablePrebid(f);await select(f,version,true);
+  const mode=(await f.req(MODE)).data;
+  assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200,version);
+  const saved={rules:false,alias:false,contextual:false};
+  for(const options of combinations){
+   const label=JSON.stringify({...options,version});
+   // Each option is saved or removed through its own view; the alias account row as in the test above.
+   if(saved.rules!==Boolean(options.rules)){
+    const rules=(await f.req('/test-api/bidder-rules')).data;
+    assert.equal((await f.req('/test-api/bidder-rules',{revision:rules.revision,settings:{schemaVersion:1,enabled:Boolean(options.rules),rules:[]}})).status,200,label);
+   }
+   if(saved.contextual!==Boolean(options.contextual)){
+    const state=(await f.req('/test-api/contextual-signals')).data;
+    assert.equal((await f.req('/test-api/contextual-signals',{revision:state.revision,settings:options.contextual?contextual:{...state.settings,enabled:false}})).status,200,label);
+   }
+   if(saved.alias!==Boolean(options.alias)){
+    if(options.alias)f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,account_json,enabled) VALUES('alias-ox','test-site','ox_ag',?,?,1)")
+     .run(JSON.stringify({unit:'synthetic-unit',delDomain:'synthetic.example.invalid'}),JSON.stringify({baseAdapter:'openx',displayName:'Agency',schain:{mode:'none'}}));
+    else f.sqlite.prepare("DELETE FROM bidders WHERE id='alias-ox'").run();
+   }
+   Object.assign(saved,{rules:Boolean(options.rules),alias:Boolean(options.alias),contextual:Boolean(options.contextual)});
+   const issue=(await f.req('/test-api/site-runtime')).data.validationIssue;
+   const packages=(await f.req('/test-api/site-packages')).data,status=(await f.req('/test-api/status')).data.validationIssue;
+   const generated=await f.req('/test-api/site-packages',{action:'generate',revision:packages.revision,notes:'Matrix'}),older=await f.req('/test-api/generate',{acknowledge:true});
+   if(issue){
+    assert.equal(packages.error,issue,label);assert.notEqual(packages.nextStep,'demand',label);assert.equal(status,issue,label);
+    assert.equal(generated.data.error,issue,label);assert.equal(older.data.error,issue,label);
+    seen[/^Contextual signals /.test(issue)?'contextual':'guidance']++;
+   }else if(generated.status===201){
+    assert.equal(packages.error,null,label);assert.equal(status,null,label);assert.equal(older.status,200,label);seen.generated++;
+   }else{
+    // Bid caching alone (or with bidder rules on a script without them, in the TEST wording) is what Generate refuses.
+    assert.equal(packages.error,generated.data.error,label);assert.equal(status,generated.data.error,label);assert.equal(older.data.error,generated.data.error,label);
+    if(packages.nextStep==='demand')seen.demand++;
+   }
+  }
+  fixtures.splice(fixtures.indexOf(f),1);f.close();
+ }
+ assert.ok(seen.contextual>0&&seen.guidance>0&&seen.demand>0&&seen.generated>0,JSON.stringify(seen));
+ // Generate words an unknown reason with the generic text, so Releases and the home page keep the bid caching refusal:
+ // here a GAM code that scripts before 3.19.1 cannot use, which Script setup names.
+ const f=await fixture();await enablePrebid(f);await select(f,'3.18.0',true);
+ const mode=(await f.req(MODE)).data;
+ assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
+ f.sqlite.prepare("INSERT INTO ad_units(id,publisher_id,code,type,media_type,size_map_key,enabled) SELECT 'unit-dot',publisher_id,'Top.Unit','BTF',media_type,size_map_key,1 FROM ad_units WHERE publisher_id='test-site' AND code='Billboard'").run();
+ assert.match((await f.req('/test-api/site-runtime')).data.validationIssue,/^Ad unit Top\.Unit uses a GAM code /);
+ const kept=(await f.req('/test-api/site-packages')).data,generic=configurationErrorMessage(Error('unknown'));
+ assert.equal((await f.req('/test-api/site-packages',{action:'generate',revision:kept.revision,notes:'Matrix'})).data.error,generic);
+ assert.equal((await f.req('/test-api/generate',{acknowledge:true})).data.error,generic);
+ assert.equal(kept.error,TEST_BID_CACHE_GENERATOR_MESSAGE);assert.equal(kept.nextStep,'demand');
+ assert.equal((await f.req('/test-api/status')).data.validationIssue,TEST_BID_CACHE_GENERATOR_MESSAGE);
+ // Without a saved script, a TEST site with Prebid on is refused in every view before any saved option.
+ f.sqlite.prepare("DELETE FROM ad_units WHERE id='unit-dot'").run();
+ const unpinned=config(f);delete unpinned.builtinRuntimeSelection;
+ f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(unpinned));
+ const reason='Save Prebid settings through the TEST editor first.';
+ for(const path of ['/test-api/site-runtime','/test-api/site-packages','/test-api/status'])assert.equal((await f.req(path)).data.error,reason,path);
+ assert.equal((await f.req('/test-api/site-packages',{action:'generate',revision:'0',notes:'Matrix'})).data.error,reason);
+ assert.equal((await f.req('/test-api/generate',{acknowledge:true})).data.error,reason);
 });
 
 test('the TEST site explicitly selects combined Preview and generates both saved caching and bidder rules',async()=>{

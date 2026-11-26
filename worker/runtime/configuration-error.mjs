@@ -43,3 +43,7 @@ export function configurationErrorMessage(error) {
   if (message.length > 4000 || /[\r\n\u0000-\u001f\u007f]/u.test(message)) return GENERIC;
   return EXACT.includes(message) || diagnostics.some(pattern => pattern.test(message)) ? message : GENERIC;
 }
+/** Whether the error is one of the known configuration diagnostics, shown as is, rather than the generic message. */
+export function knownConfigurationError(error) {
+  return configurationErrorMessage(error) !== GENERIC;
+}

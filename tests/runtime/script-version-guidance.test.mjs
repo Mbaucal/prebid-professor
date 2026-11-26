@@ -8,7 +8,7 @@ import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
 import {runtimeNotices} from '../../shared/runtime-notices.mjs';
 import {siteRuntimeSettings,siteRuntimeResponse} from '../../worker/site-runtime/service.mjs';
-import {packageState} from '../../worker/site-runtime/releases.mjs';
+import {packageState,generatePackage} from '../../worker/site-runtime/releases.mjs';
 import {configure} from './artifact-fixture.mjs';
 import {bidCacheSite} from './bid-cache323-site.mjs';
 import {runtime324Site} from './runtime324-site.mjs';
@@ -189,8 +189,11 @@ test('patterns for the guidance are anchored and refuse altered text',()=>{
 // Script setup and Releases read the saved site through the Worker services.
 const fixtures=[];
 test.afterEach(()=>{while(fixtures.length)fixtures.pop().close();});
-function savedSite({cache=false,rules=false,alias=false,version}){
-  const f=adminAuditStore({config:{...(cache?{prebidBidCache:CACHE}:{}),runtimeControls:{sticky:{bottomAdUnitId:''},...(rules?{bidderRules:{...RULES,rules:[{...RULES.rules[0],bidder:'pubmatic'}]}}:{})}}});
+// Contextual signals, which scripts before 3.21.0 refuse before bidder accounts, bidder rules and bid caching. TEST has
+// no adaptive auction timeout, which MAIN's scripts refuse in that place.
+const CONTEXTUAL={schemaVersion:1,enabled:true,sourceKey:'category',gam:{enabled:true},bidders:[],mappings:[{value:'Books',taxonomies:{'iab-content-2.2':['48'],'iab-content-3.0':[]}}]};
+function savedSite({cache=false,rules=false,alias=false,contextual=false,version}){
+  const f=adminAuditStore({config:{...(cache?{prebidBidCache:CACHE}:{}),runtimeControls:{sticky:{bottomAdUnitId:''},...(rules?{bidderRules:{...RULES,rules:[{...RULES.rules[0],bidder:'pubmatic'}]}}:{}),...(contextual?{contextualSignals:CONTEXTUAL}:{})}}});
   fixtures.push(f);
   if(alias)f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,account_json) VALUES('alias','audit-site','pm_ag','{}',?)").run(JSON.stringify({baseAdapter:'pubmatic',displayName:'Agency',schain:{mode:'none'}}));
   if(version){
@@ -240,6 +243,40 @@ test('Script setup on 3.21.2 with bid caching offers no bidder rules off-switch 
   assert.equal((await packageState(f.env,'audit-site')).error,bidCacheGeneratorMessage(f.readConfig(),[]));
   assert.deepEqual(expectedVersions(['bid-cache']),[]);
   assert.ok(bidCacheGeneratorMessage(f.readConfig(),[]).startsWith('Bid caching needs a compatible script version. No corrected script version is offered that applies bid caching. Versions with a runtime notice in Script setup still apply it. Your bid cache settings are kept. '));
+});
+
+test('with bid caching saved, Releases show the refusal Script setup and Generate show first',async()=>{
+  // Generate refuses contextual signals before bidder accounts and bidder rules, and both before bid caching.
+  const f=savedSite({rules:true,cache:true,contextual:true,version:'3.20.1'});
+  const state=await siteRuntimeSettings(f.env,'audit-site');
+  assert.match(state.validationIssue,/^Contextual signals require script 3\.21\.0\. /);
+  const packages=await packageState(f.env,'audit-site');
+  assert.equal(packages.error,state.validationIssue);assert.notEqual(packages.nextStep,'demand');
+  await assert.rejects(generatePackage(f.env,'audit-site','admin@example.invalid',{notes:'',revision:packages.revision}),error=>error.message===state.validationIssue);
+  // The same for every selectable script, Preview and noticed ones included, and saved option: a refusal Script setup
+  // shows is the one Releases show.
+  let refused=0;
+  for(const release of runtimeCatalog.filter(r=>r.capabilities.includes('config-preview'))){
+    for(const options of [{rules:true},{alias:true},{contextual:true},{rules:true,alias:true},{rules:true,contextual:true},{alias:true,contextual:true},{rules:true,alias:true,contextual:true}]){
+      const g=savedSite({...options,cache:true,version:release.version}),label=JSON.stringify({...options,version:release.version});
+      const issue=(await siteRuntimeSettings(g.env,'audit-site')).validationIssue;
+      if(issue){
+        const shown=await packageState(g.env,'audit-site');
+        assert.equal(shown.error,issue,label);assert.notEqual(shown.nextStep,'demand',label);
+        await assert.rejects(generatePackage(g.env,'audit-site','admin@example.invalid',{notes:'',revision:shown.revision}),error=>error.message===issue,label);
+        refused++;
+      }
+      fixtures.splice(fixtures.indexOf(g),1);g.close();
+    }
+  }
+  assert.ok(refused>=100,`${refused} refusals checked`);
+  // Generate words an unknown reason with the generic text, so Releases keep the bid caching refusal for it.
+  const unknown=savedSite({cache:true,version:'3.21.2'}),config=unknown.readConfig();
+  config.runtimeControls.adPositions={Missing:{}};unknown.writeConfig(config);
+  const revision=(await packageState(unknown.env,'audit-site')).revision;
+  await assert.rejects(generatePackage(unknown.env,'audit-site','admin@example.invalid',{notes:'',revision}),error=>error.message===configurationErrorMessage(Error('unknown')));
+  const kept=await packageState(unknown.env,'audit-site');
+  assert.equal(kept.error,bidCacheGeneratorMessage(unknown.readConfig(),[]));assert.equal(kept.nextStep,'demand');
 });
 
 test('versions come from release capabilities: the smallest step and the newest, notices, ties, one release and none',async()=>{
