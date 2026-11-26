@@ -3,6 +3,7 @@ import './runtime-canonical/install.mjs';
 import {contextualBuildKitResponse} from './site-runtime/contextual-signals-build-kit.mjs';
 import {requireContextualRuntime} from '../shared/contextual-signals/settings.mjs';
 import {requireBidderRulesRuntime} from '../shared/bidder-rules/settings.mjs';
+import {requireBidderRulesScript} from './site-runtime/script-version-guidance.mjs';
 import {bidderRuleSettingsResponse} from './site-runtime/bidder-rule-settings.mjs';
 import { dealSettingsResponse } from './site-runtime/deal-settings.mjs';
 import { countryResponse } from './geo-country.mjs';
@@ -65,7 +66,7 @@ export default {
       const row=await env.DB?.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=?').bind(oldGenerate[1]).first<{config_json:string}>();
       // A site with a saved built-in script version is told to use Generate and releases, not
       // to select a version it may already have; this older route never applies bid caching.
-      if(row){try{if(!JSON.parse(row.config_json).builtinRuntimeSelection)requireSupportedCacheGenerator(JSON.parse(row.config_json));requireRevenueRuntime(JSON.parse(row.config_json),null);requireContextualRuntime(JSON.parse(row.config_json),null);requireBidderRulesRuntime(JSON.parse(row.config_json),null);}catch(e){return new Response(JSON.stringify({error:(e as Error).message}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});}}
+      if(row){try{if(!JSON.parse(row.config_json).builtinRuntimeSelection)requireSupportedCacheGenerator(JSON.parse(row.config_json));requireRevenueRuntime(JSON.parse(row.config_json),null);requireContextualRuntime(JSON.parse(row.config_json),null);requireBidderRulesScript(JSON.parse(row.config_json),null);requireBidderRulesRuntime(JSON.parse(row.config_json),null);}catch(e){return new Response(JSON.stringify({error:(e as Error).message}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});}}
       if(row&&JSON.parse(row.config_json).builtinRuntimeSelection)return new Response(JSON.stringify({error:'Use Generate and releases with the saved built-in script version.'}),{status:409,headers:{'content-type':'application/json','cache-control':'no-store'}});
     }
     const revenueMatch=url.pathname.match(/^\/api\/publishers\/([a-z0-9][a-z0-9-]{0,97})\/(deals|outstream-settings|contextual-signals|bidder-rules)(\/build-kit)?$/);
@@ -103,7 +104,7 @@ export default {
     let siteId: string;
     try { siteId = decodeURIComponent(match[1]); } catch { return fail('Invalid site ID.', 400); }
     const revenueConfig=await env.DB?.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id=?').bind(siteId).first<{config_json:string}>();
-    if(revenueConfig){try{requireRevenueRuntime(JSON.parse(revenueConfig.config_json),null);requireContextualRuntime(JSON.parse(revenueConfig.config_json),null);requireBidderRulesRuntime(JSON.parse(revenueConfig.config_json),null);}catch(e){return fail((e as Error).message,409);}}
+    if(revenueConfig){try{requireRevenueRuntime(JSON.parse(revenueConfig.config_json),null);requireContextualRuntime(JSON.parse(revenueConfig.config_json),null);requireBidderRulesScript(JSON.parse(revenueConfig.config_json),null);requireBidderRulesRuntime(JSON.parse(revenueConfig.config_json),null);}catch(e){return fail((e as Error).message,409);}}
     if (bundle) {
       // The artifact bundle never applies bid caching; saved settings that would reuse bids are refused.
       if(revenueConfig){try{requireSupportedCacheGenerator(JSON.parse(revenueConfig.config_json));}catch(e){return fail((e as Error).message,409);}}

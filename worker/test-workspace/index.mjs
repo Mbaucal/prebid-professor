@@ -173,7 +173,7 @@ async function route(request,env) {
     // Saved bid caching that this script cannot apply: say so before Generate.
     if(selected&&settings){
       const config=JSON.parse(settings.config.config_json);
-      try { requireSupportedCacheGenerator(config,selected); } catch(error) { validationIssue=testBidCacheMessage(error.message,config); }
+      try { requireSupportedCacheGenerator(config,selected,settings.bidders??[]); } catch(error) { validationIssue=testBidCacheMessage(error.message,config); }
     }
     return json({...schema,runtime:selected?{version:selected.version,sha256:selected.codeSha256}:null,validationIssue,
       ...(settings?{takeOver:takeOverForBuild(settings)}:{}),publishable:false});

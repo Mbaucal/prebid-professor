@@ -21,12 +21,13 @@ export function runtimeNoticeSuffix(pin: PinLike) {
 // module, so a later stable release changes the text without an edit here.
 export function runtimeNoticeText(notice: RuntimeNotice, choices: readonly Choice[], current?: { version: string } | null) {
   const currentLabel = current ? runtimeLabel(current.version) : undefined;
-  const alternative = choices.find(item => runtimeLabel(item.version) === notice.alternative.version);
+  const suggested = notice.alternative;
+  const alternative = suggested && choices.find(item => runtimeLabel(item.version) === suggested.version);
   const alternativeLabel = alternative ? runtimeLabel(alternative.version) : undefined;
   const parts = [notice.warning];
-  if (alternative && alternativeLabel) {
+  if (alternative && alternativeLabel && suggested) {
     const status = alternativeLabel === currentLabel ? ', the current version,' : alternative.channel === 'preview' ? ' (Preview)' : '';
-    parts.push(`${alternativeLabel}${status} has ${notice.alternative.offers}.`);
+    parts.push(`${alternativeLabel}${status} has ${suggested.offers}.`);
   }
   if (currentLabel && currentLabel !== alternativeLabel && currentLabel !== notice.version) parts.push(`${currentLabel} is the current version.`);
   return parts.join(' ');

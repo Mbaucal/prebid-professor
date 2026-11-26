@@ -38,7 +38,7 @@ export async function packageState(env,site,{testOnly=false}={}){
  if(setup.userSyncWarning)warnings.push(setup.userSyncWarning);
  // The saved cache settings are checked against the script version the site selected.
  const cacheDescriptor=selected?.descriptor??runtimeCatalog.find(r=>r.id===displayPin?.runtimeId&&r.version===displayPin?.runtimeVersion);
- let cacheBlocked=false;try{requireSupportedCacheGenerator(JSON.parse(saved.config.config_json),cacheDescriptor);}catch(e){error=e.message;cacheBlocked=true;}
+ let cacheBlocked=false;try{requireSupportedCacheGenerator(JSON.parse(saved.config.config_json),cacheDescriptor,saved.bidders??[]);}catch(e){error=e.message;cacheBlocked=true;}
  const rows=await db(env).prepare("SELECT * FROM releases WHERE publisher_id=? AND version LIKE ? ORDER BY created_at DESC,id DESC LIMIT 50").bind(site,testOnly?'builtin-draft-%':'builtin-release-%').all();
  // Keep prior production packages reachable after selecting a built-in runtime.
  const earlier=testOnly?{results:[]}:await db(env).prepare(`SELECT r.*,

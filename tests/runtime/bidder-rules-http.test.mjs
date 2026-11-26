@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../../worker/app-builtin-runtime-preview.ts';
 import {adminAuditStore} from '../support/admin-audit-store.mjs';
+import {scriptVersionText} from '../../worker/site-runtime/script-version-guidance.mjs';
 import {TEST_EMAIL,TEST_PASSWORD,TEST_SECRET} from '../support/test-workspace-store.mjs';
 const origin='https://bidder-rules.fixture.invalid',path='/api/publishers/audit-site/bidder-rules';
 const ctx={waitUntil(){},passThroughOnException(){}};
@@ -31,7 +32,7 @@ test('all legacy generation and preview paths reject enabled rules instead of si
     const config=f.readConfig();config.runtimeControls.bidderRules={schemaVersion:1,enabled:true,rules:[]};f.writeConfig(config);
     for(const [suffix,method] of [['releases/generate','POST'],['releases/validate','POST'],['builtin-runtime-preview','GET'],['builtin-runtime-preview','POST'],['builtin-runtime-bundle','POST'],['builtin-runtime-prebid-check','GET']]){
       const response=await f.call('/api/publishers/audit-site/'+suffix,{method,headers:{cookie:f.cookie,origin,'content-type':'application/json'},...(method==='POST'?{body:'{}'}:{})});
-      assert.equal(response.status,409,suffix);assert.match((await response.json()).error,/Bidder rules require script 3.22.0/);
+      assert.equal(response.status,409,suffix);assert.equal((await response.json()).error,`This script cannot apply enabled bidder rules. Select ${scriptVersionText(['bidder-rules'])} in Script setup and save, or turn off bidder rules. Your saved settings and previous packages are unchanged.`,suffix);
     }
   }finally{f.close();}
 });

@@ -4,6 +4,7 @@ import {bidderAccountsForBuild} from '../../shared/bidder-accounts/snapshot.mjs'
 import {requireBidderAccounts} from '../../worker/site-runtime/bidder-account-settings.mjs';
 import {prebidRequirements} from '../../worker/runtime/prebid-artifact-check-v2.mjs';
 import {normalizeDeals} from '../../shared/bidder-accounts/deals.mjs';
+import {scriptVersionText} from '../../worker/site-runtime/script-version-guidance.mjs';
 const row=(bidder, metadata={}, enabled=1)=>({bidder,params_json:'{"mid":123}',account_json:JSON.stringify(metadata),enabled});
 const snapshot=bidders=>({site:{id:'sample'},config:{config_json:JSON.stringify({enablePrebid:true})},bidders});
 const input=accounts=>({core:{bidders:accounts.map(account=>({bidder:account.bidder,params:{mid:123}})),userSync:{userIds:[]}},options:{enablePrebid:true},bidderAccounts:accounts});
@@ -16,7 +17,7 @@ test('accounts resolve one base-adapter module; no alias-named modules',()=>{
 test('only active new account behavior requires explicit capable version',()=>{
  assert.doesNotThrow(()=>requireBidderAccounts(snapshot([row('openx')]),{capabilities:[]}));
  assert.doesNotThrow(()=>requireBidderAccounts(snapshot([row('adf_ag',{baseAdapter:'adf'},0)]),{capabilities:[]}));
- assert.throws(()=>requireBidderAccounts(snapshot([row('adf_ag',{baseAdapter:'adf'})]),{capabilities:[]}),/3.22.1/);
+ assert.throws(()=>requireBidderAccounts(snapshot([row('adf_ag',{baseAdapter:'adf'})]),{capabilities:[]}),{status:422,message:`This script cannot apply bidder accounts (adf_ag). Select ${scriptVersionText(['bidder-accounts'])} in Script setup and save. Your saved settings and previous packages are unchanged.`});
  assert.doesNotThrow(()=>requireBidderAccounts(snapshot([row('adf_ag',{baseAdapter:'adf'})]),{capabilities:['bidder-accounts']}));
  const off=snapshot([row('adf_ag',{baseAdapter:'adf'})]);off.config.config_json='{"enablePrebid":false}';assert.deepEqual(bidderAccountsForBuild(off),[]);
 });
