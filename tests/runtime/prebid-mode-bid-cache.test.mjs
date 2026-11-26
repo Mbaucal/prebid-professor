@@ -219,6 +219,9 @@ function cacheVersions(needs, history = runtimeReleaseHistory, notices = runtime
   return [...new Set([offered.filter(release => release.capabilities.length === fewest).at(-1), offered.at(-1)])].map(release => release.version + (release.channel === 'preview' ? ' (Preview)' : ''));
 }
 const choice = labels => labels.length < 2 ? labels[0] ?? '' : `${labels.slice(0, -1).join(', ')} or ${labels.at(-1)}`;
+// Whether a numeric release with a runtime notice has bid caching and the other needed capabilities.
+const cacheNoticed = (needs, history = runtimeReleaseHistory, notices = runtimeNotices) => history.some(release => /^\d+\.\d+\.\d+$/.test(release.version)
+  && ['bid-cache', ...needs].every(capability => release.capabilities.includes(capability)) && notices.some(notice => notice.version === release.version && notice.runtimeSha256 === release.codeSha256));
 const MAIN_3260 = runtimeReleaseHistory.filter(release => /^\d+\.\d+\.\d+$/.test(release.version) && byVersion(release, {version: '3.26.0'}) <= 0);
 const rulesOn = {schemaVersion: 1, enabled: true, rules: []};
 function withAlias(f) {
@@ -240,6 +243,9 @@ test('the panels name the bid caching versions for the saved options, at most tw
     const state = await read(f), expected = cacheVersions(needs);
     assert.deepEqual(state.bidCacheScriptVersions, expected, label);
     assert.ok(expected.length >= 1 && expected.length <= 2, label);
+    // Whether a version with a runtime notice (never named) applies the same options; the panels read it when no
+    // version is named.
+    assert.equal(state.bidCacheNoticedScriptApplies, cacheNoticed(needs), label);
     // The first version with bid caching stays as it is (3.23.0, which has a runtime notice).
     assert.equal(state.bidCacheRuntimeVersion, BID_CACHE_RUNTIME_VERSION);
   }
@@ -285,16 +291,19 @@ test('the Generate bid caching refusal cannot go stale: a new release or notice 
   for (const [name, [history, notices]] of Object.entries(histories)) for (const config of [{}, {enablePrebid: true, runtimeControls: {bidderRules: rulesOn}}]) {
     const named = bidCacheScriptVersions(config, [], history, notices), message = bidCacheGeneratorMessage(config, [], history, notices);
     assert.deepEqual(named, cacheVersions(config.runtimeControls ? ['bidder-rules'] : [], history, notices), name);
-    assert.ok(named.length?message.includes(`Select ${choice(named)} in Script setup and save;`):message.includes('no available script version'), `${name}: ${message}`);
+    if(named.length)assert.ok(message.includes(`Select ${choice(named)} in Script setup and save;`),`${name}: ${message}`);
+    else{assert.match(message,/^Bid caching needs a compatible script version\. No corrected script version is offered that applies .+\. Versions with a runtime notice in Script setup still apply (?:it|them)\. /,`${name}: ${message}`);assert.doesNotMatch(message,/Select |select /);}
     assert.deepEqual([...new Set(message.match(/\b\d+\.\d+\.\d+\b/g))], named.map(version => version.replace(' (Preview)', '')), `${name}: ${message}`);
     texts.add(message);
   }
   assert.equal(texts.size, 5, 'histories differ, and the unavailable TEST case names saved rules separately');
-  assert.ok(bidCacheGeneratorMessage({}, [], histories['up to 3.24.0 (TEST)'][0]).includes('no available script version applies bid caching. Your bid cache settings are kept.'));
+  // Up to 3.24.0, 3.23.0 and 3.24.0 apply bid caching but have runtime notices, so none is named, and the text does not
+  // say that no version applies it.
+  assert.ok(bidCacheGeneratorMessage({}, [], histories['up to 3.24.0 (TEST)'][0]).startsWith('Bid caching needs a compatible script version. No corrected script version is offered that applies bid caching. Versions with a runtime notice in Script setup still apply it. Your bid cache settings are kept. '));
   assert.ok(bidCacheGeneratorMessage({}, [], ...histories['a notice on 3.25.1']).includes('Select 3.26.0 (Preview) in Script setup and save; your bid cache settings are kept. This version combines '));
-  // No version applies them together: the refusal says so instead of naming one.
+  // No version applies them together, with or without a notice: the refusal says so instead of naming one.
   const none = bidCacheGeneratorMessage({enablePrebid: true, runtimeControls: {bidderRules: rulesOn}}, [], MAIN_3260.filter(entry => byVersion(entry, {version: '3.23.0'}) <= 0));
-  assert.equal(none, 'Bid caching needs a compatible script version, but no available script version applies bidder rules and bid caching together. Your bid cache settings are kept. '
+  assert.equal(none, 'Bid caching needs a compatible script version. No available script version applies bidder rules and bid caching together. Your bid cache settings are kept. '
     + 'To use this script version, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.');
 });
 

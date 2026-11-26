@@ -10,7 +10,7 @@ import { getPrebidSettings,preparePrebidSettings,commitPrebidSettings,savePrebid
 import { normalizePrebidDraft } from '../../worker/test-workspace/prebid-draft.mjs';
 import { getSiteDraft,saveSiteDraft } from '../../worker/test-workspace/site-draft-service.mjs';
 import { generatedLiteral } from '../support/generated-literal.mjs';
-import { scriptVersionLabels } from '../../worker/site-runtime/script-version-guidance.mjs';
+import { scriptVersionLabels, noticedScriptVersionApplies } from '../../worker/site-runtime/script-version-guidance.mjs';
 import { digest } from '../../worker/runtime/preview-snapshot.mjs';
 const modules=['consentManagementTcf','tcfControl','currency','adformBidAdapter'];
 const file=(extra='',names=modules)=>new TextEncoder().encode(`/* prebid.js v11.11.0\nModules: ${names.join(', ')} */\nwindow.prebidFixtureOnly=true; // ${extra}\n`);
@@ -59,5 +59,7 @@ test('the account note names the script versions from the server, narrowed by sa
   const c=JSON.parse((await snap(f)).config.config_json);c.prebidBidCache={enabled:true,maxBidAgeSeconds:45};
   f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(c));
   assert.deepEqual((await read(f)).accountScriptVersions,scriptVersionLabels(['bidder-accounts','bid-cache']));
+  // Whether a version with a runtime notice (never named) applies them too.
+  assert.equal((await read(f)).accountNoticedScriptApplies,noticedScriptVersionApplies(['bidder-accounts','bid-cache']));
   assert.notDeepEqual(scriptVersionLabels(['bidder-accounts']),scriptVersionLabels(['bidder-accounts','bid-cache']),'saved bid caching narrows the versions');
 });

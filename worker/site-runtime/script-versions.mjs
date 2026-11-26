@@ -33,6 +33,22 @@ export function scriptVersionsWith(capabilities,history=runtimeReleaseHistory,no
 export const scriptVersionLabels=(capabilities,history,notices)=>scriptVersionsWith(capabilities,history,notices).map(releaseLabel);
 /** "3.22.2 (Preview) or 3.26.0 (Preview)", or one version; empty when no offered release has every capability. */
 export const scriptVersionText=(capabilities,history,notices)=>versionList(scriptVersionLabels(capabilities,history,notices),'or');
+/** Whether a numeric registry release with a runtime notice has every listed capability. scriptVersionsWith never
+ * names such a release, but it stays selectable in Script setup, so a text for an empty list must not say that no
+ * version applies these capabilities. */
+export function noticedScriptVersionApplies(capabilities,history=runtimeReleaseHistory,notices=runtimeNotices){
+  return history.some(release=>parts(release.version)&&covers(release,capabilities)&&noticed(release,notices));
+}
+/** The sentences for capabilities that no named version applies (scriptVersionsWith is empty), without naming any
+ * version. When a release with a runtime notice applies them, no corrected version is offered; otherwise none applies
+ * them. "together" only for two or more. */
+export function noScriptVersionText(capabilities,history,notices){
+  const names=capabilities.map(capability=>CAPABILITY_NAMES[capability]),many=names.length>1;
+  const applies=`applies ${versionList(names,'and')}${many?' together':''}`;
+  return noticedScriptVersionApplies(capabilities,history,notices)
+    ?`No corrected script version is offered that ${applies}. Versions with a runtime notice in Script setup still apply ${many?'them':'it'}.`
+    :`No available script version ${applies}.`;
+}
 
 /** Active bidder accounts with an alias or their own SChain (requireBidderAccounts), by account code; none while
  * Prebid is off. Reads the bidder rows of a saved snapshot. */

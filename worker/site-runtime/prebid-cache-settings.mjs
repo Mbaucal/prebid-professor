@@ -3,7 +3,7 @@ import {CACHE_POSITIONS,hasBidCache} from '../experiments/position-cache-setting
 import {runtimeSupportsBidCache} from '../../shared/bid-cache/eligibility.mjs';
 import {validateAdUnitCode} from '../../shared/gam/ad-unit-code.mjs';
 import {requireAdaptiveTimeoutRuntime} from '../../shared/auction-timeout/settings.mjs';
-import {scriptVersionsWith,releaseLabel,versionList,accountsNeeding,rulesNeeded,timeoutNeeded,neededCapabilities,CAPABILITY_NAMES} from './script-versions.mjs';
+import {scriptVersionsWith,noticedScriptVersionApplies,noScriptVersionText,releaseLabel,versionList,accountsNeeding,rulesNeeded,timeoutNeeded,neededCapabilities,CAPABILITY_NAMES} from './script-versions.mjs';
 export {hasBidCache};
 export const DEFAULT_BID_CACHE = Object.freeze({enabled:false,maxBidAgeSeconds:60});
 /** The most position overrides one site can save; each names one of its own ad units. */
@@ -81,13 +81,16 @@ function cacheCapabilities(config,bidders) {
 }
 /** ['3.24.0 (Preview)', '3.26.0 (Preview)'] for the panels. */
 export const bidCacheScriptVersions=(config,bidders,history,notices)=>bidCacheScripts(config,bidders,history,notices).map(releaseLabel);
+/** Whether a release with a runtime notice applies bid caching with the same saved options. It is never named but
+ * stays selectable, so with no named version the panels say that no corrected version is offered. */
+export const bidCacheNoticedScriptApplies=(config,bidders,history,notices)=>noticedScriptVersionApplies(cacheCapabilities(config,bidders),history,notices);
 const KEEP_SCRIPT='turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.';
 /** Generate's refusal when saved settings would reuse bids and the selected script cannot apply bid caching. It names
  * the versions of bidCacheScripts and says what every one of them combines bid caching with. */
 export function bidCacheGeneratorMessage(config={},bidders,history,notices) {
   const needed=cacheCapabilities(config,bidders),releases=scriptVersionsWith(needed,history,notices);
   if(!releases.length){
-    return `Bid caching needs a compatible script version, but no available script version applies ${versionList(needed.map(capability=>CAPABILITY_NAMES[capability]),'and')}${needed.length>1?' together':''}. Your bid cache settings are kept. `
+    return `Bid caching needs a compatible script version. ${noScriptVersionText(needed,history,notices)} Your bid cache settings are kept. `
       +`To use this script version, ${KEEP_SCRIPT}`;
   }
   // Only what every named version has: bidder accounts and bidder rules from their capabilities, and the cache checks

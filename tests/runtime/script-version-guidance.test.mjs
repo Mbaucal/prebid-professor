@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {runtimeCatalog,previewInput,buildArtifactCandidate} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {assertSnapshotCompilerCompatibility} from '../../worker/compiler-input-compatibility.mjs';
@@ -10,6 +11,7 @@ import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-histor
 import {runtimeNotices} from '../../shared/runtime-notices.mjs';
 import {siteRuntimeSettings,siteRuntimeResponse} from '../../worker/site-runtime/service.mjs';
 import {packageState} from '../../worker/site-runtime/releases.mjs';
+import {scriptGuidance} from '../../worker/site-runtime/script-version-guidance.mjs';
 import {configure} from './artifact-fixture.mjs';
 import {bidCacheSite} from './bid-cache323-site.mjs';
 import {runtime324Site} from './runtime324-site.mjs';
@@ -36,6 +38,19 @@ function expectedVersions(capabilities,history=runtimeReleaseHistory,notices=run
   return [...new Set([offered.filter(r=>r.capabilities.length===fewest).at(-1),offered.at(-1)])].map(label);
 }
 const choice=labels=>labels.length<2?labels[0]??'':`${labels.slice(0,-1).join(', ')} or ${labels.at(-1)}`;
+// When no version is named, a release with a runtime notice may still apply every capability. It stays selectable in
+// Script setup, so the text says that no corrected version is offered, not that none applies them. MAIN always names a
+// version today (3.26.0 applies every option), so these texts are checked with earlier registries and added notices.
+const NAMES={'bidder-accounts':'bidder accounts','bidder-rules':'bidder rules','bid-cache':'bid caching','adaptive-auction-timeout':'adaptive timeout'};
+const noticedApplies=(capabilities,history=runtimeReleaseHistory,notices=runtimeNotices)=>history.some(r=>numeric(r.version)
+  &&capabilities.every(capability=>r.capabilities.includes(capability))&&notices.some(n=>n.version===r.version&&n.runtimeSha256===r.codeSha256));
+function noVersionText(capabilities,history,notices){
+  const names=capabilities.map(capability=>NAMES[capability]),many=names.length>1;
+  const list=many?`${names.slice(0,-1).join(', ')} and ${names.at(-1)} together`:names[0];
+  return noticedApplies(capabilities,history,notices)
+    ?`No corrected script version is offered that applies ${list}. Versions with a runtime notice in Script setup still apply ${many?'them':'it'}.`
+    :`No available script version applies ${list}.`;
+}
 // The registry as it stood with 3.26.0 (MAIN) and with 3.24.0 (TEST). Records are never changed, so these stay fixed.
 const upTo=version=>runtimeReleaseHistory.filter(r=>numeric(r.version)&&byVersion(r,{version})<=0);
 const MAIN_3260=upTo('3.26.0'),TEST_3240=upTo('3.24.0');
@@ -141,6 +156,18 @@ test('patterns for the guidance are anchored and refuse altered text',()=>{
   assert.notEqual(message.replace(/select (\S+ \(Preview\)) or /,'select $1, 3.25.0 (Preview) or '),message,'a third name is inserted');
   for(const altered of [message+' ',' '+message,message.replace('3.25.1 (Preview)','3.25.1 (Preview) or later'),message.replace('Script 3.23.0','Script <b>'),message+'\nmore',message.replace('select 3.25.1','select https://example.invalid'),
     message.replace(/select (\S+ \(Preview\)) or /,'select $1, 3.25.0 (Preview) or ')])
+    assert.equal(configurationErrorMessage(Error(altered)),generic,altered);
+  // With no version named (the releases up to 3.25.0, where 3.24.0 and 3.25.0 have notices), the notice sentence is
+  // allowed only as the guidance writes it.
+  const noticed=scriptGuidance({accounts:['pm_ag'],rules:false,cache:true},runtimeCatalog.find(r=>r.version==='3.23.0'),upTo('3.25.0'));
+  assert.equal(noticed,'Script 3.23.0 cannot apply bidder accounts (pm_ag). No corrected script version is offered that applies bidder accounts and bid caching together. Versions with a runtime notice in Script setup still apply them. Your saved settings and previous packages are unchanged.');
+  assert.equal(configurationErrorMessage(Error(noticed)),noticed);
+  for(const altered of [noticed.replace('No corrected script version','No corrected script version or later'),noticed.replace('No corrected script version','Select https://example.invalid'),
+    // The wrong pronoun, a dangling 'and', a missing 'together' or notice sentence, or the notice sentence after the
+    // claim that no version applies them.
+    noticed.replace('still apply them','still apply it'),noticed.replace('bidder accounts and bid caching','bidder accounts and'),noticed.replace(' together.','.'),
+    noticed.replace(' Versions with a runtime notice in Script setup still apply them.',''),noticed.replace('No corrected script version is offered that applies','No available script version applies'),
+    noticed.replace('bid caching together','bid caching or 3.24.0 together')])
     assert.equal(configurationErrorMessage(Error(altered)),generic,altered);
 });
 
@@ -258,7 +285,51 @@ test('versions come from release capabilities: the smallest step and the newest,
   assert.deepEqual(bidCacheScriptVersions({enablePrebid:true,prebidBidCache:CACHE,adaptiveAuctionTimeout:{...TIMEOUT,enabled:false}},[]),expectedVersions(['bid-cache']));
 });
 
+test('with no named version the guidance says whether a version with a runtime notice still applies the options',async()=>{
+  const {bidCacheNoticedScriptApplies}=await import('../../worker/site-runtime/prebid-cache-settings.mjs');
+  const r3212=runtimeCatalog.find(x=>x.version==='3.21.2');
+  // Up to 3.25.0, 3.24.0 and 3.25.0 apply bidder rules and bid caching but have runtime notices, so none is named.
+  const noticed=scriptGuidance({accounts:[],rules:true,cache:true},r3212,upTo('3.25.0'));
+  assert.equal(noticed,'Script 3.21.2 cannot apply enabled bidder rules. No corrected script version is offered that applies bidder rules and bid caching together. Versions with a runtime notice in Script setup still apply them. Your saved settings and previous packages are unchanged.');
+  assert.equal(noticed,`Script 3.21.2 cannot apply enabled bidder rules. ${noVersionText(['bidder-rules','bid-cache'],upTo('3.25.0'))} Your saved settings and previous packages are unchanged.`);
+  // Up to 3.23.0 no release applies both, with or without a notice.
+  const none=scriptGuidance({accounts:[],rules:true,cache:true},r3212,upTo('3.23.0'));
+  assert.equal(none,'Script 3.21.2 cannot apply enabled bidder rules. No available script version applies bidder rules and bid caching together. Your saved settings and previous packages are unchanged.');
+  // One option: no 'together', and the pronoun follows the number.
+  const accounts322=[{id:'tessera-3.22.0',version:'3.22.0',channel:'stable',capabilities:['bidder-accounts'],codeSha256:runtimeNotices[0].runtimeSha256}];
+  const one=scriptGuidance({accounts:['a1'],rules:false,cache:false},{version:'4.0.2',capabilities:[]},accounts322);
+  assert.equal(one,'Script 4.0.2 cannot apply bidder accounts (a1). No corrected script version is offered that applies bidder accounts. Versions with a runtime notice in Script setup still apply it. Your saved settings and previous packages are unchanged.');
+  const oneNone=scriptGuidance({accounts:['a1'],rules:false,cache:false},{version:'4.0.2',capabilities:[]},[]);
+  assert.equal(oneNone,'Script 4.0.2 cannot apply bidder accounts (a1). No available script version applies bidder accounts. Your saved settings and previous packages are unchanged.');
+  // An adaptive timeout that no release up to 3.25.1 applies: no version applies it, with or without a notice.
+  const timeout=scriptGuidance({accounts:[],rules:true,cache:false,timeout:true},r3212,upTo('3.25.1'));
+  assert.equal(timeout,'Script 3.21.2 cannot apply enabled bidder rules. No available script version applies bidder rules and adaptive timeout together. Your saved settings and previous packages are unchanged.');
+  for(const message of [noticed,none,one,oneNone,timeout])assert.equal(configurationErrorMessage(Error(message)),message,message);
+  const generic=configurationErrorMessage(Error('x'));
+  for(const altered of [one.replace('still apply it','still apply them'),one.replace('bidder accounts.','bidder accounts together.'),oneNone.replace('bidder accounts.','bidder accounts and.'),none.replace(' together.','.'),
+    none.replace('bidder rules and bid caching','bidder rules and bid caching and bidder accounts'),none.replace('bidder rules and bid caching','bidder rules, bid caching')])
+    assert.equal(configurationErrorMessage(Error(altered)),generic,altered);
+  // Generate's bid caching refusal and the cache panels' flag follow the same three cases.
+  const config={enablePrebid:true,runtimeControls:{bidderRules:{schemaVersion:1,enabled:true,rules:[]}}};
+  assert.ok(bidCacheGeneratorMessage(config,[],upTo('3.25.0')).startsWith(`Bid caching needs a compatible script version. ${noVersionText(['bidder-rules','bid-cache'],upTo('3.25.0'))} Your bid cache settings are kept. To use this script version, `));
+  assert.ok(bidCacheGeneratorMessage({},[],upTo('3.22.2')).startsWith('Bid caching needs a compatible script version. No available script version applies bid caching. Your bid cache settings are kept. To use this script version, '));
+  assert.deepEqual([bidCacheScriptVersions(config,[],upTo('3.25.0')),bidCacheNoticedScriptApplies(config,[],upTo('3.25.0'))],[[],true]);
+  assert.deepEqual([bidCacheScriptVersions(config,[],upTo('3.23.0')),bidCacheNoticedScriptApplies(config,[],upTo('3.23.0'))],[[],false]);
+  // With MAIN's registry a version is named, and versions with a notice are only reported, never named.
+  assert.deepEqual(bidCacheScriptVersions(config,[]),expectedVersions(['bidder-rules','bid-cache']));
+  assert.equal(bidCacheNoticedScriptApplies(config,[]),noticedApplies(['bidder-rules','bid-cache']));
+});
+
 // Panel copy reads the versions from the server payloads, so it follows the saved options and the registry.
+const source=path=>readFile(new URL('../../'+path,import.meta.url),'utf8');
+test('with no version named, the Bidder rules panel says whether a version with a runtime notice still applies the rules',async()=>{
+  const panel=await source('src/components/BidderRulesPanel.tsx');
+  assert.match(panel,/payload\.noticedScriptApplies===true\s*\?'No corrected script version is offered that applies bidder rules with your other saved options\. Versions with a runtime notice in Script setup still apply them\.'\s*:'No available script version applies bidder rules with your other saved options\.'/);
+  // The note and the save message use the same sentence and never name a noticed version.
+  assert.match(panel,/\?`You can save rules now\. \$\{noScriptText\(data\)\}`:/);
+  assert.match(panel,/\?`Saved\. \$\{noScriptText\(value\)\} Your rules are kept; existing scripts are unchanged\.`:/);
+});
+
 test('the Bidder rules and Bidders payloads name the versions for their option plus the saved ones',async()=>{
   const {getBidderRuleSettings}=await import('../../worker/site-runtime/bidder-rule-settings.mjs');
   const {listBidders}=await import('../../worker/bidders.ts');
@@ -269,5 +340,8 @@ test('the Bidder rules and Bidders payloads name the versions for their option p
     const bidders=await (await listBidders(f.env,'audit-site')).json();
     assert.deepEqual(bidders.accountScriptVersions,expectedVersions(['bidder-accounts',...needs]),label);assert.ok(Array.isArray(bidders.bidders),label);
     for(const versions of [rules.scriptVersions,bidders.accountScriptVersions])assert.ok(versions.length>=1&&versions.length<=2,label);
+    // Whether a version with a runtime notice applies the same options, so an empty list is not read as none existing.
+    assert.equal(rules.noticedScriptApplies,noticedApplies([...new Set(['bidder-rules',...needs])]),label);
+    assert.equal(bidders.accountNoticedScriptApplies,noticedApplies([...new Set(['bidder-accounts',...needs])]),label);
   }
 });

@@ -3,11 +3,11 @@
  * from the registered release capabilities and runtime notices, so a new release or notice changes the text without
  * an edit here and the text never grows with the number of releases. Only the wording is decided here: which settings
  * a script accepts stays with the existing guards, and generated packages are unchanged. */
-import {scriptVersionsWith,scriptVersionLabels,scriptVersionText,versionList as list,accountsNeeding,rulesNeeded,timeoutNeeded,neededCapabilities,CAPABILITY_NAMES as NAMES} from './script-versions.mjs';
+import {scriptVersionsWith,scriptVersionLabels,scriptVersionText,noScriptVersionText,noticedScriptVersionApplies,versionList as list,accountsNeeding,rulesNeeded,timeoutNeeded,neededCapabilities,CAPABILITY_NAMES as NAMES} from './script-versions.mjs';
 import {bidCacheActive} from './prebid-cache-settings.mjs';
 
 // The naming rule lives in script-versions.mjs, which the bid caching wording shares; these names stay exported here.
-export {scriptVersionsWith,scriptVersionLabels,scriptVersionText,neededCapabilities};
+export {scriptVersionsWith,scriptVersionLabels,scriptVersionText,noScriptVersionText,noticedScriptVersionApplies,neededCapabilities};
 const named=codes=>codes.length>3?`${codes.slice(0,3).join(', ')} and ${codes.length-3} more`:codes.join(', ');
 
 /** The saved options that only some scripts apply, by the same tests as their guards: active bidder accounts with an
@@ -27,10 +27,19 @@ function configNeeds(config){
  * the site's other saved options. Unreadable saved settings are left to the guards that refuse them. The bid caching
  * panels and Generate use bidCacheScriptVersions (prebid-cache-settings.mjs), which counts the same options. */
 export function savedScriptVersionLabels(capability,snapshot){
+  return scriptVersionLabels(savedCapabilities(capability,snapshot));
+}
+/** Whether a release with a runtime notice applies the same options as savedScriptVersionLabels. Such a release is
+ * never named but stays selectable, so the panels say that no corrected version is offered instead of that none
+ * applies them. */
+export function savedNoticedScriptApplies(capability,snapshot){
+  return noticedScriptVersionApplies(savedCapabilities(capability,snapshot));
+}
+function savedCapabilities(capability,snapshot){
   let needs;
   try{needs=savedScriptNeeds(snapshot);}
   catch{let config=null;try{config=JSON.parse(snapshot.config.config_json);}catch{}needs={accounts:[],...configNeeds(config)};}
-  return scriptVersionLabels([...new Set([capability,...neededCapabilities(needs)])]);
+  return [...new Set([capability,...neededCapabilities(needs)])];
 }
 
 /** The refusal for a script that lacks bidder accounts or bidder rules the site has saved, or null. Bid caching only
@@ -48,9 +57,9 @@ export function scriptGuidance(needs,descriptor,history){
   const versions=scriptVersionText(needed,history);
   // Turning bidder rules off is offered only when that alone lets this script apply the other saved options.
   const offSwitch=!accountsLacking&&(!needs.cache||has('bid-cache'))&&(!needs.timeout||has('adaptive-auction-timeout'));
-  const choice=!versions?`No available script version applies ${list(needed.map(capability=>NAMES[capability]),'and')} together`
-    :`${kept.length?`To keep them with your saved ${list(kept,'and')}, select`:'Select'} ${versions} in Script setup and save${offSwitch?', or turn off bidder rules':''}`;
-  return `${version?`Script ${version}`:'This script'} cannot apply ${list(lacking,'or')}. ${choice}. Your saved settings and previous packages are unchanged.`;
+  const choice=!versions?noScriptVersionText(needed,history)
+    :`${kept.length?`To keep them with your saved ${list(kept,'and')}, select`:'Select'} ${versions} in Script setup and save${offSwitch?', or turn off bidder rules':''}.`;
+  return `${version?`Script ${version}`:'This script'} cannot apply ${list(lacking,'or')}. ${choice} Your saved settings and previous packages are unchanged.`;
 }
 /** Checked before the shared guards, whose wording names one fixed version or says "or later". Same status as the
  * bidder rules guard. */
