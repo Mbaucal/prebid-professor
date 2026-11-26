@@ -155,7 +155,8 @@ test('historical scripts refuse combined settings with no corrected TEST choice 
  assert.equal(refused.status,422);assert.equal(refused.data.error,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE);
  assert.deepEqual(config(f),before);
  for(const message of [TEST_BID_CACHE_BIDDER_RULES_MESSAGE,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE]){
-  assert.match(message,/No available script version applies bid caching and bidder rules together\./);assert.doesNotMatch(message,/select 3\.24|3\.25|or later|Config/);
+  // 3.24.0 applies both but has a runtime notice: it is not named, and the text does not say that no version applies them.
+  assert.match(message,/ No corrected script version is offered that applies bid caching and bidder rules together\. Versions with a runtime notice in Script setup still apply them\. /);assert.doesNotMatch(message,/select 3\.24|3\.24\.0|3\.25|or later|Config|No available/);
  }
  // Bid caching off: 3.23.0 is still refused for the bidder rules, with the shared guidance that names the version
  // the Bidder rules panel names, not the bid caching reason.
@@ -205,7 +206,7 @@ test('saved bidder accounts on 3.23.0: no corrected TEST choice is offered, whil
  assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
  // TEST has no corrected available cache/account choice after excluding its exact runtime notices.
  assert.deepEqual(scriptVersionLabels(['bidder-accounts','bid-cache']),[]);
- const expected='Script 3.23.0 cannot apply bidder accounts (ox_ag). No available script version applies bidder accounts and bid caching together. Your saved settings and previous packages are unchanged.';
+ const expected='Script 3.23.0 cannot apply bidder accounts (ox_ag). No corrected script version is offered that applies bidder accounts and bid caching together. Versions with a runtime notice in Script setup still apply them. Your saved settings and previous packages are unchanged.';
  const setup=(await f.req('/test-api/site-runtime')).data;
  assert.equal(setup.validationIssue,expected);
  // Generate and releases shows the same reason, not the generic configuration text.
@@ -234,8 +235,11 @@ test('the TEST Bidder rules view and Prebid editor name the versions for their o
  assert.deepEqual(scriptVersionLabels(['bidder-accounts','bid-cache']),[]);
  const mode=(await f.req(MODE)).data;
  assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
- assert.deepEqual((await f.req('/test-api/bidder-rules')).data.scriptVersions,scriptVersionLabels(['bidder-rules','bid-cache']));
- assert.deepEqual((await f.req('/test-api/prebid-settings')).data.accountScriptVersions,scriptVersionLabels(['bidder-accounts','bid-cache']));
+ const rules=(await f.req('/test-api/bidder-rules')).data,prebid=(await f.req('/test-api/prebid-settings')).data;
+ assert.deepEqual(rules.scriptVersions,scriptVersionLabels(['bidder-rules','bid-cache']));
+ assert.deepEqual(prebid.accountScriptVersions,scriptVersionLabels(['bidder-accounts','bid-cache']));
+ // 3.24.0 still applies them with its runtime notice, so the views do not say that no version applies them.
+ assert.equal(rules.noticedScriptApplies,true);assert.equal(prebid.accountNoticedScriptApplies,true);
  assert.notDeepEqual(scriptVersionLabels(['bidder-rules']),scriptVersionLabels(['bidder-rules','bid-cache']),'saved bid caching narrows the versions');
 });
 
@@ -245,7 +249,7 @@ test('the TEST Bid caching view names the scripts that apply bid caching, never 
  // The offered versions come from the registry, leaving out exact noticed sources.
  const capable=(await f.req(MODE)).data,named=bidCacheScriptVersions(config(f),[]);
  assert.deepEqual(named,[]);
- assert.equal(capable.runtimeSupportsBidCache,true);assert.deepEqual(capable.bidCacheScriptVersions,named);
+ assert.equal(capable.runtimeSupportsBidCache,true);assert.deepEqual(capable.bidCacheScriptVersions,named);assert.equal(capable.bidCacheNoticedScriptApplies,true);
  // The first version with bid caching stays as it is (3.23.0, which has a runtime notice).
  assert.equal(capable.bidCacheRuntimeVersion,'3.23.0');
  await select(f,'3.21.2',true);
@@ -254,6 +258,8 @@ test('the TEST Bid caching view names the scripts that apply bid caching, never 
  // With bid caching saved, the TEST Generate reason names the same versions.
  assert.equal((await f.req(MODE,{enabled:true,revision:earlier.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
  const blocked=(await f.req('/test-api/site-packages')).data;
- assert.equal(blocked.error,TEST_BID_CACHE_GENERATOR_MESSAGE);assert.ok(blocked.error.startsWith('Bid caching needs a compatible script version, but no available script version applies bid caching.'),blocked.error);
+ assert.equal(blocked.error,TEST_BID_CACHE_GENERATOR_MESSAGE);assert.ok(blocked.error.startsWith('Bid caching needs a compatible script version. No corrected script version is offered that applies bid caching. Versions with a runtime notice in Script setup still apply it. '),blocked.error);
+ // The panels can tell that no corrected version is offered from no version applying bid caching at all.
+ assert.equal((await f.req(MODE)).data.bidCacheNoticedScriptApplies,true);
  assert.doesNotMatch(blocked.error,/Select |select |3\.24|3\.25/);
 });

@@ -15,4 +15,5 @@ export function bidCacheActive(config: Record<string, unknown>): boolean;
 export function requireSupportedCacheGenerator(config: Record<string, unknown>, descriptor?: unknown, bidders?: readonly unknown[]): void;
 export function bidCacheScripts<T extends Release = Release>(config: Record<string, unknown>, bidders?: readonly unknown[], history?: readonly T[], notices?: readonly Notice[]): T[];
 export function bidCacheScriptVersions(config: Record<string, unknown>, bidders?: readonly unknown[], history?: readonly Release[], notices?: readonly Notice[]): string[];
+export function bidCacheNoticedScriptApplies(config: Record<string, unknown>, bidders?: readonly unknown[], history?: readonly Release[], notices?: readonly Notice[]): boolean;
 export function bidCacheGeneratorMessage(config?: Record<string, unknown>, bidders?: readonly unknown[], history?: readonly Release[], notices?: readonly Notice[]): string;

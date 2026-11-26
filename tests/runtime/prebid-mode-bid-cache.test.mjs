@@ -269,7 +269,8 @@ test('Generate names the same bid caching versions as the panels, read from the 
     try { requireSupportedCacheGenerator(f.readConfig(), runtime3212, bidders); } catch (error) { message = error.message; assert.equal(error.status, 409, label); }
     assert.equal(message, bidCacheGeneratorMessage(f.readConfig(), bidders), label);
     assert.deepEqual(named,[],label);
-    assert.ok(message.startsWith('Bid caching needs a compatible script version, but no available script version applies '),message);
+    assert.ok(message.startsWith('Bid caching needs a compatible script version. No corrected script version is offered that applies '),message);
+    assert.match(message,/\. Versions with a runtime notice in Script setup still apply (?:it|them)\. Your bid cache settings are kept\. /);
     assert.deepEqual([...new Set(message.match(/\b\d+\.\d+\.\d+\b/g))], named.map(version => version.replace(' (Preview)', '')), message);
     assert.match(message,/Your bid cache settings are kept\. To use this script version, turn bid caching off in Config → Demand → Prebid,/);
     assert.doesNotMatch(message,/Select |select |3\.24|3\.25/);
@@ -295,19 +296,19 @@ test('the Generate bid caching refusal cannot go stale: a new release or notice 
     const named = bidCacheScriptVersions(config, [], history, notices), message = bidCacheGeneratorMessage(config, [], history, notices);
     assert.deepEqual(named, cacheVersions(config.runtimeControls ? ['bidder-rules'] : [], history, notices), name);
     if(named.length)assert.ok(message.includes(`Select ${choice(named)} in Script setup and save;`),`${name}: ${message}`);
-    else{assert.ok(message.includes('but no available script version applies'),`${name}: ${message}`);assert.doesNotMatch(message,/Select |select /);}
+    else{assert.match(message,/^Bid caching needs a compatible script version\. No corrected script version is offered that applies .+\. Versions with a runtime notice in Script setup still apply (?:it|them)\. /,`${name}: ${message}`);assert.doesNotMatch(message,/Select |select /);}
     assert.deepEqual([...new Set(message.match(/\b\d+\.\d+\.\d+\b/g))], named.map(version => version.replace(' (Preview)', '')), `${name}: ${message}`);
     texts.add(message);
   }
   assert.equal(texts.size, 5, 'each history words the refusal differently; the no-choice TEST fallback also names saved bidder rules');
   // Current TEST words the empty choice and keeps the explicit manual off-switch, with the exact saved options.
   for(const config of [{},{enablePrebid:true,runtimeControls:{bidderRules:rulesOn}}])assert.equal(bidCacheGeneratorMessage(config,[],TEST_3240),
-    `Bid caching needs a compatible script version, but no available script version applies ${config.runtimeControls?'bidder rules and bid caching together':'bid caching'}. Your bid cache settings are kept. `
+    `Bid caching needs a compatible script version. No corrected script version is offered that applies ${config.runtimeControls?'bidder rules and bid caching together':'bid caching'}. Versions with a runtime notice in Script setup still apply ${config.runtimeControls?'them':'it'}. Your bid cache settings are kept. `
     +'To use this script version, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.');
   assert.ok(bidCacheGeneratorMessage({}, [], ...histories['a notice on 3.24.0']).includes('Select 3.25.1 (Preview) or 3.26.0 (Preview) in Script setup and save; your bid cache settings are kept. Both versions combine '));
-  // No version applies them together: the refusal says so instead of naming one.
+  // No version applies them together, with or without a notice: the refusal says so instead of naming one.
   const none = bidCacheGeneratorMessage({enablePrebid: true, runtimeControls: {bidderRules: rulesOn}}, [], MAIN_3260.filter(entry => byVersion(entry, {version: '3.23.0'}) <= 0));
-  assert.equal(none, 'Bid caching needs a compatible script version, but no available script version applies bidder rules and bid caching together. Your bid cache settings are kept. '
+  assert.equal(none, 'Bid caching needs a compatible script version. No available script version applies bidder rules and bid caching together. Your bid cache settings are kept. '
     + 'To use this script version, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.');
 });
 

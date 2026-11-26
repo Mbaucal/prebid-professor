@@ -1,9 +1,10 @@
 // TEST-only wording names this workspace's existing views and the Preview scripts to allow. The versions come from the
 // release registry by the shared naming rule (site-runtime/script-versions.mjs), as the panels and the shared Generate
 // refusal name them, so a new release or runtime notice changes them together. With the TEST releases (up to 3.24.0)
-// no corrected bid-cache version is currently offered: both registered cache releases carry a notice.
+// no corrected bid-cache version is currently offered: both registered cache releases carry a notice, and the messages
+// say that versions with a runtime notice still apply them.
 import {BID_CACHE_GENERATOR_MESSAGE,bidCacheActive} from '../site-runtime/prebid-cache-settings.mjs';
-import {scriptVersionsWith,versionList} from '../site-runtime/script-versions.mjs';
+import {scriptVersionsWith,noScriptVersionText,versionList} from '../site-runtime/script-versions.mjs';
 
 const KEEP_SCRIPT='open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position.';
 // How the shared refusal ends: the way back to this script names Config pages, which TEST words with its own views.
@@ -21,7 +22,7 @@ export function testBidderRulesMessages(history,notices){
  const releases=scriptVersionsWith(['bid-cache','bidder-rules'],history,notices),preview=releases.some(release=>release.channel==='preview');
  const both=releases.length
   ?`To use both, select ${versionList(releases.map(release=>release.version+(release.channel==='preview'?' Preview':'')),'or')} in Script setup, ${preview?'allow Preview scripts, ':''}and save.`
-  :'No available script version applies bid caching and bidder rules together.';
+  :noScriptVersionText(['bid-cache','bidder-rules'],history,notices);
  return {combined:`This script cannot combine bid caching and bidder rules. ${both} To keep this script version instead, turn bid caching off: ${KEEP_SCRIPT} Your saved bidder rules are kept.`,
   withoutBidCache:`Script 3.23.0 has bid caching but cannot apply enabled bidder rules. ${both} To keep 3.23.0 instead, turn off bidder rules in Bidder rules. Your saved settings are kept.`};
 }

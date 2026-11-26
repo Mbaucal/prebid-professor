@@ -47,6 +47,13 @@ def registry_labels(*capabilities):
  return json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
 CACHE_SCRIPTS=registry_labels('bid-cache');assert len(CACHE_SCRIPTS)<=2,CACHE_SCRIPTS
 CACHE_SCRIPT=' or '.join(CACHE_SCRIPTS)
+# Whether a release with a runtime notice applies bid caching: never named, but still selectable in Script setup.
+def registry_noticed(*capabilities):
+ code="const {noticedScriptVersionApplies}=await import('./worker/site-runtime/script-versions.mjs');console.log(JSON.stringify(noticedScriptVersionApplies(JSON.parse(process.argv[1]))))"
+ return json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
+CACHE_NOTICED=registry_noticed('bid-cache')
+NO_CACHE_VERSION=('No corrected script version is offered that applies bid caching. Versions with a runtime notice in Script setup still apply it.'
+ if CACHE_NOTICED else 'No available script version applies bid caching.')
 NO_CACHE_SCRIPT='No corrected compatible bid-cache script is available in this workspace. Your saved settings are kept.'
 SELECT_TEXT=f'Select script {CACHE_SCRIPT} in Script setup to apply bid caching. Your setting is saved.' if CACHE_SCRIPTS else NO_CACHE_SCRIPT
 # Saved settings would cache, but the form has unsaved changes: nothing claims it is saved.
@@ -57,7 +64,7 @@ POSITION_TEXT=f'Applies to the next package generated with script {CACHE_SCRIPT}
 POSITION_SAVED='Saved. Select a compatible script in Script setup to apply it.' if CACHE_SCRIPTS else 'Saved. No corrected compatible bid-cache script is available in this workspace. Your setting is kept.'
 GENERATOR_TEXT=(f'Bid caching needs a compatible script version. Select {CACHE_SCRIPT} in Script setup and save; your bid cache settings are kept. '
  + ('Both versions combine' if len(CACHE_SCRIPTS)>1 else 'This version combines')+' bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
- 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.') if CACHE_SCRIPTS else ('Bid caching needs a compatible script version, but no available script version applies bid caching. Your bid cache settings are kept. '
+ 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.') if CACHE_SCRIPTS else (f'Bid caching needs a compatible script version. {NO_CACHE_VERSION} Your bid cache settings are kept. '
  'To use this script version, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.')
 try:
  with sync_playwright() as p:

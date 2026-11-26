@@ -185,7 +185,9 @@ test('the generator 409 names the bid caching versions and preserving the curren
   const releases = scriptVersionsWith([BID_CACHE_CAPABILITY]), labels = releases.map(release => release.version + (release.channel === 'preview' ? ' (Preview)' : ''));
   assert.deepEqual(releases, [], 'TEST has no corrected cache release after its exact 3.24.0 source is noticed');
   assert.ok(releases.every(release => release.capabilities.includes('bidder-accounts') && release.capabilities.includes('bidder-rules')), 'every named version has bidder accounts and rules');
-  assert.equal(BID_CACHE_GENERATOR_MESSAGE, 'Bid caching needs a compatible script version, but no available script version applies bid caching. Your bid cache settings are kept. '
+  // 3.23.0 and 3.24.0 apply bid caching but have runtime notices, so they are not named, and the text does not say that
+  // no version applies it.
+  assert.equal(BID_CACHE_GENERATOR_MESSAGE, 'Bid caching needs a compatible script version. No corrected script version is offered that applies bid caching. Versions with a runtime notice in Script setup still apply it. Your bid cache settings are kept. '
     + 'To use this script version, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.');
   assert.doesNotMatch(BID_CACHE_GENERATOR_MESSAGE, /3\.23\.0|or later/);
 });

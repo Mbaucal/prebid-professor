@@ -36,6 +36,9 @@ test('bidder rules copy names the versions from the server payload, not a fixed 
  assert.match(panel,/versionChoice\(payload\.scriptVersions\?\?\[\]\)/);
  assert.match(panel,/You can save rules now\. Select and save \{scriptChoice\(data\)\} before generating a package that uses them\./);
  assert.match(panel,/`Saved\. Select and save \$\{scriptChoice\(value\)\}, then generate a new script to apply these rules\. Existing scripts are unchanged\.`/);
+ // With no version named, the panel says whether a version with a runtime notice still applies them (3.24.0 on TEST
+ // with saved bid caching), and never names that version.
+ assert.match(panel,/payload\.noticedScriptApplies===true\s*\?'No corrected script version is offered that applies bidder rules with your other saved options\. Versions with a runtime notice in Script setup still apply them\.'\s*:'No available script version applies bidder rules with your other saved options\.'/);
 });
 
 test('the TEST Prebid editor names the account script versions from the server, not 3.22.1 or a later version',async()=>{
@@ -51,13 +54,13 @@ test('the TEST bid caching messages name the scripts the panels name, from the r
  const rules={enablePrebid:true,runtimeControls:{bidderRules:{schemaVersion:1,enabled:true,rules:[]}}};
  const plain=bidCacheScriptVersions({},[]),withRules=bidCacheScriptVersions(rules,[]);
  assert.deepEqual(plain,[]);assert.deepEqual(withRules,[]);
- assert.ok(TEST_BID_CACHE_GENERATOR_MESSAGE.includes('but no available script version applies bid caching.'),TEST_BID_CACHE_GENERATOR_MESSAGE);
+ assert.ok(TEST_BID_CACHE_GENERATOR_MESSAGE.includes(' No corrected script version is offered that applies bid caching. Versions with a runtime notice in Script setup still apply it. '),TEST_BID_CACHE_GENERATOR_MESSAGE);
  assert.doesNotMatch(TEST_BID_CACHE_GENERATOR_MESSAGE,/Select |select /);
  assert.equal(testBidCacheMessage(bidCacheGeneratorMessage({},[]),{}),TEST_BID_CACHE_GENERATOR_MESSAGE);
  assert.equal(testBidCacheMessage(bidCacheGeneratorMessage(rules,[]),rules),TEST_BID_CACHE_BIDDER_RULES_MESSAGE);
  // TEST offers no corrected combined cache version and never recommends a noticed or unavailable release.
  for(const message of [TEST_BID_CACHE_BIDDER_RULES_MESSAGE,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE]){
-  assert.ok(message.includes('No available script version applies bid caching and bidder rules together.'),message);
+  assert.ok(message.includes(' No corrected script version is offered that applies bid caching and bidder rules together. Versions with a runtime notice in Script setup still apply them. '),message);
   assert.doesNotMatch(message,/To use both, select|3\.24\.0|3\.25/);
  }
  // "Script 3.23.0 has bid caching but cannot apply enabled bidder rules" fits every script that gets that message.
@@ -70,11 +73,11 @@ test('the TEST bid caching messages name the scripts the panels name, from the r
 test('the TEST bid caching messages preserve their suffix with no corrected choice and follow a new release or notice',()=>{
  // Exactly the TEST texts with the releases up to 3.24.0.
  const keep='open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position.';
- assert.equal(TEST_BID_CACHE_GENERATOR_MESSAGE,'Bid caching needs a compatible script version, but no available script version applies bid caching. Your bid cache settings are kept. To use this script version, '+keep);
+ assert.equal(TEST_BID_CACHE_GENERATOR_MESSAGE,'Bid caching needs a compatible script version. No corrected script version is offered that applies bid caching. Versions with a runtime notice in Script setup still apply it. Your bid cache settings are kept. To use this script version, '+keep);
  assert.doesNotMatch(TEST_BID_CACHE_GENERATOR_MESSAGE,/scripopen|Config →|3\.24|3\.25/);
- assert.equal(TEST_BID_CACHE_BIDDER_RULES_MESSAGE,'This script cannot combine bid caching and bidder rules. No available script version applies bid caching and bidder rules together. '
+ assert.equal(TEST_BID_CACHE_BIDDER_RULES_MESSAGE,'This script cannot combine bid caching and bidder rules. No corrected script version is offered that applies bid caching and bidder rules together. Versions with a runtime notice in Script setup still apply them. '
   +'To keep this script version instead, turn bid caching off: '+keep+' Your saved bidder rules are kept.');
- assert.equal(BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE,'Script 3.23.0 has bid caching but cannot apply enabled bidder rules. No available script version applies bid caching and bidder rules together. '
+ assert.equal(BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE,'Script 3.23.0 has bid caching but cannot apply enabled bidder rules. No corrected script version is offered that applies bid caching and bidder rules together. Versions with a runtime notice in Script setup still apply them. '
   +'To keep 3.23.0 instead, turn off bidder rules in Bidder rules. Your saved settings are kept.');
  assert.deepEqual(testBidderRulesMessages(TEST_3240),{combined:TEST_BID_CACHE_BIDDER_RULES_MESSAGE,withoutBidCache:BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE});
  // MAIN's later releases (synthetic here): two versions; a notice on 3.24.0 moves the smallest step to 3.25.1.
@@ -91,8 +94,13 @@ test('the TEST bid caching messages preserve their suffix with no corrected choi
   const shared=bidCacheGeneratorMessage({},[],history,notices);
   assert.equal(testBidCacheMessage(shared,{}),shared.replace('turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.',keep));
  }
- // No version applies both: the messages say so instead of naming one.
- assert.ok(testBidderRulesMessages(TEST_3240,notice).combined.includes(' No available script version applies bid caching and bidder rules together. '));
+ // No version without a notice applies both: the messages say so instead of naming one, and that 3.24.0, which has a
+ // notice, still applies them. Up to 3.23.0 no version applies both at all.
+ assert.ok(testBidderRulesMessages(TEST_3240,notice).combined.includes(' No corrected script version is offered that applies bid caching and bidder rules together. Versions with a runtime notice in Script setup still apply them. To keep '));
+ const upTo323=TEST_3240.filter(r=>r.version!=='3.24.0');
+ for(const message of Object.values(testBidderRulesMessages(upTo323)))assert.ok(message.includes(' No available script version applies bid caching and bidder rules together. To keep '),message);
+ assert.ok(bidCacheGeneratorMessage({},[],upTo323).startsWith('Bid caching needs a compatible script version. No corrected script version is offered that applies bid caching. Versions with a runtime notice in Script setup still apply it. '));
+ assert.ok(bidCacheGeneratorMessage({},[],upTo323.filter(r=>r.version!=='3.23.0')).startsWith('Bid caching needs a compatible script version. No available script version applies bid caching. Your bid cache settings are kept. '));
  // Other messages pass unchanged.
  for(const message of ['Something else.','Bid caching needs a compatible script version, but an unrecognized ending.'])assert.equal(testBidCacheMessage(message,{}),message);
 });
