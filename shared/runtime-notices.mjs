@@ -20,8 +20,13 @@ export const runtimeNotices = Object.freeze([Object.freeze({
   version: '3.23.0',
   runtimeSha256: 'c2b9e027f2bd263c17b3f0d81b701120b29bde23efeaa3efd81ad2163f47c224',
   optionSuffix: ' · Earlier bid cache',
-  warning: '3.23.0 adds bid caching on the 3.21.2 base. It does not include bidder accounts or bidder rules, the lazy initial-auction correction, or the newer checks that prevent cached bids from bypassing a bidder activity restriction or a raised price floor.',
-  alternative: Object.freeze({ version: '3.24.0', offers: 'bid caching, bidder accounts and rules with these safeguards' }),
+  warning: '3.23.0 adds bid caching on the 3.21.2 base. It does not include bidder accounts or bidder rules, the lazy initial-auction correction, or the newer checks that prevent cached bids from bypassing a bidder activity restriction or a raised price floor. A corrected compatible bid-cache version is not available in this TEST workspace.',
+  excludeFromRecommendation: true,
+}),Object.freeze({
+  version: '3.24.0',
+  runtimeSha256: '6a897977487d60d69165fd574a468db5cf3a7269b87868ae3dd794b66ea0bc48',
+  optionSuffix: ' · Cache limit',
+  warning: '3.24.0 can stop reusing cached bids during a long page session. A corrected compatible bid-cache version is not available in this TEST workspace. This version remains selectable; saved settings and packages are unchanged.',
   excludeFromRecommendation: true,
 })]);
 

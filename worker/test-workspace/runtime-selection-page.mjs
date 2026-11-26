@@ -11,7 +11,7 @@ export const runtimeSelectionScript = `
 const el=(id)=>document.getElementById(id);let state=null,busy=false,stale=true;
 const notices=${JSON.stringify(runtimeNotices)};
 function noticeFor(item){return item?notices.find(notice=>notice.version===item.pin.runtimeVersion&&notice.runtimeSha256===item.pin.runtimeSha256):undefined;}
-function noticeText(notice){const alternative=state.runtimes.find(item=>item.version===notice.alternative.version);return notice.warning+(alternative?' '+alternative.version+(alternative.channel==='preview'?' (Preview)':'')+' has '+notice.alternative.offers+'.':'');}
+function noticeText(notice){const suggested=notice.alternative,alternative=suggested&&state.runtimes.find(item=>item.version===suggested.version);return notice.warning+(alternative?' '+alternative.version+(alternative.channel==='preview'?' (Preview)':'')+' has '+suggested.offers+'.':'');}
 function showNotice(item){const notice=noticeFor(item);el('runtime-notice').hidden=!notice;el('runtime-notice').textContent=notice?noticeText(notice):'';if(notice)el('runtime').setAttribute('aria-describedby','runtime-notice');else el('runtime').removeAttribute('aria-describedby');}
 function message(text,error=false){el('message').textContent=text;el('message').classList.toggle('error',error);}
 function renderHistory(){

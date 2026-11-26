@@ -7,11 +7,13 @@ import {scriptVersionsWith,versionList} from '../site-runtime/script-versions.mj
 
 const KEEP_SCRIPT='open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position.';
 // How the shared refusal ends: the way back to this script names Config pages, which TEST words with its own views.
-const KEEP_PREFIX='To keep this script version instead, ',SHARED_KEEP=BID_CACHE_GENERATOR_MESSAGE.slice(BID_CACHE_GENERATOR_MESSAGE.indexOf(KEEP_PREFIX)+KEEP_PREFIX.length);
+const KEEP_PREFIXES=['To keep this script version instead, ','To use this script version, '];
+const keepPrefix=KEEP_PREFIXES.find(prefix=>BID_CACHE_GENERATOR_MESSAGE.includes(prefix));
+const SHARED_KEEP=keepPrefix?BID_CACHE_GENERATOR_MESSAGE.slice(BID_CACHE_GENERATOR_MESSAGE.lastIndexOf(keepPrefix)+keepPrefix.length):null;
 /** The shared bid caching refusal (bidCacheGeneratorMessage in site-runtime/prebid-cache-settings.mjs), whichever
  * versions it names for the site's saved options. */
-export const isBidCacheRefusal=message=>typeof message==='string'&&message.startsWith('Bid caching needs a compatible script version')&&message.endsWith(SHARED_KEEP);
-const testGeneratorMessage=message=>message.slice(0,message.length-SHARED_KEEP.length)+KEEP_SCRIPT;
+export const isBidCacheRefusal=message=>typeof message==='string'&&message.startsWith('Bid caching needs a compatible script version')&&typeof SHARED_KEEP==='string'&&SHARED_KEEP.length>0&&message.endsWith(SHARED_KEEP);
+const testGeneratorMessage=message=>isBidCacheRefusal(message)?message.slice(0,message.length-SHARED_KEEP.length)+KEEP_SCRIPT:message;
 export const TEST_BID_CACHE_GENERATOR_MESSAGE=testGeneratorMessage(BID_CACHE_GENERATOR_MESSAGE);
 /** The TEST messages for enabled bidder rules beside bid caching, naming the versions that apply both (at most two, by
  * the shared rule). The history and notices are arguments only so tests can show the text follows the registry. */
