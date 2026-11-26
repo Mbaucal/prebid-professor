@@ -14,9 +14,8 @@ import { TEST_SITE, jsonBody } from './boundary.mjs';
 import {cleanupResponse,cleanupState} from './package-cleanup.mjs';
 import {getPrebidMode,updatePrebidMode} from '../prebid-mode.ts';
 import {withAuthenticatedActor} from '../http.ts';
-import {BID_CACHE_GENERATOR_MESSAGE} from '../site-runtime/prebid-cache-settings.mjs';
 import {digest} from '../runtime/preview-snapshot.mjs';
-import {testBidCacheMessage} from './bid-cache-messages.mjs';
+import {isBidCacheRefusal,testBidCacheMessage} from './bid-cache-messages.mjs';
 import {abTestsResponse} from '../experiments/ab-tests-api.mjs';
 
 // The shared generator refusal names the production Config menus; this workspace has a Bid caching view instead.
@@ -98,7 +97,7 @@ export async function siteWorkspaceResponse(request,env,actor,headers){
    }
    if(response.status===409&&response.headers.get('content-type')?.includes('application/json')){
     const body=await response.clone().json();
-    if(body.error===BID_CACHE_GENERATOR_MESSAGE)return new Response(JSON.stringify({...body,error:testBidCacheMessage(body.error,siteConfig)}),{status:409,headers:response.headers});
+    if(isBidCacheRefusal(body.error))return new Response(JSON.stringify({...body,error:testBidCacheMessage(body.error,siteConfig)}),{status:409,headers:response.headers});
    }
    return response;
   }

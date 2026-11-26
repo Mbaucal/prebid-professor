@@ -399,6 +399,13 @@ export const api = {
     return payload.bidders;
   },
 
+  async loadBidders(publisherId: string): Promise<Pick<BiddersResponse, 'bidders' | 'accountScriptVersions'>> {
+    const payload = await requestJson<BiddersResponse>(
+      `/api/publishers/${encodeURIComponent(publisherId)}/bidders`,
+    );
+    return { bidders: payload.bidders, accountScriptVersions: payload.accountScriptVersions ?? [] };
+  },
+
   async createBidder(publisherId: string, input: CreateBidderInput): Promise<Bidder> {
     const payload = await requestJson<BidderResponse>(
       `/api/publishers/${encodeURIComponent(publisherId)}/bidders`,

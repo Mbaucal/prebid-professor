@@ -7,6 +7,15 @@ from playwright.sync_api import sync_playwright,expect
 root=Path(__file__).resolve().parent.parent
 out=root/'.generated/review-mba413-test-editor';out.mkdir(parents=True,exist_ok=True)
 custom={'ver':'1.0','complete':1,'nodes':[{'asi':'agency.example','sid':'agency-42','hp':1}]}
+# Script versions that apply bidder accounts, from the registry.
+def registry_labels(*capabilities):
+ """The versions the admin names for these capabilities, read from the release registry by the shared rule
+ (worker/site-runtime/script-versions.mjs): the smallest step and the newest without a runtime notice, one or two."""
+ code="const {scriptVersionLabels}=await import('./worker/site-runtime/script-versions.mjs');console.log(JSON.stringify(scriptVersionLabels(JSON.parse(process.argv[1]))))"
+ labels=json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
+ assert 1<=len(labels)<=2,labels
+ return ' or '.join(labels)
+ACCOUNT_SCRIPTS=registry_labels('bidder-accounts')
 reports=[]
 with sync_playwright() as pw:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
@@ -52,6 +61,8 @@ with sync_playwright() as pw:
    try:
     reject.append(True);page.goto(origin+'/prebid-settings',wait_until='domcontentloaded');expect(page.locator('#message')).to_contain_text('Synthetic TEST read outage');screen('read-error')
     page.locator('#reload-prebid').click();expect(page.locator('#editor')).to_be_enabled();checks.append('Read failure is visible and reload recovers actual TEST data')
+    expect(page.locator('#account-scripts')).to_have_text(f'Account aliases and custom or no-upstream SChain require script {ACCOUNT_SCRIPTS}. Saving preparation does not switch the script version.')
+    expect(page.locator('#editor')).not_to_contain_text('3.22.1');checks.append('Account note names the script versions that apply bidder accounts')
     own=add('adf_smn','inherit',111,'SMN Adform');agency=add('adf_ag','custom',222,'Agency Adform');field(agency,'schainJson').fill('{bad')
     page.locator('#enable-prebid').check();saveplan();expect(page.locator('#message.error')).to_contain_text('JSON');expect(field(agency,'params')).to_have_value(json.dumps({'mid':222}));screen('custom-json-error',agency)
     assert not data('/__fixture/snapshot')['bidders'];checks.append('Invalid custom JSON is rejected without activation or lost account inputs')
