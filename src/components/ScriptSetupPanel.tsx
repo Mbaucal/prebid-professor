@@ -49,6 +49,7 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const noticeId = useId();
+  const summaryId = useId();
   const loaded=useRef(false);
 
   async function request(body?: unknown): Promise<State> {
@@ -128,19 +129,19 @@ function SetupEditor({ publisherId, endpoint, onChanged, onOpenPrebid, onContinu
         </label>
       </div>
       <label>Script version
-        <select aria-label="Script version" aria-describedby={notice ? noticeId : undefined} value={selection ? pinKey(selection) : ''} disabled={busy || stale || unavailable} onChange={event => {
+        <select aria-label="Script version" aria-describedby={notice ? `${summaryId} ${noticeId}` : summaryId} value={selection ? pinKey(selection) : ''} disabled={busy || stale || unavailable} onChange={event => {
           const next = versionOptions.find(item => pinKey(item.pin) === event.target.value);
           if (next) { setSelection(next.pin); setMessage(''); }
         }}>
           {!selection ? <option value="">Unavailable</option> : null}
-          {/* While a noticed saved version is also selected, its notice takes the place of the plain saved marker so the closed select fits a phone-width screen; the line below then says Saved version. In the open list, with another version selected, the choice keeps the marker. */}
+          {/* While a noticed or Preview saved version is also selected, the closed select leaves out the plain saved marker so it fits a phone-width screen; the line below then says Saved version and describes the select, so screen readers still hear it. In the open list, with another version selected, the choice keeps the marker. */}
           {versionOptions.map(item => <option key={pinKey(item.pin)} value={pinKey(item.pin)} disabled={item === savedOption && !savedRuntime}>
-            {runtimeLabel(item.version)}{item.channel === 'preview' ? ' · Preview' : ''}{runtimeNoticeSuffix(item.pin)}{samePin(item.pin, current?.pin ?? null) ? ' · Current version' : item === savedOption ? savedRuntime ? ' · Saved earlier build' : ' · Saved version unavailable' : samePin(item.pin, state.selected) && !(runtimeNotice(item.pin) && samePin(item.pin, selection)) ? ' · Saved version' : ''}
+            {runtimeLabel(item.version)}{item.channel === 'preview' ? ' · Preview' : ''}{runtimeNoticeSuffix(item.pin)}{samePin(item.pin, current?.pin ?? null) ? ' · Current version' : item === savedOption ? savedRuntime ? ' · Saved earlier build' : ' · Saved version unavailable' : samePin(item.pin, state.selected) && !((runtimeNotice(item.pin) || item.channel === 'preview') && samePin(item.pin, selection)) ? ' · Saved version' : ''}
           </option>)}
         </select>
       </label>
       <div className="script-version-summary">
-        <span>Script version <strong>{selection ? runtimeLabel(selected?.version ?? selection.runtimeVersion) : 'Unavailable'}</strong>{selected?.channel === 'preview' ? ' · Preview' : ''}{!selection ? '' : !state.selected && isCurrent ? ' · Current version for new scripts' : changedVersion ? ' · Unsaved version change' : isCurrent ? ' · Current version' : earlierBuild ? ' · Saved earlier build' : ' · Saved version'}</span>
+        <span id={summaryId}>Script version <strong>{selection ? runtimeLabel(selected?.version ?? selection.runtimeVersion) : 'Unavailable'}</strong>{selected?.channel === 'preview' ? ' · Preview' : ''}{!selection ? '' : !state.selected && isCurrent ? ' · Current version for new scripts' : changedVersion ? ' · Unsaved version change' : isCurrent ? ' · Current version' : earlierBuild ? ' · Saved earlier build' : ' · Saved version'}</span>
         {current && !isCurrent ? <button type="button" disabled={busy || stale} onClick={() => { setSelection(current.pin); setMessage(''); }}>Use current version</button> : null}
       </div>
       {selected?.channel === 'preview' ? <p className="script-prebid-note" role="note">Preview version selected. Save explicitly and verify a generated package on TEST before using it on a live site.</p> : null}

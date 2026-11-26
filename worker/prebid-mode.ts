@@ -5,7 +5,7 @@ import { readPreviewSnapshot } from './runtime/builtin-preview-service.mjs';
 import { digest } from './runtime/preview-snapshot.mjs';
 import { runtimeCatalog, prepareSiteRuntimeSelection } from './test-workspace/runtime-catalog.mjs';
 import { commitSiteConfiguration } from './site-runtime/service.mjs';
-import { bidCacheSettings, requireEligibleOverrides, supportsNamedScripts } from './site-runtime/prebid-cache-settings.mjs';
+import { bidCacheScriptVersions, bidCacheSettings, requireEligibleOverrides, supportsNamedScripts } from './site-runtime/prebid-cache-settings.mjs';
 import { CACHE_POSITIONS } from './experiments/position-cache-settings.mjs';
 import { BID_CACHE_RUNTIME_VERSION, bidCacheEligibleCodes, runtimeSupportsBidCache, type BidCacheUnitRow } from '../shared/bid-cache/eligibility.mjs';
 
@@ -100,9 +100,10 @@ async function buildPayload(db: D1Database, siteId: string, config: JsonRecord):
   ]);
 
   const enabled = enabledFromConfig(config);
-  const [site, units] = await Promise.all([
+  const [site, units, bidders] = await Promise.all([
     db.prepare('SELECT domain, gam_path FROM publishers WHERE id = ?').bind(siteId).first(),
     readCacheUnits(db, siteId),
+    db.prepare('SELECT bidder, account_json, enabled FROM bidders WHERE publisher_id = ?').bind(siteId).all(),
   ]);
   return {
     revision: await digest(config),
@@ -110,6 +111,9 @@ async function buildPayload(db: D1Database, siteId: string, config: JsonRecord):
     bidCacheAvailable: true,
     bidCachePositions: bidCacheEligibleCodes(units, config),
     bidCacheRuntimeVersion: BID_CACHE_RUNTIME_VERSION,
+    // The versions the panels name, the same as Generate's bid caching refusal: those that apply bid caching with the
+    // site's other saved options, at most two, such as ["3.24.0 (Preview)", "3.26.0 (Preview)"]; empty when none does.
+    bidCacheScriptVersions: bidCacheScriptVersions(config, bidders.results ?? []),
     ...selectedRuntime(config),
     // Only adds a sentence about new named scripts. It never changes which settings can be
     // saved or which positions are listed. Named scripts keep the reviewed inventory of

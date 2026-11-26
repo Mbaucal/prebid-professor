@@ -12,6 +12,7 @@ import { listPrebidFiles, readPrebidFile } from './prebid-files.mjs';
 import { fields, normalizePrebidDraft, SUPPORTED_BIDDERS } from './prebid-draft.mjs';
 import { makePrebidPlan, publicPlan, planOptions, USER_IDS } from './prebid-plan.mjs';
 import { assertRevenueDraftPreserved } from './revenue-draft-guard.mjs';
+import { savedScriptVersionLabels } from '../site-runtime/script-version-guidance.mjs';
 export const prebidStore = (env) => ({isolation:'explicit-test-store', db:env.DB, bucket:env.BUILDS});
 export async function prebidSnapshot(env) {
   const snapshot = await readPreviewSnapshot(env.DB.withSession('first-primary'), TEST_SITE, {includePrebid:true});
@@ -39,6 +40,8 @@ export async function getPrebidSettings(env) {
     units:snapshot.units.map((u)=>({code:u.code,enabled:u.enabled===1})),requiredModules,
     plan:config.testPrebidPlan??null,options:planOptions(config),userIds:USER_IDS.map(({name,label})=>({name,label})),
     version:snapshot.prebidBuilds[0]?.version??'11.11.0',
+    // The versions the account note names: bidder accounts together with the site's other saved options.
+    accountScriptVersions:savedScriptVersionLabels('bidder-accounts',snapshot),
     validationIssue,publishable:false,notice:'File bytes and header declarations are checked. Partner parameters and actual ad delivery still need a staging test.'};
 }
 export async function prepareBuildPlan(env,body) {
