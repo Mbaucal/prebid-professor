@@ -171,3 +171,14 @@ test('comments and types near the version names never show a label the naming ru
   for(const label of excluded)assert.ok(!text.includes(label),`${path} shows ${label}`);
  }
 });
+
+test('the docs attribute the cache limit in a long page session to 3.24.0 only, as its runtime notice does',async()=>{
+ const notice=version=>runtimeNotices.find(n=>n.version===version).warning;
+ // The notices: 3.24.0 can stop reusing cached bids during a long page session; 3.23.0 lacks later corrections.
+ assert.match(notice('3.24.0'),/long page session/);assert.doesNotMatch(notice('3.23.0'),/long page session|finite/);
+ for(const path of ['docs/per-position-bid-cache.md','docs/bidder-accounts.md']){
+  const doc=await source(path);
+  assert.doesNotMatch(doc,/3\.23\.0 and 3\.24\.0[^.]*(?:finite cache history|cache-limit|long page session)/,path);
+ }
+ assert.match(await source('docs/per-position-bid-cache.md'),/3\.24\.0 can stop reusing cached bids during a long page session\./);
+});
