@@ -6,6 +6,7 @@ import { runtimeCatalog, readPinnedSiteRuntime, buildArtifactCandidate, previewI
 import { takeOverForBuild } from '../test-workspace/takeover-settings.mjs';
 import { zipSync } from 'fflate';
 import {requireSupportedCacheGenerator} from './prebid-cache-settings.mjs';
+import {savedScriptNeeds,scriptGuidance} from './script-version-guidance.mjs';
 import { siteSetupState } from './setup-state.mjs';
 import { artifactResponseHeaders } from '../artifact-response-headers.ts';
 import { refreshSummary } from './refresh-summary.mjs';
@@ -36,9 +37,12 @@ export async function packageState(env,site,{testOnly=false}={}){
  const setup=siteSetupState(saved);if(error&&setup.setupMessage)error=setup.setupMessage;
  const warnings=selected?refreshSummary(previewInput(selected.snapshot,selected.descriptor,'20000101_000000'),saved.units,selected.pin,saved.rules).warnings:[];
  if(setup.userSyncWarning)warnings.push(setup.userSyncWarning);
- // The saved cache settings are checked against the script version the site selected.
+ // The saved cache settings are checked against the script version the site selected. Generate checks the Script
+ // setup guidance for bidder accounts and bidder rules first, so it is shown first here too; only the bid caching
+ // refusal sends the site to Demand.
  const cacheDescriptor=selected?.descriptor??runtimeCatalog.find(r=>r.id===displayPin?.runtimeId&&r.version===displayPin?.runtimeVersion);
- let cacheBlocked=false;try{requireSupportedCacheGenerator(JSON.parse(saved.config.config_json),cacheDescriptor,saved.bidders??[]);}catch(e){error=e.message;cacheBlocked=true;}
+ let cacheBlocked=false;try{requireSupportedCacheGenerator(JSON.parse(saved.config.config_json),cacheDescriptor,saved.bidders??[]);}
+ catch(e){let guidance=null;try{guidance=scriptGuidance(savedScriptNeeds(saved),cacheDescriptor);}catch{}error=guidance??e.message;cacheBlocked=!guidance;}
  const rows=await db(env).prepare("SELECT * FROM releases WHERE publisher_id=? AND version LIKE ? ORDER BY created_at DESC,id DESC LIMIT 50").bind(site,testOnly?'builtin-draft-%':'builtin-release-%').all();
  // Keep prior production packages reachable after selecting a built-in runtime.
  const earlier=testOnly?{results:[]}:await db(env).prepare(`SELECT r.*,

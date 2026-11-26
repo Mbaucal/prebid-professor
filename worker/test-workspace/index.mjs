@@ -37,6 +37,7 @@ import { isTestUnitRuleItemPath, unitRulesResponse } from './unit-rules.mjs';
 import {namedScriptMethodAllowed,namedScriptsResponse} from './named-scripts.mjs';
 import {requireSupportedCacheGenerator} from '../site-runtime/prebid-cache-settings.mjs';
 import {testBidCacheMessage} from './bid-cache-messages.mjs';
+import {savedScriptNeeds,scriptGuidance} from '../site-runtime/script-version-guidance.mjs';
 
 // HTML form navigation under no-referrer sends Origin:null. same-origin keeps
 // legitimate form Origin while still suppressing cross-origin referrers.
@@ -170,10 +171,12 @@ async function route(request,env) {
     let selected=null,validationIssue=null;
     try { selected=pin?descriptorForPin(pin):runtimeCatalog[1]; }
     catch { validationIssue='The saved script version is unavailable or has changed. Open Script version and choose an available version. Your settings and saved packages are unchanged.'; }
-    // Saved bid caching that this script cannot apply: say so before Generate.
+    // Saved bid caching that this script cannot apply: say so before Generate. Generate checks the Script setup
+    // guidance for bidder accounts and bidder rules first, so that comes first here too.
     if(selected&&settings){
       const config=JSON.parse(settings.config.config_json);
-      try { requireSupportedCacheGenerator(config,selected,settings.bidders??[]); } catch(error) { validationIssue=testBidCacheMessage(error.message,config); }
+      try { requireSupportedCacheGenerator(config,selected,settings.bidders??[]); }
+      catch(error) { let guidance=null;try{guidance=scriptGuidance(savedScriptNeeds(settings),selected);}catch{} validationIssue=guidance??testBidCacheMessage(error.message,config); }
     }
     return json({...schema,runtime:selected?{version:selected.version,sha256:selected.codeSha256}:null,validationIssue,
       ...(settings?{takeOver:takeOverForBuild(settings)}:{}),publishable:false});

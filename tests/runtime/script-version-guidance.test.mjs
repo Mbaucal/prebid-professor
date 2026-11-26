@@ -231,6 +231,9 @@ test('Script setup on 3.21.2 with bid caching offers no bidder rules off-switch 
   const state=await siteRuntimeSettings(f.env,'audit-site');
   assert.equal(state.validationIssue,'Script 3.21.2 cannot apply enabled bidder rules. No corrected script version is offered that applies bidder rules and bid caching together. Versions with a runtime notice in Script setup still apply them. Your saved settings and previous packages are unchanged.');
   assert.equal(configurationErrorMessage(Error(state.validationIssue)),state.validationIssue);
+  // Releases show the same guidance, as Generate checks it first, and do not send the site to Demand for bid caching.
+  const packages=await packageState(f.env,'audit-site');
+  assert.equal(packages.error,state.validationIssue);assert.notEqual(packages.nextStep,'demand');
   // Turning rules off on 3.21.2 would only lead to the bid caching refusal.
   const config=f.readConfig();config.runtimeControls.bidderRules.enabled=false;f.writeConfig(config);
   assert.equal((await siteRuntimeSettings(f.env,'audit-site')).validationIssue,null);

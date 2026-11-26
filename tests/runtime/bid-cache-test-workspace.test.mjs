@@ -176,6 +176,25 @@ test('historical scripts refuse combined settings with no corrected TEST choice 
  assert.equal((await f.req('/test-api/site-packages')).data.error,TEST_BID_CACHE_GENERATOR_MESSAGE);
 });
 
+test('with bidder rules and bid caching on 3.21.2, every TEST view shows the Script setup guidance first',async()=>{
+ const f=await fixture();await enablePrebid(f);
+ const mode=(await f.req(MODE)).data;
+ assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
+ await select(f,'3.21.2',true);
+ const rules=(await f.req('/test-api/bidder-rules')).data;
+ assert.equal((await f.req('/test-api/bidder-rules',{revision:rules.revision,settings:{schemaVersion:1,enabled:true,rules:[]}})).status,200);
+ // 3.21.2 applies neither, so turning bid caching off alone would not let it generate: Generate names the bidder
+ // rules first, and every view says the same instead of sending the site to Demand for bid caching.
+ const guidance='Script 3.21.2 cannot apply enabled bidder rules. No corrected script version is offered that applies bidder rules and bid caching together. Versions with a runtime notice in Script setup still apply them. Your saved settings and previous packages are unchanged.';
+ const before=config(f);
+ const generated=await f.req('/test-api/generate',{acknowledge:true});
+ assert.equal(generated.status,422,JSON.stringify(generated.data));assert.equal(generated.data.error,guidance);
+ const packages=(await f.req('/test-api/site-packages')).data;
+ assert.equal(packages.ready,false);assert.equal(packages.error,guidance);assert.notEqual(packages.nextStep,'demand');
+ assert.equal((await f.req('/test-api/status')).data.validationIssue,guidance);
+ assert.equal((await f.req('/test-api/site-runtime')).data.validationIssue,guidance);
+ assert.deepEqual(config(f),before);
+});
 
 test('the TEST site explicitly selects combined Preview and generates both saved caching and bidder rules',async()=>{
  const f=await fixture();await enablePrebid(f);
