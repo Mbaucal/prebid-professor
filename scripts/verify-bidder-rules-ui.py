@@ -1,9 +1,10 @@
 """Bidder eligibility editor: native React + authenticated Worker, synthetic only."""
-import base64,json,os,subprocess
+import argparse,base64,json,os,subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright,expect
-root=Path(__file__).resolve().parent.parent
+parser=argparse.ArgumentParser();parser.add_argument('--root',type=Path,default=Path(__file__).resolve().parent.parent)
+root=parser.parse_args().root.resolve()
 out=root/'.generated/bidder-rules-ui-evidence';out.mkdir(parents=True,exist_ok=True)
 origin='https://bidder-rules.fixture.invalid';endpoint='/api/publishers/audit-site/bidder-rules'
 checks=[]
@@ -12,8 +13,12 @@ def registry_labels(*capabilities):
  (worker/site-runtime/script-versions.mjs): the smallest step and the newest without a runtime notice, one or two."""
  code="const {scriptVersionLabels}=await import('./worker/site-runtime/script-versions.mjs');console.log(JSON.stringify(scriptVersionLabels(JSON.parse(process.argv[1]))))"
  labels=json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
- assert 1<=len(labels)<=2,labels
+ assert len(labels)<=2,labels
  return ' or '.join(labels)
+def rules_note(versions):
+ return f'You can save rules now. Select and save script version {versions} before generating a package that uses them.' if versions else 'You can save rules now. No available script version applies bidder rules with your other saved options.'
+def saved_note(versions):
+ return f'Saved. Select and save script version {versions}, then generate a new script to apply these rules. Existing scripts are unchanged.' if versions else 'Saved. No available script version applies bidder rules with your other saved options. Your rules are kept; existing scripts are unchanged.'
 RULE_SCRIPTS=registry_labels('bidder-rules')
 # With saved bid caching, only versions that apply bid caching and bidder rules together.
 RULE_CACHE_SCRIPTS=registry_labels('bidder-rules','bid-cache')
@@ -60,7 +65,7 @@ with sync_playwright() as playwright:
     page.goto(origin,wait_until='domcontentloaded');expect(panel.get_by_role('status')).to_contain_text('Loading');screen('loading')
     fulfill(pending.pop(),'Synthetic load unavailable.');expect(panel.get_by_role('alert')).to_contain_text('Synthetic load');screen('load-error')
     panel.get_by_role('button',name='Reload saved settings').click();expect(panel.get_by_role('checkbox',name='Enable bidder rules for this site')).not_to_be_checked();expect(save).to_be_disabled()
-    expect(page.get_by_role('navigation',name='Configuration sections')).to_be_visible();expect(note).to_have_text(f'You can save rules now. Select and save script version {RULE_SCRIPTS} before generating a package that uses them.');expect(panel).not_to_contain_text('or later');screen('defaults')
+    expect(page.get_by_role('navigation',name='Configuration sections')).to_be_visible();expect(note).to_have_text(rules_note(RULE_SCRIPTS));expect(panel).not_to_contain_text('or later');screen('defaults')
     panel.get_by_role('checkbox',name='Enable bidder rules for this site').check();panel.get_by_role('button',name='Add bidder rule').click()
     panel.get_by_role('combobox',name='Bidder for rule 1').select_option('pubmatic')
     panel.get_by_role('textbox',name='Rule 1 name',exact=True).fill('Serbia desktop')
@@ -91,7 +96,7 @@ with sync_playwright() as playwright:
     preview('RS',1024,'P1');screen('position-override')
     faults['holdPost']=True;save.click();expect(panel.get_by_role('button',name='Saving…')).to_be_disabled();expect(codes).to_be_disabled();expect(panel.get_by_role('button',name='Add bidder rule')).to_be_disabled();screen('saving')
     fulfill(pending.pop(),'Synthetic save unavailable. Retry your edits.');expect(panel.get_by_role('alert')).to_contain_text('Synthetic save');expect(panel.get_by_role('alert')).to_be_in_viewport();expect(codes).to_have_value('rs, BA');expect(save).to_be_enabled();screen('save-error')
-    save.click();expect(panel.get_by_text(f'Saved. Select and save script version {RULE_SCRIPTS}, then generate a new script to apply these rules. Existing scripts are unchanged.',exact=True)).to_be_visible();expect(save).to_be_disabled()
+    save.click();expect(panel.get_by_text(saved_note(RULE_SCRIPTS),exact=True)).to_be_visible();expect(save).to_be_disabled()
     saved=data()['settings'];assert saved['enabled'];assert saved['rules'][0]['countries']['values']==['BA','RS'];assert saved['rules'][1]['positions']==['m.box_1'];assert saved['rules'][1]['devices']==['mobile']
     page.reload();expect(codes).to_have_value('BA, RS');expect(save).to_be_disabled();screen('reloaded')
     # Invalid edits do not reach persistence. Overlapping policies are not silently ordered.
@@ -102,7 +107,17 @@ with sync_playwright() as playwright:
     panel.get_by_role('checkbox',name='Enable bidder rules for this site').uncheck();save.click();expect(panel.get_by_text('Saved. Generate a new script to apply this change. Existing scripts are unchanged.',exact=True)).to_be_visible();assert data()['settings']['enabled'] is False;assert data()['settings']['rules']==saved['rules']
     panel.get_by_role('button',name='Add bidder rule').click();panel.get_by_role('textbox',name='Rule 3 name',exact=True).fill('Unsaved');panel.get_by_role('button',name='Reset changes').click();expect(panel.get_by_role('textbox',name='Rule 3 name',exact=True)).to_have_count(0)
     # Saved bid caching with 3.23.0: the note names only versions that apply bid caching and bidder rules together.
-    data('/__fixture/bid-cache-323',{});page.reload();expect(note).to_have_text(f'You can save rules now. Select and save script version {RULE_CACHE_SCRIPTS} before generating a package that uses them.');assert RULE_CACHE_SCRIPTS!=RULE_SCRIPTS;screen('bid-cache-323')
+    data('/__fixture/bid-cache-323',{});page.reload();expect(note).to_have_text(rules_note(RULE_CACHE_SCRIPTS));assert RULE_CACHE_SCRIPTS!=RULE_SCRIPTS;screen('bid-cache-323')
+    if not RULE_CACHE_SCRIPTS:
+     # No fixed combined version is available on TEST, but explicit saves still work and keep every rule.
+     panel.get_by_role('checkbox',name='Enable bidder rules for this site').check();save.click()
+     expect(panel.get_by_text(saved_note(RULE_CACHE_SCRIPTS),exact=True)).to_be_visible()
+     current=data();assert current['settings']['enabled'] is True and current['settings']['rules']==saved['rules']
+     assert current['scriptVersions']==[] and current['runtimeEligible'] is False
+     expect(save).to_be_disabled();screen('no-compatible-script-saved')
+     panel.get_by_role('checkbox',name='Enable bidder rules for this site').uncheck();save.click()
+     expect(panel.get_by_text('Saved. Generate a new script to apply this change. Existing scripts are unchanged.',exact=True)).to_be_visible()
+     assert data()['settings']['enabled'] is False and data()['settings']['rules']==saved['rules']
     data('/__fixture/remove-bidder',{});page.reload();expect(panel.get_by_role('combobox',name='Bidder for rule 1')).to_have_value('pubmatic');expect(panel.get_by_text('This bidder is not configured or is disabled. The rule is kept; it does not activate a bidder.')).to_have_count(2);expect(panel.get_by_role('checkbox',name='m.box_1 · not configured',exact=True)).to_be_checked();screen('orphan-preserved')
     assert not errors,errors
     no_auth=send(endpoint,{'revision':data()['revision'],'settings':saved},{'cookie':''});assert no_auth['status']==401
