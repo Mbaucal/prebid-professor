@@ -21,8 +21,9 @@ import {scriptGuidance} from '../../worker/site-runtime/script-version-guidance.
 // capabilities and without a runtime notice, at most two are named, oldest first: the smallest step (the fewest
 // capabilities, the newest of those on a tie) and the newest. One when they are the same release; none when no
 // release has every capability.
-// TEST keeps its own wording for enabled bidder rules on 3.23.0 (worker/test-workspace/bid-cache-messages.mjs), checked
-// before the shared guidance; it names 3.24.0 Preview, which applies every saved option, and is checked the same way.
+// TEST keeps its own wording for enabled bidder rules beside saved bid caching on 3.23.0
+// (worker/test-workspace/bid-cache-messages.mjs), checked before the shared guidance. It names only versions that apply
+// both, none with the TEST registry, and is checked the same way. Without saved bid caching the shared guidance applies.
 const TS='20261116_120000';
 const RULES={schemaVersion:1,enabled:true,rules:[{id:'r',name:'RS only',enabled:true,bidder:'openx',positions:[],countries:{mode:'include',values:['RS'],unknown:'skip'},devices:['desktop','tablet','mobile']}]};
 const CACHE={enabled:true,maxBidAgeSeconds:60};
@@ -89,6 +90,8 @@ test('a script without bidder rules or accounts names only versions that apply e
       assert.ok(descriptor.capabilities.includes('bid-cache')&&!descriptor.capabilities.includes('bidder-rules'),name);
       const expected=expectedVersions(needs).map(version=>version.replace(' (Preview)',''));
       assert.ok(namedVersions(message,descriptor.version).every(version=>expected.includes(version)),`${name}: ${message}`);
+      // A version that applies every saved option is named whenever one is offered: an empty list is not a subset check.
+      if(expected.length)assert.ok(namedVersions(message,descriptor.version).length>0,`${name} on ${descriptor.version} names ${expected.join(' or ')}: ${message}`);
       for(const version of namedVersions(message,descriptor.version))assert.equal(refusal(make(),runtimeCatalog.find(r=>r.version===version)),null,`${name} -> ${version}`);
       assert.equal(configurationErrorMessage(Object.assign(Error(message),{status:422})),message,name);
       checked++;continue;

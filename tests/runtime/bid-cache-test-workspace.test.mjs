@@ -157,13 +157,16 @@ test('historical scripts refuse combined settings with no corrected TEST choice 
  for(const message of [TEST_BID_CACHE_BIDDER_RULES_MESSAGE,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE]){
   assert.match(message,/No available script version applies bid caching and bidder rules together\./);assert.doesNotMatch(message,/select 3\.24|3\.25|or later|Config/);
  }
- // Bid caching off: 3.23.0 is still refused for the bidder rules, with the same reason.
+ // Bid caching off: 3.23.0 is still refused for the bidder rules, with the shared guidance that names the version
+ // the Bidder rules panel names, not the bid caching reason.
  const off=(await f.req(MODE)).data;
  assert.equal((await f.req(MODE,{enabled:true,revision:off.revision,bidCache:{enabled:false,maxBidAgeSeconds:45}},'PUT')).status,200);
  assert.equal((await f.req('/test-api/site-packages')).data.ready,true);
  const again=(await f.req('/test-api/site-runtime')).data;
  const refusedOff=await f.req('/test-api/site-runtime',{action:'setup',revision:again.revision,runtime:r323.pin,allowPreview:false,enablePrebid:true});
- assert.equal(refusedOff.status,422);assert.equal(refusedOff.data.error,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE);
+ assert.equal(refusedOff.status,422);
+ assert.equal(refusedOff.data.error,'Script 3.23.0 cannot apply enabled bidder rules. Select 3.22.2 (Preview) in Script setup and save, or turn off bidder rules. Your saved settings and previous packages are unchanged.');
+ assert.deepEqual((await f.req('/test-api/bidder-rules')).data.scriptVersions,['3.22.2 (Preview)']);
  // Without bidder rules, the bid cache reason is the plain TEST one.
  const rulesNow=(await f.req('/test-api/bidder-rules')).data;
  assert.equal((await f.req('/test-api/bidder-rules',{revision:rulesNow.revision,settings:{schemaVersion:1,enabled:false,rules:[]}})).status,200);

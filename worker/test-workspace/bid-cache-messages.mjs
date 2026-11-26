@@ -2,7 +2,7 @@
 // release registry by the shared naming rule (site-runtime/script-versions.mjs), as the panels and the shared Generate
 // refusal name them, so a new release or runtime notice changes them together. With the TEST releases (up to 3.24.0)
 // no corrected bid-cache version is currently offered: both registered cache releases carry a notice.
-import {BID_CACHE_GENERATOR_MESSAGE} from '../site-runtime/prebid-cache-settings.mjs';
+import {BID_CACHE_GENERATOR_MESSAGE,bidCacheActive} from '../site-runtime/prebid-cache-settings.mjs';
 import {scriptVersionsWith,versionList} from '../site-runtime/script-versions.mjs';
 
 const KEEP_SCRIPT='open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position.';
@@ -31,8 +31,11 @@ export const BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE=RULES.withoutBidCache;
 const bidderRulesOn=config=>config?.enablePrebid===true&&config?.runtimeControls?.bidderRules?.enabled===true;
 /** The TEST wording for the shared bid cache refusal, given the saved site configuration; other messages pass unchanged. */
 export const testBidCacheMessage=(message,config)=>!isBidCacheRefusal(message)?message:bidderRulesOn(config)?TEST_BID_CACHE_BIDDER_RULES_MESSAGE:testGeneratorMessage(message);
-/** A script with bid caching but without bidder rules (3.23.0) cannot apply enabled bidder rules. Checked before the
- * shared bidder rules guard, whose 'or later' wording would point at 3.23.0. Same status as that guard. */
+/** A script with bid caching but without bidder rules (3.23.0) cannot apply enabled bidder rules beside saved bid
+ * caching. Checked before the shared bidder rules guard, whose 'or later' wording would point at 3.23.0. Without saved
+ * bid caching the shared guidance (requireSavedOptionsRuntime) names the versions that apply bidder rules, as the
+ * Bidder rules panel does. Same status as that guard. Unreadable cache settings are refused at Generate. */
 export function requireBidderRulesBesideBidCache(config,descriptor){
- if(bidderRulesOn(config)&&descriptor?.capabilities?.includes('bid-cache')&&!descriptor.capabilities.includes('bidder-rules'))throw Object.assign(Error(BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE),{status:422});
+ let cache=false;try{cache=bidCacheActive(config);}catch{}
+ if(bidderRulesOn(config)&&cache&&descriptor?.capabilities?.includes('bid-cache')&&!descriptor.capabilities.includes('bidder-rules'))throw Object.assign(Error(BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE),{status:422});
 }
