@@ -104,3 +104,14 @@ test('the TEST bid caching messages preserve their suffix with no corrected choi
  // Other messages pass unchanged.
  for(const message of ['Something else.','Bid caching needs a compatible script version, but an unrecognized ending.'])assert.equal(testBidCacheMessage(message,{}),message);
 });
+
+test('the cache panels check the selected script before the empty list, and the save message agrees with them',async()=>{
+ const mode=await source('src/components/PrebidModePanel.tsx'),position=await source('src/components/PositionBidCachePanel.tsx');
+ // A selected script that applies bid caching (3.23.0 or 3.24.0 on TEST) is said to apply it, never shown like 3.21.2.
+ assert.match(mode,/<p>\{payload\.runtimeSupportsBidCache \? `Applies to new packages generated with the selected script\.\$\{noCacheScript \? ` \$\{NO_CORRECTED_CACHE_SCRIPT\}\.` : ''\}` : noCacheScript \?/);
+ assert.match(position,/<p>\{data\.runtimeSupportsBidCache\?`Applies to the next package generated with the selected script\.\$\{data\.bidCacheScriptVersions\?\.length===0\?` \$\{NO_CORRECTED_CACHE_SCRIPT\}\.`:''\}`:data\.bidCacheScriptVersions\?\.length===0\?/);
+ // With no version to select, neither Demand save message (with or without named scripts) asks to select one.
+ assert.match(mode,/\? next\.bidCacheScriptVersions\?\.length === 0\s*\/\/[^\n]*\n\s*\? `Prebid settings saved\.\$\{next\.namedScriptLibrary \? ' New named scripts use them\.' : ''\} \$\{noCacheScriptText\(next\)\}; your bid cache settings are kept\.`/);
+ // A version with a runtime notice is never named; the panels only say that such versions still apply bid caching.
+ for(const panel of [mode,position])assert.match(panel,/Versions with a runtime notice in Script setup still apply bid caching with your other saved options\./);
+});
