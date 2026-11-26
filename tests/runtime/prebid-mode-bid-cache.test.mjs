@@ -228,8 +228,8 @@ function withAlias(f) {
 
 test('the panels name the bid caching versions for the saved options, at most two, never "or later"', async () => {
   // With the releases up to 3.26.0: 3.23.0 has a notice, so 3.24.0 is the smallest step and 3.26.0 the newest.
-  assert.deepEqual(cacheVersions([], MAIN_3260), ['3.24.0 (Preview)', '3.26.0 (Preview)']);
-  assert.deepEqual(bidCacheScriptVersions({}, [], MAIN_3260), ['3.24.0 (Preview)', '3.26.0 (Preview)']);
+  assert.deepEqual(cacheVersions([], MAIN_3260), ['3.25.1 (Preview)', '3.26.0 (Preview)']);
+  assert.deepEqual(bidCacheScriptVersions({}, [], MAIN_3260), ['3.25.1 (Preview)', '3.26.0 (Preview)']);
   const selection = runtime => ({schemaVersion: 1, runtime: pinRuntime(runtime, {allowPreview: true}), prebid: null});
   for (const [config, needs, alias] of [[{}, []], [{prebidBidCache: {enabled: true, maxBidAgeSeconds: 60}}, []],
     [{builtinRuntimeSelection: selection(runtimeCatalog.find(runtime => runtime.version === BID_CACHE_RUNTIME_VERSION))}, []],
@@ -274,24 +274,24 @@ test('Generate names the same bid caching versions as the panels, read from the 
 
 test('the Generate bid caching refusal cannot go stale: a new release or notice changes it with the panels', () => {
   const release = (version, capabilities) => ({id: 'tessera-' + version, version, channel: 'preview', codeSha256: version, capabilities});
-  const r326 = runtimeReleaseHistory.find(entry => entry.version === '3.26.0'), r324 = runtimeReleaseHistory.find(entry => entry.version === '3.24.0');
+  const r326 = runtimeReleaseHistory.find(entry => entry.version === '3.26.0'), r3251 = runtimeReleaseHistory.find(entry => entry.version === '3.25.1');
   const histories = {
     'up to 3.26.0': [MAIN_3260, runtimeNotices],
     'up to 3.24.0 (TEST)': [MAIN_3260.filter(entry => byVersion(entry, {version: '3.24.0'}) <= 0), runtimeNotices],
     'a future 3.27.0': [[release('3.27.0', [...r326.capabilities, 'future']), ...MAIN_3260], runtimeNotices],
-    'a notice on 3.24.0': [MAIN_3260, [...runtimeNotices, {version: '3.24.0', runtimeSha256: r324.codeSha256}]],
+    'a notice on 3.25.1': [MAIN_3260, [...runtimeNotices, {version: '3.25.1', runtimeSha256: r3251.codeSha256}]],
   };
   const texts = new Set();
   for (const [name, [history, notices]] of Object.entries(histories)) for (const config of [{}, {enablePrebid: true, runtimeControls: {bidderRules: rulesOn}}]) {
     const named = bidCacheScriptVersions(config, [], history, notices), message = bidCacheGeneratorMessage(config, [], history, notices);
     assert.deepEqual(named, cacheVersions(config.runtimeControls ? ['bidder-rules'] : [], history, notices), name);
-    assert.ok(message.includes(`Select ${choice(named)} in Script setup and save;`), `${name}: ${message}`);
+    assert.ok(named.length?message.includes(`Select ${choice(named)} in Script setup and save;`):message.includes('no available script version'), `${name}: ${message}`);
     assert.deepEqual([...new Set(message.match(/\b\d+\.\d+\.\d+\b/g))], named.map(version => version.replace(' (Preview)', '')), `${name}: ${message}`);
     texts.add(message);
   }
-  assert.equal(texts.size, 4, 'each history words the refusal differently');
-  assert.ok(bidCacheGeneratorMessage({}, [], histories['up to 3.24.0 (TEST)'][0]).includes('Select 3.24.0 (Preview) in Script setup and save; your bid cache settings are kept. This version combines '));
-  assert.ok(bidCacheGeneratorMessage({}, [], ...histories['a notice on 3.24.0']).includes('Select 3.25.1 (Preview) or 3.26.0 (Preview) in Script setup and save; your bid cache settings are kept. Both versions combine '));
+  assert.equal(texts.size, 5, 'histories differ, and the unavailable TEST case names saved rules separately');
+  assert.ok(bidCacheGeneratorMessage({}, [], histories['up to 3.24.0 (TEST)'][0]).includes('no available script version applies bid caching. Your bid cache settings are kept.'));
+  assert.ok(bidCacheGeneratorMessage({}, [], ...histories['a notice on 3.25.1']).includes('Select 3.26.0 (Preview) in Script setup and save; your bid cache settings are kept. This version combines '));
   // No version applies them together: the refusal says so instead of naming one.
   const none = bidCacheGeneratorMessage({enablePrebid: true, runtimeControls: {bidderRules: rulesOn}}, [], MAIN_3260.filter(entry => byVersion(entry, {version: '3.23.0'}) <= 0));
   assert.equal(none, 'Bid caching needs a compatible script version, but no available script version applies bidder rules and bid caching together. Your bid cache settings are kept. '

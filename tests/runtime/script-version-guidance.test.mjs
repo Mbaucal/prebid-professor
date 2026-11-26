@@ -62,12 +62,12 @@ const namedVersions=(message,selected)=>[...new Set(message.match(/\b\d+\.\d+\.\
 test('the guidance names the smallest step and the newest release, never more than two',()=>{
   const newest=needs=>label(runtimeReleaseHistory.filter(r=>numeric(r.version)&&needs.every(c=>r.capabilities.includes(c))&&!runtimeNotices.some(n=>n.version===r.version&&n.runtimeSha256===r.codeSha256)).sort(byVersion).at(-1));
   for(const needs of [['bidder-rules'],['bidder-accounts'],['bidder-accounts','bidder-rules']])assert.deepEqual(expectedVersions(needs),['3.22.2 (Preview)',newest(needs)]);
-  for(const needs of [['bid-cache'],['bidder-rules','bid-cache'],['bidder-accounts','bid-cache'],['bidder-accounts','bidder-rules','bid-cache']])assert.deepEqual(expectedVersions(needs),['3.24.0 (Preview)',newest(needs)]);
+  for(const needs of [['bid-cache'],['bidder-rules','bid-cache'],['bidder-accounts','bid-cache'],['bidder-accounts','bidder-rules','bid-cache']])assert.deepEqual(expectedVersions(needs),['3.25.1 (Preview)',newest(needs)]);
   // With the releases up to 3.26.0 (MAIN) and up to 3.24.0 (TEST).
   assert.deepEqual(expectedVersions(['bidder-rules'],MAIN_3260),['3.22.2 (Preview)','3.26.0 (Preview)']);
-  assert.deepEqual(expectedVersions(['bidder-rules','bid-cache'],MAIN_3260),['3.24.0 (Preview)','3.26.0 (Preview)']);
-  assert.deepEqual(expectedVersions(['bidder-rules'],TEST_3240),['3.22.2 (Preview)','3.24.0 (Preview)']);
-  assert.deepEqual(expectedVersions(['bidder-rules','bid-cache'],TEST_3240),['3.24.0 (Preview)']);
+  assert.deepEqual(expectedVersions(['bidder-rules','bid-cache'],MAIN_3260),['3.25.1 (Preview)','3.26.0 (Preview)']);
+  assert.deepEqual(expectedVersions(['bidder-rules'],TEST_3240),['3.22.2 (Preview)']);
+  assert.deepEqual(expectedVersions(['bidder-rules','bid-cache'],TEST_3240),[]);
 });
 
 test('a script without bidder rules or accounts names only versions that apply every saved option, and each of them is accepted',async()=>{
@@ -139,7 +139,7 @@ test('patterns for the guidance are anchored and refuse altered text',()=>{
   const generic=configurationErrorMessage(Error('x'));
   assert.equal(configurationErrorMessage(Error(message)),message);
   assert.notEqual(message.replace(/select (\S+ \(Preview\)) or /,'select $1, 3.25.0 (Preview) or '),message,'a third name is inserted');
-  for(const altered of [message+' ',' '+message,message.replace('3.24.0 (Preview)','3.24.0 (Preview) or later'),message.replace('Script 3.23.0','Script <b>'),message+'\nmore',message.replace('select 3.24.0','select https://example.invalid'),
+  for(const altered of [message+' ',' '+message,message.replace('3.25.1 (Preview)','3.25.1 (Preview) or later'),message.replace('Script 3.23.0','Script <b>'),message+'\nmore',message.replace('select 3.25.1','select https://example.invalid'),
     message.replace(/select (\S+ \(Preview\)) or /,'select $1, 3.25.0 (Preview) or ')])
     assert.equal(configurationErrorMessage(Error(altered)),generic,altered);
 });
@@ -205,17 +205,17 @@ test('versions come from release capabilities: the smallest step and the newest,
   // and accounts; 3.24.0 is the smallest step with bid caching (3.23.0 has a notice); 3.26.0 is the newest.
   assert.equal(scriptVersionText(['bidder-rules'],MAIN_3260),'3.22.2 (Preview) or 3.26.0 (Preview)');
   assert.equal(scriptVersionText(['bidder-accounts'],MAIN_3260),'3.22.2 (Preview) or 3.26.0 (Preview)');
-  for(const needs of [['bid-cache'],['bidder-rules','bid-cache'],['bidder-accounts','bidder-rules','bid-cache']])assert.equal(scriptVersionText(needs,MAIN_3260),'3.24.0 (Preview) or 3.26.0 (Preview)');
+  for(const needs of [['bid-cache'],['bidder-rules','bid-cache'],['bidder-accounts','bidder-rules','bid-cache']])assert.equal(scriptVersionText(needs,MAIN_3260),'3.25.1 (Preview) or 3.26.0 (Preview)');
   // The registry up to 3.24.0 (TEST) keeps the names it has today.
-  assert.equal(scriptVersionText(['bidder-rules'],TEST_3240),'3.22.2 (Preview) or 3.24.0 (Preview)');
-  assert.deepEqual(scriptVersionLabels(['bidder-accounts','bid-cache'],TEST_3240),['3.24.0 (Preview)']);
+  assert.equal(scriptVersionText(['bidder-rules'],TEST_3240),'3.22.2 (Preview)');
+  assert.deepEqual(scriptVersionLabels(['bidder-accounts','bid-cache'],TEST_3240),[]);
   // A later notice moves the smallest step: with one on 3.24.0, 3.25.0 and 3.25.1 tie and the newer patch is named.
   const r324=runtimeReleaseHistory.find(r=>r.version==='3.24.0');
   const notices=[...runtimeNotices,{version:'3.24.0',runtimeSha256:r324.codeSha256}];
   assert.equal(scriptVersionText(['bid-cache'],MAIN_3260,notices),'3.25.1 (Preview) or 3.26.0 (Preview)');
   assert.deepEqual(scriptVersionLabels(['bid-cache'],MAIN_3260,notices),expectedVersions(['bid-cache'],MAIN_3260,notices));
   // A notice matches the exact source only: another build of 3.24.0 would stay offered.
-  assert.equal(scriptVersionText(['bid-cache'],MAIN_3260,[...runtimeNotices,{version:'3.24.0',runtimeSha256:'0'.repeat(64)}]),'3.24.0 (Preview) or 3.26.0 (Preview)');
+  assert.equal(scriptVersionText(['bid-cache'],MAIN_3260,[...runtimeNotices.filter(n=>n.version!=='3.24.0'),{version:'3.24.0',runtimeSha256:'0'.repeat(64)}]),'3.24.0 (Preview) or 3.26.0 (Preview)');
   // One release: the smallest step is the newest. Up to 3.22.2, 3.22.1 and 3.22.2 tie (3.22.0 has a notice).
   assert.deepEqual(scriptVersionLabels(['bidder-rules'],upTo('3.22.2')),['3.22.2 (Preview)']);
   assert.deepEqual(scriptVersionLabels(['bidder-rules'],upTo('3.22.1')),['3.22.1 (Preview)']);

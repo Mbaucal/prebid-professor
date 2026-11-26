@@ -6,7 +6,7 @@ export type RuntimeNotice = {
   /** Plain-language reason shown beside the selected version. */
   readonly warning: string;
   /** A release with the same feature and the missing fixes, named only when it is offered. */
-  readonly alternative: { readonly version: string; readonly offers: string };
+  readonly alternative?: { readonly version: string; readonly offers: string };
   /** A known earlier source stays selectable but is not offered as the recommendation. */
   readonly excludeFromRecommendation?: boolean;
 };
