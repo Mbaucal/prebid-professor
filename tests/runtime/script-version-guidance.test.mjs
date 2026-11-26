@@ -10,7 +10,7 @@ import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
 import {runtimeNotices} from '../../shared/runtime-notices.mjs';
 import {siteRuntimeSettings,siteRuntimeResponse} from '../../worker/site-runtime/service.mjs';
-import {packageState} from '../../worker/site-runtime/releases.mjs';
+import {packageState,generatePackage} from '../../worker/site-runtime/releases.mjs';
 import {scriptGuidance} from '../../worker/site-runtime/script-version-guidance.mjs';
 import {configure} from './artifact-fixture.mjs';
 import {bidCacheSite} from './bid-cache323-site.mjs';
@@ -214,6 +214,10 @@ test('Script setup on 3.21.2 with bid caching does not offer turning bidder rule
   const f=savedSite({rules:true,cache:true,version:'3.21.2'});
   const state=await siteRuntimeSettings(f.env,'audit-site');
   assert.equal(state.validationIssue,`Script 3.21.2 cannot apply enabled bidder rules. To keep them with your saved bid caching, select ${choice(expectedVersions(['bidder-rules','bid-cache']))} in Script setup and save. Your saved settings and previous packages are unchanged.`);
+  // Releases show the same guidance, as Generate checks it first, and do not send the site to Demand for bid caching.
+  const packages=await packageState(f.env,'audit-site');
+  assert.equal(packages.error,state.validationIssue);assert.notEqual(packages.nextStep,'demand');
+  await assert.rejects(generatePackage(f.env,'audit-site','admin@example.invalid',{notes:'',revision:packages.revision}),error=>error.message===state.validationIssue);
   // Turning rules off on 3.21.2 would only lead to the bid caching refusal.
   const config=f.readConfig();config.runtimeControls.bidderRules.enabled=false;f.writeConfig(config);
   assert.equal((await siteRuntimeSettings(f.env,'audit-site')).validationIssue,null);
