@@ -183,11 +183,10 @@ test('malformed compiled input fails closed', () => {
 test('the generator 409 names the bid caching versions and preserving the current script with caching off', () => {
   // The versions come from the registry (one or two: the smallest step and the newest without a runtime notice).
   const releases = scriptVersionsWith([BID_CACHE_CAPABILITY]), labels = releases.map(release => release.version + (release.channel === 'preview' ? ' (Preview)' : ''));
-  assert.ok(releases.length >= 1 && releases.length <= 2, labels.join(', '));
+  assert.deepEqual(releases, [], 'TEST has no corrected cache release after its exact 3.24.0 source is noticed');
   assert.ok(releases.every(release => release.capabilities.includes('bidder-accounts') && release.capabilities.includes('bidder-rules')), 'every named version has bidder accounts and rules');
-  assert.equal(BID_CACHE_GENERATOR_MESSAGE, `Bid caching needs a compatible script version. Select ${labels.join(' or ')} in Script setup and save; your bid cache settings are kept. `
-    + `${labels.length > 1 ? 'Both versions combine' : 'This version combines'} bid caching with bidder accounts, bidder rules and the current native activity and floor checks. `
-    + 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.');
+  assert.equal(BID_CACHE_GENERATOR_MESSAGE, 'Bid caching needs a compatible script version, but no available script version applies bid caching. Your bid cache settings are kept. '
+    + 'To use this script version, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.');
   assert.doesNotMatch(BID_CACHE_GENERATOR_MESSAGE, /3\.23\.0|or later/);
 });
 

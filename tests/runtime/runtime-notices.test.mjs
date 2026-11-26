@@ -5,7 +5,8 @@ import {parse} from 'acorn';
 import {runtimeLabel, publicRuntimeChoices} from '../../src/site-workspace/runtime-labels.ts';
 import {runtimeNotice, runtimeNoticeSuffix, runtimeNoticeText} from '../../src/site-workspace/runtime-notices.ts';
 import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
-import {recommendedRuntimeRelease} from '../../shared/runtime-notices.mjs';
+import {recommendedRuntimeRelease, runtimeNotices} from '../../shared/runtime-notices.mjs';
+import {scriptVersionsWith} from '../../worker/site-runtime/script-versions.mjs';
 import {runtimeCatalog, previewInput} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {compileRuntime321} from '../../worker/runtime-321/compiler.mjs';
@@ -28,7 +29,7 @@ const pinOf = version => runtimes.find(r => r.version === version).pin;
 test('only exact registered earlier builds carry notices; the registry is read, never changed', () => {
   const before = JSON.stringify(runtimeReleaseHistory);
   const noticed = runtimeReleaseHistory.filter(r => runtimeNotice({runtimeVersion: r.version, runtimeSha256: r.codeSha256}));
-  assert.deepEqual(noticed.map(r => r.version), ['3.23.0','3.22.0']);
+  assert.deepEqual(noticed.map(r => r.version), ['3.24.0','3.23.0','3.22.0']);
   const notice = runtimeNotice(pinOf('3.22.0'));
   assert.equal(notice.runtimeSha256, record.codeSha256);
   assert.equal(record.channel, 'stable', '3.22.0 stays a stable, savable choice without preview opt-in');
@@ -48,8 +49,9 @@ test('Script setup labels: 3.22.0 gets the short suffix, order and every other l
   assert.deepEqual(['3.22.1', '3.22.0', '3.21.2'].map(version => labels[index(version)]), ['3.22.1 · Preview', '3.22.0' + SUFFIX, '3.21.2']);
   assert.deepEqual(labels.filter(label => label.includes(SUFFIX)), ['3.22.0' + SUFFIX]);
   assert.equal(SUFFIX.split(' · ')[1], 'No 3.21.1+ fixes', 'Verifiers split labels on the existing separator');
-  for (const item of choices) if (!['3.22.0','3.23.0'].includes(item.version)) assert.equal(runtimeNoticeSuffix(item.pin), '');
+  for (const item of choices) if (!['3.22.0','3.23.0','3.24.0'].includes(item.version)) assert.equal(runtimeNoticeSuffix(item.pin), '');
   assert.equal(runtimeNoticeSuffix(pinOf('3.23.0')),' · Earlier bid cache');
+  assert.equal(runtimeNoticeSuffix(pinOf('3.24.0')),' · Limited');
 });
 
 test('warning names the alternative and the current version from data, not from a literal', () => {
@@ -73,9 +75,15 @@ test('warning names the alternative and the current version from data, not from 
   assert.equal(runtimeNoticeText(notice, publicRuntimeChoices([...runtimes, promoted]), promoted), `${WARNING} 3.22.2, the current version, has bidder rules with these fixes.`);
 });
 
-test('each notice names an alternative that is offered, has no notice and no newer patch of its line', () => {
+test('every offered alternative has no notice or newer patch, and TEST cache notices explicitly have no local alternative', () => {
   const numbers = version => version.split('.').map(Number);
-  for (const notice of [runtimeNotice(pinOf('3.22.0')), runtimeNotice(pinOf('3.23.0'))]) {
+  for (const notice of runtimeNotices) {
+    if (!notice.alternative) {
+      assert(['3.23.0','3.24.0'].includes(notice.version),notice.version);
+      assert.match(notice.warning,/corrected compatible bid-cache version is not available in this TEST workspace/);
+      assert.deepEqual(scriptVersionsWith(['bid-cache']),[]);
+      continue;
+    }
     const alternative = runtimeReleaseHistory.find(r => r.version === notice.alternative.version);
     assert(alternative && runtimeCatalog.some(r => r.version === alternative.version && r.codeSha256 === alternative.codeSha256), notice.alternative.version);
     assert.equal(runtimeNotice({runtimeVersion: alternative.version, runtimeSha256: alternative.codeSha256}), undefined, alternative.version);
@@ -96,8 +104,9 @@ test('the exact earlier cache source is labelled without changing its channel, p
   assert.match(notice.warning,/bidder activity restriction or a raised price floor/);
   assert.equal(runtimeNotice({runtimeVersion:'3.23.0',runtimeSha256:'f'.repeat(64)}),undefined);
   const choices=publicRuntimeChoices(runtimes),text=runtimeNoticeText(notice,choices,current);
-  assert(text.includes('3.24.0 (Preview) has bid caching, bidder accounts and rules with these safeguards.'));
+  assert(text.includes('A corrected compatible bid-cache version is not available in this TEST workspace.'));
   assert(text.endsWith('3.21.2 is the current version.'));
+  assert(!text.includes('3.24.0'));
   assert(!runtimeNoticeText(notice,choices.filter(r=>r.version!=='3.24.0'),current).includes('3.24.0'));
 });
 
@@ -193,6 +202,24 @@ test('TEST workspace Script version page labels and explains 3.22.0 without an A
   }
   page.choose('3.23.0');
   assert.equal(page.note.hidden,false);
-  assert(page.note.textContent.includes('3.24.0 (Preview) has bid caching, bidder accounts and rules with these safeguards.'));
+  assert(page.note.textContent.includes('A corrected compatible bid-cache version is not available in this TEST workspace.'));
+  assert(!page.note.textContent.includes('3.24.0'));
   assert.equal(page.runtime.getAttribute('aria-describedby'),'runtime-notice');
+  page.choose('3.24.0');
+  assert.equal(page.note.hidden,false);
+  assert.match(page.note.textContent,/stop reusing cached bids during a long page session/);
+  assert.match(page.note.textContent,/not available in this TEST workspace/);
+  assert.doesNotMatch(page.note.textContent,/3\.25/);
+});
+
+test('the TEST cache-session warning preserves the exact registered pin, preview opt-in and selectable choices',()=>{
+  const cache=runtimeCatalog.find(r=>r.version==='3.24.0'),before=JSON.stringify(runtimeReleaseHistory);
+  const pin=pinRuntime(cache,{allowPreview:true}),notice=runtimeNotice(pin);
+  assert.equal(cache.codeSha256,'6a897977487d60d69165fd574a468db5cf3a7269b87868ae3dd794b66ea0bc48');
+  assert.equal(cache.channel,'preview');assert.equal(notice.alternative,undefined);
+  assert.equal(notice.runtimeSha256,cache.codeSha256);assert.equal(notice.excludeFromRecommendation,true);
+  assert(publicRuntimeChoices(runtimes).some(row=>row.version==='3.24.0'));
+  assert.equal(runtimeNotice({...pin,runtimeSha256:'0'.repeat(64)}),undefined);
+  assert(!runtimeCatalog.some(row=>/^3\.25\./.test(row.version)));
+  assert.equal(JSON.stringify(runtimeReleaseHistory),before);
 });

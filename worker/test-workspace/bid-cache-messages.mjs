@@ -1,7 +1,7 @@
 // TEST-only wording names this workspace's existing views and the Preview scripts to allow. The versions come from the
 // release registry by the shared naming rule (site-runtime/script-versions.mjs), as the panels and the shared Generate
 // refusal name them, so a new release or runtime notice changes them together. With the TEST releases (up to 3.24.0)
-// that is 3.24.0 Preview.
+// no corrected bid-cache version is currently offered: both registered cache releases carry a notice.
 import {BID_CACHE_GENERATOR_MESSAGE} from '../site-runtime/prebid-cache-settings.mjs';
 import {scriptVersionsWith,versionList} from '../site-runtime/script-versions.mjs';
 

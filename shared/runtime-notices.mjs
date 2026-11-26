@@ -25,7 +25,7 @@ export const runtimeNotices = Object.freeze([Object.freeze({
 }),Object.freeze({
   version: '3.24.0',
   runtimeSha256: '6a897977487d60d69165fd574a468db5cf3a7269b87868ae3dd794b66ea0bc48',
-  optionSuffix: ' · Cache limit',
+  optionSuffix: ' · Limited',
   warning: '3.24.0 can stop reusing cached bids during a long page session. A corrected compatible bid-cache version is not available in this TEST workspace. This version remains selectable; saved settings and packages are unchanged.',
   excludeFromRecommendation: true,
 })]);
