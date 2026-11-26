@@ -150,6 +150,7 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
   const savedOverrides=dropUnused?Object.fromEntries(applied):positionOverrides;
   const hasCache=cacheEnabled||applied.some(([,on])=>on);
   const cacheScript=payload?.bidCacheScriptVersions?.length?`script ${versionChoice(payload.bidCacheScriptVersions)}`:'a compatible script';
+  const noCacheScript=Array.isArray(payload?.bidCacheScriptVersions)&&payload.bidCacheScriptVersions.length===0;
   // Saved settings that would reuse bids (the site default, or a position override on).
   const savedCache=!!payload&&(payload.prebidMode.bidCache.enabled||Object.values(positionOverrides).some(Boolean));
 
@@ -237,7 +238,7 @@ export default function PrebidModePanel({ publisherId, onChanged }: Props) {
               <span>A bid may expire sooner according to its original TTL.</span>
               {!validAge ? <span role="alert">Enter a whole number from 1 to 300.</span> : null}
             </label> : null}
-            <p>{payload.runtimeSupportsBidCache ? 'Applies to new packages generated with the selected script.' : savedCache ? `Select ${cacheScript} in Script setup to apply bid caching.${dirty ? '' : ' Your setting is saved.'}` : `Bid caching needs ${cacheScript}.`}{payload.namedScriptLibrary ? ' New named scripts in Releases → Scripts and A/B tests use it too; saved scripts and tests keep their own settings.' : ''}</p>
+            <p>{noCacheScript?'No corrected compatible bid-cache script is available in this workspace. Your saved settings are kept.':payload.runtimeSupportsBidCache ? 'Applies to new packages generated with the selected script.' : savedCache ? `Select ${cacheScript} in Script setup to apply bid caching.${dirty ? '' : ' Your setting is saved.'}` : `Bid caching needs ${cacheScript}.`}{payload.namedScriptLibrary ? ' New named scripts in Releases → Scripts and A/B tests use it too; saved scripts and tests keep their own settings.' : ''}</p>
           </fieldset> : <p>Bid caching is inactive while Prebid is off. Its saved settings are kept.</p>}
 
           <div className="prebid-mode-state-grid">
