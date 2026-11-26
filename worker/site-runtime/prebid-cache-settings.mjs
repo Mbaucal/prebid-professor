@@ -77,7 +77,8 @@ function cacheCapabilities(config,bidders) {
   if(bidders)try{accounts=accountsNeeding(config,{bidders});}catch{}
   return neededCapabilities({accounts,rules:rulesNeeded(config),cache:true,timeout:timeoutNeeded(config)});
 }
-/** ['3.24.0 (Preview)', '3.26.0 (Preview)'] for the panels. */
+/** The labels for the panels, at most two, as scriptVersionLabels gives them; empty on TEST, where each release with
+ * bid caching has a runtime notice. */
 export const bidCacheScriptVersions=(config,bidders,history,notices)=>bidCacheScripts(config,bidders,history,notices).map(releaseLabel);
 /** Whether a release with a runtime notice applies bid caching with the same saved options. It is never named but
  * stays selectable, so with no named version the panels say that no corrected version is offered. */

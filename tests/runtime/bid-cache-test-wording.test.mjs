@@ -158,3 +158,16 @@ test('the account notes in Bidders tell unknown versions from none, and say when
  assert.match(panel,/'No corrected script version is offered that applies the new alias with your other saved options\. Versions with a runtime notice in Script setup still apply it\.'/);
  assert.match(panel,/'No available script version applies the new alias with your other saved options\.'/);
 });
+
+test('comments and types near the version names never show a label the naming rule cannot give',async()=>{
+ // A release with a runtime notice that excludes it from recommendation is never named, so no example label for it
+ // may appear where the names are produced or typed (3.24.0 (Preview) on TEST).
+ const excluded=runtimeNotices.filter(notice=>notice.excludeFromRecommendation===true)
+  .map(notice=>runtimeReleaseHistory.find(r=>r.version===notice.version&&r.codeSha256===notice.runtimeSha256))
+  .filter(release=>release?.channel==='preview').map(release=>`${release.version} (Preview)`);
+ assert.ok(excluded.includes('3.24.0 (Preview)'),excluded.join());
+ for(const path of ['worker/site-runtime/script-versions.mjs','worker/site-runtime/prebid-cache-settings.mjs','worker/site-runtime/script-version-guidance.mjs','worker/prebid-mode.ts','worker/bidders.ts','src/components/PrebidModePanel.tsx','src/components/PositionBidCachePanel.tsx','src/components/BiddersPanel.tsx','src/components/BidderRulesPanel.tsx','src/shared/types.ts']){
+  const text=await source(path);
+  for(const label of excluded)assert.ok(!text.includes(label),`${path} shows ${label}`);
+ }
+});

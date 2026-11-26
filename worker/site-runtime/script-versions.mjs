@@ -12,7 +12,7 @@ const parts=version=>RELEASE.exec(version)?.slice(1).map(Number);
 const byVersion=(a,b)=>{const x=parts(a.version),y=parts(b.version);return x[0]-y[0]||x[1]-y[1]||x[2]-y[2];};
 const covers=(release,capabilities)=>capabilities.every(capability=>release.capabilities.includes(capability));
 const noticed=(release,notices)=>notices.some(notice=>notice.version===release.version&&notice.runtimeSha256===release.codeSha256);
-/** "3.24.0 (Preview)" for a preview release, "3.21.2" for a stable one. */
+/** "3.22.2 (Preview)" for a preview release, "3.21.2" for a stable one. */
 export const releaseLabel=release=>release.version+(release.channel==='preview'?' (Preview)':'');
 /** "a", "a or b", "a, b or c" (word "or"), or with "and". */
 export const versionList=(items,word)=>items.length<2?items[0]??'':`${items.slice(0,-1).join(', ')} ${word} ${items.at(-1)}`;

@@ -112,7 +112,8 @@ async function buildPayload(db: D1Database, siteId: string, config: JsonRecord):
     bidCachePositions: bidCacheEligibleCodes(units, config),
     bidCacheRuntimeVersion: BID_CACHE_RUNTIME_VERSION,
     // The versions the panels name, the same as Generate's bid caching refusal: those that apply bid caching with the
-    // site's other saved options, at most two, such as ["3.24.0 (Preview)", "3.26.0 (Preview)"]; empty when none does.
+    // site's other saved options, at most two; empty when none does, as on TEST, where each release with bid caching
+    // has a runtime notice.
     bidCacheScriptVersions: bidCacheScriptVersions(config, bidders.results ?? []),
     // Whether a version with a runtime notice applies them: never named, but still selectable in Script setup.
     bidCacheNoticedScriptApplies: bidCacheNoticedScriptApplies(config, bidders.results ?? []),
