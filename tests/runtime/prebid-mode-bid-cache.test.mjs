@@ -299,7 +299,7 @@ test('the Generate bid caching refusal cannot go stale: a new release or notice 
     assert.deepEqual([...new Set(message.match(/\b\d+\.\d+\.\d+\b/g))], named.map(version => version.replace(' (Preview)', '')), `${name}: ${message}`);
     texts.add(message);
   }
-  assert.equal(texts.size, 4, 'each history words the refusal differently');
+  assert.equal(texts.size, 5, 'each history words the refusal differently; the no-choice TEST fallback also names saved bidder rules');
   // Current TEST words the empty choice and keeps the explicit manual off-switch, with the exact saved options.
   for(const config of [{},{enablePrebid:true,runtimeControls:{bidderRules:rulesOn}}])assert.equal(bidCacheGeneratorMessage(config,[],TEST_3240),
     `Bid caching needs a compatible script version, but no available script version applies ${config.runtimeControls?'bidder rules and bid caching together':'bid caching'}. Your bid cache settings are kept. `
