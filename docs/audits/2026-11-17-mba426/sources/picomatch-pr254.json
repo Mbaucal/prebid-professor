@@ -1,0 +1,22 @@
+{
+  "html_url": "https://github.com/micromatch/picomatch/pull/254",
+  "number": 254,
+  "state": "open",
+  "title": "fix: flatten single-branch wildcard repetition to avoid ReDoS",
+  "body": "## Problem\nGHSA-fc5q-39xc-vjpf describes nested unbounded repetition in single-branch extglobs such as `+(*a)`. The current guard handles ambiguous alternatives and nested extglobs, but ordinary wildcard tokens still produce nested quantifiers.\n\n## Fix\nFor a single branch containing wildcard stars and only fixed-width text/qmark/bracket tokens, collapse the outer `+` repeat to one occurrence, or the outer `*` repeat to an optional occurrence. The branch language is closed under concatenation: earlier repetitions can be absorbed by a wildcard star. Preserve the already-parsed body, leading guard, escaping, path options and outer capture. Alternatives, slash/globstar/nested constructs, existing safety rewrites and explicit maxExtglobRecursion=false are unchanged. With capture:true the wildcard capture now covers the flattened body rather than the last repeat iteration; outer capture remains the full match.\n\n## Verification\n- Reproduced an unpatched +(*a) failing input exceeding an isolated 1-second deadline; patched version completes immediately.\n- npm test: lint and all 2001 upstream tests pass.\n- New hostile-input child-process deadlines and matching/escaping/capture cases.\n- 22860 short-input true/false parity checks against npm 4.0.7 across default, dot, capture, Windows and bash options.\n\nNo application code, private data or credentials included. Offered as a focused patch for maintainer review, not a claim of an official published fix.",
+  "created_at": "2026-11-17T18:31:17Z",
+  "updated_at": "2026-11-17T18:31:17Z",
+  "merged_at": null,
+  "merged": false,
+  "mergeable": true,
+  "base": {
+    "label": "micromatch:master",
+    "ref": "master",
+    "sha": "9fab7bf61913ea334c4203ed321c426cfde44a42"
+  },
+  "head": {
+    "label": "handeyman:fix/single-wildcard-extglob-redos",
+    "ref": "fix/single-wildcard-extglob-redos",
+    "sha": "c63a5bf4e61dbdb81bc41e97dc2616c30acce337"
+  }
+}

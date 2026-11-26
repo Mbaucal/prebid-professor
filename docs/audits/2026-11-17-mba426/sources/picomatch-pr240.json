@@ -1,0 +1,22 @@
+{
+  "html_url": "https://github.com/micromatch/picomatch/pull/240",
+  "number": 240,
+  "state": "closed",
+  "title": "fix: prevent single-branch extglob ReDoS (CVE-2026-112366)",
+  "body": "Collapse redundant repetition in safe wildcard extglobs and literalize complex forms that cannot be safely simplified. Add regression tests for the reported attack patterns and related bypasses.\n\nPrepare the secured-picomatch 4.0.7-a fork metadata and documentation. Verified lint, 2004 tests, CI coverage, and packed-package installation.",
+  "created_at": "2026-10-28T07:20:56Z",
+  "updated_at": "2026-10-28T07:23:32Z",
+  "merged_at": null,
+  "merged": false,
+  "mergeable": true,
+  "base": {
+    "label": "micromatch:master",
+    "ref": "master",
+    "sha": "9fab7bf61913ea334c4203ed321c426cfde44a42"
+  },
+  "head": {
+    "label": "ryotsu-kankichi:4.0.7.a",
+    "ref": "4.0.7.a",
+    "sha": "f9822e9514d490f3e3bc17f50a4d3cacff2056c2"
+  }
+}
