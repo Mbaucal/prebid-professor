@@ -15,7 +15,8 @@ type ModePayload = {
   /** The first script version that applies bid caching. */
   bidCacheRuntimeVersion: string;
   /** The versions to select for bid caching with the site's other saved options, at most two, such as
-   * ["3.24.0 (Preview)", "3.26.0 (Preview)"]; Generate's refusal names the same. Empty when none applies them. */
+   * ["3.25.1 (Preview)", "3.26.0 (Preview)"]; Generate's refusal names the same. Empty when no version without a
+   * runtime notice applies them. */
   bidCacheScriptVersions: string[];
   /** Whether a version with a runtime notice applies bid caching with the same saved options. It is never named but
    * stays selectable in Script setup, so an empty list does not mean that no version applies them. */

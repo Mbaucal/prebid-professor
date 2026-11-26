@@ -233,14 +233,16 @@ test('versions come from release capabilities: the smallest step and the newest,
     for(const release of scriptVersionsWith(needs))assert.ok(runtimeCatalog.some(r=>r.id===release.id&&r.version===release.version&&r.codeSha256===release.codeSha256),release.version);
   }
   // The registry up to 3.26.0 (MAIN): 3.22.1 and 3.22.2 tie, so the newer patch is the smallest step for bidder rules
-  // and accounts; 3.24.0 is the smallest step with bid caching (3.23.0 has a notice); 3.26.0 is the newest.
+  // and accounts; 3.25.1 is the smallest step with bid caching (3.23.0, 3.24.0 and 3.25.0 have notices); 3.26.0 is the
+  // newest.
   assert.equal(scriptVersionText(['bidder-rules'],MAIN_3260),'3.22.2 (Preview) or 3.26.0 (Preview)');
   assert.equal(scriptVersionText(['bidder-accounts'],MAIN_3260),'3.22.2 (Preview) or 3.26.0 (Preview)');
   for(const needs of [['bid-cache'],['bidder-rules','bid-cache'],['bidder-accounts','bidder-rules','bid-cache']])assert.equal(scriptVersionText(needs,MAIN_3260),'3.25.1 (Preview) or 3.26.0 (Preview)');
-  // The registry up to 3.24.0 (TEST) keeps the names it has today.
+  // Up to 3.24.0 (TEST), 3.24.0 has a notice: bidder rules name 3.22.2 only, and nothing is named with bid caching.
   assert.equal(scriptVersionText(['bidder-rules'],TEST_3240),'3.22.2 (Preview)');
   assert.deepEqual(scriptVersionLabels(['bidder-accounts','bid-cache'],TEST_3240),[]);
-  // A later notice moves the smallest step: with one on 3.24.0, 3.25.0 and 3.25.1 tie and the newer patch is named.
+  // The notices already cover 3.24.0 and 3.25.0, so adding the 3.24.0 notice again changes nothing: 3.25.1 stays the
+  // smallest step.
   const r324=runtimeReleaseHistory.find(r=>r.version==='3.24.0');
   const notices=[...runtimeNotices,{version:'3.24.0',runtimeSha256:r324.codeSha256}];
   assert.equal(scriptVersionText(['bid-cache'],MAIN_3260,notices),'3.25.1 (Preview) or 3.26.0 (Preview)');
@@ -403,4 +405,17 @@ test('the account notes in Bidders tell unknown versions from none, and say when
   assert.match(panel,/'No available script version applies aliases and account-specific SChain with your other saved options\. You can save the account for a future package\.'/);
   assert.match(panel,/'No corrected script version is offered that applies the new alias with your other saved options\. Versions with a runtime notice in Script setup still apply it\.'/);
   assert.match(panel,/'No available script version applies the new alias with your other saved options\.'/);
+});
+
+test('comments and types near the version names never show a label the naming rule cannot give',async()=>{
+  // A release with a runtime notice that excludes it from recommendation is never named, so no example label for it
+  // may appear where the names are produced or typed (3.24.0 (Preview) or 3.25.0 (Preview) on MAIN).
+  const excluded=runtimeNotices.filter(notice=>notice.excludeFromRecommendation===true)
+    .map(notice=>runtimeReleaseHistory.find(r=>r.version===notice.version&&r.codeSha256===notice.runtimeSha256))
+    .filter(release=>release?.channel==='preview').map(release=>`${release.version} (Preview)`);
+  assert.ok(excluded.includes('3.24.0 (Preview)')&&excluded.includes('3.25.0 (Preview)'),excluded.join());
+  for(const path of ['worker/site-runtime/script-versions.mjs','worker/site-runtime/prebid-cache-settings.mjs','worker/site-runtime/script-version-guidance.mjs','worker/prebid-mode.ts','worker/bidders.ts','src/components/PrebidModePanel.tsx','src/components/PositionBidCachePanel.tsx','src/components/BiddersPanel.tsx','src/components/BidderRulesPanel.tsx','src/shared/types.ts']){
+    const text=await source(path);
+    for(const label of excluded)assert.ok(!text.includes(label),`${path} shows ${label}`);
+  }
 });

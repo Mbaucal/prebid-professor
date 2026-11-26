@@ -231,7 +231,8 @@ function withAlias(f) {
 }
 
 test('the panels name the bid caching versions for the saved options, at most two, never "or later"', async () => {
-  // With the releases up to 3.26.0: 3.23.0 has a notice, so 3.24.0 is the smallest step and 3.26.0 the newest.
+  // With the releases up to 3.26.0: 3.23.0, 3.24.0 and 3.25.0 have notices, so 3.25.1 is the smallest step and 3.26.0
+  // the newest.
   assert.deepEqual(cacheVersions([], MAIN_3260), ['3.25.1 (Preview)', '3.26.0 (Preview)']);
   assert.deepEqual(bidCacheScriptVersions({}, [], MAIN_3260), ['3.25.1 (Preview)', '3.26.0 (Preview)']);
   const selection = runtime => ({schemaVersion: 1, runtime: pinRuntime(runtime, {allowPreview: true}), prebid: null});
