@@ -1,5 +1,16 @@
 # Cross-account Cloudflare Pages deployments
 
+## Current acceptance boundary — 3 October 2026
+
+Cross-account preview publication and restore were executed successfully on
+14 September; [the original receipts](evidence/tanjug-compact-restore/README.md)
+supersede the pre-execution status in the historical preparation section below.
+Those runs used `completeRelease:false`. Main now has complete-release channel
+and delivery support; the remaining MBA-46 acceptance is the exact selected
+publisher's complete production release and rollback, with explicit production
+authorization. See the [remaining acceptance plan](publisher-acceptance-remaining.md).
+Do not repeat the accepted preview sequence or request configured secrets again.
+
 ## Reviewed TEST branch preparation — 14 September 2026
 
 The Pages pipeline now pins the private R2 manifest before dispatch and downloads
