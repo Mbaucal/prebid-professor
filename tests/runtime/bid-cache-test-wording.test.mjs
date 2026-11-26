@@ -176,9 +176,17 @@ test('the docs attribute the cache limit in a long page session to 3.24.0 only, 
  const notice=version=>runtimeNotices.find(n=>n.version===version).warning;
  // The notices: 3.24.0 can stop reusing cached bids during a long page session; 3.23.0 lacks later corrections.
  assert.match(notice('3.24.0'),/long page session/);assert.doesNotMatch(notice('3.23.0'),/long page session|finite/);
- for(const path of ['docs/per-position-bid-cache.md','docs/bidder-accounts.md']){
+ for(const path of ['docs/per-position-bid-cache.md','docs/bidder-accounts.md','docs/bidder-rules.md']){
   const doc=await source(path);
   assert.doesNotMatch(doc,/3\.23\.0 and 3\.24\.0[^.]*(?:finite cache history|cache-limit|long page session)/,path);
  }
  assert.match(await source('docs/per-position-bid-cache.md'),/3\.24\.0 can stop reusing cached bids during a long page session\./);
+ // 3.23.0 has neither bidder accounts nor bidder rules, so the docs for those options say so instead of a shared notice.
+ const caps=version=>runtimeReleaseHistory.find(r=>r.version===version).capabilities;
+ for(const [path,capability,name] of [['docs/bidder-accounts.md','bidder-accounts','bidder accounts'],['docs/bidder-rules.md','bidder-rules','bidder rules']]){
+  assert.ok(!caps('3.23.0').includes(capability)&&caps('3.24.0').includes(capability),capability);
+  const doc=await source(path);
+  assert.match(doc,/3\.24\.0 applies them but has a runtime notice, because it can stop reusing cached bids during a long page session\./,path);
+  assert.ok(doc.includes(`3.23.0 has no ${name}.`),path);
+ }
 });
