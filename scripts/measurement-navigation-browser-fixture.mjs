@@ -30,6 +30,10 @@ const originalObjects=new Map([...h.r2.objects].map(([key,row])=>[key,createHash
 const publishers=[{id:'measurement-publisher',name:'Measurement Publisher',status:'active',sitesCount:4,notes:'',
   sites:['alpha-site','beta-site','empty-site','legacy-site'].map(site=>({id:site,publisherAccountId:'measurement-publisher',name:site+'.example.invalid',domain:site+'.example.invalid',
     gamPath:'/999/'+site+'/',status:'draft',currentVersion:'draft',adsTxtUrl:'https://example.invalid/ads.txt',updatedAt:'2026-11-23T00:00:00Z',lastPublishedAt:null,adUnitsCount:1,biddersCount:0}))}];
+// Optional synthetic Politika route for CSV UI QA; no real publisher data is embedded.
+if(process.argv.includes('--politika')){
+  const site=publishers[0].sites.find(site=>site.id==='alpha-site');site.name='politika.rs';site.domain='politika.rs';
+}
 const bundle=await build({stdin:{contents:`
   import {createRoot} from 'react-dom/client';import App from './src/App';import './src/dashboard-styles';
   createRoot(document.getElementById('root')).render(<App/>);`,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,
@@ -38,7 +42,7 @@ console.log(JSON.stringify({ready:true,origin:MAIN_AB_ORIGIN,experiments,scope:'
 for await(const line of createInterface({input:process.stdin})){
   try{
     const input=JSON.parse(line),url=new URL(input.path,MAIN_AB_ORIGIN);let response;
-    if(url.pathname==='/')response=new Response('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script src="/fixture.js"></script></body></html>',{headers:{'content-type':'text/html'}});
+    if(url.pathname==='/')response=new Response('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script src="/fixture.js"></script></body></html>',{headers:{'content-type':'text/html'}});
     else if(['/fixture.js','/fixture.css'].includes(url.pathname)){
       const extension=url.pathname.endsWith('.js')?'.js':'.css';response=new Response(bundle.outputFiles.find(file=>file.path.endsWith(extension)).text,{headers:{'content-type':extension==='.js'?'application/javascript':'text/css'}});
     }else if(url.pathname==='/tessera-logo.png')response=new Response(readFileSync('public/tessera-logo.png'),{headers:{'content-type':'image/png'}});
