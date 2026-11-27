@@ -15,7 +15,7 @@ import {gamReportV2Response} from './gam-report-v2-api.mjs';
  *   GET    base/<abx>/record       the exact stored record bytes
  *   DELETE base/<abx>, PUT base/<abx>   trash and restore, body {confirmId, sha256}
  *   POST   base/<abx>/events       {type: 'marked-live' | 'marked-stopped'} */
-const DRAFT=/^builtin-draft-[a-f0-9]{64}$/,SAVED=/^builtin-(?:draft|release)-[a-f0-9]{64}$/;
+const DRAFT=/^builtin-draft-[a-f0-9]{64}$/,SAVED=/^(?:builtin-(?:draft|release)|original-source)-[a-f0-9]{64}$/;
 const CURSOR=/^[A-Za-z0-9_=+/.-]{1,1024}$/;
 const CONTROL=/[\u0000-\u001f\u007f-\u009f]/;
 const MAX_BODY=4096;
@@ -62,6 +62,7 @@ function armOf(id,pkg){
   const note=pkg.release?.note??pkg.release?.notes;
   let runtimeVersion=pkg.release?.runtime?.runtimeVersion??null;
   try{runtimeVersion=JSON.parse(new TextDecoder().decode(pkg.files['manifest.json'])).runtime.runtimeVersion??runtimeVersion;}catch{}
+  if(id.startsWith('original-source-')){const source=JSON.parse(new TextDecoder().decode(pkg.files['manifest.json'])).source;runtimeVersion=source.runtimeVersion??'build '+source.build;}
   return {id,name:typeof note==='string'&&note.trim()?note.trim():'Generated package',runtimeVersion};
 }
 function savedIds(body,testOnly){

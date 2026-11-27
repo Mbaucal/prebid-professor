@@ -33,6 +33,7 @@ jobs:
           node --experimental-strip-types --test tests/runtime/politika-gam-csv.test.mjs
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-loader*.test.mjs tests/runtime/ab-bundle.test.mjs tests/runtime/ab-store*.test.mjs tests/runtime/ab-tests-api.test.mjs tests/runtime/ab-main-package3251.test.mjs tests/runtime/ab-tests-main.test.mjs tests/runtime/ab-history-main.test.mjs tests/runtime/ab-measurement*.test.mjs tests/runtime/ab-memory-adversarial-qa.test.mjs tests/runtime/gam-report-v2*.test.mjs tests/runtime/ab-version-id-main.test.mjs
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/verify-ab-tests-main-workerd.mjs
+          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-original-sources.test.mjs
       - name: Install pinned browser tools
         run: |
           python -m pip install playwright==1.55.0
@@ -46,6 +47,7 @@ jobs:
           python scripts/verify-measurement-layout-ui.py
           python scripts/verify-gam-report-v2-ui.py
           python scripts/verify-politika-gam-import-ui.py
+          python scripts/verify-original-sources-ui.py
       - name: Verify native 3.25.1 delivery, consent and failure recovery
         run: |
           node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs scripts/prepare-ab-loader-main-browser.mjs .generated/ab-loader-main-browser
@@ -77,6 +79,7 @@ jobs:
             .generated/measurement-layout-ui/**
             .generated/gam-report-v2-ui/**
             .generated/politika-gam-import-ui/**
+            .generated/original-sources-ui/**
             .generated/ab-tests-main-workerd/**
             .generated/ab-loader-main-browser/**
             .generated/ab-loader111-transport-qa/**

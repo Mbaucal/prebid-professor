@@ -8,6 +8,9 @@ import * as previousLoader from './ab-loader-1.0.2.mjs';
 import * as memoryLoader from './ab-loader-1.1.0.mjs';
 import * as currentLoader from './ab-loader-1.1.1.mjs';
 import * as versionLoader from './ab-loader-1.2.0.mjs';
+import * as originalLoader from './ab-loader-1.3.0.mjs';
+import {verifyOriginalPackage} from '../site-runtime/original-sources.mjs';
+import {originalRuntimeLabel} from './original-source-catalog.mjs';
 import registry from './ab-loader-registry.json' with {type:'json'};
 
 /* Generic A/B bundle composer (MBA-416, layout publisher-ab-v1). It never rebuilds a script:
@@ -42,6 +45,7 @@ const same=(a,b)=>canonical(a)===canonical(b);
 const sorted=list=>[...new Set(list)].sort();
 const only=(list,other)=>list.filter(x=>!other.includes(x));
 function loaderFor(version=currentLoader.AB_LOADER_VERSION){
+  if(version===originalLoader.AB_LOADER_VERSION)return originalLoader;
   if(version===versionLoader.AB_LOADER_VERSION)return versionLoader;
   if(version===currentLoader.AB_LOADER_VERSION)return currentLoader;
   if(version===memoryLoader.AB_LOADER_VERSION)return memoryLoader;
@@ -76,6 +80,11 @@ const json=(bytes,message)=>{try{return JSON.parse(decode.decode(bytes));}catch{
 async function savedVersion(pkg,side){
   if(!record(pkg)||!record(pkg.files)||!record(pkg.release))refuse('package-incomplete',`Version ${side} is not a saved package. Choose a saved version under Releases.`,'packages');
   const id=pkg.release.id,files=pkg.files;
+  if(typeof id==='string'&&id.startsWith('original-source-')){
+    let verified;try{verified=await verifyOriginalPackage(pkg,pkg.release.siteId);}catch{refuse('package-unverified',`Version ${side} differs from its verified original source.`,'packages');}
+    const source=verified.source;
+    return {side,id,siteId:source.site,name:source.name,runtime:{runtimeVersion:originalRuntimeLabel(source)},prebidVersion:null,config:null,files,original:source};
+  }
   if(typeof id!=='string'||!RELEASE_ID.test(id))refuse('package-unverified',`Version ${side} is not a saved built-in version. Choose a version saved under Releases.`,'packages');
   for(const name of ['ads.min.js','manifest.json','config.json'])
     if(!(files[name] instanceof Uint8Array)||!files[name].length)refuse('package-incomplete',`Version ${side} has no ${name}. Generate that version again, or choose another saved version.`,'packages');
@@ -103,6 +112,12 @@ async function compatibilityChecks(site,A,B,loaderVersion){
   const checks=[];
   for(const v of [A,B])if(v.siteId!==site)refuse('site-differs',`Version ${v.side} belongs to site ${v.siteId}. Choose two saved versions of ${site}.`,'site');
   checks.push({check:'site',result:'same'});
+  if(A.original||B.original){
+    if(!A.original||!B.original||A.original.pair!==B.original.pair)refuse('source-types-differ','Choose the two saved original Politika scripts together. An original script cannot be compared with a newly generated package.','sources');
+    if(loaderVersion!=='1.3.0')refuse('original-loader-required','Original scripts require the single-attempt original-script loader.','startup');
+    return [...checks,{check:'original-source-hashes',result:'verified'},{check:'original-pair',result:A.original.pair},{check:'startup',result:'single-attempt-no-fallback'}];
+  }
+  if(loaderVersion==='1.3.0')refuse('original-sources-required','This loader is only for the reviewed original scripts.','sources');
   if(loaderVersion==='1.0.2'||loaderVersion==='1.1.0'||loaderVersion==='1.1.1'||loaderVersion==='1.2.0')for(const v of [A,B])if(!startupGuard(v.files))refuse('startup-guard-missing',`Version ${v.side} has no supported runtime startup guard. Choose a verified built-in version before creating this test.`,'startup');
   const pa=A.files['prebid.js'],pb=B.files['prebid.js'];
   if(!pa!==!pb)refuse('prebid-differs',`Version ${pa?'A':'B'} loads Prebid.js and version ${pa?'B':'A'} is GAM only. Choose two versions with the same Prebid setting.`,'prebid');
@@ -135,6 +150,9 @@ function storageUse(v){
   return {apis:STORAGE_APIS.filter(api=>text.includes(api)),takeOverIntervalMinutes:v.config.adPosition?.frequencyMinutes??0};
 }
 function warnings(A,B){
+  if(A.original||B.original)return [{code:'original-source-scope',message:'These are exact original scripts. Their full Config snapshots are unavailable, so matching CMP, user sync, layout and other settings is not claimed. Keep the existing page, CMP, GPT and Prebid setup. Results measure all differences between these scripts, not only bid caching.'},
+    {code:'original-source-loader',message:'This test uses one script attempt per page. There is no fallback on load failure, because the original A script has no startup guard. Replace the existing loader when deploying; do not add a second ads.js tag.'},
+    {code:'original-source-reporting',message:'New requests use VersionId and Variant. Old reports are not relabelled. Assignment collection and Config-based report plans are unavailable for original sources.'}];
   const list=[];
   if(A.runtime.runtimeVersion!==B.runtime.runtimeVersion)list.push({code:'runtime-differs',a:A.runtime.runtimeVersion,b:B.runtime.runtimeVersion,
     message:`Versions A and B run different script versions (${A.runtime.runtimeVersion} and ${B.runtime.runtimeVersion}). The result measures every change between them.`});
@@ -223,7 +241,7 @@ export function abGamIdentity(record){
   const entry=typeof version==='string'&&Object.hasOwn(registry,version)?registry[version]:null;
   if(!entry||typeof entry.sha256!=='string'||record.loader.sha256!==entry.sha256||typeof record.testId!=='string'||!TEST_ID.test(record.testId))
     invalid('This saved package has no verified GAM identity.');
-  return {key:version==='1.2.0'?'VersionId':'TestId',value:record.testId,label:'Version ID'};
+  return {key:['1.2.0','1.3.0'].includes(version)?'VersionId':'TestId',value:record.testId,label:'Version ID'};
 }
 // Stored entries at a fixed 1980 time, sorted, as the package download ZIP (releases.mjs) does.
 const zip=files=>zipSync(Object.fromEntries(Object.keys(files).sort().map(p=>[p,[files[p],{level:0,mtime:new Date(1980,0,1)}]])),{level:0});
@@ -246,7 +264,8 @@ export async function checkAbCompatibility({site,a,b,loaderVersion}){
   let A,B,diff=null,notes=[];
   try{
     if(typeof site!=='string'||!SITE.test(site))invalid('Choose a site for the test.');
-    A=await savedVersion(a,'A');B=await savedVersion(b,'B');diff=configDiff(A,B);notes=warnings(A,B);
+    A=await savedVersion(a,'A');B=await savedVersion(b,'B');diff=sourceDiff(A,B);notes=warnings(A,B);
+    if(A.original||B.original)loaderVersion='1.3.0';
     return {compatible:true,refusal:null,checks:await compatibilityChecks(site,A,B,loaderFor(loaderVersion).AB_LOADER_VERSION),warnings:notes,configDiff:diff};
   }catch(e){
     if(e.status!==422)throw e;
@@ -258,19 +277,20 @@ export async function checkAbCompatibility({site,a,b,loaderVersion}){
  * for invalid fields and {status:422, code, check} when the versions cannot be compared. */
 export async function composeAbBundle({site,a,b,trafficBPercent,testId,name,loaderVersion}){
   validate({site,a,b,trafficBPercent,testId,name});
-  const selectedLoader=loaderFor(loaderVersion);
   const A=await savedVersion(a,'A'),B=await savedVersion(b,'B');
+  const selectedLoader=loaderFor(A.original||B.original?'1.3.0':loaderVersion);
   const checks=await compatibilityChecks(site,A,B,selectedLoader.AB_LOADER_VERSION);
   const arms={A:await arm(A),B:await arm(B)};
   const files={_headers:encode.encode(PAGES_HEADERS)};
   if(A.files['prebid.js'])files['prebid.js']=A.files['prebid.js'].slice();
   // For A/A both arms name the same path, so the bundle holds one arm file.
   for(const v of [A,B])files[`r/${v.id}/ads.js`]=v.files['ads.min.js'].slice();
+  if(A.original)files['README.txt']=encode.encode(`Original Politika scripts\n\nReplace the existing A/B ads.js loader. Do not add another ads.js tag.\nKeep the existing CMP, GPT, Prebid.js, ad positions and page styles. These dependencies are not bundled.\nThe new loader sends VersionId=${testId} and Variant=A/B. It does not change historical requests.\nOne arm is loaded per page, without load-error or timeout fallback. Original A lacks a native startup guard.\nResults measure all script differences, not only caching. Config snapshots and assignment collection are unavailable.\n\nA: ${A.original.url}\nSHA256: ${A.original.sha256}\nB: ${B.original.url}\nSHA256: ${B.original.sha256}\n`);
   const inventory=async()=>Promise.all(Object.keys(files).sort().map(async path=>({path,sha256:await sha256(files[path]),bytes:files[path].length})));
   const loader={version:selectedLoader.AB_LOADER_VERSION,sha256:registry[selectedLoader.AB_LOADER_VERSION].sha256};
   const prebid=files['prebid.js']?{sha256:await sha256(files['prebid.js']),version:A.prebidVersion}:null;
   const record={schema:AB_TEST_SCHEMA,id:null,site,name,testId,trafficBPercent,arms,prebid,loader,
-    compatibility:{checks,warnings:warnings(A,B)},configDiff:configDiff(A,B),
+    compatibility:{checks,warnings:warnings(A,B)},configDiff:sourceDiff(A,B),
     bundle:{layout:AB_BUNDLE_LAYOUT,files:await inventory(),zipSha256:null},createdBy:null,createdAt:null};
   record.id='abx-'+await sha256(encode.encode(abTestIdentity(record)));
   files['ads.js']=encode.encode(selectedLoader.renderAbLoader({schema:selectedLoader.AB_LOADER_CONFIG_SCHEMA,id:record.id,...(loader.version==='1.1.0'||loader.version==='1.1.1'||loader.version==='1.2.0'?{site}:{}),testId,name,trafficBPercent,arms,loader}));
@@ -278,4 +298,12 @@ export async function composeAbBundle({site,a,b,trafficBPercent,testId,name,load
   const archive=zip(ordered);
   record.bundle={layout:AB_BUNDLE_LAYOUT,files:await inventory(),zipSha256:await sha256(archive)};
   return {id:record.id,record,files:ordered,zip:archive,zipSha256:record.bundle.zipSha256};
+}
+
+function sourceDiff(A,B){
+  if(!A.original&&!B.original)return configDiff(A,B);
+  if(!A.original||!B.original)return null;
+  return [{field:'runtimeVersion',a:A.runtime.runtimeVersion,b:B.runtime.runtimeVersion},
+    {field:'sourceBuild',a:A.original.build,b:B.original.build},{field:'bidCache.enabled',a:A.original.cache,b:B.original.cache},
+    {field:'sourceUrl',a:A.original.url,b:B.original.url}];
 }

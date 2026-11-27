@@ -8,6 +8,7 @@ import {join} from 'node:path';
 import {unzipSync} from 'fflate';
 import {Miniflare} from './local-miniflare.mjs';
 import {composeAbBundle} from '../worker/experiments/ab-bundle.mjs';
+import {ORIGINAL_SOURCES,originalId} from '../worker/experiments/original-source-catalog.mjs';
 import {guardedModules,guardCalls,describeCalls} from './canonical-text-guard.mjs';
 
 const origin='https://main-ab-workerd.invalid',site='workerd-ab-alpha',other='workerd-ab-beta';
@@ -210,6 +211,22 @@ try{
   const retried=await json(base(site),{method:'POST',body:input});
   check('Retry after restart remains idempotent',retried.created===false&&retried.record.id===record.id&&(await json(base(site))).tests.length===1);
   check('Restart and repeated reads preserve source packages and publisher channels',await persistent()===dbBefore&&await sourceObjects()===sourcesBefore);
+  // The actual compiled original-source path: static responses only, never execute either real arm.
+  await addSite('politika');const originalBefore=await persistent(),originalBase=base('politika');
+  check('Original save retains the MAIN origin gate',(await request(originalBase+'/original-sources',{method:'POST',origin:'https://foreign.invalid'})).status===403);
+  const originals=await json(originalBase+'/original-sources',{method:'POST'});
+  check('Workerd saves both verified original choices',originals.versions.length===2&&originals.versions.every(v=>v.sourceKind==='original-script'&&v.state==='stored'));
+  await json(originalBase+'/original-sources',{method:'POST'});
+  check('Workerd original-source save and retry make no network requests',outbound===0);
+  const originalInput={a:originalId(ORIGINAL_SOURCES[0]),b:originalId(ORIGINAL_SOURCES[1]),name:'Original Politika scripts',testId:'politika_original_1',trafficBPercent:50,reportingKey:'VersionId'};
+  check('Compiled original pair passes with explicit scope warnings',(await json(originalBase+'/check',{method:'POST',body:originalInput})).warnings.some(w=>w.code==='original-source-scope'));
+  const originalTest=await json(originalBase,{method:'POST',body:originalInput},201);
+  const originalDownload=await request(originalBase+'/'+originalTest.record.id+'/download'),originalZip=new Uint8Array(await originalDownload.arrayBuffer()),originalUnzipped=unzipSync(originalZip);
+  check('Compiled original test uses the new single-attempt loader',originalTest.record.loader.version==='1.3.0');
+  for(const source of ORIGINAL_SOURCES)check('Downloaded original '+source.side+' bytes are unchanged',hash(originalUnzipped[originalTest.record.arms[source.side].path])===source.sha256);
+  const originalPlans=await json(originalBase+'/'+originalTest.record.id+'/measurement/plans');
+  check('Original sources do not fabricate Config-based reporting scope',originalPlans.sourceError.includes('no complete Config snapshot'));
+  check('Saving original sources and test leaves publisher config and channels unchanged',await persistent()===originalBefore);
   check('The complete compiled flow makes no outbound network request',outbound===0);
   assert.deepEqual(describeCalls(await guardCalls(mf,origin)),[],'Restarted MAIN serialized a function without canonical source text');
   await writeFile(output+'/bundle.zip',bytes);await writeFile(output+'/record.json',recordBytes);
