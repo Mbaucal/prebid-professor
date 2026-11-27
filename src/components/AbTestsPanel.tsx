@@ -10,7 +10,7 @@ import {runtimeLabel} from '../site-workspace/runtime-labels';
  * (MAIN: /api/publishers/<site>/ab-tests, TEST: /test-api/ab-tests). React only, so no server code reaches the browser bundle.
  * Notices use their own .ab-tests-status class: other verifiers look for .runtime-message and .runtime-error with
  * role=status in the same view, so this panel never puts role=status on those classes, and errors are role=alert. */
-type Version = {id:string;name:string;createdAt:string;runtimeVersion:string|null;runtimeSha256?:string|null;prebidVersion:string|null;state?:'stored'|'unavailable';unavailableReason?:string|null};
+type Version = {id:string;name:string;createdAt:string|null;runtimeVersion:string|null;runtimeSha256?:string|null;prebidVersion:string|null;state?:'stored'|'unavailable';unavailableReason?:string|null;sourceKind?:'original-script';sourceUrl?:string};
 type Arm = {release:string;runtimeVersion:string;name:string};
 type Summary = {id:string;name:string;testId:string;trafficBPercent:number;createdAt:string;createdBy:string;zipSha256:string;
   prebidVersion:string|null;fileCount:number;arms:{A:Arm;B:Arm};deletedAt:string|null};
@@ -30,10 +30,11 @@ const FIELD_LABELS: Record<string,string> = {
   runtimeVersion:'Script version',capabilities:'Script capabilities','bidCache.enabled':'Bid caching','bidCache.maxAgeSeconds':'Maximum bid age (seconds)',
   'bidCache.positions':'Bid cache positions','refresh.default':'Refresh','refresh.rules':'Refresh by position','refresh.stickySeconds':'Sticky refresh (seconds)',
   floors:'Floors',bidders:'Bidders',bidderParams:'Bidder settings',timeouts:'Timeouts','timeouts.rules':'Timeouts by position',otherSettings:'Other settings',
+  sourceBuild:'Original build',sourceUrl:'Original source',
 };
 // List fields hold only what one side has and the other lacks (ab-bundle.mjs configDiff), so an empty side is not "None".
 const LIST_FIELDS = new Set(['capabilities','bidCache.positions','bidders']);
-const when = (iso:string) => new Date(iso).toLocaleString();
+const when = (iso:string|null) => iso?new Date(iso).toLocaleString():'Unavailable';
 const short = (id:string) => id.slice(-8);
 const shown = (value:unknown) => value===null||value===undefined?'Not set':Array.isArray(value)&&!value.length?'None':typeof value==='boolean'?(value?'On':'Off')
   :typeof value==='string'||typeof value==='number'?String(value):JSON.stringify(value,null,2);
@@ -207,11 +208,14 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
 
   const versions=data?.versions??[],known=new Set(versions.map(v=>v.id)),availableVersions=versions.filter(version=>version.state!=='unavailable');
   async function sourceSaved(id:string){await load();if(!active.current)return;setA(current=>current||id);if(a)setB(current=>current||id);}
-  function sourceDescription(id:string){const version=versions.find(value=>value.id===id);if(!version)return null;const notice=runtimeNotice(version);return <p className="ab-tests-selected-source"><strong>{version.name}</strong> · script {version.runtimeVersion?runtimeLabel(version.runtimeVersion):'Unavailable'}{runtimeNoticeSuffix(version)}{version.prebidVersion?` · Prebid ${version.prebidVersion}`:' · GAM only'}{version.state==='unavailable'?<span className="runtime-error"> · {version.unavailableReason||'This source is unavailable.'}</span>:notice?<span> · {notice.warning}</span>:null}</p>;}
+  async function originalsSaved(aId:string,bId:string){await load();if(!active.current)return;setA(aId);setB(bId);setResult(null);}
+  function sourceDescription(id:string){const version=versions.find(value=>value.id===id);if(!version)return null;
+    if(version.sourceKind==='original-script')return <p className="ab-tests-selected-source"><strong>{version.name}</strong> · Original saved file · Uses the existing page’s Prebid and GPT setup{version.state==='unavailable'?<span className="runtime-error"> · {version.unavailableReason}</span>:null}</p>;
+    const notice=runtimeNotice(version);return <p className="ab-tests-selected-source"><strong>{version.name}</strong> · script {version.runtimeVersion?runtimeLabel(version.runtimeVersion):'Unavailable'}{runtimeNoticeSuffix(version)}{version.prebidVersion?` · Prebid ${version.prebidVersion}`:' · GAM only'}{version.state==='unavailable'?<span className="runtime-error"> · {version.unavailableReason||'This source is unavailable.'}</span>:notice?<span> · {notice.warning}</span>:null}</p>;}
   const options=(selected:string)=><>
     <option value="">Choose a saved version</option>
     {selected&&!known.has(selected)?<option value={selected}>{short(selected)} · no longer in Saved versions</option>:null}
-    {versions.map(v=><option key={v.id} value={v.id} disabled={v.state==='unavailable'}>{`${v.name} · ${v.runtimeVersion?runtimeLabel(v.runtimeVersion):'Unavailable'}${runtimeNoticeSuffix(v)} · ${when(v.createdAt)} · ${short(v.id)}${v.state==='unavailable'?' · unavailable':''}`}</option>)}
+    {versions.map(v=><option key={v.id} value={v.id} disabled={v.state==='unavailable'}>{`${v.name} · ${v.sourceKind==='original-script'?'Original file':`${v.runtimeVersion?runtimeLabel(v.runtimeVersion):'Unavailable'}${runtimeNoticeSuffix(v)}`} · ${when(v.createdAt)} · ${short(v.id)}${v.state==='unavailable'?' · unavailable':''}`}</option>)}
   </>;
   const armLine=(side:'A'|'B',arm:Arm)=><div key={side}><dt>Version {side}</dt><dd>
     <span className="ab-tests-name">{arm.name}</span> · {arm.runtimeVersion} · {short(arm.release)}
@@ -280,7 +284,7 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
     {noticeAt('list')}
     {!data.tests.length?<p>{workspace?'No A/B packages saved yet. Earlier packages are listed below.':'No A/B tests saved yet.'}</p>:data.tests.map(test=>{
       const detail=details[test.id],loaded=detail&&'record' in detail?detail:null,last=loaded?.events.at(-1);
-      const identityKey=loaded?(loaded.record.loader?.version==='1.2.0'?'VersionId':'TestId'):undefined;
+      const identityKey=loaded?(['1.2.0','1.3.0'].includes(loaded.record.loader?.version??'')?'VersionId':'TestId'):undefined;
       return <article key={test.id} className="ab-tests-item" aria-label={`A/B test: ${test.name}`}>
         <h4 className="ab-tests-name">{test.name}</h4>
         <p>Version ID <code>{test.testId}</code> · B {test.trafficBPercent}% · saved {when(test.createdAt)} by <span className="ab-tests-name">{test.createdBy}</span>{identityKey?<> · GAM key <code>{identityKey}</code></>:null}</p>
@@ -322,7 +326,7 @@ function SiteAbTestsPanel({publisherId,endpoint,testOnly=false,refreshKey=0,onOp
       <a className="button secondary ab-tests-create" href={availableVersions.length<2?'#ab-source-versions':'#ab-tests-new'}>Create A/B test</a>
     </header>:<h2 id="ab-tests-title">A/B tests</h2>}
     <p>Compare two saved versions on your site. Each page view gets version A or version B. A saved test never changes.</p>
-    {workspace?<>{savedTests}{history}<AbSourceVersionsPanel publisherId={publisherId} siteName={siteName??publisherId} availableVersions={data?availableVersions.length:null} disabled={busy} onSaved={sourceSaved} onReload={load}/></>:null}
+    {workspace?<>{savedTests}{history}<AbSourceVersionsPanel publisherId={publisherId} siteName={siteName??publisherId} availableVersions={data?availableVersions.length:null} disabled={busy} onSaved={sourceSaved} onOriginalsSaved={originalsSaved} onReload={load}/></>:null}
     {loadError?<p role="alert" className="runtime-error">{loadError} <button onClick={()=>setAttempt(n=>n+1)}>Reload A/B tests</button></p>
     :!data?<p className="ab-tests-status" role="status">Loading A/B tests…</p>:<>
     {!workspace&&onOpenMeasurement?<div className="ab-tests-note"><p>Create and measure A/B tests in the site's Measurement workspace.</p><button type="button" onClick={()=>onOpenMeasurement()}>Create A/B test in Measurement</button></div>:createForm}

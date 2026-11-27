@@ -1,6 +1,7 @@
 import {abTestsResponse} from '../experiments/ab-tests-api.mjs';
 import {readPackage} from './releases.mjs';
 import {abHistoryResponse} from './ab-history.mjs';
+import {listOriginalSources,readOriginalSource,originalSourcesResponse} from './original-sources.mjs';
 
 const SITE=/^[a-z0-9][a-z0-9-]{0,97}$/;
 const RELEASE=/^builtin-release-[a-f0-9]{64}$/;
@@ -17,9 +18,12 @@ export async function mainAbTestsResponse(request,env,site,actor){
     if(!env.DB||!env.BUILDS)return json('A/B storage is unavailable. Retry.',503);
     const db=env.DB.withSession('first-primary');
     if(!await db.prepare('SELECT id FROM publishers WHERE id=?').bind(site).first())return json('Site not found.',404);
+    const originals=await originalSourcesResponse(request,env.BUILDS,site,actor,headers);
+    if(originals)return originals;
     const history=await abHistoryResponse(request,env,site);
     if(history)return history;
     const readVersion=async(id,options)=>{
+      if(id.startsWith('original-source-'))return readOriginalSource(env.BUILDS,site,id);
       if(!RELEASE.test(id))fail('Saved built-in release not found.',404);
       return readPackage(env,site,id,options);
     };
@@ -29,7 +33,7 @@ export async function mainAbTestsResponse(request,env,site,actor){
       if(published.results.length>1)fail('The production version is ambiguous. Check the site releases before choosing A.',409);
       // Match Saved versions' 50-item window while retaining the current control even after many new drafts.
       const rows=await db.prepare("SELECT id,notes,status,created_at FROM releases WHERE publisher_id=? AND version LIKE 'builtin-release-%' AND status<>'failed' ORDER BY CASE WHEN status='production' THEN 0 ELSE 1 END,created_at DESC,id DESC LIMIT 50").bind(site).all();
-      const available=[];
+      const available=await listOriginalSources(env.BUILDS,site);
       for(const row of rows.results){
         try{
           const pkg=await readVersion(row.id,{requestedFile:'manifest.json'});

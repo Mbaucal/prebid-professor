@@ -37,6 +37,7 @@ async function testContext(bucket,site,id){
 /** Resolve only immutable source packages; mutable publisher settings are never consulted. */
 async function savedScope(context,readVersion){
   const {record,site}=context,arms={};let inventoryPath=null;
+  check(record.loader?.version!=='1.3.0','Original scripts have no complete Config snapshot. Config-based report plans are unavailable; use the GAM VersionId and Variant dimensions directly.',422,'original-source-reporting-unavailable');
   for(const side of ['A','B']){
     const source=record.arms[side];let pkg;
     try{pkg=await readVersion(source.release);}catch(error){if(error?.status!==404)fail('The saved source metadata could not be read. Retry.',503,'report-source-unavailable');}

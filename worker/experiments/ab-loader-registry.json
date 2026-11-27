@@ -22,5 +22,9 @@
   "1.2.0": {
     "sha256": "b9d4fa8a5850c82a740eb7f4ad98bee267749bed81a68b93aca62de2cbcc372d",
     "created": "2026-11-25"
+  },
+  "1.3.0": {
+    "sha256": "0ebf4c97ecb58880f63bf11d4dc0227280cd950a047bfd7fa2400412ee3bc9e4",
+    "created": "2026-11-27"
   }
 }
