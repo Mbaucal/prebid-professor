@@ -50,7 +50,7 @@ try:
    with page.expect_response(lambda r:r.request.method=='POST' and urlsplit(r.url).path=='/api/publishers/politika/ab-tests') as event:page.get_by_role('button',name='Save A/B test',exact=True).click()
    assert event.value.status==201
    article=page.get_by_role('article',name='A/B test: Original scripts '+str(width),exact=True);expect(article).to_be_visible();shot('saved-test',article)
-   state=inspect();assert state['sqlUnchanged'];assert len(state['sourceObjects'])==4;assert state['sourceReads']==2;assert unexpected==[]
+   state=inspect();assert state['sqlUnchanged'];assert len(state['sourceObjects'])==4;assert state['sourceReads']==0;assert unexpected==[]
    checks.append({'width':width,'savedOriginals':2,'newTestCreated':True,'sourceBytesVerifiedByBackend':True,'sqlUnchanged':True,'externalBrowserRequests':0,'overflow':False})
    context.close()
   browser.close()

@@ -3,12 +3,8 @@ import {readFileSync} from 'node:fs';
 import {createInterface} from 'node:readline';
 import {build} from 'esbuild';
 import {mainAbFixture,MAIN_AB_ORIGIN} from '../tests/support/ab-tests-main-fixture.mjs';
-import {ORIGINAL_SOURCES} from '../worker/experiments/original-source-catalog.mjs';
 let sourceReads=0;
-globalThis.fetch=async(url,options)=>{
-  const source=ORIGINAL_SOURCES.find(s=>s.url===url);if(!source||options.redirect!=='manual')throw Error('Unexpected outbound request');
-  sourceReads++;return new Response(readFileSync(`tests/fixtures/politika-originals/${source.side}.js`));
-};
+globalThis.fetch=async()=>{sourceReads++;throw Error('Unexpected outbound request');};
 const h=await mainAbFixture({seed:false});await h.addSite('politika');
 const baseline=h.persistent();
 const publishers=[{id:'politika',name:'Politika Online',status:'active',sitesCount:1,notes:'',sites:[{

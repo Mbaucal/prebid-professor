@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import archive from '../../worker/experiments/original-source-bytes.json' with {type:'json'};
 import {createHash} from 'node:crypto';
 import {unzipSync} from 'fflate';
 import {mainAbFixture} from '../support/ab-tests-main-fixture.mjs';
@@ -9,16 +9,12 @@ import {ORIGINAL_SOURCES,originalId} from '../../worker/experiments/original-sou
 import {saveOriginalSources,readOriginalSource,listOriginalSources} from '../../worker/site-runtime/original-sources.mjs';
 import {checkAbCompatibility,composeAbBundle,abGamIdentity} from '../../worker/experiments/ab-bundle.mjs';
 
-const bytes=Object.fromEntries(ORIGINAL_SOURCES.map(s=>[s.url,new Uint8Array(readFileSync(`tests/fixtures/politika-originals/${s.side}.js`))]));
+const bytes=Object.fromEntries(ORIGINAL_SOURCES.map(s=>[s.url,new Uint8Array(Buffer.from(archive[s.sha256],'base64'))]));
 const A=originalId(ORIGINAL_SOURCES[0]),B=originalId(ORIGINAL_SOURCES[1]),base='/api/publishers/politika/ab-tests';
 const digest=b=>createHash('sha256').update(b).digest('hex');
-let h,oldFetch,fetches=[],badSource=false;
+let h,oldFetch,fetches=[];
 test.before(async()=>{
-  oldFetch=globalThis.fetch;globalThis.fetch=async(url,options)=>{
-    assert(Object.hasOwn(bytes,url),'Only the two pinned public URLs may be read');assert.equal(options.redirect,'manual');assert(options.signal);
-    assert.equal(options.headers.authorization,undefined);fetches.push(url);
-    return new Response(badSource?new TextEncoder().encode('different script'):bytes[url]);
-  };
+  oldFetch=globalThis.fetch;globalThis.fetch=async()=>{fetches.push('unexpected');assert.fail('No outbound traffic');};
   h=await mainAbFixture({seed:false});await h.addSite('politika');await h.addSite('other-site');
 });
 test.after(()=>{h?.close();globalThis.fetch=oldFetch;});
@@ -36,9 +32,9 @@ test('GET does not fetch or save originals; authentication, origin, site and bou
   assert.equal((await h.request('/api/publishers/other-site/ab-tests/original-sources',{method:'POST'})).status,404);
   assert.equal(h.persistent(),before);assert.equal(h.r2.log.puts.length,puts);assert.equal(fetches.length,0);
 });
-test('a changed public file is rejected before any source or publisher write',async()=>{
-  const puts=h.r2.log.puts.length;badSource=true;
-  try{assert.equal((await h.request(base+'/original-sources',{method:'POST'})).status,409);assert.equal(h.r2.log.puts.length,puts);}finally{badSource=false;}
+test('a corrupt archived source is rejected before any source or publisher write',async()=>{
+  const puts=h.r2.log.puts.length,key=ORIGINAL_SOURCES[0].sha256,original=archive[key];archive[key]='changed';
+  try{assert.equal((await h.request(base+'/original-sources',{method:'POST'})).status,409);assert.equal(h.r2.log.puts.length,puts);}finally{archive[key]=original;}
 });
 test('saving exact originals adds named A/B choices, preserves all publisher state and safely retries',async()=>{
   const before=h.persistent(),saved=await h.json(base+'/original-sources',{method:'POST'});

@@ -1,3 +1,4 @@
+import archive from '../experiments/original-source-bytes.json' with {type:'json'};
 import {sha256} from '../runtime/prebid-artifact-check.mjs';
 import {ORIGINAL_PAIR,ORIGINAL_SOURCES,originalId,originalSource,originalRuntimeLabel} from '../experiments/original-source-catalog.mjs';
 
@@ -58,23 +59,21 @@ async function immutablePut(bucket,path,bytes){
   const stored=await readBytes(bucket,path,bytes.length);
   if(!stored||await sha256(stored)!==digest)fail(503,'The original script save could not be confirmed. Retry.');
 }
-async function fetchOriginal(source){
-  // Only reviewed public HTTPS URLs are fetched, no caller URL, cookies, redirects or internal hosts.
-  const response=await fetch(source.url,{redirect:'manual',signal:AbortSignal.timeout(15000),headers:{accept:'application/javascript'}});
-  if(!response.ok||!response.body)fail(503,'The original script could not be downloaded. Retry.');
-  const reader=response.body.getReader(),chunks=[];let size=0;
-  try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>source.bytes){await reader.cancel();invalid();}chunks.push(value);}}
-  finally{reader.releaseLock();}
-  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
-  if(size!==source.bytes||await sha256(bytes)!==source.sha256)invalid();
+async function archivedOriginal(source){
+  // The reviewed deployed files are stored as data, never evaluated or regenerated.
+  // Saving remains possible when the original public URL is changed or removed.
+  const encoded=archive[source.sha256];let bytes;
+  if(typeof encoded!=='string'||encoded.length!==4*Math.ceil(source.bytes/3))invalid();
+  try{bytes=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));}catch{invalid();}
+  if(bytes.length!==source.bytes||await sha256(bytes)!==source.sha256)invalid();
   return bytes;
 }
 export async function saveOriginalSources(bucket,site,actor){
   const sources=ORIGINAL_SOURCES.filter(s=>s.site===site);if(!sources.length)fail(404,'No reviewed original scripts are available for this site.');
   const missing=[];
   for(const source of sources){try{await readOriginalSource(bucket,site,originalId(source));}catch(error){if(error.status!==404)throw error;missing.push(source);}}
-  // Verify both downloads before any write. Partial storage failures are safe to retry.
-  const files=await Promise.all(missing.map(fetchOriginal));
+  // Verify both archived originals before any write. Partial storage failures are safe to retry.
+  const files=await Promise.all(missing.map(archivedOriginal));
   for(let i=0;i<missing.length;i++){
     const source=missing[i],id=originalId(source),root=key(site,id);
     await immutablePut(bucket,root+'/ads.js',files[i]);

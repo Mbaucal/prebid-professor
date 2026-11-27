@@ -22,13 +22,12 @@ assert.equal(hash(prebid),'384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b1
 await mkdir(output,{recursive:true});
 const checks=[];
 const check=(name,ok)=>{assert(ok,name);checks.push(name);};
-let mf,db,bucket,cookie='',outbound=0,originalReads=0,expected,record,measurementPlan;
-const originalFiles=Object.fromEntries(await Promise.all(ORIGINAL_SOURCES.map(async s=>[s.url,new Uint8Array(await readFile(`tests/fixtures/politika-originals/${s.side}.js`))])));
+let mf,db,bucket,cookie='',outbound=0,expected,record,measurementPlan;
 const options={modules:guardedModules(script),compatibilityDate:'2026-07-15',compatibilityFlags:['nodejs_compat'],cf:false,
   resourcePersistencePath:directory,d1Databases:{DB:'main-ab-d1'},r2Buckets:{BUILDS:'main-ab-r2'},
   bindings:{ADMIN_EMAIL:actor,ADMIN_PASSWORD:password,SESSION_SECRET:secret},
   serviceBindings:{ASSETS:()=>new Response('No remote fixture assets',{status:404})},
-  outboundService:request=>{if(Object.hasOwn(originalFiles,request.url)){originalReads++;return new Response(originalFiles[request.url]);}outbound++;return new Response('External requests are blocked',{status:503});}};
+  outboundService:()=>{outbound++;return new Response('External requests are blocked',{status:503});}};
 async function start(){mf=new Miniflare(options);await mf.ready;db=await mf.getD1Database('DB');bucket=await mf.getR2Bucket('BUILDS');}
 const base=id=>`/api/publishers/${id}/ab-tests`;
 async function request(path,{method='GET',body,auth=true,origin:source=origin,headers={}}={}){
@@ -218,7 +217,7 @@ try{
   const originals=await json(originalBase+'/original-sources',{method:'POST'});
   check('Workerd saves both verified original choices',originals.versions.length===2&&originals.versions.every(v=>v.sourceKind==='original-script'&&v.state==='stored'));
   await json(originalBase+'/original-sources',{method:'POST'});
-  check('Workerd original-source retry does not refetch',originalReads===2);
+  check('Workerd original-source save and retry make no network requests',outbound===0);
   const originalInput={a:originalId(ORIGINAL_SOURCES[0]),b:originalId(ORIGINAL_SOURCES[1]),name:'Original Politika scripts',testId:'politika_original_1',trafficBPercent:50,reportingKey:'VersionId'};
   check('Compiled original pair passes with explicit scope warnings',(await json(originalBase+'/check',{method:'POST',body:originalInput})).warnings.some(w=>w.code==='original-source-scope'));
   const originalTest=await json(originalBase,{method:'POST',body:originalInput},201);
@@ -233,7 +232,7 @@ try{
   await writeFile(output+'/bundle.zip',bytes);await writeFile(output+'/record.json',recordBytes);
   const result={scope:'Actual compiled MAIN Worker in ephemeral workerd/D1/R2; synthetic non-Tanjug 3.25.1 cache OFF/ON packages. No generated ad scripts executed, paid traffic, GAM writes, publisher activation or hosted production verification.',
     passed:checks.length,failed:0,checks,workerSha256:hash(script),site,otherSite:other,releaseA:a,releaseB:b,
-    loader:record.loader,prebidSha256:hash(prebid),zipSha256:hash(bytes),recordSha256:hash(recordBytes),outboundRequests:outbound,offlineOriginalSourceReads:originalReads};
+    loader:record.loader,prebidSha256:hash(prebid),zipSha256:hash(bytes),recordSha256:hash(recordBytes),outboundRequests:outbound};
   await writeFile(output+'/result.json',JSON.stringify(result,null,2)+'\n');
   console.log(JSON.stringify({passed:checks.length,failed:0,zipSha256:result.zipSha256,loader:record.loader}));
 }catch(error){
