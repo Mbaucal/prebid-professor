@@ -67,7 +67,65 @@ fields do not replace the existing round or latest-auction assertions.
   reproduces missing dispatch observations, so renumbering by GAM request
   ordinal would conceal that failure rather than prove a recorder-only fix.
 
-Natural CI causality remains unconfirmed. MBA-432 stays In Progress until a
-real failure receipt or a faithful reproduction distinguishes observation,
-timing and serving behavior. No retry of the failed MAIN workflow was used.
-No live Google/GAM requests, paid traffic or publisher activation were used.
+At that stage, natural CI causality remained unconfirmed. The following
+investigation used the new failure receipt rather than retrying that failure.
+
+## Native timing collision found on 2026-11-28
+
+Run `46087897687`, job `140801693800`, failed at `S / 1280 / normal` on
+`5ed23d47619983ef5e347ba8c9de4bcce493a192`. The receipt contains actual
+Billboard requests for rounds 1, 2, 3 and 5. Round 4 completed its native
+auction with a valid bid and callback, but did not reach the synthetic GAM
+dispatcher. The same gap affected Billboard_2 and Billboard_3; Sticky kept
+all its rounds.
+
+The fixture had set auctions to start every 2 seconds. The frozen runtime's
+non-Sticky GPT wrapper rejects another submission within 1500 ms. A slow
+round 3 followed by a fast round 4 compressed the actual submission gap to
+1367 ms. Counting an attempted cache submission does not prove GPT dispatched
+it. This is a real gate collision in the accelerated synthetic fixture, not a
+reason to replace an absent observation or relax the round assertion.
+
+All eight generated files from the failed artifact match a package generated
+at base `4fb4160abd0ccfc02bbbc8c998d64ddddb154cb3`. With those identical
+bytes, delaying one round 3 synthetic RPC by 700 ms and allowing round 4 to
+respond immediately reproduces the missing round 4. Applying the same delay
+to subsequent rounds keeps callback spacing even and passes the unchanged
+single-scenario verifier. This comparison does not establish that every
+older failure had this cause or that production revenue was affected.
+
+The per-position fixture now uses 4 seconds, derived explicitly from the
+1500 ms GPT guard + the longest 1500 ms auction timeout + its 500 ms callback
+failsafe + a 500 ms scheduling margin. Both default-on and default-off
+profiles use this bound. No production setting, frozen source, old ZIP or
+runtime registry entry changes. The existing 45-second wait, exact round
+lookup and all CPM/cache/native-auction assertions remain unchanged.
+
+`verify-position-cache-latency.py` runs the original verifier with a wrapper
+around only its synthetic bidder RPC. It adds one 700 ms round 3 delay per
+browser context, below the frozen ATF auction timeout, then delegates to the
+original callback. It does not change a packaged script, request lookup or
+deadline. A successful run writes `browser-latency-report.json` beside the
+manifest, with the checks, exercised delays and verified file hashes.
+
+The existing A/B editor CI keeps the original normal runs for both profiles
+and adds one delayed positions run. Its offline regressions also preserve the
+old 2-second missing-round trace and check the new interval against the full
+callback bound:
+
+```sh
+node --test tests/runtime/position-cache-fixture-timing.test.mjs
+python -m unittest discover -s tests/runtime -p 'test_position_cache_latency.py'
+TANJUG_PACKAGE_DIR=.generated/script-library-delivered/positions/deploy python scripts/verify-position-cache-latency.py
+```
+
+Local verification of the compiled Worker/downloaded package passed 69 service
+and package contracts. The new 4-second profiles passed the original verifier
+at both 1280 and 390 px: 53 checks with default cache on, 49 with default off,
+and 53 with the controlled round 3 delay. Related Node suites passed 42 tests;
+Python diagnostics passed 12 and the new wrapper helper passed 2. These are
+local results; the integrated branch still requires its fresh CI run.
+
+All browser traffic in this investigation uses native shipped Prebid with
+intercepted synthetic demand and local GPT/TCF. No live Google/GAM requests,
+paid traffic or publisher activation were used.

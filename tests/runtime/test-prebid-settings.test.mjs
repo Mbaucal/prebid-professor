@@ -4,13 +4,14 @@ import { workspaceStore } from '../support/test-workspace-store.mjs';
 import { initializeTestSchema } from '../../worker/test-workspace/schema.mjs';
 import { readRuntimeSelectionSettings, saveRuntimeSelectionSettings, selectedWorkspaceRuntime } from '../../worker/test-workspace/runtime-selection.mjs';
 import { readPreviewSnapshot } from '../../worker/runtime/builtin-preview-service.mjs';
-import { buildArtifactCandidate } from '../../worker/test-workspace/runtime-catalog.mjs';
+import { buildArtifactCandidate, runtimeCatalog } from '../../worker/test-workspace/runtime-catalog.mjs';
+import { pinRuntime } from '../../worker/runtime/version-pin.mjs';
 import { readPrebidUpload,storePrebidFile,listPrebidFiles,readPrebidFile,inspectUpload,MAX_PREBID_UPLOAD } from '../../worker/test-workspace/prebid-files.mjs';
 import { getPrebidSettings,preparePrebidSettings,commitPrebidSettings,savePrebidSettings,prebidStore } from '../../worker/test-workspace/prebid-settings.mjs';
 import { normalizePrebidDraft } from '../../worker/test-workspace/prebid-draft.mjs';
 import { getSiteDraft,saveSiteDraft } from '../../worker/test-workspace/site-draft-service.mjs';
 import { generatedLiteral } from '../support/generated-literal.mjs';
-import { scriptVersionLabels } from '../../worker/site-runtime/script-version-guidance.mjs';
+import { scriptVersionLabels, noticedScriptVersionApplies } from '../../worker/site-runtime/script-version-guidance.mjs';
 import { digest } from '../../worker/runtime/preview-snapshot.mjs';
 const modules=['consentManagementTcf','tcfControl','currency','adformBidAdapter'];
 const file=(extra='',names=modules)=>new TextEncoder().encode(`/* prebid.js v11.11.0\nModules: ${names.join(', ')} */\nwindow.prebidFixtureOnly=true; // ${extra}\n`);
@@ -50,14 +51,35 @@ test('the account note names the script versions from the server, narrowed by sa
   const {prebidPage,prebidScript}=await import('../../worker/test-workspace/prebid-page.mjs');
   assert.doesNotMatch(prebidPage(),/3\.22\.1|or a later version/);
   assert.match(prebidPage(),/<p class="muted" id="account-scripts">Account aliases and custom or no-upstream SChain require a script version that applies bidder accounts with your other saved options\. Saving preparation does not switch the script version\.<\/p>/);
-  assert.match(prebidScript,/el\('account-scripts'\)\.textContent=accountNote\(state\.accountScriptVersions\|\|\[\]\)/);
-  const accountNote=new Function(`${/^function accountNote\(versions\)\{.*\}$/m.exec(prebidScript)?.[0]??''};return accountNote;`)();
-  assert.equal(accountNote(['3.22.2 (Preview)','3.24.0 (Preview)']),'Account aliases and custom or no-upstream SChain require script 3.22.2 (Preview) or 3.24.0 (Preview). Saving preparation does not switch the script version.');
-  assert.equal(accountNote(['3.24.0 (Preview)']),'Account aliases and custom or no-upstream SChain require script 3.24.0 (Preview). Saving preparation does not switch the script version.');
+  assert.match(prebidScript,/el\('account-scripts'\)\.textContent=accountNote\(state\)/);
+  const accountNote=new Function(`${/^function accountNote\(state\)\{.*\}$/m.exec(prebidScript)?.[0]??''};return accountNote;`)();
+  const tail=' Saving preparation does not switch the script version.',what='account aliases and custom or no-upstream SChain with your other saved options';
+  // A named list comes first; with no name, the selected script, a version with a runtime notice (never named) or none
+  // applies accounts with the other saved options; without a list the note names no version and denies none.
+  for(const [state,expected] of [
+    [{accountScriptVersions:['3.22.2 (Preview)','3.26.0 (Preview)'],selectedScriptAppliesAccounts:true},'Account aliases and custom or no-upstream SChain require script 3.22.2 (Preview) or 3.26.0 (Preview).'],
+    [{accountScriptVersions:['3.26.0 (Preview)']},'Account aliases and custom or no-upstream SChain require script 3.26.0 (Preview).'],
+    [{accountScriptVersions:[],accountNoticedScriptApplies:true,selectedScriptAppliesAccounts:true},`The selected script applies ${what}.`],
+    [{accountScriptVersions:[],accountNoticedScriptApplies:true,selectedScriptAppliesAccounts:false},`No corrected script version is offered that applies ${what}. Versions with a runtime notice in Script setup still apply them.`],
+    [{accountScriptVersions:[],accountNoticedScriptApplies:false,selectedScriptAppliesAccounts:false},`No available script version applies ${what}.`],
+    [{},'Account aliases and custom or no-upstream SChain require a script version that applies bidder accounts with your other saved options.'],
+  ])assert.equal(accountNote(state),expected+tail,JSON.stringify(state));
   const f=await ready();await save(f,await proposal(f));
   assert.deepEqual((await read(f)).accountScriptVersions,scriptVersionLabels(['bidder-accounts']));
   const c=JSON.parse((await snap(f)).config.config_json);c.prebidBidCache={enabled:true,maxBidAgeSeconds:45};
   f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify(c));
   assert.deepEqual((await read(f)).accountScriptVersions,scriptVersionLabels(['bidder-accounts','bid-cache']));
+  // Whether a version with a runtime notice (never named) applies them too.
+  assert.equal((await read(f)).accountNoticedScriptApplies,noticedScriptVersionApplies(['bidder-accounts','bid-cache']));
+  // Whether the saved script applies bidder accounts with saved bid caching: the first TEST runtime does not; 3.24.0
+  // (with a runtime notice, never named) and 3.26.0 do. Only the registry release the exact pin names counts.
+  assert.equal((await read(f)).selectedScriptAppliesAccounts,false);
+  for(const [version,expected] of [['3.24.0',true],['3.26.0',true],['3.23.0',false],['3.22.2',false]]){
+    const pin=pinRuntime(runtimeCatalog.find(r=>r.version===version),{allowPreview:true});
+    f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify({...c,builtinRuntimeSelection:{...c.builtinRuntimeSelection,runtime:pin}}));
+    assert.equal((await read(f)).selectedScriptAppliesAccounts,expected,version);
+    f.sqlite.prepare('UPDATE publisher_configs SET config_json=?').run(JSON.stringify({...c,builtinRuntimeSelection:{...c.builtinRuntimeSelection,runtime:{...pin,runtimeSha256:'0'.repeat(64)}}}));
+    assert.equal((await read(f)).selectedScriptAppliesAccounts,false,version+' with another source checksum');
+  }
   assert.notDeepEqual(scriptVersionLabels(['bidder-accounts']),scriptVersionLabels(['bidder-accounts','bid-cache']),'saved bid caching narrows the versions');
 });

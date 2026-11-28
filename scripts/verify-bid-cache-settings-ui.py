@@ -13,6 +13,8 @@ process=subprocess.Popen(['node','scripts/script-library-browser-fixture.mjs'],c
 assert json.loads(process.stdout.readline())['ready']
 SITE='/api/publishers/example'
 errors=[];requests=[];checks=[];held=[];hold={'GET':False,'PUT':False}
+# Fields changed in the answers of /prebid-mode, for states MAIN's registry does not reach (no version named).
+patch={}
 def check(name,ok):
  assert ok,name
  checks.append(name)
@@ -28,9 +30,11 @@ def sql(statement,*args):call({'sql':statement,'args':list(args)})
 def forward(r):
  url=urlsplit(r.request.url);assert url.netloc=='tessera.fixture.invalid'
  payload={'path':url.path+('?'+url.query if url.query else ''),'method':r.request.method,'body':r.request.post_data}
- result=call(payload);body=base64.b64decode(result['body'])
+ result=call(payload);body=base64.b64decode(result['body']);headers=result['headers']
  requests.append({'method':payload['method'],'path':url.path,'status':result['status']})
- r.fulfill(status=result['status'],headers=result['headers'],body=body)
+ if patch and url.path==SITE+'/prebid-mode' and result['status']==200:
+  body=json.dumps({**json.loads(body),**patch}).encode();headers={k:v for k,v in headers.items() if k.lower()!='content-length'}
+ r.fulfill(status=result['status'],headers=headers,body=body)
 def route(r):
  if urlsplit(r.request.url).path==SITE+'/prebid-mode' and hold.get(r.request.method):
   hold[r.request.method]=False;held.append(r);return
@@ -172,6 +176,59 @@ try:
   page.set_viewport_size({'width':390,'height':844})
   check('The capable dialog fits 390 px',dialog.bounding_box()['width']<=390 and no_scroll(page))
   page.screenshot(path=str(out/'position-capable-390.png'))
+  # MAIN always names a bid caching version, because 3.26.0 applies every option. The answers are changed here to the
+  # states the panels must still word truthfully: no version named, with or without a selected script that applies
+  # bid caching, and with or without a version with a runtime notice that applies it.
+  page.get_by_role('button',name='Close bid cache settings').click();dialog.wait_for(state='detached')
+  page.set_viewport_size({'width':1280,'height':1000})
+  NO_CORRECTED='No corrected compatible bid-cache script is available in this workspace'
+  NOTICED_STILL='Versions with a runtime notice in Script setup still apply bid caching with your other saved options.'
+  NO_AVAILABLE='No available script version applies bid caching with your other saved options'
+  def open_demand():
+   page.get_by_role('button',name='Ad positions',exact=True).click();page.get_by_role('button',name='Demand → Prebid',exact=True).click()
+   page.get_by_label('Maximum bid age (seconds)',exact=True).wait_for()
+  def save_demand(age,expected):
+   page.get_by_label('Maximum bid age (seconds)',exact=True).fill(age);page.get_by_role('button',name='Save Prebid settings',exact=True).click()
+   message=page.locator('.prebid-mode-message');message.filter(has_text=expected).wait_for()
+   return message.inner_text()=='✓ '+expected and 'Select a compatible script' not in page.locator('main').inner_text()
+  def open_position(code):
+   page.get_by_role('button',name='Ad positions',exact=True).click();card(page,code).get_by_role('button',name='Bid cache',exact=False).click()
+   found=page.get_by_role('dialog',name=f'Bid cache · {code}',exact=True);found.get_by_label(f'Bid cache for {code}',exact=True).wait_for()
+   return found
+  patch.update({'bidCacheScriptVersions':[],'bidCacheNoticedScriptApplies':True})
+  open_demand();fieldset.get_by_text(f'Applies to new packages generated with the selected script. {NO_CORRECTED}.',exact=True).wait_for()
+  check('No version named, and the selected script applies bid caching: Demand says it applies with the selected script',
+   fieldset.get_by_text(SELECT_TEXT,exact=True).count()==0 and 'Your saved settings are kept' not in fieldset.inner_text())
+  page.screenshot(path=str(out/'demand-capable-no-version-desktop.png'),full_page=True)
+  dialog=open_position('Footer')
+  check('No version named, and the selected script applies bid caching: the position dialog says it applies with the selected script',
+   dialog.get_by_text(f'Applies to the next package generated with the selected script. {NO_CORRECTED}.',exact=True).is_visible())
+  page.get_by_role('button',name='Close bid cache settings').click();dialog.wait_for(state='detached')
+  patch['runtimeSupportsBidCache']=False
+  open_demand();fieldset.get_by_text(f'{NO_CORRECTED}. {NOTICED_STILL} Your saved settings are kept.',exact=True).wait_for()
+  check('No version named, a noticed version applies bid caching: the Demand save message agrees and asks to select none',save_demand('55',f'Prebid settings saved. {NO_CORRECTED}; your bid cache settings are kept.'))
+  page.set_viewport_size({'width':390,'height':844})
+  check('The no-version Demand text fits 390 px',no_scroll(page));page.screenshot(path=str(out/'demand-noticed-no-version-390.png'),full_page=True)
+  page.set_viewport_size({'width':1280,'height':1000})
+  patch['namedScriptLibrary']=True
+  open_demand();check('With named scripts, the save message agrees too',save_demand('56',f'Prebid settings saved. New named scripts use them. {NO_CORRECTED}; your bid cache settings are kept.'))
+  del patch['namedScriptLibrary']
+  dialog=open_position('Footer')
+  check('No version named, a noticed version applies bid caching: the position dialog says so',dialog.get_by_text(f'{NO_CORRECTED}. {NOTICED_STILL} Your saved settings are kept.',exact=True).is_visible())
+  dialog.get_by_label('Bid cache for Footer',exact=True).select_option('on');dialog.get_by_role('button',name='Save position setting').click()
+  dialog.get_by_role('status').filter(has_text=f'Saved. {NO_CORRECTED}. Your setting is kept.').wait_for()
+  check('The position save message agrees with the dialog and asks to select no version',dialog.get_by_text('Select a compatible script',exact=False).count()==0)
+  page.get_by_role('button',name='Close bid cache settings').click();dialog.wait_for(state='detached')
+  patch['bidCacheNoticedScriptApplies']=False
+  open_demand();fieldset.get_by_text(f'{NO_AVAILABLE}. Your saved settings are kept.',exact=True).wait_for()
+  check('No version applies bid caching at all: the Demand save message says so',save_demand('57',f'Prebid settings saved. {NO_AVAILABLE}; your bid cache settings are kept.'))
+  dialog=open_position('Footer')
+  check('No version applies bid caching at all: the position dialog says so',dialog.get_by_text(f'{NO_AVAILABLE}. Your saved settings are kept.',exact=True).is_visible())
+  dialog.get_by_label('Bid cache for Footer',exact=True).select_option('off');dialog.get_by_role('button',name='Save position setting').click()
+  dialog.get_by_role('status').filter(has_text=f'Saved. {NO_AVAILABLE}. Your setting is kept.').wait_for()
+  check('The position save message names no version either',dialog.get_by_text('Select a compatible script',exact=False).count()==0)
+  page.get_by_role('button',name='Close bid cache settings').click();dialog.wait_for(state='detached')
+  patch.clear()
   check('No unhandled UI error',not errors)
   browser.close()
 finally:

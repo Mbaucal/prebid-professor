@@ -11,6 +11,7 @@ import {runtimeCatalog} from '../worker/test-workspace/runtime-catalog.mjs';
 import {pinRuntime} from '../worker/runtime/version-pin.mjs';
 import {sha256} from './static-aa-package.mjs';
 import {guardedModules,guardCalls,describeCalls} from './canonical-text-guard.mjs';
+import {positionCacheFixtureRefreshSeconds} from './position-cache-fixture-timing.mjs';
 
 const directory=await mkdtemp(join(tmpdir(),'script-library-'));
 const origin='https://app.invalid',password=randomBytes(20).toString('hex');
@@ -148,9 +149,9 @@ try {
     const roundtrip=await(await demand()).json();
     check(label+': saved overrides round-trip',roundtrip.prebidMode.bidCache.enabled===enabled&&roundtrip.prebidMode.bidCache.positionOverrides.Billboard===false&&roundtrip.prebidMode.bidCache.positionOverrides.Sticky===true);
     check(label+': supported positions are returned',roundtrip.bidCachePositions.includes('Billboard')&&roundtrip.bidCachePositions.includes('Sticky'));
-    const state=await(await call()).json(),body={revision:state.revision,name:label,refreshSeconds:2};
+    const state=await(await call()).json(),body={revision:state.revision,name:label,refreshSeconds:positionCacheFixtureRefreshSeconds};
     const created=await call('/scripts',body),data=await created.json();assert.equal(created.status,201,JSON.stringify(data));
-    const expected=await buildSavedScript({...inputs,...body,settings:{mode:enabled?'auction-with-cache':'fresh-only',refreshSeconds:2,maxBidAgeSeconds:60,positionOverrides}});
+    const expected=await buildSavedScript({...inputs,...body,settings:{mode:enabled?'auction-with-cache':'fresh-only',refreshSeconds:positionCacheFixtureRefreshSeconds,maxBidAgeSeconds:60,positionOverrides}});
     check(label+': versioned position runtime',data.item.id===expected.id&&expected.manifest.kind==='saved-script-v2');
     await materialize('scripts',data.item.id,label,expected);
   }

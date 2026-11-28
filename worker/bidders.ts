@@ -14,7 +14,7 @@ import { apiError, getActor, json, readJson } from './http';
 import type { DatabaseEnv } from './publishers';
 import { normalizeBidderAccount, normalizeBidderAccounts } from '../shared/bidder-accounts/settings.mjs';
 import { assertCompilerStrings } from './compiler-input-compatibility.mjs';
-import { savedScriptVersionLabels } from './site-runtime/script-version-guidance.mjs';
+import { savedNoticedScriptApplies, savedScriptVersionLabels, savedSelectedScriptApplies } from './site-runtime/script-version-guidance.mjs';
 
 type BidderRow = {
   id: string;
@@ -270,7 +270,12 @@ export async function listBidders(env: DatabaseEnv, publisherId: string): Promis
 
   // The script versions the account form names: bidder accounts together with the site's other saved options.
   const config = await env.DB.prepare('SELECT config_json FROM publisher_configs WHERE publisher_id = ? LIMIT 1').bind(publisherId).first<{config_json: string}>();
-  const accountScriptVersions = savedScriptVersionLabels('bidder-accounts', {config: {config_json: config?.config_json ?? '{}'}, bidders: bidderResult.results ?? []});
+  const saved = {config: {config_json: config?.config_json ?? '{}'}, bidders: bidderResult.results ?? []};
+  const accountScriptVersions = savedScriptVersionLabels('bidder-accounts', saved);
+  // Whether a version with a runtime notice applies them: it is never named, but stays selectable in Script setup.
+  const accountNoticedScriptApplies = savedNoticedScriptApplies('bidder-accounts', saved);
+  // Whether the saved script applies them, so the form says so instead of denying it when no version is named.
+  const selectedScriptAppliesAccounts = savedSelectedScriptApplies('bidder-accounts', saved);
 
   return json({
     ok: true,
@@ -278,6 +283,8 @@ export async function listBidders(env: DatabaseEnv, publisherId: string): Promis
       toBidder(row, overridesByBidder.get(row.bidder) ?? []),
     ),
     accountScriptVersions,
+    accountNoticedScriptApplies,
+    selectedScriptAppliesAccounts,
   });
 }
 

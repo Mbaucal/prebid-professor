@@ -3,7 +3,7 @@ import {readPreviewSnapshot} from '../runtime/builtin-preview-service.mjs';
 import {digest} from '../runtime/preview-snapshot.mjs';
 import {commitSiteConfiguration} from './service.mjs';
 import {normalizeBidderRules,defaultBidderRules} from '../../shared/bidder-rules/settings.mjs';
-import {savedScriptVersionLabels} from './script-version-guidance.mjs';
+import {savedScriptVersionLabels,savedNoticedScriptApplies} from './script-version-guidance.mjs';
 
 const fail=(message,status=422)=>{throw Object.assign(Error(message),{status});};
 async function read(env,siteId){
@@ -23,8 +23,9 @@ function payload(saved,config,revision){
   }
   return {revision,settings,bidders,positions,enablePrebid:config.enablePrebid===true,
     runtimeEligible:config.builtinRuntimeSelection?.runtime?.capabilities?.includes('bidder-rules')===true,
-    // The versions that apply bidder rules together with the other saved options (bidder accounts, bid caching).
-    scriptVersions:savedScriptVersionLabels('bidder-rules',saved),published:false};
+    // The versions that apply bidder rules together with the other saved options (bidder accounts, bid caching), and
+    // whether a version with a runtime notice applies them too (never named, still selectable).
+    scriptVersions:savedScriptVersionLabels('bidder-rules',saved),noticedScriptApplies:savedNoticedScriptApplies('bidder-rules',saved),published:false};
 }
 export async function getBidderRuleSettings(env,siteId){
   const saved=await read(env,siteId),config=JSON.parse(saved.config.config_json);
