@@ -76,7 +76,7 @@ export default function ContextualSignalsPanel({publisherId,onChanged,endpoint}:
         <label className="check-row"><input type="checkbox" checked={draft.gam.enabled} onChange={event=>change({gam:{enabled:event.target.checked}})}/><span>Google Ad Manager PPS · IAB Content 2.2</span></label>
         <p className="contextual-signals-help">Google currently lists PPS for GAM 360. Requires PPS availability in your network and enabled demand-channel sharing. IAB Content 3.0 is not sent to Google PPS.</p>
         <p className="contextual-signals-help">This script manages page-level GAM PPS. Do not enable it alongside another PPS configuration.</p>
-        <p>Choose a taxonomy only after checking support with that SSP for your account and Prebid build. Adapter forwarding alone does not confirm SSP acceptance.</p>
+        <p className="contextual-signals-help">Choose a taxonomy only after checking support with that SSP for your account and Prebid build. Adapter forwarding alone does not confirm SSP acceptance.</p>
         {!data.enablePrebid&&hasPrebidRoutes?<p className="contextual-signals-note">Prebid is off. Bidder choices remain saved and are omitted from a GAM-only package.</p>:null}
         {data.bidders.length?<div className="contextual-signals-bidders">{data.bidders.map(bidder=>{
           const route=draft.bidders.find(item=>item.bidder===bidder.bidder);
@@ -103,7 +103,7 @@ export default function ContextualSignalsPanel({publisherId,onChanged,endpoint}:
       </fieldset>
       <fieldset className="contextual-signals-card" disabled={saving}>
         <legend>3. Category mappings</legend>
-        <p>Each taxonomy has its own IDs. Enter IDs separated by commas. Mapping one version never converts IDs to another version.</p>
+        <p className="contextual-signals-help">Each taxonomy has its own IDs. Enter IDs separated by commas. Mapping one version never converts IDs to another version.</p>
         {data.taxonomies.map(taxonomy=><datalist key={taxonomy.id} id={`contextual-${publisherId}-${taxonomy.id}`}>{taxonomy.categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</datalist>)}
         {draft.mappings.length===0?<p className="contextual-signals-help">No mappings yet. Add the exact category values supplied by your site.</p>:null}
         <div className="contextual-signals-mappings">{draft.mappings.map((row,index)=><article className="contextual-signals-mapping" key={index}>

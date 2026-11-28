@@ -1,9 +1,12 @@
-.contextual-signals-page{display:grid;gap:18px;padding:24px;min-width:0}
+.contextual-signals-page{display:grid;gap:18px;padding:24px 32px 44px;min-width:0}
 .contextual-signals-page .config-toolbar{margin:0}
 .contextual-signals-page p{margin:0;line-height:1.55}
-.contextual-signals-card{display:grid;gap:16px;margin:0;padding:20px;border:1px solid #d3dceb;border-radius:14px;background:#fff;min-width:0}
-.contextual-signals-card legend{padding:0 8px;font-weight:750;color:#273142}
-.contextual-signals-field{display:grid;gap:7px;min-width:0;font-weight:600}
+.contextual-signals-card{display:block;margin:0;padding:20px;border:1px solid #d3dceb;border-radius:14px;background:#fff;min-width:0}
+/* Per the HTML rendering rules a floated legend is not the fieldset's rendered legend: it is laid out inside the card, not across its border, and still names the fieldset. The card stays display:block so the float is not neutralised as a grid item. */
+.contextual-signals-card>legend{float:left;width:100%;margin:0 0 16px;padding:0;color:#273142;font-size:18px;font-weight:750;line-height:1.35}
+.contextual-signals-page .contextual-signals-card>legend+*{clear:both}
+.contextual-signals-page .contextual-signals-card>*+*{margin-top:16px}
+.contextual-signals-field{display:grid;gap:7px;align-content:start;min-width:0;font-weight:600}
 .contextual-signals-field input,.contextual-signals-field select{width:100%;min-width:0;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#273142;font:inherit}
 .contextual-signals-field small,.contextual-signals-help{font-size:13px;line-height:1.5;font-weight:400;color:#64748b;overflow-wrap:anywhere}
 .contextual-signals-field code{overflow-wrap:anywhere}
@@ -13,13 +16,15 @@
 .contextual-signals-row-heading,.contextual-signals-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .contextual-signals-actions{justify-content:flex-start}
 .contextual-signals-page .check-row{display:flex;gap:10px;align-items:flex-start;line-height:1.5}
-.contextual-signals-page .check-row input{margin-top:4px;flex:none}
+.contextual-signals-page .check-row input{margin-top:1px;flex:none}
 .contextual-signals-note{padding:12px 14px;border:1px solid #f1d7a8;border-radius:8px;background:#fff9ed;color:#765b24;font-size:14px}
+.contextual-signals-note>p+p{margin-top:8px}
 .contextual-signals-page button{white-space:normal}
 .contextual-signals-page fieldset:disabled{opacity:.7}
-.contextual-signals-integration{display:grid;gap:12px;font-size:14px;line-height:1.5}
+.contextual-signals-integration{font-size:14px;line-height:1.5}
 .contextual-signals-integration summary{cursor:pointer;font-weight:650}
-.contextual-signals-integration[open] p{margin:12px 0}
+.contextual-signals-integration[open] p{margin:10px 0 12px}
+.contextual-signals-integration .button{display:inline-block;text-decoration:none}
 @media(max-width:640px){.contextual-signals-page{padding:16px;gap:16px}.contextual-signals-card{padding:14px}.contextual-signals-bidders,.contextual-signals-id-fields{grid-template-columns:minmax(0,1fr)}.contextual-signals-mapping{padding:12px}.contextual-signals-actions>.button{width:100%}}
 
 .contextual-signals-feedback{display:grid;gap:12px;scroll-margin:16px}
