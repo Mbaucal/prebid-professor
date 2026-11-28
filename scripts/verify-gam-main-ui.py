@@ -242,6 +242,85 @@ def verify_testid_selection(browser, identity_key='TestId'):
    server.terminate();server.wait(timeout=10)
  return cases
 
+def verify_targeting_recovery(browser):
+ cases=[]
+ for mode in ['key-before','value-before','value-partial','key-after']:
+  for width,height in [(1440,1080),(390,844)]:
+   server=subprocess.Popen(['node','scripts/gam-main-ui-fixture.mjs'],cwd=root,stdout=subprocess.PIPE,text=True,env={**os.environ,'GAM_MAIN_RECOVERY':mode})
+   context=None
+   try:
+    assert 'ready' in server.stdout.readline()
+    context=browser.new_context(viewport={'width':width,'height':height})
+    page=context.new_page();errors=[];external=[];requests=[]
+    page.on('pageerror',lambda error:errors.append(str(error)))
+    def local_only(route):
+     if not route.request.url.startswith(origin+'/'):external.append(route.request.url);route.abort()
+     else:route.continue_()
+    page.route('**/*',local_only)
+    page.on('request',lambda request:requests.append({'method':request.method,'url':request.url}))
+    page.goto(origin+'/?section=integrations')
+    page.get_by_role('button',name='Key-values',exact=True).click()
+    page.get_by_role('button',name='Poništi izbor',exact=True).click()
+    page.get_by_role('checkbox',name='Uključi ključ aq_bid_origin',exact=True).check()
+    if mode.startswith('key-'):
+     card=page.locator('.gam-kv-key').filter(has=page.get_by_role('checkbox',name='Uključi ključ aq_bid_origin',exact=True))
+     card.locator('summary').click();page.get_by_role('button',name='Bez vrednosti za aq_bid_origin',exact=True).click()
+    page.get_by_role('button',name='Proveri izabrane key-values u GAM-u',exact=True).click()
+    status=page.get_by_label('Status key-values posla',exact=True)
+    expect(status.get_by_role('heading',name='Provera je završena — spremno za potvrdu',exact=True)).to_be_visible(timeout=30000)
+    page.locator('.gam-kv-confirm input[type=checkbox]').check()
+    page.get_by_role('button',name='Pokreni pripremu key-values',exact=True).click()
+    check=page.get_by_role('button',name='Proveri ishod u GAM-u',exact=True)
+    expect(check).to_be_visible(timeout=30000)
+    pending=page.request.get(origin+'/__fixture__/state').json();writes=len(pending['writes'])
+    assert page.get_by_role('button',name='Zaustavi posao',exact=True).count()==0
+    check.click()
+    if mode=='key-after':
+     expect(status.get_by_role('heading',name='Priprema je završena',exact=True)).to_be_visible(timeout=30000)
+     state=page.request.get(origin+'/__fixture__/state').json()
+     assert len(state['writes'])==writes and len(state['keys'])==1 and state['values']==[]
+     action='reconciled existing without another write'
+    else:
+     expect(check).to_be_enabled()
+     assert page.get_by_role('button',name='Zaustavi posao',exact=True).count()==0
+     assert len(page.request.get(origin+'/__fixture__/state').json()['writes'])==writes
+     job_id=pending['jobs'][-1]['id']
+     assert page.request.post(origin+'/__fixture__/age-attempt',data={'id':job_id}).json()['aged']
+     held=[]
+     page.route('**/check',lambda route:held.append(route))
+     check.click();expect(status).to_have_attribute('aria-busy','true');expect(check).to_be_disabled();assert len(held)==1
+     held.pop().continue_();page.unroute('**/check')
+     expect(status.get_by_text('Nije ponovljen upis.',exact=False)).to_be_visible(timeout=30000)
+     expect(page.get_by_role('button',name='Nastavi posao',exact=True)).to_be_enabled()
+     stop_button=page.get_by_role('button',name='Zaustavi posao',exact=True);expect(stop_button).to_be_disabled()
+     assert len(page.request.get(origin+'/__fixture__/state').json()['writes'])==writes
+     status.screenshot(path=str(out/f'recovery-{mode}-{width}.png'))
+     if mode=='key-before':
+      page.locator('.gam-kv-close-preview input[type=checkbox]').check();expect(stop_button).to_be_enabled()
+      page.reload();page.get_by_role('button',name='Key-values',exact=True).click();page.get_by_role('button',name='Otvori key-values posao',exact=True).first.click()
+      expect(stop_button).to_be_disabled();page.locator('.gam-kv-close-preview input[type=checkbox]').check();stop_button.click()
+      expect(status.get_by_role('heading',name='Posao je zaustavljen',exact=True)).to_be_visible(timeout=30000)
+      state=page.request.get(origin+'/__fixture__/state').json();assert state['jobs'][-1]['status']=='cancelled';assert len(state['writes'])==writes;assert not state['keys'] and not state['values']
+      action='explicit stop after confirmed-empty check and reload'
+     else:
+      originals=pending['values']
+      page.get_by_role('button',name='Nastavi posao',exact=True).click()
+      expect(status.get_by_role('heading',name='Priprema je završena',exact=True)).to_be_visible(timeout=30000)
+      state=page.request.get(origin+'/__fixture__/state').json();assert len(state['keys'])==1 and len(state['values'])==3
+      for original in originals:assert next(value for value in state['values'] if value['id']==original['id'])==original
+      assert len(state['writes'])==writes+1
+      assert len(state['writes'][-1]['payloads'])==3-len(originals)
+      action='explicit retry creates only missing values'
+    assert not errors,errors
+    assert not external,external
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+    page.screenshot(path=str(out/f'recovery-{mode}-result-{width}.png'),full_page=False)
+    cases.append({'width':width,'recoveryMode':mode,'passed':True,'action':action,'pageErrors':errors,'externalRequests':external,'requests':requests})
+   finally:
+    if context:context.close()
+    server.terminate();server.wait(timeout=10)
+ return cases
+
 with sync_playwright() as p:
  browser=p.chromium.launch(headless=True,executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox'])
  try:
@@ -361,6 +440,7 @@ with sync_playwright() as p:
   evidence.extend(verify_testid_selection(browser, 'VersionId'))
   evidence.extend(verify_add_only_safety(browser))
   evidence.extend(verify_during_existing_creatives(browser))
+  evidence.extend(verify_targeting_recovery(browser))
  finally:browser.close()
 (out/'result.json').write_text(json.dumps({'passed':True,'scope':'Actual MAIN App build, real local GAM handler; synthetic storage and Google only','cases':evidence},indent=2)+'\n')
 print('PASS actual MAIN App: independent add-only completion beside partial legacy creatives, exact old job/lock/ad preservation, OFF metadata, progress, saved results and safe blockers at desktop/mobile')

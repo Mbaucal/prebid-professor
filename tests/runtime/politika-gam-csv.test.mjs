@@ -49,7 +49,7 @@ test('source Active View anomalies preserve counters and suppress affected ratio
 });
 test('metadata prevents wrong currency, time zone, network, scope, period and Prebid orders',()=>{
  for(const patch of [{'Report currency':'USD'},{'Time zone':'UTC'},{'Publisher network':'Other'},{'Report type':'Ad Exchange'},{'Report name':'Politika | 03 Wrong'}, {Filters:'Ad unit ID (all levels) = 999'}, {Filters:'Ad unit ID (all levels) = 23338702405 AND Country = Serbia'}, {'Date range':'Nov 20, 2026 - Nov 21, 2026'}])assert.throws(()=>parsePolitikaCsv(fixtureCsv('01',{propertyPatch:patch})));
- assert.throws(()=>parsePolitikaCsv(fixtureCsv('02',{propertyPatch:{Filters:'Ad unit ID (all levels) = 23338702405 AND Order ID = 999'}})),/five saved Prebid orders/);
+ assert.throws(()=>parsePolitikaCsv(fixtureCsv('02',{propertyPatch:{Filters:'Ad unit ID (all levels) = 23338702405 AND Order ID = 999'}})),/expected Prebid order IDs/);
 });
 test('older incomplete CMP filters are explicitly flagged instead of implying zero missing buckets',()=>{
  const r=parsePolitikaCsv(fixtureCsv('05',{propertyPatch:{Filters:'Ad unit ID (all levels) = 23338702405 AND Key-values ID = '+Array.from({length:12},(_,i)=>String(1001+i)).join(', ')}}));

@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import {gamResponse} from '../worker/integrations/gam-service.mjs';
 import {trafficFixture,prebidPlan} from '../tests/gam/traffic-fixture.mjs';
+import {GamError} from '../shared/gam/plan.mjs';
 const fixture=trafficFixture(),root=resolve('dist/client');
 const origin='http://127.0.0.1:4187',base='/api/integrations/gam';
 const options={base,clientFactory:()=>fixture.client,trafficFactory:()=>fixture.traffic};
@@ -13,6 +14,21 @@ if(connected.status!==201)throw Error('Synthetic GAM connection failed');
 if(process.env.GAM_MAIN_SEED_OFF==='1'){
   fixture.db.key.push({id:'9000001',name:'aq_bid_origin',displayName:'Existing operator label',type:'FREEFORM',status:'ACTIVE',reportableType:'OFF'});
   fixture.db.value.push({id:'9000002',customTargetingKeyId:'9000001',name:'fresh',displayName:'Existing fresh label',matchType:'EXACT',status:'ACTIVE'});
+}
+const recoveryMode=process.env.GAM_MAIN_RECOVERY;
+if(['key-before','key-after','value-before','value-partial'].includes(recoveryMode)){
+  const create=fixture.traffic.create.bind(fixture.traffic);let failed=false;
+  fixture.traffic.create=async(kind,payloads)=>{
+    if(!failed&&kind===recoveryMode.split('-')[0]){
+      failed=true;
+      if(recoveryMode==='value-partial'){
+        await create(kind,payloads.slice(0,1));
+        throw new GamError('Synthetic QUOTA after partial batch',429);
+      }
+      fixture.failNext(kind,recoveryMode==='key-after');
+    }
+    return create(kind,payloads);
+  };
 }
 let blockerId;
 async function localAction(path,body){
@@ -51,14 +67,22 @@ if(['preview','creating','creative'].includes(process.env.GAM_MAIN_BLOCKER)){
 createServer(async(req,res)=>{
   try{
     const url=new URL(req.url,origin);let response;
-    if(url.pathname.startsWith(base+'/')){
+    if(url.pathname==='/__fixture__/age-attempt'&&req.method==='POST'){
+      let body='';for await(const chunk of req)body+=chunk;const {id}=JSON.parse(body);
+      if(typeof id!=='string'||!/^[a-f0-9-]{36}$/.test(id))throw Error('Invalid fixture job');
+      const job=await(await fixture.env.BUILDS.get(`api-integrations/gam/line-items/v1/jobs/${id}.json`)).json();
+      const path=`api-integrations/gam/line-items/v1/attempts/${id}/${job.cursor}.json`,attempt=await(await fixture.env.BUILDS.get(path)).json();
+      await fixture.env.BUILDS.put(path,JSON.stringify({...attempt,startedAt:Date.now()-90001}));
+      response=Response.json({aged:true});
+    }else if(url.pathname.startsWith(base+'/')){
       let body='';for await(const chunk of req)body+=chunk;
       response=await gamResponse(new Request(url,{method:req.method,headers:req.headers,body:['GET','HEAD'].includes(req.method)?undefined:body}),fixture.env,'main-ui@example.invalid',options);
     }else if(url.pathname==='/__fixture__/state'&&req.method==='GET'){
       const blockerRaw=blockerId?fixture.env.BUILDS.data.get(`api-integrations/gam/line-items/v1/jobs/${blockerId}.json`)?.body??null:null;
       const blocker=blockerRaw?JSON.parse(blockerRaw):null;
       const lock=fixture.env.BUILDS.data.get('api-integrations/gam/line-items/v1/locks/123456.json');
-      response=Response.json({keys:fixture.db.key,values:fixture.db.value,writes:fixture.calls,blocker:blocker?{id:blocker.id,status:blocker.status,cursor:blocker.cursor}:null,
+      const jobs=[...fixture.env.BUILDS.data.entries()].filter(([key])=>key.startsWith('api-integrations/gam/line-items/v1/jobs/')).map(([,value])=>{const job=JSON.parse(value.body);return {id:job.id,status:job.status,cursor:job.cursor,phase:job.phase};});
+      response=Response.json({keys:fixture.db.key,values:fixture.db.value,writes:fixture.calls,...(recoveryMode?{jobs}:{}),blocker:blocker?{id:blocker.id,status:blocker.status,cursor:blocker.cursor}:null,
         blockerRaw,networkLock:lock?.body??null,adObjects:Object.fromEntries(['advertiser','order','creative','lineItem','association'].map(kind=>[kind,fixture.db[kind]]))});
     }else if(req.method!=='GET')response=Response.json({error:'Not part of the synthetic MAIN fixture'},{status:405});
     else if(url.pathname==='/api/organization')response=Response.json({agencies:[],memberships:[]});

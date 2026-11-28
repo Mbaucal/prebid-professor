@@ -31,6 +31,12 @@ const publishers=[{id:'measurement-publisher',name:'Measurement Publisher',statu
   sites:['alpha-site','beta-site','empty-site','legacy-site'].map(site=>({id:site,publisherAccountId:'measurement-publisher',name:site+'.example.invalid',domain:site+'.example.invalid',
     gamPath:'/999/'+site+'/',status:'draft',currentVersion:'draft',adsTxtUrl:'https://example.invalid/ads.txt',updatedAt:'2026-11-23T00:00:00Z',lastPublishedAt:null,adUnitsCount:1,biddersCount:0}))}];
 // Optional synthetic Politika route for CSV UI QA; no real publisher data is embedded.
+if(process.argv.includes('--gam-reports')){
+  const rows=publishers[0].sites;
+  Object.assign(rows.find(site=>site.id==='alpha-site'),{name:'politika.rs',domain:'politika.rs',gamPath:'/22852026051/Politika.rs-Display/'});
+  Object.assign(rows.find(site=>site.id==='beta-site'),{name:'tanjug.rs',domain:'tanjug.rs',gamPath:'/22852026051/Tanjug.rs-Display/'});
+  Object.assign(rows.find(site=>site.id==='empty-site'),{name:'direktno.rs',domain:'direktno.rs',gamPath:'/22038436483/direktno/'});
+}
 if(process.argv.includes('--politika')){
   const site=publishers[0].sites.find(site=>site.id==='alpha-site');site.name='politika.rs';site.domain='politika.rs';
 }
@@ -38,11 +44,20 @@ const bundle=await build({stdin:{contents:`
   import {createRoot} from 'react-dom/client';import App from './src/App';import './src/dashboard-styles';
   createRoot(document.getElementById('root')).render(<App/>);`,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,
   outdir:'.generated/measurement-navigation-fixture',jsx:'automatic',format:'iife',minify:true,define:{'process.env.NODE_ENV':'"production"'}});
+const contextBundle=process.argv.includes('--gam-reports')?await build({stdin:{contents:`
+  import {createRoot} from 'react-dom/client';import {useState} from 'react';import GamCsvImportPanel from './src/components/GamCsvImportPanel';import './src/dashboard-styles';
+  function ContextFixture(){const [context,setContext]=useState({siteId:'same-site',siteName:'Context QA',siteDomain:'context.example.invalid',gamPath:'/999/context/'});window.__setGamContext=setContext;return <GamCsvImportPanel {...context}/>;}
+  createRoot(document.getElementById('root')).render(<ContextFixture/>);`,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,
+  outdir:'.generated/gam-csv-context-fixture',jsx:'automatic',format:'iife',minify:true,define:{'process.env.NODE_ENV':'"production"'}}):null;
 console.log(JSON.stringify({ready:true,origin:MAIN_AB_ORIGIN,experiments,scope:'Real App and MAIN router; synthetic hierarchy, SQLite/R2, no ad or external traffic'}));
 for await(const line of createInterface({input:process.stdin})){
   try{
     const input=JSON.parse(line),url=new URL(input.path,MAIN_AB_ORIGIN);let response;
     if(url.pathname==='/')response=new Response('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script src="/fixture.js"></script></body></html>',{headers:{'content-type':'text/html'}});
+    else if(url.pathname==='/__qa/gam-csv-context'&&contextBundle)response=new Response('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/context.css"></head><body><div id="root"></div><script src="/context.js"></script></body></html>',{headers:{'content-type':'text/html'}});
+    else if(['/context.js','/context.css'].includes(url.pathname)&&contextBundle){
+      const extension=url.pathname.endsWith('.js')?'.js':'.css';response=new Response(contextBundle.outputFiles.find(file=>file.path.endsWith(extension)).text,{headers:{'content-type':extension==='.js'?'application/javascript':'text/css'}});
+    }
     else if(['/fixture.js','/fixture.css'].includes(url.pathname)){
       const extension=url.pathname.endsWith('.js')?'.js':'.css';response=new Response(bundle.outputFiles.find(file=>file.path.endsWith(extension)).text,{headers:{'content-type':extension==='.js'?'application/javascript':'text/css'}});
     }else if(url.pathname==='/tessera-logo.png')response=new Response(readFileSync('public/tessera-logo.png'),{headers:{'content-type':'image/png'}});
