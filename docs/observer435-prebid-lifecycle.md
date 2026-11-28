@@ -30,6 +30,12 @@ The candidate intentionally patches reviewed 11.34.0 source commit
 The patch verifies all three original file hashes before any write and rejects
 unknown source bytes. Locked `npm ci` and upstream gulp produce separate control
 and fixed bundles. Builds refuse to overwrite prior outputs.
+The recipe records the UTC banner date and accepts `--build-date 2026-11-28`
+to reproduce the reviewed file. Upstream's current-date stamp is normalized only
+on the `Updated:` comment line; strict UTF-8/date/banner checks and a separately
+recorded executable-body hash prevent that normalization from changing code.
+The actual upstream-produced date is recorded too. Other source/lock/module/tool
+inputs must also match for an exact byte reproduction.
 
 The checked-in artifact is a Tanjug-derived **20-module display profile**, not a
 universal per-site acceptance result. Other module sets use the builder's
@@ -94,7 +100,8 @@ Local receipts:
 
 Additional local regressions passed:
 
-- 22 source/artifact tests, including the retained-disposer WeakRef edge.
+- 25 source/artifact tests, including the retained-disposer WeakRef edge and
+  banner-date normalization/body-identity checks.
 - Four compiled renderer functional cases (control/fixed × display/native-format)
   preserve the intervention payload and reporting lifecycle.
 - Ten late-render/TTL cases run with the exact 20-module production-profile
@@ -112,7 +119,7 @@ publisher installation remain separate explicit steps.
 ## Reproduce
 
 ```sh
-node scripts/build-prebid-observer435.mjs --out .generated/observer435-builds
+node scripts/build-prebid-observer435.mjs --build-date 2026-11-28 --out .generated/observer435-builds
 node --test tests/runtime/observer435-lifecycle.test.mjs tests/runtime/observer435-artifact.test.mjs
 python tests/runtime/observer435-browser.py \
   --control .generated/observer435-builds/control \

@@ -5,15 +5,16 @@ import {mkdir,readFile,readdir,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
-import {OBSERVER435_VARIANT,OBSERVER435_UPSTREAM,OBSERVER435_BEFORE,applyObserver435Patch,observer435Sha,observer435Modules} from './observer435-patch.mjs';
+import {OBSERVER435_VARIANT,OBSERVER435_UPSTREAM,OBSERVER435_BEFORE,applyObserver435Patch,observer435Sha,observer435Modules,observer435BuildDate,normalizeObserver435Banner} from './observer435-patch.mjs';
 
 const root=resolve(import.meta.dirname,'..'),args=process.argv.slice(2),options={};
 for(let i=0;i<args.length;i+=2){
-  assert(['--out','--modules'].includes(args[i])&&args[i+1]&&!Object.hasOwn(options,args[i]),'Use [--out <empty build directory>] [--modules <explicit Prebid11.34 module JSON>].');
-  options[args[i]]=resolve(args[i+1]);
+  assert(['--out','--modules','--build-date'].includes(args[i])&&args[i+1]&&!Object.hasOwn(options,args[i]),'Use [--out <empty build directory>] [--modules <explicit Prebid11.34 module JSON>] [--build-date YYYY-MM-DD].');
+  options[args[i]]=args[i]==='--build-date'?args[i+1]:resolve(args[i+1]);
 }
 const output=resolve(options['--out']??resolve(root,'.generated/observer435-builds')),upstream=resolve(output,'upstream-11.34.0');
 const sha=observer435Sha,pin=OBSERVER435_UPSTREAM;
+const buildDate=observer435BuildDate(options['--build-date']??new Date().toISOString().slice(0,10));
 const moduleInput=await readFile(options['--modules']??resolve(root,'vendor/prebid/tanjug-11.34.0/prebid-config.json'));
 const modules=observer435Modules(JSON.parse(moduleInput),Boolean(options['--modules']));
 function run(command,argv,cwd,capture=false){
@@ -58,7 +59,8 @@ for(const label of ['control','fixed']){
   }
   const modified=run('git',['diff','--name-only'],upstream,true).split('\n').filter(Boolean).sort();
   assert.deepEqual(modified,label==='fixed'?Object.keys(OBSERVER435_BEFORE).sort():[],'Unexpected upstream source changes.');
-  const bytes=await readFile(resolve(upstream,'build/dist/prebid.js')),folder=resolve(output,label);
+  const rawBytes=await readFile(resolve(upstream,'build/dist/prebid.js')),folder=resolve(output,label);
+  const normalized=normalizeObserver435Banner(rawBytes,buildDate),{bytes}=normalized;
   assert(bytes.includes(Buffer.from(`"v${pin.version}"`)),'Wrong Prebid core version.');
   await mkdir(folder,{recursive:true});await writeFile(resolve(folder,'prebid.js'),bytes,{flag:'wx'});
   await writeFile(resolve(folder,'prebid-config.json'),JSON.stringify({version:pin.version,modules},null,2)+'\n',{flag:'wx'});
@@ -71,7 +73,9 @@ for(const label of ['control','fixed']){
     rendererSha256[renderer]=sha(source);await writeFile(resolve(folder,`renderer-${renderer}.js`),source,{flag:'wx'});
   }
   const manifest={schemaVersion:1,kind:'tessera-prebid-build-candidate',prebidVersion:pin.version,variant:label==='fixed'?OBSERVER435_VARIANT:'observer435-source-control',...source,...tools,
-    byteSize:bytes.length,buildSha256:sha(bytes),rendererSha256,patches:label==='fixed'?changes:[],
+    byteSize:bytes.length,buildSha256:sha(bytes),buildDate,upstreamBannerDate:normalized.upstreamBannerDate,
+    executableBodySha256:normalized.executableBodySha256,bannerNormalization:'UTC date comment line only; executable bytes unchanged',
+    rendererSha256,patches:label==='fixed'?changes:[],
     scope:'Separate opt-in Prebid build. No publisher activation, runtime change, SSP acceptance or revenue claim.'};
   if(label==='fixed'){
     const patch=run('git',['diff','--',...Object.keys(OBSERVER435_BEFORE)],upstream,true)+'\n';

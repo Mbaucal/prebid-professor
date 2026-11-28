@@ -64,5 +64,9 @@
   "moduleSelection": {
     "kind": "reviewed-tanjug-derived-profile",
     "inputSha256": "de139b2d73fe3202c931f2457d2f7788804ad9a5171cac3840f6d225340c4702"
-  }
+  },
+  "buildDate": "2026-11-28",
+  "upstreamBannerDate": "2026-11-28",
+  "executableBodySha256": "9e65da03fd62189f60028357bc2047169c792cad3cfe269fd35d28514a766b7d",
+  "bannerNormalization": "UTC date comment line only; executable bytes unchanged"
 }

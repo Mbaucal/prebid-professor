@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {inspectPrebidArtifact,parsePrebidHeader} from '../../worker/runtime/prebid-artifact-check-v2.mjs';
-import {OBSERVER435_REPORTING_SOURCE,OBSERVER435_UPSTREAM,observer435Sha as sha} from '../../scripts/observer435-patch.mjs';
+import {OBSERVER435_REPORTING_SOURCE,OBSERVER435_UPSTREAM,observer435Sha as sha,normalizeObserver435Banner,observer435BuildDate} from '../../scripts/observer435-patch.mjs';
 const folder=new URL('../../vendor/prebid/observer-lifecycle-11.34.0-tessera-1/',import.meta.url);
 const bytes=await readFile(new URL('prebid.js',folder)),manifest=JSON.parse(await readFile(new URL('manifest.json',folder),'utf8'));
 const config=JSON.parse(await readFile(new URL('prebid-config.json',folder),'utf8'));
@@ -45,4 +45,19 @@ test('the existing frozen11.34 vendor bytes keep their original identity',async(
   const frozen=await readFile(new URL('../../vendor/prebid/tanjug-11.34.0/prebid.js',import.meta.url));
   assert.equal(sha(frozen),'384daae36c4fb334e16229d7f3e4b7a2c2caf9c0344580bdca7b185c756bb10b');
   assert.notEqual(sha(frozen),manifest.buildSha256);
+});
+test('reviewed build date reproduces exact candidate bytes and records executable-body identity',()=>{
+  const result=normalizeObserver435Banner(bytes,'2026-11-28');
+  assert.deepEqual(result.bytes,bytes);assert.equal(result.buildDate,manifest.buildDate);assert.equal(result.upstreamBannerDate,manifest.upstreamBannerDate);
+  assert.equal(result.executableBodySha256,manifest.executableBodySha256);
+});
+test('a different build date changes only the comment line, never the executable body',()=>{
+  const result=normalizeObserver435Banner(bytes,'2026-11-29');
+  assert.notEqual(sha(result.bytes),sha(bytes));assert.equal(result.executableBodySha256,manifest.executableBodySha256);
+  assert.deepEqual(normalizeObserver435Banner(result.bytes,'2026-11-28').bytes,bytes);
+});
+test('invalid dates or an unknown banner fail closed',()=>{
+  for(const value of ['2026-02-30','2026-11-28T00:00:00Z','yesterday','2026-1-1'])assert.throws(()=>observer435BuildDate(value));
+  assert.throws(()=>normalizeObserver435Banner(Buffer.from('unknown source'),'2026-11-28'),/Unexpected upstream build banner/);
+  assert.throws(()=>normalizeObserver435Banner(Buffer.concat([bytes,Buffer.from([255])]),'2026-11-28'));
 });

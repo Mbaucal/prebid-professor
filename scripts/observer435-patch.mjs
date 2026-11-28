@@ -20,6 +20,21 @@ export function observer435Modules(profile,explicit=false){
   assert(!modules.includes('contextualAuditRtdProvider'),'Synthetic audit providers are not production candidates.');
   return modules;
 }
+export function observer435BuildDate(value){
+  assert(typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value,'Use an explicit valid UTC build date YYYY-MM-DD.');
+  return value;
+}
+/** Upstream stamps today's UTC date. Normalize that one comment line, never executable code. */
+export function normalizeObserver435Banner(input,date){
+  const buildDate=observer435BuildDate(date),source=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(input);
+  const prefix=`/* prebid.js v${OBSERVER435_UPSTREAM.version}\nUpdated: `;
+  assert(source.startsWith(prefix),'Unexpected upstream build banner.');
+  const upstreamBannerDate=observer435BuildDate(source.slice(prefix.length,prefix.length+10));
+  assert(source.slice(prefix.length+10).startsWith('\nModules: '),'Unexpected upstream banner date line.');
+  const normalized=prefix+buildDate+source.slice(prefix.length+10),bodyStart=source.indexOf('*/')+2;
+  assert(bodyStart>1&&normalized.slice(bodyStart)===source.slice(bodyStart),'Banner normalization changed executable bytes.');
+  return{bytes:Buffer.from(normalized),buildDate,upstreamBannerDate,executableBodySha256:observer435Sha(source.slice(bodyStart))};
+}
 
 export const OBSERVER435_REPORTING_SOURCE=`// One registration per live render document, without rooting detached documents.
 const registrations = new WeakMap();

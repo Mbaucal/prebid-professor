@@ -18,6 +18,7 @@ separate candidate with the same source patch:
 ```sh
 node scripts/build-prebid-observer435.mjs \
   --modules /path/to/explicit-prebid-11.34-profile.json \
+  --build-date 2026-11-28 \
   --out .generated/site-observer435-build
 ```
 
@@ -25,6 +26,11 @@ The profile must explicitly name version `11.34.0`; this command does not upgrad
 or rewrite an older profile. It preserves the exact requested module set, checks
 module names and source availability, retains TCF modules and refuses the
 synthetic audit provider. Every resulting build gets its own module list/hash.
+The reviewed UTC banner date is `2026-11-28`. Upstream normally stamps the day
+of compilation; `--build-date` normalizes only that date comment line, validates
+the date and verifies unchanged executable-body bytes. Produced/selected dates
+and the executable-body hash are recorded in the manifest. Match the recorded
+source/lock/module/tool versions as well when reproducing exact file bytes.
 
 Use **Publishers → publisher → site → Prebid.js → Step 2** to inspect the file
 and its complete module list, then **Upload approved build to R2**. Review missing
