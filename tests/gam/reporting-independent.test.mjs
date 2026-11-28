@@ -279,17 +279,18 @@ test('an uncertain reporting create keeps the targeting fence after 90 seconds a
   await finish(f,await start(f,ad));assert.equal(f.duplicates,0);
 });
 
-test('an unpersisted uncertain targeting write cannot be escaped by ageing, checking or cancelling it',async()=>{
+test('an unpersisted uncertain targeting write needs complete Check after the deadline before explicit cancellation',async()=>{
   const f=await setup(),ad=await ready(f,tinyAd()),kv=await ready(f,report({key:'aq_bid_origin',values:[]}));
   assert.equal((await saved(f,kv.id)).executionLane,'reporting_add_only_v1');
   let j=await start(f,kv);f.failNext('key',false);j=await action(f,j,'step');assert.equal(j.awaitingCheck,true);
   const pending=await (await f.env.BUILDS.get(attemptKey(j.id,j.cursor))).json();pending.startedAt-=3600000;
   await f.env.BUILDS.put(attemptKey(j.id,j.cursor),JSON.stringify(pending));
-  j=await action(f,j,'check');assert.equal(j.awaitingCheck,true);assert.equal(j.status,'creating');
+  j=await action(f,j,'check');assert.equal(j.awaitingCheck,false);assert.equal(j.status,'creating');
   const before=structuredClone(f.env.BUILDS.data.get(targetLock)),writes=f.writes.length;
-  assert.equal((await request(f,`/line-items/jobs/${j.id}/cancel`,{})).status,409);
   assert.equal((await request(f,`/line-items/jobs/${ad.id}/start`,{confirm:true,confirmNetwork:'123456'})).status,409);
   assert.deepEqual(f.env.BUILDS.data.get(targetLock),before);assert.equal(f.writes.length,writes);assert.equal(f.db.key.length,0);
+  j=await action(f,j,'cancel');assert.equal(j.status,'cancelled');assert.equal(f.writes.length,writes);
+  await finish(f,await start(f,ad));assert.equal(f.duplicates,0);
 });
 
 test('missing or unreadable targeting owner state is unknown, never an expired free reservation',async()=>{

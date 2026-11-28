@@ -49,6 +49,36 @@ verified during the saved job's association steps; the UI must not label
 unverified associations as done. The approved phase order and total plan remain
 unchanged.
 
+## Key-value recovery after a rejected or lost create (MBA-436)
+
+The key-values panel can stop an executing saved job after its current write is
+resolved. It never deletes existing GAM keys, values, orders, creatives or line
+items. Stopping requires explicit confirmation of the displayed job/network;
+a stale cursor is refused.
+
+For an uncertain key/value create, **Proveri ishod u GAM-u** reads the complete
+key or parent-value scope and matches names case-insensitively. A failed,
+truncated, inconsistent, wrong-parent or conflicting read keeps the attempt and
+network reservation blocked. An elapsed 90-second fence alone cannot unlock it.
+
+If all attempted entities are confirmed, the original IDs are reused immediately.
+If only some or none exist, the same complete check after the 90-second window
+retires the old attempt with a storage CAS while retaining the targeting lease.
+The operator may then **Nastavi posao** or explicitly **Zaustavi posao**. Check
+does not send another create/update. A later explicit step rereads current names
+and creates only what is still missing. A late create colliding after that read
+is rejected by GAM's unique-name constraint and reconciled through Check again;
+it is not treated as permission to overwrite or blindly retry a batch.
+
+Read-only recovery can use refreshed credentials only after independently
+confirming the same GAM network. The saved plan and original connection revision
+remain unchanged. If credentials changed before or during Check, continuing old
+writes stays forbidden: stop the verified job and prepare a new review instead.
+
+New custom targeting plans reject GAM's reserved characters before any Google
+request. They create EXACT values, so the dynamic-match exceptions for `*` and
+`~` do not apply. See [valid key-value entry](https://support.google.com/admanager/answer/10020177).
+
 ## Evidence boundaries
 
 Regression tests use independently seeded GAM-shaped responses, including
