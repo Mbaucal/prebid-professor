@@ -47,17 +47,33 @@ def registry_labels(*capabilities):
  return json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
 CACHE_SCRIPTS=registry_labels('bid-cache');assert len(CACHE_SCRIPTS)<=2,CACHE_SCRIPTS
 CACHE_SCRIPT=' or '.join(CACHE_SCRIPTS)
-NO_CACHE_SCRIPT='No corrected compatible bid-cache script is available in this workspace. Your saved settings are kept.'
+# Whether a release with a runtime notice applies bid caching: never named, but still selectable in Script setup.
+def registry_noticed(*capabilities):
+ code="const {noticedScriptVersionApplies}=await import('./worker/site-runtime/script-versions.mjs');console.log(JSON.stringify(noticedScriptVersionApplies(JSON.parse(process.argv[1]))))"
+ return json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
+CACHE_NOTICED=registry_noticed('bid-cache')
+NO_CACHE_VERSION=('No corrected script version is offered that applies bid caching. Versions with a runtime notice in Script setup still apply it.'
+ if CACHE_NOTICED else 'No available script version applies bid caching.')
+# No version named: a version with a runtime notice may still apply bid caching with the saved options (it stays
+# selectable in Script setup), or none does.
+NO_CORRECTED='No corrected compatible bid-cache script is available in this workspace'
+NO_CACHE_SHORT=NO_CORRECTED if CACHE_NOTICED else 'No available script version applies bid caching with your other saved options'
+NO_CACHE_SCRIPT=(NO_CORRECTED+'. Versions with a runtime notice in Script setup still apply bid caching with your other saved options.' if CACHE_NOTICED else NO_CACHE_SHORT+'.')+' Your saved settings are kept.'
+# The Demand save message agrees with the paragraph under it.
+DEMAND_SAVED='Prebid settings saved. Select a compatible script in Script setup before you generate; your bid cache settings are kept.' if CACHE_SCRIPTS else f'Prebid settings saved. {NO_CACHE_SHORT}; your bid cache settings are kept.'
+# A selected script that applies bid caching is said to apply it, also when no corrected version is offered.
+CAPABLE_DEMAND='Applies to new packages generated with the selected script.'+('' if CACHE_SCRIPTS else f' {NO_CORRECTED}.')
+CAPABLE_POSITION='Applies to the next package generated with the selected script.'+('' if CACHE_SCRIPTS else f' {NO_CORRECTED}.')
 SELECT_TEXT=f'Select script {CACHE_SCRIPT} in Script setup to apply bid caching. Your setting is saved.' if CACHE_SCRIPTS else NO_CACHE_SCRIPT
 # Saved settings would cache, but the form has unsaved changes: nothing claims it is saved.
 SELECT_DIRTY_TEXT=f'Select script {CACHE_SCRIPT} in Script setup to apply bid caching.' if CACHE_SCRIPTS else NO_CACHE_SCRIPT
 # Nothing saved would cache yet.
 NEEDS_TEXT=f'Bid caching needs script {CACHE_SCRIPT}.' if CACHE_SCRIPTS else NO_CACHE_SCRIPT
 POSITION_TEXT=f'Applies to the next package generated with script {CACHE_SCRIPT}. Select {"one of these versions" if len(CACHE_SCRIPTS)>1 else "that version"} in Script setup to use it.' if CACHE_SCRIPTS else NO_CACHE_SCRIPT
-POSITION_SAVED='Saved. Select a compatible script in Script setup to apply it.' if CACHE_SCRIPTS else 'Saved. No corrected compatible bid-cache script is available in this workspace. Your setting is kept.'
+POSITION_SAVED='Saved. Select a compatible script in Script setup to apply it.' if CACHE_SCRIPTS else f'Saved. {NO_CACHE_SHORT}. Your setting is kept.'
 GENERATOR_TEXT=(f'Bid caching needs a compatible script version. Select {CACHE_SCRIPT} in Script setup and save; your bid cache settings are kept. '
  + ('Both versions combine' if len(CACHE_SCRIPTS)>1 else 'This version combines')+' bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
- 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.') if CACHE_SCRIPTS else ('Bid caching needs a compatible script version, but no available script version applies bid caching. Your bid cache settings are kept. '
+ 'To keep this script version instead, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.') if CACHE_SCRIPTS else (f'Bid caching needs a compatible script version. {NO_CACHE_VERSION} Your bid cache settings are kept. '
  'To use this script version, turn bid caching off in Config → Demand → Prebid, remove unused overrides there, and set positions that are On to Use site setting under Config → Ad units → Bid cache.')
 try:
  with sync_playwright() as p:
@@ -79,16 +95,17 @@ try:
   hold['PUT']=True;page.get_by_role('button',name='Save Prebid settings',exact=True).click()
   page.get_by_role('button',name='Saving…',exact=True).wait_for()
   check('Saving disables the cache controls',cache.is_disabled() and page.get_by_label('Maximum bid age (seconds)',exact=True).is_disabled() and page.get_by_role('button',name='Saving…',exact=True).is_disabled())
-  release();page.get_by_text('Prebid settings saved. Select a compatible script in Script setup before you generate; your bid cache settings are kept.',exact=False).wait_for()
+  release();page.get_by_text(DEMAND_SAVED,exact=False).wait_for()
   status,saved=api('GET','/prebid-mode')
   check('The site default is saved in D1',status==200 and saved['prebidMode']['bidCache']=={'enabled':True,'maxBidAgeSeconds':45})
-  check(f'Saved, on 3.21.2: the panel asks for {CACHE_SCRIPT} and says the setting is saved',fieldset.get_by_text(SELECT_TEXT,exact=True).is_visible())
+  check(f'Saved, on 3.21.2: the panel asks for {CACHE_SCRIPT or "no version"} and says the setting is saved, as the save message does',fieldset.get_by_text(SELECT_TEXT,exact=True).is_visible()
+   and (bool(CACHE_SCRIPTS) or 'Select a compatible script' not in page.locator('main').inner_text()))
   page.screenshot(path=str(out/'demand-saved-desktop.png'),full_page=True)
   # 409: another tab saves first; this form must reload before saving.
   status,_=api('PUT','/prebid-mode',{'enabled':True,'revision':saved['revision'],'bidCache':{'enabled':True,'maxBidAgeSeconds':90}})
   assert status==200
   page.get_by_label('Maximum bid age (seconds)',exact=True).fill('50')
-  check(f'A saved setting with unsaved changes asks for {CACHE_SCRIPT} without calling the form saved',fieldset.get_by_text(SELECT_DIRTY_TEXT,exact=True).is_visible())
+  check(f'A saved setting with unsaved changes asks for {CACHE_SCRIPT or "no version"} without calling the form saved',fieldset.get_by_text(SELECT_DIRTY_TEXT,exact=True).is_visible())
   page.get_by_role('button',name='Save Prebid settings',exact=True).click()
   page.get_by_text('Prebid settings changed. Reload before saving.',exact=True).wait_for()
   check('A stale form is refused with 409 and keeps the entered value',any(r['status']==409 for r in requests) and page.get_by_label('Maximum bid age (seconds)',exact=True).input_value()=='50')
@@ -167,12 +184,12 @@ try:
   status,mode=api('GET','/prebid-mode')
   check('With 3.23.0 saved, the API reports that it applies bid caching','bid-cache' in pin['capabilities'] and status==200 and mode['runtimeSupportsBidCache'] is True and mode['selectedRuntime']=={'id':'tessera-3.23.0','version':'3.23.0'})
   page.get_by_role('button',name='Ad positions',exact=True).click();page.get_by_role('button',name='Demand → Prebid',exact=True).click()
-  page.get_by_text('Applies to new packages generated with the selected script.' if CACHE_SCRIPTS else NO_CACHE_SCRIPT,exact=True).wait_for()
-  check('A capable runtime stays supported without inventing an unoffered upgrade',page.get_by_text(SELECT_TEXT,exact=True).count()==(0 if CACHE_SCRIPTS else 1))
+  page.get_by_text(CAPABLE_DEMAND,exact=True).wait_for()
+  check('A capable runtime is said to apply bid caching without inventing an unoffered upgrade',page.get_by_text(SELECT_TEXT,exact=True).count()==0 and page.get_by_text(NO_CACHE_SCRIPT,exact=True).count()==0)
   page.screenshot(path=str(out/'demand-capable-desktop.png'),full_page=True)
   page.get_by_role('button',name='Ad positions',exact=True).click();card(page,'Footer').get_by_role('button',name='Bid cache: On',exact=True).click()
   dialog=page.get_by_role('dialog',name='Bid cache · Footer',exact=True)
-  dialog.get_by_text('Applies to the next package generated with the selected script.' if CACHE_SCRIPTS else NO_CACHE_SCRIPT,exact=True).wait_for()
+  dialog.get_by_text(CAPABLE_POSITION,exact=True).wait_for()
   dialog.get_by_label('Bid cache for Footer',exact=True).select_option('off');dialog.get_by_role('button',name='Save position setting').click()
   dialog.get_by_role('status').filter(has_text='Saved. Generate a new package to apply this setting.').wait_for()
   page.set_viewport_size({'width':390,'height':844})

@@ -15,7 +15,11 @@ test('every older bundled runtime rejects enabled rules with an actionable versi
   // The historical 3.23.0 cache script still refuses rules; the combined Preview supports them.
   const cache=runtimeCatalog.filter(row=>row.capabilities.includes('bid-cache')&&!row.capabilities.includes('bidder-rules'));
   assert.deepEqual(cache.map(row=>row.version),['3.23.0']);
-  for(const descriptor of cache)assert.throws(()=>previewInput(snapshot,descriptor,TS),error=>error.message===BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE&&error.status===422&&!/or later/.test(error.message));
+  // Without saved bid caching, the shared guidance names the version that applies bidder rules.
+  for(const descriptor of cache)assert.throws(()=>previewInput(snapshot,descriptor,TS),error=>error.message===`Script 3.23.0 cannot apply enabled bidder rules. Select ${scriptVersionText(['bidder-rules'])} in Script setup and save, or turn off bidder rules. Your saved settings and previous packages are unchanged.`&&error.status===422);
+  // With saved bid caching, the TEST reason for the cache script applies.
+  const cached=configure(fixture(),c=>{c.runtimeControls.bidderRules=policy();c.prebidBidCache={enabled:true,maxBidAgeSeconds:60};});
+  for(const descriptor of cache)assert.throws(()=>previewInput(cached,descriptor,TS),error=>error.message===BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE&&error.status===422&&!/or later/.test(error.message));
   for(const descriptor of runtimeCatalog.filter(row=>!row.capabilities.includes('bidder-rules')&&!cache.includes(row)))assert.throws(()=>previewInput(snapshot,descriptor,TS),error=>error.message.includes(`cannot apply enabled bidder rules. Select ${scriptVersionText(['bidder-rules'])} in Script setup and save, or turn off bidder rules.`));
   assert.deepEqual(previewInput(snapshot,current,TS).bidderRules,policy());
   const combined=runtimeCatalog.find(row=>row.version==='3.24.0');

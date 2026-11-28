@@ -30,7 +30,7 @@ with sync_playwright() as pw:
   for width in [1440,390]:
    proc=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/review-mba413-browser-fixture.mjs','--runtime='+args.runtime],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
    ready=json.loads(proc.stdout.readline());assert ready['ready'] and ready['runtime']==args.runtime
-   checks=[];requests=[];errors=[];external=[];hold=[];pending=[];reject=[]
+   checks=[];requests=[];errors=[];external=[];hold=[];pending=[];reject=[];patch=[]
    page=browser.new_page(viewport={'width':width,'height':1000});page.on('pageerror',lambda error:errors.append(str(error)))
    def send(path,method='GET',body=None):
     proc.stdin.write(json.dumps({'path':path,'method':method,'body':None if body is None else json.dumps(body)})+'\n');proc.stdin.flush()
@@ -41,7 +41,10 @@ with sync_playwright() as pw:
     request=route.request;path=urlsplit(request.url).path
     value=send(path,request.method,json.loads(request.post_data) if request.post_data else None)
     requests.append({'path':path,'method':request.method,'status':value['status']})
-    route.fulfill(status=value['status'],headers=value['headers'],body=base64.b64decode(value['body']))
+    body=base64.b64decode(value['body'])
+    # Payload fields for a saved state this fixture cannot reach (such as 3.24.0 with saved bid caching); None drops one.
+    if patch and path==endpoint and request.method=='GET':body=json.dumps({k:v for k,v in {**json.loads(body),**patch[0]}.items() if v is not None}).encode()
+    route.fulfill(status=value['status'],headers=value['headers'],body=body)
    def route(route):
     request=route.request;url=urlsplit(request.url)
     if url.netloc!='accounts-review.fixture.invalid':external.append(request.url);route.abort();return
@@ -65,6 +68,11 @@ with sync_playwright() as pw:
    try:
     reject.append(True);page.goto(origin+'/',wait_until='domcontentloaded');expect(page.locator('.bidders-page .form-error')).to_contain_text('Synthetic list outage')
     screen('listing-error');passed('Listing failure is visible and recoverable')
+    # The script versions are unknown after the failure: the account form names none and denies none.
+    page.get_by_role('button',name='＋ New bidder',exact=True).click();d=dialog()
+    expect(d.get_by_text('Aliases and account-specific SChain require',exact=False)).to_have_text('Aliases and account-specific SChain require a script version that applies bidder accounts with your other saved options. Existing scripts keep their saved settings.')
+    expect(d).not_to_contain_text('No available script version');expect(d).not_to_contain_text('No corrected script version')
+    d.get_by_role('button',name='Cancel',exact=True).click();expect(d).to_have_count(0);passed('After a listing failure the account form names no version and denies none')
     hold.append('GET');page.reload(wait_until='domcontentloaded');expect(page.locator('.bidders-page .config-loading')).to_be_visible();screen('listing-loading')
     assert len(pending)==1;fulfill(pending.pop());expect(card('pubmatic')).to_be_visible();expect(page.locator('.bidders-page .config-loading')).to_have_count(0)
     passed('Loading preserves the component and reload recovers the real API')
@@ -101,6 +109,22 @@ with sync_playwright() as pw:
     saved=next(row for row in data(endpoint)['bidders'] if row['bidder']=='adf_ag');assert saved['schain']=={'mode':'inherit','config':remembered};passed('Switching away from custom preserves the edited custom values for later reuse')
     card('adf_ag').get_by_role('button',name='Edit bidder',exact=True).click();d=dialog();d.get_by_label('Account SChain',exact=True).select_option('custom');expect(d.get_by_label('Custom SChain JSON',exact=True)).to_have_value(json.dumps(remembered,indent=2));d.get_by_label('Custom SChain JSON',exact=True).fill('{bad');d.get_by_label('Account SChain',exact=True).select_option('none');d.get_by_role('button',name='Save bidder',exact=True).click();expect(d.get_by_role('alert')).to_contain_text('not valid JSON');screen('inactive-custom-draft-error',d.get_by_role('alert'));d.get_by_role('button',name='Discard custom draft',exact=True).click();d.get_by_role('button',name='Save bidder',exact=True).click();expect(d).to_have_count(0)
     saved=next(row for row in data(endpoint)['bidders'] if row['bidder']=='adf_ag');assert saved['schain']=={'mode':'none'};passed('Invalid hidden draft is explicit and can be discarded before saving no upstream chain')
+    # With no version named, the account notes follow the payload: the selected script applies accounts with the other
+    # saved options, a version with a runtime notice still applies them (never named), none applies them, or unknown.
+    alias_lead='Base params and the selected SChain settings are copied. The base adapter must be present in the uploaded Prebid build. '
+    for fields,form_note,alias_note in [
+     ({'accountScriptVersions':[],'accountNoticedScriptApplies':True,'selectedScriptAppliesAccounts':True},'The selected script applies aliases and account-specific SChain with your other saved options. Save the account, then generate a new package.','The new account alias is registered by the selected script.'),
+     ({'accountScriptVersions':[],'accountNoticedScriptApplies':True,'selectedScriptAppliesAccounts':False},'No corrected script version is offered that applies aliases and account-specific SChain with your other saved options. Versions with a runtime notice in Script setup still apply them. You can save the account for a future package.','No corrected script version is offered that applies the new alias with your other saved options. Versions with a runtime notice in Script setup still apply it.'),
+     ({'accountScriptVersions':[],'accountNoticedScriptApplies':False,'selectedScriptAppliesAccounts':False},'No available script version applies aliases and account-specific SChain with your other saved options. You can save the account for a future package.','No available script version applies the new alias with your other saved options.'),
+     ({'accountScriptVersions':None,'accountNoticedScriptApplies':None,'selectedScriptAppliesAccounts':None},'Aliases and account-specific SChain require a script version that applies bidder accounts with your other saved options.','The new account alias is registered by a script version that applies bidder accounts.')]:
+     patch[:]=[fields];page.reload(wait_until='domcontentloaded');expect(card('adf_ag')).to_be_visible();expect(page.locator('.bidders-page .config-loading')).to_have_count(0)
+     page.get_by_role('button',name='＋ New bidder',exact=True).click();d=dialog()
+     expect(d.locator('p.muted-copy',has_text=form_note)).to_have_text(form_note+' Existing scripts keep their saved settings.');d.get_by_role('button',name='Cancel',exact=True).click();expect(d).to_have_count(0)
+     card('adf_ag').locator('.bidder-actions').get_by_role('button',name='Duplicate',exact=True).click();d=dialog()
+     expect(d.get_by_text(alias_lead,exact=False)).to_have_text(alias_lead+alias_note+' Review partner IDs before enabling this account.')
+     expect(d).not_to_contain_text('3.24.0');expect(d).not_to_contain_text('3.23.0');d.get_by_role('button',name='Cancel',exact=True).click();expect(d).to_have_count(0)
+    patch.clear();page.reload(wait_until='domcontentloaded');expect(card('adf_ag')).to_be_visible()
+    passed('With no version named, the account notes say whether the selected or a noticed script applies accounts, or that none does')
     before=data('/__fixture/snapshot');page.get_by_role('button',name='Script setup',exact=True).click();selector=page.get_by_label('Script version',exact=True);expect(selector).to_be_enabled()
     if args.runtime=='3.22.1':assert 'preview' in selector.locator('option:checked').inner_text().lower(),'Preview version is not labeled as preview'
     screen('script-preview-labeled',selector);assert data('/__fixture/snapshot')==before,'Opening version settings must not switch or modify account settings';passed('Script setup labels the selected preview explicitly and opening it changes no settings')

@@ -7,6 +7,11 @@ export function versionList(items: readonly string[], word: string): string;
 export function scriptVersionsWith<T extends Release>(capabilities: readonly string[], history?: readonly T[], notices?: readonly Notice[]): T[];
 export function scriptVersionLabels(capabilities: readonly string[], history?: readonly Release[], notices?: readonly Notice[]): string[];
 export function scriptVersionText(capabilities: readonly string[], history?: readonly Release[], notices?: readonly Notice[]): string;
+/** Whether a numeric release with a runtime notice has every capability: never named, but still selectable. */
+export function noticedScriptVersionApplies(capabilities: readonly string[], history?: readonly Release[], notices?: readonly Notice[]): boolean;
+/** The sentences for capabilities that no named version applies, naming no version. */
+export function noScriptVersionText(capabilities: readonly string[], history?: readonly Release[], notices?: readonly Notice[]): string;
+export function pinnedReleaseApplies(pin: unknown, capabilities: readonly string[], history?: readonly (Release & { id: string })[]): boolean;
 export function accountsNeeding(config: Record<string, unknown>, snapshot: { bidders?: unknown[] }): string[];
 export function rulesNeeded(config: unknown): boolean;
 export function timeoutNeeded(config: unknown): boolean;

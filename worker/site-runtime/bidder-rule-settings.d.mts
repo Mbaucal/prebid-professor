@@ -8,6 +8,8 @@ export type BidderRulesPayload={
   enablePrebid:boolean;
   runtimeEligible:boolean;
   scriptVersions:string[];
+  /** Whether a version with a runtime notice applies the same options; it is never named. */
+  noticedScriptApplies:boolean;
   published:false;
 };
 export function getBidderRuleSettings(env:RuntimeServiceEnv,siteId:string):Promise<BidderRulesPayload>;

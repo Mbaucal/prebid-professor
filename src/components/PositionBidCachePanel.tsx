@@ -2,8 +2,12 @@ import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {versionChoice} from '../site-workspace/runtime-labels';
 
 export type BidCachePayload={revision:string;bidCacheAvailable:boolean;bidCachePositions:string[];
-  bidCacheRuntimeVersion:string;bidCacheScriptVersions:string[];runtimeSupportsBidCache:boolean;namedScriptLibrary:boolean;namedScriptPositions:string[];
+  bidCacheRuntimeVersion:string;bidCacheScriptVersions:string[];bidCacheNoticedScriptApplies?:boolean;runtimeSupportsBidCache:boolean;namedScriptLibrary:boolean;namedScriptPositions:string[];
   prebidMode:{enabled:boolean;bidCache:{enabled:boolean;maxBidAgeSeconds:number;positionOverrides?:Record<string,boolean>}}};
+const NO_CORRECTED_CACHE_SCRIPT='No corrected compatible bid-cache script is available in this workspace';
+/** With no version named: no corrected version is offered while versions with a runtime notice still apply bid caching
+ * with the saved options (never named, still selectable), or none applies them. Without the final period. */
+const noCacheScriptText=(data:BidCachePayload)=>data.bidCacheNoticedScriptApplies===true?NO_CORRECTED_CACHE_SCRIPT:'No available script version applies bid caching with your other saved options';
 export async function fetchBidCacheSettings(site:string,body?:unknown):Promise<BidCachePayload>{
   const response=await fetch(`/api/publishers/${encodeURIComponent(site)}/prebid-mode`,{
     method:body?'PUT':'GET',credentials:'same-origin',cache:'no-store',
@@ -25,7 +29,7 @@ export default function PositionBidCachePanel({publisherId,code,onClose,onSaved,
     const bidCache={...data.prebidMode.bidCache,positionOverrides:{...data.prebidMode.bidCache.positionOverrides}};
     if(choice==='inherit')delete bidCache.positionOverrides[code];else bidCache.positionOverrides[code]=choice==='on';
     const next=await fetchBidCacheSettings(publisherId,{revision:data.revision,enabled:data.prebidMode.enabled,bidCache});
-    accept(next);onSaved(next);setMessage(next.runtimeSupportsBidCache?'Saved. Generate a new package to apply this setting.':next.bidCacheScriptVersions?.length===0?'Saved. No corrected compatible bid-cache script is available in this workspace. Your setting is kept.':'Saved. Select a compatible script in Script setup to apply it.');
+    accept(next);onSaved(next);setMessage(next.runtimeSupportsBidCache?'Saved. Generate a new package to apply this setting.':next.bidCacheScriptVersions?.length===0?`Saved. ${noCacheScriptText(next)}. Your setting is kept.`:'Saved. Select a compatible script in Script setup to apply it.');
   }catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   const inherited=data?.prebidMode.bidCache.enabled??false;
   const effective=choice==='inherit'?inherited:choice==='on';
@@ -53,7 +57,7 @@ export default function PositionBidCachePanel({publisherId,code,onClose,onSaved,
       <p><strong>Effective: {!data.prebidMode.enabled?'Inactive — Prebid is off':effective?'On':'Off'}</strong></p>
       <p>{data.prebidMode.enabled?'Every refresh still starts a new auction.':'When Prebid is enabled, every refresh starts a new auction.'} {effective?'Valid, unused bids from earlier auctions for this position may also compete.':'This position uses only bids from its current auction.'}</p>
       {effective?<p>Maximum cached bid age: {data.prebidMode.bidCache.maxBidAgeSeconds} seconds, or less if its original TTL expires.</p>:null}
-      <p>{data.bidCacheScriptVersions?.length===0?'No corrected compatible bid-cache script is available in this workspace. Your saved settings are kept.':data.runtimeSupportsBidCache?'Applies to the next package generated with the selected script.':data.bidCacheScriptVersions?.length?`Applies to the next package generated with script ${versionChoice(data.bidCacheScriptVersions)}. Select ${data.bidCacheScriptVersions.length>1?'one of these versions':'that version'} in Script setup to use it.`:'Bid-cache recommendations are unavailable. Reload this view before choosing a script.'}{!data.namedScriptLibrary?'':data.namedScriptPositions.includes(code)?` New named scripts in ${testOnly?'Scripts and A/B tests':'Releases → Scripts and A/B tests'} use it too.`:` Named scripts in ${testOnly?'Scripts and A/B tests':'Releases → Scripts and A/B tests'} do not include this position; an override here stops new named scripts until it is set to Use site setting.`}</p>
+      <p>{data.runtimeSupportsBidCache?`Applies to the next package generated with the selected script.${data.bidCacheScriptVersions?.length===0?` ${NO_CORRECTED_CACHE_SCRIPT}.`:''}`:data.bidCacheScriptVersions?.length===0?`${noCacheScriptText(data)}.${data.bidCacheNoticedScriptApplies===true?' Versions with a runtime notice in Script setup still apply bid caching with your other saved options.':''} Your saved settings are kept.`:data.bidCacheScriptVersions?.length?`Applies to the next package generated with script ${versionChoice(data.bidCacheScriptVersions)}. Select ${data.bidCacheScriptVersions.length>1?'one of these versions':'that version'} in Script setup to use it.`:'Bid-cache recommendations are unavailable. Reload this view before choosing a script.'}{!data.namedScriptLibrary?'':data.namedScriptPositions.includes(code)?` New named scripts in ${testOnly?'Scripts and A/B tests':'Releases → Scripts and A/B tests'} use it too.`:` Named scripts in ${testOnly?'Scripts and A/B tests':'Releases → Scripts and A/B tests'} do not include this position; an override here stops new named scripts until it is set to Use site setting.`}</p>
       <button className="button primary" disabled={busy||!dirty||!data.prebidMode.enabled} onClick={()=>void save()}>{busy?'Saving…':'Save position setting'}</button>
     </>:data?<p>{code} cannot reuse bids. Only enabled ATF and BTF banner positions can; TakeOver and Outstream positions always use the current auction.</p>:null}
     {error?<button className="button secondary" disabled={busy} onClick={()=>void reload()}>Reload bid cache settings</button>:null}

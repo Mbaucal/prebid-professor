@@ -4,6 +4,7 @@ import { api, ApiError } from '../api';
 import { versionChoice } from '../site-workspace/runtime-labels';
 import DealsPanel from './DealsPanel';
 import type {
+  AccountScripts,
   AdUnit,
   Bidder,
   BidderOverride,
@@ -157,12 +158,34 @@ function IdChips({ params }: { params: JsonObject }) {
   );
 }
 
+/** The account form note on script versions. Unknown versions (null) are neither named nor denied. A named list comes
+ * first; with no name, a selected script that applies bidder accounts with the other saved options is said to, and
+ * otherwise the note says whether a version with a runtime notice still applies them, without naming it. */
+function accountFormNote(scripts: AccountScripts | null): string {
+  if (!scripts) return 'Aliases and account-specific SChain require a script version that applies bidder accounts with your other saved options.';
+  if (scripts.versions.length) return `Aliases and account-specific SChain require script ${versionChoice(scripts.versions)}. Save the account, then explicitly select ${scripts.versions.length > 1 ? 'one of these versions' : 'that version'} in Script setup and generate a new package.`;
+  if (scripts.selectedApplies) return 'The selected script applies aliases and account-specific SChain with your other saved options. Save the account, then generate a new package.';
+  return scripts.noticedApplies
+    ? 'No corrected script version is offered that applies aliases and account-specific SChain with your other saved options. Versions with a runtime notice in Script setup still apply them. You can save the account for a future package.'
+    : 'No available script version applies aliases and account-specific SChain with your other saved options. You can save the account for a future package.';
+}
+
+/** The same choice for the alias a duplicate registers. */
+function aliasNote(scripts: AccountScripts | null): string {
+  if (!scripts) return 'The new account alias is registered by a script version that applies bidder accounts.';
+  if (scripts.versions.length) return `The new account alias is registered by script ${versionChoice(scripts.versions)}.`;
+  if (scripts.selectedApplies) return 'The new account alias is registered by the selected script.';
+  return scripts.noticedApplies
+    ? 'No corrected script version is offered that applies the new alias with your other saved options. Versions with a runtime notice in Script setup still apply it.'
+    : 'No available script version applies the new alias with your other saved options.';
+}
+
 export default function BiddersPanel({ publisherId, onChanged }: Props) {
   const currentSite = useRef(publisherId); currentSite.current = publisherId;
   const loadSequence = useRef(0);
   const [bidders, setBidders] = useState<Bidder[]>([]);
-  // Script versions that apply bidder accounts with the site's other saved options, from the server.
-  const [accountScripts, setAccountScripts] = useState<string[]>([]);
+  // Script versions that apply bidder accounts with the site's other saved options, from the server; null while unknown.
+  const [accountScripts, setAccountScripts] = useState<AccountScripts | null>(null);
   const [adUnits, setAdUnits] = useState<AdUnit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -189,7 +212,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
       ]);
       if (sequence !== loadSequence.current || currentSite.current !== publisherId) return;
       setBidders(bidderItems.bidders);
-      setAccountScripts(bidderItems.accountScriptVersions);
+      setAccountScripts(bidderItems.accountScripts);
       setAdUnits(unitItems);
       setError(null);
     } catch (requestError) {
@@ -200,7 +223,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
   }, [publisherId]);
 
   useEffect(() => {
-    setBidders([]); setAccountScripts([]); setAdUnits([]); setBidderMode(null); setOverrideMode(null); setSubmitting(false);
+    setBidders([]); setAccountScripts(null); setAdUnits([]); setBidderMode(null); setOverrideMode(null); setSubmitting(false);
     void load();
     return () => { loadSequence.current++; };
   }, [load]);
@@ -623,7 +646,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
               </select><small>{bidderForm.schainMode === 'none' ? 'The wrapper adds no site or intermediary node for this account. The exchange may build its own downstream chain. Use this only when that is the actual selling path.' : bidderForm.schainMode === 'custom' ? 'This complete account-specific configuration replaces the site chain for this account. Use the verified seller IDs in payment order.' : 'This account receives the saved site chain.'}</small></label>
               {bidderForm.schainText.trim() !== emptyBidderForm.schainText.trim() ? <div className="form-options"><p>Custom values are kept when you choose another SChain mode. Invalid custom drafts must be corrected or discarded before saving.</p><button className="button secondary" type="button" disabled={submitting} onClick={() => setBidderForm(current => ({...current, schainText:emptyBidderForm.schainText}))}>Discard custom draft</button></div> : null}
               {bidderForm.schainMode === 'custom' ? <label><span>Custom SChain JSON</span><textarea className="json-textarea" aria-label="Custom SChain JSON" spellCheck={false} value={bidderForm.schainText} onChange={event => setBidderForm(current => ({...current, schainText:event.target.value}))}/><small>Version, completeness and ordered seller nodes. Include only the verified selling path for this account.</small></label> : null}
-              <p className="muted-copy">{accountScripts.length ? `Aliases and account-specific SChain require script ${versionChoice(accountScripts)}. Save the account, then explicitly select ${accountScripts.length > 1 ? 'one of these versions' : 'that version'} in Script setup and generate a new package.` : 'No available script version applies aliases and account-specific SChain with your other saved options. You can save the account for a future package.'} Existing scripts keep their saved settings.</p>
+              <p className="muted-copy">{accountFormNote(accountScripts)} Existing scripts keep their saved settings.</p>
 
               {bidderMode !== 'duplicate' ? (
                 <label>
@@ -650,7 +673,7 @@ export default function BiddersPanel({ publisherId, onChanged }: Props) {
                     />
                     <span>Copy all slot, device and ad-unit overrides</span>
                   </label>
-                  <p>Base params and the selected SChain settings are copied. The base adapter must be present in the uploaded Prebid build. {accountScripts.length ? `The new account alias is registered by script ${versionChoice(accountScripts)}.` : 'No available script version applies the new alias with your other saved options.'} Review partner IDs before enabling this account.</p>
+                  <p>Base params and the selected SChain settings are copied. The base adapter must be present in the uploaded Prebid build. {aliasNote(accountScripts)} Review partner IDs before enabling this account.</p>
                 </div>
               )}
 

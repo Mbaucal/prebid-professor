@@ -15,13 +15,21 @@ def registry_labels(*capabilities):
  labels=json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
  assert len(labels)<=2,labels
  return ' or '.join(labels)
-def rules_note(versions):
- return f'You can save rules now. Select and save script version {versions} before generating a package that uses them.' if versions else 'You can save rules now. No available script version applies bidder rules with your other saved options.'
-def saved_note(versions):
- return f'Saved. Select and save script version {versions}, then generate a new script to apply these rules. Existing scripts are unchanged.' if versions else 'Saved. No available script version applies bidder rules with your other saved options. Your rules are kept; existing scripts are unchanged.'
+def registry_noticed(*capabilities):
+ """Whether a release with a runtime notice applies these capabilities: it is never named, but it stays selectable,
+ so an empty list says that no corrected version is offered instead of that none applies them."""
+ code="const {noticedScriptVersionApplies}=await import('./worker/site-runtime/script-versions.mjs');console.log(JSON.stringify(noticedScriptVersionApplies(JSON.parse(process.argv[1]))))"
+ return json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
+def no_rules_script(noticed):
+ return ('No corrected script version is offered that applies bidder rules with your other saved options. Versions with a runtime notice in Script setup still apply them.'
+  if noticed else 'No available script version applies bidder rules with your other saved options.')
+def rules_note(versions,noticed=False):
+ return f'You can save rules now. Select and save script version {versions} before generating a package that uses them.' if versions else f'You can save rules now. {no_rules_script(noticed)}'
+def saved_note(versions,noticed=False):
+ return f'Saved. Select and save script version {versions}, then generate a new script to apply these rules. Existing scripts are unchanged.' if versions else f'Saved. {no_rules_script(noticed)} Your rules are kept; existing scripts are unchanged.'
 RULE_SCRIPTS=registry_labels('bidder-rules')
 # With saved bid caching, only versions that apply bid caching and bidder rules together.
-RULE_CACHE_SCRIPTS=registry_labels('bidder-rules','bid-cache')
+RULE_CACHE_SCRIPTS=registry_labels('bidder-rules','bid-cache');RULE_CACHE_NOTICED=registry_noticed('bidder-rules','bid-cache')
 with sync_playwright() as playwright:
  launch={'headless':True,'args':['--no-sandbox','--disable-dev-shm-usage']}
  executable=os.environ.get('CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROMIUM_PATH')
@@ -107,13 +115,13 @@ with sync_playwright() as playwright:
     panel.get_by_role('checkbox',name='Enable bidder rules for this site').uncheck();save.click();expect(panel.get_by_text('Saved. Generate a new script to apply this change. Existing scripts are unchanged.',exact=True)).to_be_visible();assert data()['settings']['enabled'] is False;assert data()['settings']['rules']==saved['rules']
     panel.get_by_role('button',name='Add bidder rule').click();panel.get_by_role('textbox',name='Rule 3 name',exact=True).fill('Unsaved');panel.get_by_role('button',name='Reset changes').click();expect(panel.get_by_role('textbox',name='Rule 3 name',exact=True)).to_have_count(0)
     # Saved bid caching with 3.23.0: the note names only versions that apply bid caching and bidder rules together.
-    data('/__fixture/bid-cache-323',{});page.reload();expect(note).to_have_text(rules_note(RULE_CACHE_SCRIPTS));assert RULE_CACHE_SCRIPTS!=RULE_SCRIPTS;screen('bid-cache-323')
+    data('/__fixture/bid-cache-323',{});page.reload();expect(note).to_have_text(rules_note(RULE_CACHE_SCRIPTS,RULE_CACHE_NOTICED));assert RULE_CACHE_SCRIPTS!=RULE_SCRIPTS;screen('bid-cache-323')
     if not RULE_CACHE_SCRIPTS:
      # No fixed combined version is available on TEST, but explicit saves still work and keep every rule.
      panel.get_by_role('checkbox',name='Enable bidder rules for this site').check();save.click()
-     expect(panel.get_by_text(saved_note(RULE_CACHE_SCRIPTS),exact=True)).to_be_visible()
+     expect(panel.get_by_text(saved_note(RULE_CACHE_SCRIPTS,RULE_CACHE_NOTICED),exact=True)).to_be_visible()
      current=data();assert current['settings']['enabled'] is True and current['settings']['rules']==saved['rules']
-     assert current['scriptVersions']==[] and current['runtimeEligible'] is False
+     assert current['scriptVersions']==[] and current['runtimeEligible'] is False and current['noticedScriptApplies'] is RULE_CACHE_NOTICED
      expect(save).to_be_disabled();screen('no-compatible-script-saved')
      panel.get_by_role('checkbox',name='Enable bidder rules for this site').uncheck();save.click()
      expect(panel.get_by_text('Saved. Generate a new script to apply this change. Existing scripts are unchanged.',exact=True)).to_be_visible()

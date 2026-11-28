@@ -1,5 +1,6 @@
 import { normalizeCsvForApi } from './csv';
 import type {
+  AccountScripts,
   AdUnit,
   AdUnitResponse,
   AdUnitsResponse,
@@ -399,11 +400,15 @@ export const api = {
     return payload.bidders;
   },
 
-  async loadBidders(publisherId: string): Promise<Pick<BiddersResponse, 'bidders' | 'accountScriptVersions'>> {
+  async loadBidders(publisherId: string): Promise<{ bidders: Bidder[]; accountScripts: AccountScripts | null }> {
     const payload = await requestJson<BiddersResponse>(
       `/api/publishers/${encodeURIComponent(publisherId)}/bidders`,
     );
-    return { bidders: payload.bidders, accountScriptVersions: payload.accountScriptVersions ?? [] };
+    // Without a list the versions stay unknown (null), so the panel neither names nor denies one.
+    const accountScripts = Array.isArray(payload.accountScriptVersions)
+      ? { versions: payload.accountScriptVersions, noticedApplies: payload.accountNoticedScriptApplies === true, selectedApplies: payload.selectedScriptAppliesAccounts === true }
+      : null;
+    return { bidders: payload.bidders, accountScripts };
   },
 
   async createBidder(publisherId: string, input: CreateBidderInput): Promise<Bidder> {

@@ -12,7 +12,7 @@ import { listPrebidFiles, readPrebidFile } from './prebid-files.mjs';
 import { fields, normalizePrebidDraft, SUPPORTED_BIDDERS } from './prebid-draft.mjs';
 import { makePrebidPlan, publicPlan, planOptions, USER_IDS } from './prebid-plan.mjs';
 import { assertRevenueDraftPreserved } from './revenue-draft-guard.mjs';
-import { savedScriptVersionLabels } from '../site-runtime/script-version-guidance.mjs';
+import { savedNoticedScriptApplies, savedSelectedScriptApplies, savedScriptVersionLabels } from '../site-runtime/script-version-guidance.mjs';
 export const prebidStore = (env) => ({isolation:'explicit-test-store', db:env.DB, bucket:env.BUILDS});
 export async function prebidSnapshot(env) {
   const snapshot = await readPreviewSnapshot(env.DB.withSession('first-primary'), TEST_SITE, {includePrebid:true});
@@ -42,6 +42,10 @@ export async function getPrebidSettings(env) {
     version:snapshot.prebidBuilds[0]?.version??'11.11.0',
     // The versions the account note names: bidder accounts together with the site's other saved options.
     accountScriptVersions:savedScriptVersionLabels('bidder-accounts',snapshot),
+    // Whether a version with a runtime notice applies them: never named, but still selectable in Script setup.
+    accountNoticedScriptApplies:savedNoticedScriptApplies('bidder-accounts',snapshot),
+    // Whether the saved script applies them, so the note says so instead of denying it when no version is named.
+    selectedScriptAppliesAccounts:savedSelectedScriptApplies('bidder-accounts',snapshot),
     validationIssue,publishable:false,notice:'File bytes and header declarations are checked. Partner parameters and actual ad delivery still need a staging test.'};
 }
 export async function prepareBuildPlan(env,body) {

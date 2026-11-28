@@ -11,6 +11,8 @@ import {TEST_BID_CACHE_GENERATOR_MESSAGE,TEST_BID_CACHE_BIDDER_RULES_MESSAGE,BID
 import {TEST_BID_CACHE_GENERATOR_MESSAGE as SITE_WORKSPACE_MESSAGE} from '../../worker/test-workspace/site-workspace.mjs';
 import {getPrebidSettings,savePrebidSettings} from '../../worker/test-workspace/prebid-settings.mjs';
 import {scriptVersionLabels} from '../../worker/site-runtime/script-version-guidance.mjs';
+import {runtimeCatalog} from '../../worker/test-workspace/runtime-catalog.mjs';
+import {configurationErrorMessage} from '../../worker/runtime/configuration-error.mjs';
 const MODE='/api/publishers/test-site/prebid-mode';
 const fixtures=[];
 test.before(()=>{globalThis.fetch=()=>assert.fail('No external request in the TEST bid cache flow');});
@@ -155,15 +157,19 @@ test('historical scripts refuse combined settings with no corrected TEST choice 
  assert.equal(refused.status,422);assert.equal(refused.data.error,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE);
  assert.deepEqual(config(f),before);
  for(const message of [TEST_BID_CACHE_BIDDER_RULES_MESSAGE,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE]){
-  assert.match(message,/No available script version applies bid caching and bidder rules together\./);assert.doesNotMatch(message,/select 3\.24|3\.25|or later|Config/);
+  // 3.24.0 applies both but has a runtime notice: it is not named, and the text does not say that no version applies them.
+  assert.match(message,/ No corrected script version is offered that applies bid caching and bidder rules together\. Versions with a runtime notice in Script setup still apply them\. /);assert.doesNotMatch(message,/select 3\.24|3\.24\.0|3\.25|or later|Config|No available/);
  }
- // Bid caching off: 3.23.0 is still refused for the bidder rules, with the same reason.
+ // Bid caching off: 3.23.0 is still refused for the bidder rules, with the shared guidance that names the version
+ // the Bidder rules panel names, not the bid caching reason.
  const off=(await f.req(MODE)).data;
  assert.equal((await f.req(MODE,{enabled:true,revision:off.revision,bidCache:{enabled:false,maxBidAgeSeconds:45}},'PUT')).status,200);
  assert.equal((await f.req('/test-api/site-packages')).data.ready,true);
  const again=(await f.req('/test-api/site-runtime')).data;
  const refusedOff=await f.req('/test-api/site-runtime',{action:'setup',revision:again.revision,runtime:r323.pin,allowPreview:false,enablePrebid:true});
- assert.equal(refusedOff.status,422);assert.equal(refusedOff.data.error,BIDDER_RULES_WITHOUT_BID_CACHE_MESSAGE);
+ assert.equal(refusedOff.status,422);
+ assert.equal(refusedOff.data.error,'Script 3.23.0 cannot apply enabled bidder rules. Select 3.22.2 (Preview) in Script setup and save, or turn off bidder rules. Your saved settings and previous packages are unchanged.');
+ assert.deepEqual((await f.req('/test-api/bidder-rules')).data.scriptVersions,['3.22.2 (Preview)']);
  // Without bidder rules, the bid cache reason is the plain TEST one.
  const rulesNow=(await f.req('/test-api/bidder-rules')).data;
  assert.equal((await f.req('/test-api/bidder-rules',{revision:rulesNow.revision,settings:{schemaVersion:1,enabled:false,rules:[]}})).status,200);
@@ -172,6 +178,95 @@ test('historical scripts refuse combined settings with no corrected TEST choice 
  assert.equal((await f.req('/test-api/site-packages')).data.error,TEST_BID_CACHE_GENERATOR_MESSAGE);
 });
 
+test('with bidder rules and bid caching on 3.21.2, every TEST view shows the Script setup guidance first',async()=>{
+ const f=await fixture();await enablePrebid(f);
+ const mode=(await f.req(MODE)).data;
+ assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
+ await select(f,'3.21.2',true);
+ const rules=(await f.req('/test-api/bidder-rules')).data;
+ assert.equal((await f.req('/test-api/bidder-rules',{revision:rules.revision,settings:{schemaVersion:1,enabled:true,rules:[]}})).status,200);
+ // 3.21.2 applies neither, so turning bid caching off alone would not let it generate: Generate names the bidder
+ // rules first, and every view says the same instead of sending the site to Demand for bid caching.
+ const guidance='Script 3.21.2 cannot apply enabled bidder rules. No corrected script version is offered that applies bidder rules and bid caching together. Versions with a runtime notice in Script setup still apply them. Your saved settings and previous packages are unchanged.';
+ const before=config(f);
+ const generated=await f.req('/test-api/generate',{acknowledge:true});
+ assert.equal(generated.status,422,JSON.stringify(generated.data));assert.equal(generated.data.error,guidance);
+ const packages=(await f.req('/test-api/site-packages')).data;
+ assert.equal(packages.ready,false);assert.equal(packages.error,guidance);assert.notEqual(packages.nextStep,'demand');
+ assert.equal((await f.req('/test-api/status')).data.validationIssue,guidance);
+ assert.equal((await f.req('/test-api/site-runtime')).data.validationIssue,guidance);
+ assert.deepEqual(config(f),before);
+});
+
+test('with bid caching saved, every TEST view shows the refusal Script setup and Generate show first, for every script',async()=>{
+ // Generate checks the saved settings against the selected script (contextual signals, bidder accounts, bidder rules)
+ // before bid caching. Releases, the home page status and both Generate routes show that refusal; only the bare bid
+ // caching refusal sends the site to Demand. Every selectable TEST release, Preview and noticed ones included, with
+ // each combination of the saved options that only some scripts apply. TEST has no adaptive auction timeout.
+ const contextual={schemaVersion:1,enabled:true,sourceKey:'category',gam:{enabled:true},bidders:[],mappings:[{value:'Books',taxonomies:{'iab-content-2.2':['48'],'iab-content-3.0':[]}}]};
+ const combinations=[{},{rules:true},{alias:true},{contextual:true},{rules:true,alias:true},{rules:true,contextual:true},{alias:true,contextual:true},{rules:true,alias:true,contextual:true}];
+ const seen={contextual:0,guidance:0,demand:0,generated:0};
+ for(const {version} of runtimeCatalog){
+  const f=await fixture();await enablePrebid(f);await select(f,version,true);
+  const mode=(await f.req(MODE)).data;
+  assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200,version);
+  const saved={rules:false,alias:false,contextual:false};
+  for(const options of combinations){
+   const label=JSON.stringify({...options,version});
+   // Each option is saved or removed through its own view; the alias account row as in the test above.
+   if(saved.rules!==Boolean(options.rules)){
+    const rules=(await f.req('/test-api/bidder-rules')).data;
+    assert.equal((await f.req('/test-api/bidder-rules',{revision:rules.revision,settings:{schemaVersion:1,enabled:Boolean(options.rules),rules:[]}})).status,200,label);
+   }
+   if(saved.contextual!==Boolean(options.contextual)){
+    const state=(await f.req('/test-api/contextual-signals')).data;
+    assert.equal((await f.req('/test-api/contextual-signals',{revision:state.revision,settings:options.contextual?contextual:{...state.settings,enabled:false}})).status,200,label);
+   }
+   if(saved.alias!==Boolean(options.alias)){
+    if(options.alias)f.sqlite.prepare("INSERT INTO bidders(id,publisher_id,bidder,params_json,account_json,enabled) VALUES('alias-ox','test-site','ox_ag',?,?,1)")
+     .run(JSON.stringify({unit:'synthetic-unit',delDomain:'synthetic.example.invalid'}),JSON.stringify({baseAdapter:'openx',displayName:'Agency',schain:{mode:'none'}}));
+    else f.sqlite.prepare("DELETE FROM bidders WHERE id='alias-ox'").run();
+   }
+   Object.assign(saved,{rules:Boolean(options.rules),alias:Boolean(options.alias),contextual:Boolean(options.contextual)});
+   const issue=(await f.req('/test-api/site-runtime')).data.validationIssue;
+   const packages=(await f.req('/test-api/site-packages')).data,status=(await f.req('/test-api/status')).data.validationIssue;
+   const generated=await f.req('/test-api/site-packages',{action:'generate',revision:packages.revision,notes:'Matrix'}),older=await f.req('/test-api/generate',{acknowledge:true});
+   if(issue){
+    assert.equal(packages.error,issue,label);assert.notEqual(packages.nextStep,'demand',label);assert.equal(status,issue,label);
+    assert.equal(generated.data.error,issue,label);assert.equal(older.data.error,issue,label);
+    seen[/^Contextual signals /.test(issue)?'contextual':'guidance']++;
+   }else if(generated.status===201){
+    assert.equal(packages.error,null,label);assert.equal(status,null,label);assert.equal(older.status,200,label);seen.generated++;
+   }else{
+    // Bid caching alone (or with bidder rules on a script without them, in the TEST wording) is what Generate refuses.
+    assert.equal(packages.error,generated.data.error,label);assert.equal(status,generated.data.error,label);assert.equal(older.data.error,generated.data.error,label);
+    if(packages.nextStep==='demand')seen.demand++;
+   }
+  }
+  fixtures.splice(fixtures.indexOf(f),1);f.close();
+ }
+ assert.ok(seen.contextual>0&&seen.guidance>0&&seen.demand>0&&seen.generated>0,JSON.stringify(seen));
+ // Generate words an unknown reason with the generic text, so Releases and the home page keep the bid caching refusal:
+ // here a GAM code that scripts before 3.19.1 cannot use, which Script setup names.
+ const f=await fixture();await enablePrebid(f);await select(f,'3.18.0',true);
+ const mode=(await f.req(MODE)).data;
+ assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
+ f.sqlite.prepare("INSERT INTO ad_units(id,publisher_id,code,type,media_type,size_map_key,enabled) SELECT 'unit-dot',publisher_id,'Top.Unit','BTF',media_type,size_map_key,1 FROM ad_units WHERE publisher_id='test-site' AND code='Billboard'").run();
+ assert.match((await f.req('/test-api/site-runtime')).data.validationIssue,/^Ad unit Top\.Unit uses a GAM code /);
+ const kept=(await f.req('/test-api/site-packages')).data,generic=configurationErrorMessage(Error('unknown'));
+ assert.equal((await f.req('/test-api/site-packages',{action:'generate',revision:kept.revision,notes:'Matrix'})).data.error,generic);
+ assert.equal((await f.req('/test-api/generate',{acknowledge:true})).data.error,generic);
+ assert.equal(kept.error,TEST_BID_CACHE_GENERATOR_MESSAGE);assert.equal(kept.nextStep,'demand');
+ assert.equal((await f.req('/test-api/status')).data.validationIssue,TEST_BID_CACHE_GENERATOR_MESSAGE);
+ // Without a saved script, a TEST site with Prebid on is refused in every view before any saved option.
+ f.sqlite.prepare("DELETE FROM ad_units WHERE id='unit-dot'").run();
+ const unpinned=config(f);delete unpinned.builtinRuntimeSelection;
+ f.sqlite.prepare("UPDATE publisher_configs SET config_json=? WHERE publisher_id='test-site'").run(JSON.stringify(unpinned));
+ const reason='Save Prebid settings through the TEST editor first.';
+ for(const path of ['/test-api/site-runtime','/test-api/site-packages','/test-api/status'])assert.equal((await f.req(path)).data.error,reason,path);
+ assert.equal((await f.req('/test-api/site-packages',{action:'generate',revision:'0',notes:'Matrix'})).data.error,reason);
+ assert.equal((await f.req('/test-api/generate',{acknowledge:true})).data.error,reason);
+});
 
 test('the TEST site explicitly selects combined Preview and generates both saved caching and bidder rules',async()=>{
  const f=await fixture();await enablePrebid(f);
@@ -202,7 +297,7 @@ test('saved bidder accounts on 3.23.0: no corrected TEST choice is offered, whil
  assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
  // TEST has no corrected available cache/account choice after excluding its exact runtime notices.
  assert.deepEqual(scriptVersionLabels(['bidder-accounts','bid-cache']),[]);
- const expected='Script 3.23.0 cannot apply bidder accounts (ox_ag). No available script version applies bidder accounts and bid caching together. Your saved settings and previous packages are unchanged.';
+ const expected='Script 3.23.0 cannot apply bidder accounts (ox_ag). No corrected script version is offered that applies bidder accounts and bid caching together. Versions with a runtime notice in Script setup still apply them. Your saved settings and previous packages are unchanged.';
  const setup=(await f.req('/test-api/site-runtime')).data;
  assert.equal(setup.validationIssue,expected);
  // Generate and releases shows the same reason, not the generic configuration text.
@@ -231,8 +326,16 @@ test('the TEST Bidder rules view and Prebid editor name the versions for their o
  assert.deepEqual(scriptVersionLabels(['bidder-accounts','bid-cache']),[]);
  const mode=(await f.req(MODE)).data;
  assert.equal((await f.req(MODE,{enabled:true,revision:mode.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
- assert.deepEqual((await f.req('/test-api/bidder-rules')).data.scriptVersions,scriptVersionLabels(['bidder-rules','bid-cache']));
- assert.deepEqual((await f.req('/test-api/prebid-settings')).data.accountScriptVersions,scriptVersionLabels(['bidder-accounts','bid-cache']));
+ const rules=(await f.req('/test-api/bidder-rules')).data,prebid=(await f.req('/test-api/prebid-settings')).data;
+ assert.deepEqual(rules.scriptVersions,scriptVersionLabels(['bidder-rules','bid-cache']));
+ assert.deepEqual(prebid.accountScriptVersions,scriptVersionLabels(['bidder-accounts','bid-cache']));
+ // 3.24.0 still applies them with its runtime notice, so the views do not say that no version applies them.
+ assert.equal(rules.noticedScriptApplies,true);assert.equal(prebid.accountNoticedScriptApplies,true);
+ // The Prebid editor also says whether the selected script applies them: 3.23.0 has no bidder accounts, 3.24.0 does.
+ assert.equal(prebid.selectedScriptAppliesAccounts,false);
+ await select(f,'3.24.0',true);
+ const selected=(await f.req('/test-api/prebid-settings')).data;
+ assert.deepEqual([selected.accountScriptVersions,selected.accountNoticedScriptApplies,selected.selectedScriptAppliesAccounts],[[],true,true]);
  assert.notDeepEqual(scriptVersionLabels(['bidder-rules']),scriptVersionLabels(['bidder-rules','bid-cache']),'saved bid caching narrows the versions');
 });
 
@@ -242,7 +345,7 @@ test('the TEST Bid caching view names the scripts that apply bid caching, never 
  // The offered versions come from the registry, leaving out exact noticed sources.
  const capable=(await f.req(MODE)).data,named=bidCacheScriptVersions(config(f),[]);
  assert.deepEqual(named,[]);
- assert.equal(capable.runtimeSupportsBidCache,true);assert.deepEqual(capable.bidCacheScriptVersions,named);
+ assert.equal(capable.runtimeSupportsBidCache,true);assert.deepEqual(capable.bidCacheScriptVersions,named);assert.equal(capable.bidCacheNoticedScriptApplies,true);
  // The first version with bid caching stays as it is (3.23.0, which has a runtime notice).
  assert.equal(capable.bidCacheRuntimeVersion,'3.23.0');
  await select(f,'3.21.2',true);
@@ -251,6 +354,8 @@ test('the TEST Bid caching view names the scripts that apply bid caching, never 
  // With bid caching saved, the TEST Generate reason names the same versions.
  assert.equal((await f.req(MODE,{enabled:true,revision:earlier.revision,bidCache:{enabled:true,maxBidAgeSeconds:45}},'PUT')).status,200);
  const blocked=(await f.req('/test-api/site-packages')).data;
- assert.equal(blocked.error,TEST_BID_CACHE_GENERATOR_MESSAGE);assert.ok(blocked.error.startsWith('Bid caching needs a compatible script version, but no available script version applies bid caching.'),blocked.error);
+ assert.equal(blocked.error,TEST_BID_CACHE_GENERATOR_MESSAGE);assert.ok(blocked.error.startsWith('Bid caching needs a compatible script version. No corrected script version is offered that applies bid caching. Versions with a runtime notice in Script setup still apply it. '),blocked.error);
+ // The panels can tell that no corrected version is offered from no version applying bid caching at all.
+ assert.equal((await f.req(MODE)).data.bidCacheNoticedScriptApplies,true);
  assert.doesNotMatch(blocked.error,/Select |select |3\.24|3\.25/);
 });

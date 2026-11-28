@@ -16,8 +16,11 @@ origin=fixture['origin'];assert urlsplit(origin).hostname=='127.0.0.1'
 errors=[];requests=[];checks=[]
 LOCK='Turn Prebid on or off in Prebid and bidders. Here you can change bid caching only.'
 RULES_NOTE='You can save rules now. Select and save script version {} before generating a package that uses them.'
-def rules_note(labels):
- return RULES_NOTE.format(' or '.join(labels)) if labels else 'You can save rules now. No available script version applies bidder rules with your other saved options.'
+def no_rules_script(noticed):
+ return ('No corrected script version is offered that applies bidder rules with your other saved options. Versions with a runtime notice in Script setup still apply them.'
+  if noticed else 'No available script version applies bidder rules with your other saved options.')
+def rules_note(labels,noticed=False):
+ return RULES_NOTE.format(' or '.join(labels)) if labels else f'You can save rules now. {no_rules_script(noticed)}'
 def registry_labels(*capabilities):
  """The versions the admin names for these capabilities, read from the release registry by the shared rule
  (worker/site-runtime/script-versions.mjs): the smallest step and the newest without a runtime notice, one or two.
@@ -27,15 +30,27 @@ def registry_labels(*capabilities):
  labels=json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
  assert len(labels)<=2,labels
  return labels
-CACHE_SCRIPTS=registry_labels('bid-cache');CACHE_SCRIPT=' or '.join(CACHE_SCRIPTS)
-RULE_SCRIPTS=registry_labels('bidder-rules');RULE_CACHE_SCRIPTS=registry_labels('bidder-rules','bid-cache')
-NO_CACHE_SCRIPT='No corrected compatible bid-cache script is available in this workspace. Your saved settings are kept.'
+def registry_noticed(*capabilities):
+ """Whether a release with a runtime notice applies these capabilities (3.23.0 and 3.24.0 for bid caching on TEST):
+ never named, but still selectable in Script setup."""
+ code="const {noticedScriptVersionApplies}=await import('./worker/site-runtime/script-versions.mjs');console.log(JSON.stringify(noticedScriptVersionApplies(JSON.parse(process.argv[1]))))"
+ return json.loads(subprocess.run(['node','--input-type=module','-e',code,json.dumps(capabilities)],cwd=root,check=True,capture_output=True,text=True).stdout)
+CACHE_SCRIPTS=registry_labels('bid-cache');CACHE_SCRIPT=' or '.join(CACHE_SCRIPTS);CACHE_NOTICED=registry_noticed('bid-cache')
+RULE_SCRIPTS=registry_labels('bidder-rules');RULE_CACHE_SCRIPTS=registry_labels('bidder-rules','bid-cache');RULE_CACHE_NOTICED=registry_noticed('bidder-rules','bid-cache')
+# No version named: 3.23.0 and 3.24.0 still apply bid caching with a runtime notice (selectable, never named).
+NO_CORRECTED='No corrected compatible bid-cache script is available in this workspace'
+NO_CACHE_SHORT=NO_CORRECTED if CACHE_NOTICED else 'No available script version applies bid caching with your other saved options'
+NO_CACHE_SCRIPT=(NO_CORRECTED+'. Versions with a runtime notice in Script setup still apply bid caching with your other saved options.' if CACHE_NOTICED else NO_CACHE_SHORT+'.')+' Your saved settings are kept.'
+DEMAND_SAVED='Prebid settings saved. Select a compatible script in Script setup before you generate; your bid cache settings are kept.' if CACHE_SCRIPTS else f'Prebid settings saved. {NO_CACHE_SHORT}; your bid cache settings are kept.'
+CAPABLE_DEMAND='Applies to new packages generated with the selected script.'+('' if CACHE_SCRIPTS else f' {NO_CORRECTED}.')
+CAPABLE_POSITION='Applies to the next package generated with the selected script.'+('' if CACHE_SCRIPTS else f' {NO_CORRECTED}.')
 NEEDS=f'Bid caching needs script {CACHE_SCRIPT}.' if CACHE_SCRIPTS else NO_CACHE_SCRIPT
 POSITION=f'Applies to the next package generated with script {CACHE_SCRIPT}. Select {"one of these versions" if len(CACHE_SCRIPTS)>1 else "that version"} in Script setup to use it.' if CACHE_SCRIPTS else NO_CACHE_SCRIPT
-POSITION_SAVED='Saved. Select a compatible script in Script setup to apply it.' if CACHE_SCRIPTS else 'Saved. No corrected compatible bid-cache script is available in this workspace. Your setting is kept.'
+POSITION_SAVED='Saved. Select a compatible script in Script setup to apply it.' if CACHE_SCRIPTS else f'Saved. {NO_CACHE_SHORT}. Your setting is kept.'
 BLOCKED=(f'Bid caching needs a compatible script version. Select {CACHE_SCRIPT} in Script setup and save; your bid cache settings are kept. '
  +('Both versions combine' if len(CACHE_SCRIPTS)>1 else 'This version combines')+' bid caching with bidder accounts, bidder rules and the current native activity and floor checks. '
- 'To keep this script version instead, open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position.') if CACHE_SCRIPTS else ('Bid caching needs a compatible script version, but no available script version applies bid caching. Your bid cache settings are kept. '
+ 'To keep this script version instead, open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position.') if CACHE_SCRIPTS else ('Bid caching needs a compatible script version. '
+ +('No corrected script version is offered that applies bid caching. Versions with a runtime notice in Script setup still apply it.' if CACHE_NOTICED else 'No available script version applies bid caching.')+' Your bid cache settings are kept. '
  'To use this script version, open Bid caching, turn off Reuse valid, unused bids, remove unused overrides there, and set positions that are On to Use site setting under Bid cache by position.')
 # "or later" as words: "for later reactivation" elsewhere on the page is not a version claim.
 def or_later(text):return re.search(r'\bor later\b',text) is not None
@@ -89,7 +104,8 @@ try:
   shots(page,'bid-cache-initial')
   cache.check();page.get_by_label('Maximum bid age (seconds)',exact=True).fill('45')
   page.get_by_role('button',name='Save Prebid settings',exact=True).click()
-  page.get_by_text('Prebid settings saved.',exact=False).wait_for()
+  page.get_by_text(DEMAND_SAVED,exact=False).wait_for()
+  check('The save message agrees with the paragraph under it',page.get_by_text(NO_CACHE_SCRIPT if not CACHE_SCRIPTS else f'Select script {CACHE_SCRIPT} in Script setup to apply bid caching. Your setting is saved.',exact=True).is_visible())
   page.get_by_role('button',name='Billboard · Bid cache: On',exact=True).wait_for()
   status,mode=api('/api/publishers/test-site/prebid-mode')
   check('The site default is saved for the TEST site',status==200 and mode['prebidMode']['bidCache']=={'enabled':True,'maxBidAgeSeconds':45} and mode['prebidMode']['enabled'] is True)
@@ -111,7 +127,7 @@ try:
   shots(page,'bid-cache-saved')
   # With bid caching saved, Bidder rules name only the script that applies both.
   page.goto(origin+'/site-workspace#bidder-rules')
-  page.get_by_text(rules_note(RULE_CACHE_SCRIPTS),exact=True).wait_for()
+  page.get_by_text(rules_note(RULE_CACHE_SCRIPTS,RULE_CACHE_NOTICED),exact=True).wait_for()
   dropped=[label.replace(' (Preview)','') for label in RULE_SCRIPTS if label not in RULE_CACHE_SCRIPTS];assert dropped,RULE_SCRIPTS
   check(f'With bid caching saved, Bidder rules name only {" or ".join(RULE_CACHE_SCRIPTS)}',not any(version in page.locator('main').inner_text() for version in dropped))
   shots(page,'bidder-rules-bid-cache-saved')
@@ -120,11 +136,11 @@ try:
    # Restore the off switch afterwards so the later 3.23.0 package exercises cache alone.
    enable_rules=page.get_by_role('checkbox',name='Enable bidder rules for this site',exact=True)
    enable_rules.check();page.get_by_role('button',name='Save bidder rules',exact=True).click()
-   message='Saved. No available script version applies bidder rules with your other saved options. Your rules are kept; existing scripts are unchanged.'
+   message=f'Saved. {no_rules_script(RULE_CACHE_NOTICED)} Your rules are kept; existing scripts are unchanged.'
    page.get_by_role('status').filter(has_text=message).wait_for()
    status,rules=api('/test-api/bidder-rules')
    check('Rules can be saved without inventing a compatible choice',status==200 and rules['settings']['enabled'] is True
-    and rules['scriptVersions']==[] and rules['runtimeEligible'] is False)
+    and rules['scriptVersions']==[] and rules['runtimeEligible'] is False and rules['noticedScriptApplies'] is RULE_CACHE_NOTICED)
    current_cache=api('/api/publishers/test-site/prebid-mode')[1]['prebidMode']['bidCache']
    check('Saving bidder rules preserves the saved cache settings',current_cache=={'enabled':True,'maxBidAgeSeconds':45,'positionOverrides':{'Sticky':False}})
    shots(page,'bidder-rules-no-compatible-script-saved')
@@ -167,6 +183,16 @@ try:
    check('The downloaded 3.23.0 package carries the saved bid caching',manifest['runtime']['runtimeVersion']=='3.23.0'
     and config['bidCache']=={'defaultEnabled':True,'maxAgeSeconds':45,'positions':{'Billboard':True,'Sticky':False}}
     and b'createTesseraBidCache' in archive.read('ads.min.js'))
+  # With 3.23.0 selected, which applies bid caching with a runtime notice, the panels say that it applies.
+  page.goto(origin+'/site-workspace#bid-cache')
+  page.get_by_text(CAPABLE_DEMAND,exact=True).wait_for()
+  check('With 3.23.0 selected, Bid caching says the selected script applies it',page.get_by_text(NO_CACHE_SCRIPT,exact=True).count()==0)
+  page.get_by_role('button',name='Sticky · Bid cache: Off',exact=True).click()
+  dialog=page.get_by_role('dialog',name='Bid cache · Sticky',exact=True)
+  dialog.get_by_text(CAPABLE_POSITION,exact=True).wait_for()
+  check('With 3.23.0 selected, the position dialog says the selected script applies it',dialog.get_by_text(NO_CACHE_SCRIPT,exact=True).count()==0)
+  shots(page,'bid-cache-capable')
+  page.get_by_role('button',name='Close bid cache settings').click();dialog.wait_for(state='detached')
   check('No unhandled UI error',not errors)
   browser.close()
 finally:

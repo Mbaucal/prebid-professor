@@ -429,9 +429,17 @@ export type UnitRuleSaveResult = {
 export type BiddersResponse = {
   ok: true;
   bidders: Bidder[];
-  /** Script versions that apply bidder accounts with the site's other saved options, such as "3.24.0 (Preview)" or "3.26.0 (Preview)". */
+  /** Script versions that apply bidder accounts with the site's other saved options, such as "3.22.2 (Preview)". */
   accountScriptVersions: string[];
+  /** Whether a version with a runtime notice applies them. Such a version is never named. */
+  accountNoticedScriptApplies?: boolean;
+  /** Whether the saved script applies them. */
+  selectedScriptAppliesAccounts?: boolean;
 };
+
+/** What the Bidders account notes say about script versions, from BiddersResponse. Null while it is unknown: while
+ * loading, after a load failure, or when the server sends no list. */
+export type AccountScripts = { versions: string[]; noticedApplies: boolean; selectedApplies: boolean };
 
 export type BidderResponse = {
   ok: true;

@@ -26,7 +26,7 @@ with sync_playwright() as pw:
   for width in [1440,390]:
    proc=subprocess.Popen(['node','--experimental-strip-types','--experimental-loader','./tests/support/ts-extension-loader.mjs','scripts/review-mba413-test-editor-fixture.mjs'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
    ready=json.loads(proc.stdout.readline());assert ready['ready'];origin=ready['origin']
-   page=browser.new_page(viewport={'width':width,'height':1000});errors=[];external=[];requests=[];checks=[];hold=[];pending=[];reject=[]
+   page=browser.new_page(viewport={'width':width,'height':1000});errors=[];external=[];requests=[];checks=[];hold=[];pending=[];reject=[];patch=[]
    page.on('pageerror',lambda e:errors.append(str(e)))
    def send(path,method='GET',body=None,headers=None):
     raw=body if isinstance(body,str) else json.dumps(body) if body is not None else None
@@ -37,7 +37,10 @@ with sync_playwright() as pw:
    def fulfill(route):
     req=route.request;path=urlsplit(req.url).path;result=send(path,req.method,req.post_data,req.headers)
     requests.append({'path':path,'method':req.method,'status':result['status']})
-    route.fulfill(status=result['status'],headers=result['headers'],body=base64.b64decode(result['body']))
+    body=base64.b64decode(result['body'])
+    # Payload fields for a saved state this fixture does not reach (such as 3.24.0 with saved bid caching); None drops one.
+    if patch and path=='/test-api/prebid-settings' and req.method=='GET':body=json.dumps({k:v for k,v in {**json.loads(body),**patch[0]}.items() if v is not None}).encode()
+    route.fulfill(status=result['status'],headers=result['headers'],body=body)
    def route(route):
     req=route.request;path=urlsplit(req.url).path
     if not req.url.startswith(origin+'/'):external.append(req.url);route.abort();return
@@ -60,9 +63,24 @@ with sync_playwright() as pw:
     page.locator('#save-plan').click()
    try:
     reject.append(True);page.goto(origin+'/prebid-settings',wait_until='domcontentloaded');expect(page.locator('#message')).to_contain_text('Synthetic TEST read outage');screen('read-error')
+    # The versions are unknown after the failure: the note names none and denies none.
+    expect(page.locator('#account-scripts')).to_have_text('Account aliases and custom or no-upstream SChain require a script version that applies bidder accounts with your other saved options. Saving preparation does not switch the script version.')
     page.locator('#reload-prebid').click();expect(page.locator('#editor')).to_be_enabled();checks.append('Read failure is visible and reload recovers actual TEST data')
     expect(page.locator('#account-scripts')).to_have_text(f'Account aliases and custom or no-upstream SChain require script {ACCOUNT_SCRIPTS}. Saving preparation does not switch the script version.')
     expect(page.locator('#editor')).not_to_contain_text('3.22.1');checks.append('Account note names the script versions that apply bidder accounts')
+    # With no version named, the note says whether the selected script or a version with a runtime notice applies
+    # accounts with the other saved options, or that none does; without a list it names no version and denies none.
+    what='account aliases and custom or no-upstream SChain with your other saved options'
+    for fields,note in [
+     ({'accountScriptVersions':[],'accountNoticedScriptApplies':True,'selectedScriptAppliesAccounts':True},f'The selected script applies {what}.'),
+     ({'accountScriptVersions':[],'accountNoticedScriptApplies':True,'selectedScriptAppliesAccounts':False},f'No corrected script version is offered that applies {what}. Versions with a runtime notice in Script setup still apply them.'),
+     ({'accountScriptVersions':[],'accountNoticedScriptApplies':False,'selectedScriptAppliesAccounts':False},f'No available script version applies {what}.'),
+     ({'accountScriptVersions':None,'accountNoticedScriptApplies':None,'selectedScriptAppliesAccounts':None},'Account aliases and custom or no-upstream SChain require a script version that applies bidder accounts with your other saved options.')]:
+     patch[:]=[fields];page.reload(wait_until='domcontentloaded');expect(page.locator('#editor')).to_be_enabled()
+     expect(page.locator('#account-scripts')).to_have_text(note+' Saving preparation does not switch the script version.');expect(page.locator('#account-scripts')).not_to_contain_text('3.24.0')
+    patch.clear();page.reload(wait_until='domcontentloaded');expect(page.locator('#editor')).to_be_enabled()
+    expect(page.locator('#account-scripts')).to_have_text(f'Account aliases and custom or no-upstream SChain require script {ACCOUNT_SCRIPTS}. Saving preparation does not switch the script version.')
+    checks.append('With no version named, the account note says whether the selected or a noticed script applies accounts, or that none does')
     own=add('adf_smn','inherit',111,'SMN Adform');agency=add('adf_ag','custom',222,'Agency Adform');field(agency,'schainJson').fill('{bad')
     page.locator('#enable-prebid').check();saveplan();expect(page.locator('#message.error')).to_contain_text('JSON');expect(field(agency,'params')).to_have_value(json.dumps({'mid':222}));screen('custom-json-error',agency)
     assert not data('/__fixture/snapshot')['bidders'];checks.append('Invalid custom JSON is rejected without activation or lost account inputs')

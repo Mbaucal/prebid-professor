@@ -22,7 +22,7 @@ import { RuntimeSelectionError } from '../runtime/site-runtime-selection.mjs';
 import { SelectionWriteError } from './selection-transaction.mjs';
 import { readRuntimeSelectionSettings, saveRuntimeSelectionSettings, selectedWorkspaceRuntime } from './runtime-selection.mjs';
 import { runtimeSelectionPage, runtimeSelectionScript } from './runtime-selection-page.mjs';
-import { runtimeDescriptor, runtimeCatalog, descriptorForPin, buildArtifactCandidate } from './runtime-catalog.mjs';
+import { runtimeDescriptor, runtimeCatalog, descriptorForPin, buildArtifactCandidate, previewInput } from './runtime-catalog.mjs';
 import { describeCandidate, saveDraftRelease, readDraftRelease, readDraftReleaseIndex, readDraftReleaseFile } from '../runtime/draft-release-store.mjs';
 import { WorkspaceError, workspaceBoundary, sameOrigin, boundedText, jsonBody, TEST_SITE } from './boundary.mjs';
 import { inspectTestSchema, initializeTestSchema, migrateBidderAccountSchema } from './schema.mjs';
@@ -37,6 +37,9 @@ import { isTestUnitRuleItemPath, unitRulesResponse } from './unit-rules.mjs';
 import {namedScriptMethodAllowed,namedScriptsResponse} from './named-scripts.mjs';
 import {requireSupportedCacheGenerator} from '../site-runtime/prebid-cache-settings.mjs';
 import {testBidCacheMessage} from './bid-cache-messages.mjs';
+import {savedScriptNeeds,scriptGuidance} from '../site-runtime/script-version-guidance.mjs';
+import {assertSnapshotCompilerCompatibility} from '../compiler-input-compatibility.mjs';
+import {knownConfigurationError} from '../runtime/configuration-error.mjs';
 
 // HTML form navigation under no-referrer sends Origin:null. same-origin keeps
 // legitimate form Origin while still suppressing cross-origin referrers.
@@ -170,10 +173,16 @@ async function route(request,env) {
     let selected=null,validationIssue=null;
     try { selected=pin?descriptorForPin(pin):runtimeCatalog[1]; }
     catch { validationIssue='The saved script version is unavailable or has changed. Open Script version and choose an available version. Your settings and saved packages are unchanged.'; }
-    // Saved bid caching that this script cannot apply: say so before Generate.
+    // Generate checks the saved settings against the saved script (readPinnedSiteRuntime) before bid caching, so a
+    // known refusal from that check (contextual signals, bidder accounts, bidder rules and the other reasons Script
+    // setup shows) is shown as Generate shows it. Only otherwise is saved bid caching that this script cannot apply
+    // named before Generate, with the Script setup guidance for bidder accounts and bidder rules first.
     if(selected&&settings){
-      const config=JSON.parse(settings.config.config_json);
-      try { requireSupportedCacheGenerator(config,selected,settings.bidders??[]); } catch(error) { validationIssue=testBidCacheMessage(error.message,config); }
+      const config=JSON.parse(settings.config.config_json),{prebidBuilds,...saved}=settings;
+      if(pin)try { assertSnapshotCompilerCompatibility(saved,selected); previewInput(saved,selected,'20000101_000000'); }
+      catch(error) { if(knownConfigurationError(error))validationIssue=error.message; }
+      if(!validationIssue)try { requireSupportedCacheGenerator(config,selected,settings.bidders??[]); }
+      catch(error) { let guidance=null;try{guidance=scriptGuidance(savedScriptNeeds(settings),selected);}catch{} validationIssue=guidance??testBidCacheMessage(error.message,config); }
     }
     return json({...schema,runtime:selected?{version:selected.version,sha256:selected.codeSha256}:null,validationIssue,
       ...(settings?{takeOver:takeOverForBuild(settings)}:{}),publishable:false});
