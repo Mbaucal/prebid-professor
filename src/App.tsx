@@ -604,7 +604,7 @@ export default function App() {
             siteName={site.name}
           />
         ) : null}
-        {activeTab === 'Measurement' && site ? <SiteMeasurementPanel key={site.id} publisherId={site.id} siteName={site.name} siteDomain={site.domain}
+        {activeTab === 'Measurement' && site ? <SiteMeasurementPanel key={site.id} publisherId={site.id} siteName={site.name} siteDomain={site.domain} gamPath={site.gamPath}
           preferredExperimentId={measurementEntry?.siteId===site.id?measurementEntry.experimentId:undefined}
           /> : null}
         {activeTab === 'Test page' && site ? <SiteTestPagePanel key={site.id} publisherId={site.id} /> : null}
