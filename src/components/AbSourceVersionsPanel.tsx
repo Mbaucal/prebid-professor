@@ -2,12 +2,13 @@ import {useEffect,useRef,useState} from 'react';
 import ScriptSetupPanel from './ScriptSetupPanel';
 import PrebidBuildsPanel from './PrebidBuildsPanel';
 import {runtimeLabel} from '../site-workspace/runtime-labels';
+import OriginalScriptSources from './OriginalScriptSources';
 
 type State={site:{id:string;name:string};runtime:{runtimeVersion:string}|null;revision:string;ready:boolean;error:string|null;nextStep:string|null;warnings?:string[]};
-type Props={publisherId:string;siteName:string;availableVersions:number|null;disabled?:boolean;onSaved:(id:string)=>void|Promise<void>;onReload:()=>void|Promise<void>};
+type Props={publisherId:string;siteName:string;availableVersions:number|null;disabled?:boolean;onSaved:(id:string)=>void|Promise<void>;onOriginalsSaved:(a:string,b:string)=>void|Promise<void>;onReload:()=>void|Promise<void>};
 
 /** Reuses the saved editor setup and generator; no script version is generated or selected by visiting this view. */
-export default function AbSourceVersionsPanel({publisherId,siteName,availableVersions,disabled=false,onSaved,onReload}:Props){
+export default function AbSourceVersionsPanel({publisherId,siteName,availableVersions,disabled=false,onSaved,onOriginalsSaved,onReload}:Props){
   const [state,setState]=useState<State|null>(null),[error,setError]=useState(''),[message,setMessage]=useState('');
   const [name,setName]=useState(''),[busy,setBusy]=useState(false),[setupDirty,setSetupDirty]=useState(false);
   const [prebidOpen,setPrebidOpen]=useState(false),[setupRefresh,setSetupRefresh]=useState(0),[open,setOpen]=useState(false);
@@ -45,6 +46,7 @@ export default function AbSourceVersionsPanel({publisherId,siteName,availableVer
   async function prebidChanged(){const ready=await reload();if(active.current){if(!ready)setUncertain(true);setSetupRefresh(value=>value+1);}}
   return <details id="ab-source-versions" className="ab-source-versions" open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
     <summary>Save a script version{availableVersions!==null&&availableVersions<2?' — create the sources for A and B':''}</summary>
+    {publisherId==='politika'?<OriginalScriptSources disabled={busy||disabled} onSaved={onOriginalsSaved}/>:null}
     <p>Choose a script version, save its setup, then save a named snapshot of your current Config. Repeat for the other A/B source. Existing saved versions and deployed files stay unchanged.</p>
     <fieldset className="ab-source-setup" disabled={busy||disabled}><ScriptSetupPanel publisherId={publisherId} refreshKey={setupRefresh} onDirtyChange={setSetupDirty} preserveChoicesOnReload
       onOpenPrebid={()=>setPrebidOpen(true)} onChanged={async()=>{await reload();}}/>

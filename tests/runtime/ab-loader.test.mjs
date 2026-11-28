@@ -18,6 +18,7 @@ import * as v102 from '../../worker/experiments/ab-loader-1.0.2.mjs';
 import * as v110 from '../../worker/experiments/ab-loader-1.1.0.mjs';
 import * as v111 from '../../worker/experiments/ab-loader-1.1.1.mjs';
 import * as v120 from '../../worker/experiments/ab-loader-1.2.0.mjs';
+import * as v130 from '../../worker/experiments/ab-loader-1.3.0.mjs';
 import {AA_RELEASE, staticAALoader} from '../../worker/experiments/static-aa-v1.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -130,7 +131,7 @@ each('template never touches storage, cookies, CMP APIs, network calls or Prebid
 
 each('registry sha256 equals the template', ({L: {AB_LOADER_TEMPLATE}, version}) => {
   assert.equal(registry[version].sha256, sha256(AB_LOADER_TEMPLATE));
-  assert.deepEqual(Object.keys(registry), [...VERSIONS, v102, v110, v111, v120].map(L => L.AB_LOADER_VERSION), 'Every registered version keeps its module and its tests');
+  assert.deepEqual(Object.keys(registry), [...VERSIONS, v102, v110, v111, v120, v130].map(L => L.AB_LOADER_VERSION), 'Every registered version keeps its module and its tests');
   for (const [version, entry] of Object.entries(registry)) {
     assert.match(version, /^\d+\.\d+\.\d+$/);
     assert.deepEqual(Object.keys(entry).sort(), ['created', 'sha256']);

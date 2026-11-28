@@ -35,6 +35,7 @@ async function context(bucket,site,id){prefix(site,id);const saved=await readAbT
 /** Independent v2 verifier: existing v1 plans/parsers and their object identities are untouched. */
 async function savedScope(current,readVersion){
   const {record,site}=current,arms={};let inventoryPath=null;
+  check(record.loader?.version!=='1.3.0','Original scripts have no complete Config snapshot. Config-based report plans are unavailable; use the GAM VersionId and Variant dimensions directly.',422,'original-source-reporting-unavailable');
   for(const side of ['A','B']){
     const source=record.arms[side];let pkg;
     try{pkg=await readVersion(source.release);}catch(error){if(error?.status!==404)fail('The saved source metadata could not be read. Retry.',503,'gam-v2-source-unavailable');}
