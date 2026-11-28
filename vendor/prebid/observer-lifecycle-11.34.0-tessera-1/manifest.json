@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "kind": "tessera-prebid-build-candidate",
+  "prebidVersion": "11.34.0",
+  "variant": "tessera-observer-lifecycle-1",
+  "sourceRepository": "https://github.com/prebid/Prebid.js",
+  "upstreamVersion": "11.34.0",
+  "sourceCommit": "195e0c6069928ed906bde550cb4e4183d1dc8474",
+  "upstreamLockSha256": "077338389169c8834d5bd1dedacd92094fb3b0e05a1c54fb4de7ffaa4b7d02d9",
+  "modules": [
+    "allowActivities",
+    "consentManagementTcf",
+    "contextualSignalsRtdProvider",
+    "criteoBidAdapter",
+    "criteoIdSystem",
+    "currency",
+    "gptPreAuction",
+    "id5IdSystem",
+    "lotamePanoramaIdSystem",
+    "openxBidAdapter",
+    "priceFloors",
+    "pubmaticBidAdapter",
+    "rtdModule",
+    "schain",
+    "sharedIdSystem",
+    "tcfControl",
+    "teadsBidAdapter",
+    "teadsIdSystem",
+    "userId",
+    "videoModule"
+  ],
+  "moduleSelection": {
+    "kind": "explicit-module-profile",
+    "inputSha256": "7c8751ae8fdcc192f65f0c3376dd49691d05f6b5a3683328d9ba2a6f38300a40"
+  },
+  "canonicalContextualModule": {
+    "path": "worker/runtime-321/prebid-module.mjs",
+    "sourceFileSha256": "dbcbebe801a3679ad49fc8981a29049ad12d30dca97c43737bec576f5a6ac9d1",
+    "contentSha256": "2a7fe84e261c9c3d626551044c948e34ed1aab965334ecd1604875c986e0ad1e"
+  },
+  "nodeVersion": "v24.22.1",
+  "npmVersion": "11.9.0",
+  "byteSize": 309145,
+  "buildSha256": "d58129a05e32ea325cbbb8bbf8531b4676b7df5ace5b32a3f8474beb8dff5889",
+  "buildDate": "2026-11-28",
+  "upstreamBannerDate": "2026-11-28",
+  "executableBodySha256": "31964338d1f3e6c3f6c822747bbc97569e18ff2f52592570a545c0f8a2903ce3",
+  "bannerNormalization": "UTC date comment line only; executable bytes unchanged",
+  "rendererSha256": {
+    "display": "fce1a61fdb5c535d8710c9e2ec2b8f372380490b287a5a7e9dd7373aa5bba525",
+    "native": "9ad1299b95092c2d6fa24b531fc234bc32c8e30c8fd894f3a29fb7a65d781d1b"
+  },
+  "patches": [
+    {
+      "name": "creative/reporting.js",
+      "beforeSha256": "a1cb0023df943fd3339f931b4ff39054bda6fb144fdd5e66d8f9a1a47b719a56",
+      "afterSha256": "e14317377e15d393bea2f1e3d84cb25c06db4b12a9418961f2e621105e9edf3f"
+    },
+    {
+      "name": "creative/renderers/display/renderer.js",
+      "beforeSha256": "6e75d531da972fbd7b3ec1e5b47d7d70e51226905015433d3e18f938032e53bb",
+      "afterSha256": "c1cba10b9a44edef8a8e82ddd0df362dc18d8421d7af8f920d1678829fb4a8bc"
+    },
+    {
+      "name": "creative/renderers/native/renderer.js",
+      "beforeSha256": "86ad0875d9bd6d69172de682c042ee129ac85ec45d1f81370539ef2d32d5dc8b",
+      "afterSha256": "08ffb0da67dc0edd24944bd9ed41c54ca974e7c8c33713214e1af2bd943410ad"
+    }
+  ],
+  "scope": "Separate opt-in Prebid build. No publisher activation, runtime change, SSP acceptance or revenue claim.",
+  "patchSha256": "9595ec18fcf11c1adf715af08769b443601e17ff958caa9bfdb4415fdfdc6a17"
+}

@@ -1,0 +1,84 @@
+diff --git a/creative/renderers/display/renderer.js b/creative/renderers/display/renderer.js
+index 744344c..c102a9e 100644
+--- a/creative/renderers/display/renderer.js
++++ b/creative/renderers/display/renderer.js
+@@ -8,7 +8,7 @@ export function render({ ad, adUrl, width, height, instl }, { mkFrame, sendMessa
+       event: BROWSER_INTERVENTION,
+       intervention: report
+     });
+-  }, ['intervention']);
++  }, ['intervention'], win.document);
+ 
+   if (!ad && !adUrl) {
+     const err = new Error('Missing ad markup or URL');
+diff --git a/creative/renderers/native/renderer.js b/creative/renderers/native/renderer.js
+index f9f3fdc..3f5642f 100644
+--- a/creative/renderers/native/renderer.js
++++ b/creative/renderers/native/renderer.js
+@@ -80,7 +80,7 @@ export function render({ adId, native }, { sendMessage }, win, getMarkup = getAd
+       event: BROWSER_INTERVENTION,
+       intervention: report
+     });
+-  }, ['intervention']);
++  }, ['intervention'], win.document);
+   const { head, body } = win.document;
+   const resize = () => {
+     // force redraw - for some reason this is needed to get the right dimensions
+diff --git a/creative/reporting.js b/creative/reporting.js
+index 394b9b0..d5c1010 100644
+--- a/creative/reporting.js
++++ b/creative/reporting.js
+@@ -1,12 +1,45 @@
++// One registration per live render document, without rooting detached documents.
++const registrations = new WeakMap();
++
+ export function registerReportingObserver(callback, types, document) {
+-  const view = document?.defaultView || window;
+-  if ('ReportingObserver' in view) {
+-    try {
+-      const observer = new view.ReportingObserver((reports) => {
+-        callback(reports[0]);
+-      }, { buffered: true, types });
+-      observer.observe();
+-    } catch (e) {
++  let view, owner, observer, disposed = false;
++  const pagehide = (event) => {
++    // A BFCache entry may return to the same creative and still needs reporting.
++    if (!event.persisted) disconnect();
++  };
++  function disconnect() {
++    if (disposed) return;
++    disposed = true;
++    if (owner && registrations.get(owner) === disconnect) registrations.delete(owner);
++    try { view?.removeEventListener?.('pagehide', pagehide); } catch (e) {}
++    const current = observer, notify = callback;
++    observer = callback = owner = view = null;
++    if (current) {
++      // Preserve an intervention queued before the document leaves, then release it.
++      try {
++        const reports = current.takeRecords?.();
++        if (reports?.length) notify(reports[0]);
++      } catch (e) {}
++      try { current.disconnect(); } catch (e) {}
+     }
+   }
++  try {
++    // An explicit inactive document must not fall back to the cached renderer realm.
++    view = document === undefined ? window : document?.defaultView;
++    owner = document === undefined ? view?.document : document;
++    if (!view || !owner || !('ReportingObserver' in view)) {
++      disconnect();
++      return disconnect;
++    }
++    registrations.get(owner)?.();
++    observer = new view.ReportingObserver((reports) => {
++      if (!disposed && reports?.length) callback(reports[0]);
++    }, { buffered: true, types });
++    observer.observe();
++    registrations.set(owner, disconnect);
++    view.addEventListener?.('pagehide', pagehide);
++  } catch (e) {
++    disconnect();
++  }
++  return disconnect;
+ }

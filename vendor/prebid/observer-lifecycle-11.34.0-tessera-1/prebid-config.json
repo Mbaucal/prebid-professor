@@ -1,0 +1,25 @@
+{
+  "version": "11.34.0",
+  "modules": [
+    "allowActivities",
+    "consentManagementTcf",
+    "contextualSignalsRtdProvider",
+    "criteoBidAdapter",
+    "criteoIdSystem",
+    "currency",
+    "gptPreAuction",
+    "id5IdSystem",
+    "lotamePanoramaIdSystem",
+    "openxBidAdapter",
+    "priceFloors",
+    "pubmaticBidAdapter",
+    "rtdModule",
+    "schain",
+    "sharedIdSystem",
+    "tcfControl",
+    "teadsBidAdapter",
+    "teadsIdSystem",
+    "userId",
+    "videoModule"
+  ]
+}
