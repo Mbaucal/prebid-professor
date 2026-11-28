@@ -112,6 +112,11 @@ jobs:
         run: |
           node --experimental-strip-types scripts/prepare-demand-browser-fixtures.mjs
           python scripts/verify-demand-signals.py
+      - name: Generic A/B loader and bundle in node:vm, then in Chromium with real SRI and CORS on two loopback origins (synthetic traffic only)
+        run: |
+          node --experimental-strip-types --experimental-loader ./tests/support/ts-extension-loader.mjs --test tests/runtime/ab-loader.test.mjs tests/runtime/ab-bundle.test.mjs
+          node scripts/prepare-ab-loader-browser.mjs "$RUNNER_TEMP/ab-loader-browser"
+          python scripts/verify-ab-loader-browser.py "$RUNNER_TEMP/ab-loader-browser"
       - name: New TEST deployment setup and version history (synthetic jobs only)
         run: python scripts/verify-deployment-ui.py
       - name: Keep only synthetic report and screenshots, never sessions or databases
