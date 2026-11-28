@@ -250,7 +250,7 @@ async function route(request,env) {
     return json({descriptor,receipt,adsJs:new TextDecoder().decode(files['ads.js']),takeOver,publishable:false});
   }
   const body=await jsonBody(request,['receipt','acknowledge','note']);
-  if(body.acknowledge!==true || typeof body.note!=='string' || body.note.length>160)throw new WorkspaceError(422,'Review the test package and keep the note within 160 characters.');
+  if(body.acknowledge!==true || typeof body.note!=='string' || body.note.length>160)throw new WorkspaceError(422,'Review the test package and keep the version name within 160 characters.');
   const review=await verifyReceipt(body.receipt,env.TEST_SESSION_SECRET,{actor:actor.email,origin});
   if(!runtimeCatalog.some(r=>r.codeSha256===review.runtimeHash))throw new WorkspaceError(409,'Runtime changed. Generate a new test package.');
   const settings=await snapshot(env);

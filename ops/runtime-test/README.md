@@ -6,6 +6,8 @@ This standalone entrypoint is built on PR #26. It reuses the approved generator,
 
 The bounded [named-script TEST extension](NAMED-SCRIPTS.md) adds a separate, explicitly prepared Tanjug fixture and the existing named-library UI/API. Its package storage and soft-delete/restore routes are separate from the original built-in draft flow described below.
 
+[A/B tests](../../docs/ab-tests-test.md) live in the site workspace (Generate and releases) and are stored only in R2 `BUILDS`, under `site-experiments/v1/test-site/`. They add no binding, variable or D1 table.
+
 A synthetic example.invalid site; GPT-only generation, optional approved TakeOver code, text-only preview, reviewed Save and verified historical ZIP download. No actual ad requests from the workspace. No CMS, email, publisher publish, deletion, bulk upload, general site management or cron. The HTML inside a downloaded candidate can request ads if separately served; do not install it live.
 
 `POST /test-api/setup` is explicit, authenticated and same-origin. It accepts only an empty database, creates checksum-locked schema without production seeds, and creates one synthetic site as one D1 batch. GET requests never initialize. Recognized schemas are reusable; other/nonempty databases are refused. The built-in draft twenty-package quota includes partial upload intents; it does not cover the separate named-script library. No automatic cleanup or destructive reset.

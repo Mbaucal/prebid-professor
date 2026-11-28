@@ -171,7 +171,7 @@ try:
   status,state=api('/test-api/runtime-selection')
   pin=next(r['pin'] for r in state['runtimes'] if r['version']=='3.23.0')
   status,_=api('/test-api/runtime-selection',{'expectedRevision':state['revision'],'selection':{'runtime':pin,'allowPreview':True,'enablePrebid':True,'prebidBuildId':state['prebidBuildId']}});assert status==200,_
-  page.reload();page.get_by_label('What changed?',exact=True).fill('Bid cache TEST package')
+  page.reload();page.get_by_label('Version name',exact=True).fill('Bid cache TEST package')
   check('With 3.23.0 selected the reason is gone',page.get_by_text('Bid caching needs a compatible script version',exact=False).count()==0)
   page.get_by_role('button',name='Generate and save package',exact=True).click()
   page.get_by_role('status').filter(has_text='Package saved in Releases').wait_for()

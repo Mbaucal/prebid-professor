@@ -68,7 +68,7 @@ async function build(env,site,revision,stamp,testOnly){
 /** Explicit generation creates a stored package, never changes a channel. */
 export async function generatePackage(env,site,actor,body,{testOnly=false}={}){
  check(body&&Object.keys(body).sort().join('|')==='notes|revision','Use the displayed generation fields.',422);
- check(typeof body.notes==='string'&&body.notes.length<=160,'Use a release note of up to 160 characters.',422);
+ check(typeof body.notes==='string'&&body.notes.length<=160,'Use a version name of up to 160 characters.',422);
  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace('T','_').slice(0,15);
  const {candidate,saved}=await build(env,site,body.revision,stamp,testOnly);
  if(testOnly){
