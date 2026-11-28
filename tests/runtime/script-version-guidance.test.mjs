@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {runtimeCatalog,previewInput,buildArtifactCandidate} from '../../worker/test-workspace/runtime-catalog.mjs';
 import {assertSnapshotCompilerCompatibility} from '../../worker/compiler-input-compatibility.mjs';
@@ -9,7 +10,8 @@ import {pinRuntime} from '../../worker/runtime/version-pin.mjs';
 import {runtimeReleaseHistory} from '../../worker/runtime/runtime-release-history.mjs';
 import {runtimeNotices} from '../../shared/runtime-notices.mjs';
 import {siteRuntimeSettings,siteRuntimeResponse} from '../../worker/site-runtime/service.mjs';
-import {packageState} from '../../worker/site-runtime/releases.mjs';
+import {packageState,generatePackage} from '../../worker/site-runtime/releases.mjs';
+import {scriptGuidance} from '../../worker/site-runtime/script-version-guidance.mjs';
 import {configure} from './artifact-fixture.mjs';
 import {bidCacheSite} from './bid-cache323-site.mjs';
 import {runtime324Site} from './runtime324-site.mjs';
@@ -36,6 +38,19 @@ function expectedVersions(capabilities,history=runtimeReleaseHistory,notices=run
   return [...new Set([offered.filter(r=>r.capabilities.length===fewest).at(-1),offered.at(-1)])].map(label);
 }
 const choice=labels=>labels.length<2?labels[0]??'':`${labels.slice(0,-1).join(', ')} or ${labels.at(-1)}`;
+// When no version is named, a release with a runtime notice may still apply every capability. It stays selectable in
+// Script setup, so the text says that no corrected version is offered, not that none applies them. MAIN always names a
+// version today (3.26.0 applies every option), so these texts are checked with earlier registries and added notices.
+const NAMES={'bidder-accounts':'bidder accounts','bidder-rules':'bidder rules','bid-cache':'bid caching','adaptive-auction-timeout':'adaptive timeout'};
+const noticedApplies=(capabilities,history=runtimeReleaseHistory,notices=runtimeNotices)=>history.some(r=>numeric(r.version)
+  &&capabilities.every(capability=>r.capabilities.includes(capability))&&notices.some(n=>n.version===r.version&&n.runtimeSha256===r.codeSha256));
+function noVersionText(capabilities,history,notices){
+  const names=capabilities.map(capability=>NAMES[capability]),many=names.length>1;
+  const list=many?`${names.slice(0,-1).join(', ')} and ${names.at(-1)} together`:names[0];
+  return noticedApplies(capabilities,history,notices)
+    ?`No corrected script version is offered that applies ${list}. Versions with a runtime notice in Script setup still apply ${many?'them':'it'}.`
+    :`No available script version applies ${list}.`;
+}
 // The registry as it stood with 3.26.0 (MAIN) and with 3.24.0 (TEST). Records are never changed, so these stay fixed.
 const upTo=version=>runtimeReleaseHistory.filter(r=>numeric(r.version)&&byVersion(r,{version})<=0);
 const MAIN_3260=upTo('3.26.0'),TEST_3240=upTo('3.24.0');
@@ -142,6 +157,18 @@ test('patterns for the guidance are anchored and refuse altered text',()=>{
   for(const altered of [message+' ',' '+message,message.replace('3.25.1 (Preview)','3.25.1 (Preview) or later'),message.replace('Script 3.23.0','Script <b>'),message+'\nmore',message.replace('select 3.25.1','select https://example.invalid'),
     message.replace(/select (\S+ \(Preview\)) or /,'select $1, 3.25.0 (Preview) or ')])
     assert.equal(configurationErrorMessage(Error(altered)),generic,altered);
+  // With no version named (the releases up to 3.25.0, where 3.24.0 and 3.25.0 have notices), the notice sentence is
+  // allowed only as the guidance writes it.
+  const noticed=scriptGuidance({accounts:['pm_ag'],rules:false,cache:true},runtimeCatalog.find(r=>r.version==='3.23.0'),upTo('3.25.0'));
+  assert.equal(noticed,'Script 3.23.0 cannot apply bidder accounts (pm_ag). No corrected script version is offered that applies bidder accounts and bid caching together. Versions with a runtime notice in Script setup still apply them. Your saved settings and previous packages are unchanged.');
+  assert.equal(configurationErrorMessage(Error(noticed)),noticed);
+  for(const altered of [noticed.replace('No corrected script version','No corrected script version or later'),noticed.replace('No corrected script version','Select https://example.invalid'),
+    // The wrong pronoun, a dangling 'and', a missing 'together' or notice sentence, or the notice sentence after the
+    // claim that no version applies them.
+    noticed.replace('still apply them','still apply it'),noticed.replace('bidder accounts and bid caching','bidder accounts and'),noticed.replace(' together.','.'),
+    noticed.replace(' Versions with a runtime notice in Script setup still apply them.',''),noticed.replace('No corrected script version is offered that applies','No available script version applies'),
+    noticed.replace('bid caching together','bid caching or 3.24.0 together')])
+    assert.equal(configurationErrorMessage(Error(altered)),generic,altered);
 });
 
 // Script setup and Releases read the saved site through the Worker services.
@@ -187,11 +214,44 @@ test('Script setup on 3.21.2 with bid caching does not offer turning bidder rule
   const f=savedSite({rules:true,cache:true,version:'3.21.2'});
   const state=await siteRuntimeSettings(f.env,'audit-site');
   assert.equal(state.validationIssue,`Script 3.21.2 cannot apply enabled bidder rules. To keep them with your saved bid caching, select ${choice(expectedVersions(['bidder-rules','bid-cache']))} in Script setup and save. Your saved settings and previous packages are unchanged.`);
+  // Releases show the same guidance, as Generate checks it first, and do not send the site to Demand for bid caching.
+  const packages=await packageState(f.env,'audit-site');
+  assert.equal(packages.error,state.validationIssue);assert.notEqual(packages.nextStep,'demand');
+  await assert.rejects(generatePackage(f.env,'audit-site','admin@example.invalid',{notes:'',revision:packages.revision}),error=>error.message===state.validationIssue);
   // Turning rules off on 3.21.2 would only lead to the bid caching refusal.
   const config=f.readConfig();config.runtimeControls.bidderRules.enabled=false;f.writeConfig(config);
   assert.equal((await siteRuntimeSettings(f.env,'audit-site')).validationIssue,null);
   assert.equal((await packageState(f.env,'audit-site')).error,bidCacheGeneratorMessage(f.readConfig(),[]));
   assert.ok(bidCacheGeneratorMessage(f.readConfig(),[]).includes(`Select ${choice(expectedVersions(['bid-cache']))} in Script setup and save;`));
+});
+
+test('with bid caching saved, Releases show the refusal Script setup and Generate show first',async()=>{
+  // Generate refuses an adaptive timeout before bidder accounts and bidder rules, and both before bid caching.
+  const f=savedSite({rules:true,cache:true,timeout:true,version:'3.21.2'});
+  const state=await siteRuntimeSettings(f.env,'audit-site');
+  assert.match(state.validationIssue,/^Adaptive auction timeout requires script /);
+  const packages=await packageState(f.env,'audit-site');
+  assert.equal(packages.error,state.validationIssue);assert.notEqual(packages.nextStep,'demand');
+  await assert.rejects(generatePackage(f.env,'audit-site','admin@example.invalid',{notes:'',revision:packages.revision}),error=>error.message===state.validationIssue);
+  // The same for every selectable script and saved option: a refusal Script setup shows is the one Releases show.
+  for(const release of selectable.filter(r=>r.capabilities.includes('config-preview'))){
+    for(const options of [{rules:true},{alias:true},{timeout:true},{rules:true,timeout:true},{alias:true,timeout:true},{rules:true,alias:true,timeout:true}]){
+      const g=savedSite({...options,cache:true,version:release.version}),label=JSON.stringify({...options,version:release.version});
+      const issue=(await siteRuntimeSettings(g.env,'audit-site')).validationIssue;
+      if(!issue)continue;
+      const shown=await packageState(g.env,'audit-site');
+      assert.equal(shown.error,issue,label);assert.notEqual(shown.nextStep,'demand',label);
+      await assert.rejects(generatePackage(g.env,'audit-site','admin@example.invalid',{notes:'',revision:shown.revision}),error=>error.message===issue,label);
+      fixtures.splice(fixtures.indexOf(g),1);g.close();
+    }
+  }
+  // Generate words an unknown reason with the generic text, so Releases keep the bid caching refusal for it.
+  const unknown=savedSite({cache:true,version:'3.21.2'}),config=unknown.readConfig();
+  config.runtimeControls.adPositions={Missing:{}};unknown.writeConfig(config);
+  const revision=(await packageState(unknown.env,'audit-site')).revision;
+  await assert.rejects(generatePackage(unknown.env,'audit-site','admin@example.invalid',{notes:'',revision}),error=>error.message===configurationErrorMessage(Error('unknown')));
+  const kept=await packageState(unknown.env,'audit-site');
+  assert.equal(kept.error,bidCacheGeneratorMessage(unknown.readConfig(),[]));assert.equal(kept.nextStep,'demand');
 });
 
 test('versions come from release capabilities: the smallest step and the newest, notices, ties, one release and none',async()=>{
@@ -202,14 +262,16 @@ test('versions come from release capabilities: the smallest step and the newest,
     for(const release of scriptVersionsWith(needs))assert.ok(runtimeCatalog.some(r=>r.id===release.id&&r.version===release.version&&r.codeSha256===release.codeSha256),release.version);
   }
   // The registry up to 3.26.0 (MAIN): 3.22.1 and 3.22.2 tie, so the newer patch is the smallest step for bidder rules
-  // and accounts; 3.24.0 is the smallest step with bid caching (3.23.0 has a notice); 3.26.0 is the newest.
+  // and accounts; 3.25.1 is the smallest step with bid caching (3.23.0, 3.24.0 and 3.25.0 have notices); 3.26.0 is the
+  // newest.
   assert.equal(scriptVersionText(['bidder-rules'],MAIN_3260),'3.22.2 (Preview) or 3.26.0 (Preview)');
   assert.equal(scriptVersionText(['bidder-accounts'],MAIN_3260),'3.22.2 (Preview) or 3.26.0 (Preview)');
   for(const needs of [['bid-cache'],['bidder-rules','bid-cache'],['bidder-accounts','bidder-rules','bid-cache']])assert.equal(scriptVersionText(needs,MAIN_3260),'3.25.1 (Preview) or 3.26.0 (Preview)');
-  // The registry up to 3.24.0 (TEST) keeps the names it has today.
+  // Up to 3.24.0 (TEST), 3.24.0 has a notice: bidder rules name 3.22.2 only, and nothing is named with bid caching.
   assert.equal(scriptVersionText(['bidder-rules'],TEST_3240),'3.22.2 (Preview)');
   assert.deepEqual(scriptVersionLabels(['bidder-accounts','bid-cache'],TEST_3240),[]);
-  // A later notice moves the smallest step: with one on 3.24.0, 3.25.0 and 3.25.1 tie and the newer patch is named.
+  // The notices already cover 3.24.0 and 3.25.0, so adding the 3.24.0 notice again changes nothing: 3.25.1 stays the
+  // smallest step.
   const r324=runtimeReleaseHistory.find(r=>r.version==='3.24.0');
   const notices=[...runtimeNotices,{version:'3.24.0',runtimeSha256:r324.codeSha256}];
   assert.equal(scriptVersionText(['bid-cache'],MAIN_3260,notices),'3.25.1 (Preview) or 3.26.0 (Preview)');
@@ -258,7 +320,51 @@ test('versions come from release capabilities: the smallest step and the newest,
   assert.deepEqual(bidCacheScriptVersions({enablePrebid:true,prebidBidCache:CACHE,adaptiveAuctionTimeout:{...TIMEOUT,enabled:false}},[]),expectedVersions(['bid-cache']));
 });
 
+test('with no named version the guidance says whether a version with a runtime notice still applies the options',async()=>{
+  const {bidCacheNoticedScriptApplies}=await import('../../worker/site-runtime/prebid-cache-settings.mjs');
+  const r3212=runtimeCatalog.find(x=>x.version==='3.21.2');
+  // Up to 3.25.0, 3.24.0 and 3.25.0 apply bidder rules and bid caching but have runtime notices, so none is named.
+  const noticed=scriptGuidance({accounts:[],rules:true,cache:true},r3212,upTo('3.25.0'));
+  assert.equal(noticed,'Script 3.21.2 cannot apply enabled bidder rules. No corrected script version is offered that applies bidder rules and bid caching together. Versions with a runtime notice in Script setup still apply them. Your saved settings and previous packages are unchanged.');
+  assert.equal(noticed,`Script 3.21.2 cannot apply enabled bidder rules. ${noVersionText(['bidder-rules','bid-cache'],upTo('3.25.0'))} Your saved settings and previous packages are unchanged.`);
+  // Up to 3.23.0 no release applies both, with or without a notice.
+  const none=scriptGuidance({accounts:[],rules:true,cache:true},r3212,upTo('3.23.0'));
+  assert.equal(none,'Script 3.21.2 cannot apply enabled bidder rules. No available script version applies bidder rules and bid caching together. Your saved settings and previous packages are unchanged.');
+  // One option: no 'together', and the pronoun follows the number.
+  const accounts322=[{id:'tessera-3.22.0',version:'3.22.0',channel:'stable',capabilities:['bidder-accounts'],codeSha256:runtimeNotices[0].runtimeSha256}];
+  const one=scriptGuidance({accounts:['a1'],rules:false,cache:false},{version:'4.0.2',capabilities:[]},accounts322);
+  assert.equal(one,'Script 4.0.2 cannot apply bidder accounts (a1). No corrected script version is offered that applies bidder accounts. Versions with a runtime notice in Script setup still apply it. Your saved settings and previous packages are unchanged.');
+  const oneNone=scriptGuidance({accounts:['a1'],rules:false,cache:false},{version:'4.0.2',capabilities:[]},[]);
+  assert.equal(oneNone,'Script 4.0.2 cannot apply bidder accounts (a1). No available script version applies bidder accounts. Your saved settings and previous packages are unchanged.');
+  // An adaptive timeout that no release up to 3.25.1 applies: no version applies it, with or without a notice.
+  const timeout=scriptGuidance({accounts:[],rules:true,cache:false,timeout:true},r3212,upTo('3.25.1'));
+  assert.equal(timeout,'Script 3.21.2 cannot apply enabled bidder rules. No available script version applies bidder rules and adaptive timeout together. Your saved settings and previous packages are unchanged.');
+  for(const message of [noticed,none,one,oneNone,timeout])assert.equal(configurationErrorMessage(Error(message)),message,message);
+  const generic=configurationErrorMessage(Error('x'));
+  for(const altered of [one.replace('still apply it','still apply them'),one.replace('bidder accounts.','bidder accounts together.'),oneNone.replace('bidder accounts.','bidder accounts and.'),none.replace(' together.','.'),
+    none.replace('bidder rules and bid caching','bidder rules and bid caching and bidder accounts'),none.replace('bidder rules and bid caching','bidder rules, bid caching')])
+    assert.equal(configurationErrorMessage(Error(altered)),generic,altered);
+  // Generate's bid caching refusal and the cache panels' flag follow the same three cases.
+  const config={enablePrebid:true,runtimeControls:{bidderRules:{schemaVersion:1,enabled:true,rules:[]}}};
+  assert.ok(bidCacheGeneratorMessage(config,[],upTo('3.25.0')).startsWith(`Bid caching needs a compatible script version. ${noVersionText(['bidder-rules','bid-cache'],upTo('3.25.0'))} Your bid cache settings are kept. To use this script version, `));
+  assert.ok(bidCacheGeneratorMessage({},[],upTo('3.22.2')).startsWith('Bid caching needs a compatible script version. No available script version applies bid caching. Your bid cache settings are kept. To use this script version, '));
+  assert.deepEqual([bidCacheScriptVersions(config,[],upTo('3.25.0')),bidCacheNoticedScriptApplies(config,[],upTo('3.25.0'))],[[],true]);
+  assert.deepEqual([bidCacheScriptVersions(config,[],upTo('3.23.0')),bidCacheNoticedScriptApplies(config,[],upTo('3.23.0'))],[[],false]);
+  // With MAIN's registry a version is named, and versions with a notice are only reported, never named.
+  assert.deepEqual(bidCacheScriptVersions(config,[]),expectedVersions(['bidder-rules','bid-cache']));
+  assert.equal(bidCacheNoticedScriptApplies(config,[]),noticedApplies(['bidder-rules','bid-cache']));
+});
+
 // Panel copy reads the versions from the server payloads, so it follows the saved options and the registry.
+const source=path=>readFile(new URL('../../'+path,import.meta.url),'utf8');
+test('with no version named, the Bidder rules panel says whether a version with a runtime notice still applies the rules',async()=>{
+  const panel=await source('src/components/BidderRulesPanel.tsx');
+  assert.match(panel,/payload\.noticedScriptApplies===true\s*\?'No corrected script version is offered that applies bidder rules with your other saved options\. Versions with a runtime notice in Script setup still apply them\.'\s*:'No available script version applies bidder rules with your other saved options\.'/);
+  // The note and the save message use the same sentence and never name a noticed version.
+  assert.match(panel,/\?`You can save rules now\. \$\{noScriptText\(data\)\}`:/);
+  assert.match(panel,/\?`Saved\. \$\{noScriptText\(value\)\} Your rules are kept; existing scripts are unchanged\.`:/);
+});
+
 test('the Bidder rules and Bidders payloads name the versions for their option plus the saved ones',async()=>{
   const {getBidderRuleSettings}=await import('../../worker/site-runtime/bidder-rule-settings.mjs');
   const {listBidders}=await import('../../worker/bidders.ts');
@@ -269,5 +375,76 @@ test('the Bidder rules and Bidders payloads name the versions for their option p
     const bidders=await (await listBidders(f.env,'audit-site')).json();
     assert.deepEqual(bidders.accountScriptVersions,expectedVersions(['bidder-accounts',...needs]),label);assert.ok(Array.isArray(bidders.bidders),label);
     for(const versions of [rules.scriptVersions,bidders.accountScriptVersions])assert.ok(versions.length>=1&&versions.length<=2,label);
+    // Whether a version with a runtime notice applies the same options, so an empty list is not read as none existing.
+    assert.equal(rules.noticedScriptApplies,noticedApplies([...new Set(['bidder-rules',...needs])]),label);
+    assert.equal(bidders.accountNoticedScriptApplies,noticedApplies([...new Set(['bidder-accounts',...needs])]),label);
+  }
+});
+
+test('the Bidders payload says whether the selected script applies bidder accounts with the saved options',async()=>{
+  const {listBidders}=await import('../../worker/bidders.ts');
+  const {pinnedReleaseApplies}=await import('../../worker/site-runtime/script-versions.mjs');
+  // Computed here from the registry: the release the saved pin names has bidder accounts and every other saved option.
+  const applies=(version,needs)=>!!version&&needs.every(capability=>runtimeReleaseHistory.find(r=>r.version===version).capabilities.includes(capability));
+  for(const [options,needs] of [
+    [{cache:true,alias:true,version:'3.24.0'},['bidder-accounts','bid-cache']],
+    [{cache:true,rules:true,alias:true,version:'3.26.0'},['bidder-accounts','bidder-rules','bid-cache']],
+    [{cache:true,rules:true,alias:true,timeout:true,version:'3.25.1'},['bidder-accounts','bidder-rules','bid-cache','adaptive-auction-timeout']],
+    [{cache:true,alias:true,version:'3.23.0'},['bidder-accounts','bid-cache']],
+    [{alias:true,version:'3.22.1'},['bidder-accounts']],
+    [{rules:true,alias:true,version:'3.22.1'},['bidder-accounts','bidder-rules']],
+    [{cache:true,alias:true,version:'3.22.1'},['bidder-accounts','bid-cache']],
+    [{alias:true,version:'3.21.2'},['bidder-accounts']],
+    [{cache:true,alias:true},['bidder-accounts','bid-cache']],
+  ]){
+    const f=savedSite(options),label=JSON.stringify(options);
+    const bidders=await (await listBidders(f.env,'audit-site')).json();
+    assert.equal(bidders.selectedScriptAppliesAccounts,applies(options.version,needs),label);
+    // A selected script with a runtime notice (3.24.0) applies them but is never named.
+    if(options.version==='3.24.0')assert.ok(bidders.selectedScriptAppliesAccounts&&!bidders.accountScriptVersions.some(version=>version.startsWith('3.24.0')),label);
+  }
+  // The pin must match the registry release by id, version and source checksum.
+  const r326=runtimeReleaseHistory.find(r=>r.version==='3.26.0'),pin=pinRuntime(runtimeCatalog.find(r=>r.version==='3.26.0'),{allowPreview:true});
+  assert.equal(pinnedReleaseApplies(pin,['bidder-accounts','bid-cache']),true);
+  for(const changed of [{...pin,runtimeSha256:'0'.repeat(64)},{...pin,runtimeId:'tessera-3.25.1'},{...pin,runtimeVersion:'3.25.1'},null,undefined])
+    assert.equal(pinnedReleaseApplies(changed,['bidder-accounts']),false,JSON.stringify(changed));
+  assert.equal(pinnedReleaseApplies(pin,[...r326.capabilities,'future']),false);
+});
+
+test('the account notes in Bidders tell unknown versions from none, and say when the selected script applies accounts',async()=>{
+  const panel=await source('src/components/BiddersPanel.tsx'),client=await source('src/api.ts');
+  // Unknown while loading, after a load failure or without a list: the neutral sentences, never "No available".
+  assert.match(panel,/useState<AccountScripts \| null>\(null\)/);
+  assert.match(panel,/setAccountScripts\(null\)/);
+  assert.doesNotMatch(client,/accountScriptVersions \?\? \[\]/);
+  assert.match(client,/Array\.isArray\(payload\.accountScriptVersions\)/);
+  assert.match(panel,/if \(!scripts\) return 'Aliases and account-specific SChain require a script version that applies bidder accounts with your other saved options\.';/);
+  assert.match(panel,/if \(!scripts\) return 'The new account alias is registered by a script version that applies bidder accounts\.';/);
+  // A named list is unchanged and comes first. With no name, a selected script that applies accounts with the other
+  // saved options is said to apply them, before any denial.
+  const form=panel.indexOf('function accountFormNote'),alias=panel.indexOf('function aliasNote');
+  assert.ok(form>0&&alias>0);
+  for(const [start,named,selected] of [[form,'Aliases and account-specific SChain require script','The selected script applies aliases and account-specific SChain with your other saved options. Save the account, then generate a new package.'],[alias,'The new account alias is registered by script','The new account alias is registered by the selected script.']]){
+    const body=panel.slice(start,panel.indexOf('\n}\n',start));
+    assert.ok(body.indexOf(named)>0&&body.indexOf(named)<body.indexOf('scripts.selectedApplies')&&body.indexOf('scripts.selectedApplies')<body.indexOf('scripts.noticedApplies'),body);
+    assert.ok(body.includes(`return '${selected}';`),selected);
+  }
+  // Known empty: whether a version with a runtime notice still applies them, never naming it.
+  assert.match(panel,/'No corrected script version is offered that applies aliases and account-specific SChain with your other saved options\. Versions with a runtime notice in Script setup still apply them\. You can save the account for a future package\.'/);
+  assert.match(panel,/'No available script version applies aliases and account-specific SChain with your other saved options\. You can save the account for a future package\.'/);
+  assert.match(panel,/'No corrected script version is offered that applies the new alias with your other saved options\. Versions with a runtime notice in Script setup still apply it\.'/);
+  assert.match(panel,/'No available script version applies the new alias with your other saved options\.'/);
+});
+
+test('comments and types near the version names never show a label the naming rule cannot give',async()=>{
+  // A release with a runtime notice that excludes it from recommendation is never named, so no example label for it
+  // may appear where the names are produced or typed (3.24.0 (Preview) or 3.25.0 (Preview) on MAIN).
+  const excluded=runtimeNotices.filter(notice=>notice.excludeFromRecommendation===true)
+    .map(notice=>runtimeReleaseHistory.find(r=>r.version===notice.version&&r.codeSha256===notice.runtimeSha256))
+    .filter(release=>release?.channel==='preview').map(release=>`${release.version} (Preview)`);
+  assert.ok(excluded.includes('3.24.0 (Preview)')&&excluded.includes('3.25.0 (Preview)'),excluded.join());
+  for(const path of ['worker/site-runtime/script-versions.mjs','worker/site-runtime/prebid-cache-settings.mjs','worker/site-runtime/script-version-guidance.mjs','worker/prebid-mode.ts','worker/bidders.ts','src/components/PrebidModePanel.tsx','src/components/PositionBidCachePanel.tsx','src/components/BiddersPanel.tsx','src/components/BidderRulesPanel.tsx','src/shared/types.ts']){
+    const text=await source(path);
+    for(const label of excluded)assert.ok(!text.includes(label),`${path} shows ${label}`);
   }
 });

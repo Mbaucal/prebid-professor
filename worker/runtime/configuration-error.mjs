@@ -6,9 +6,16 @@ const GENERIC = 'The saved settings are not supported by this built-in runtime. 
 // It names one or two versions (the smallest step and the newest), never more.
 const RELEASE = String.raw`\d{1,3}\.\d{1,3}\.\d{1,3}`, CHOICE = String.raw`${RELEASE}(?: \(Preview\))?`;
 const ACCOUNT = '[a-z][a-z0-9_-]{0,63}', OPTION = '(?:bidder accounts|bidder rules|bid caching|adaptive timeout)';
+// Two to four options, joined as the guidance joins them: "a and b", "a, b and c".
+const OPTIONS = `${OPTION}(?:, ${OPTION}){0,2} and ${OPTION}`;
+// No version named (noScriptVersionText in site-runtime/script-versions.mjs): either no corrected version is offered
+// while a version with a runtime notice still applies the options, or no version applies them.
+const NOTICED = 'Versions with a runtime notice in Script setup still apply';
+const NO_VERSION = `No corrected script version is offered that applies (?:${OPTION}\\. ${NOTICED} it|${OPTIONS} together\\. ${NOTICED} them)`
+  + `|No available script version applies (?:${OPTION}|${OPTIONS} together)`;
 const SCRIPT_GUIDANCE = new RegExp(`^(?:Script ${RELEASE}|This script) cannot apply (?:bidder accounts \\(${ACCOUNT}(?:, ${ACCOUNT}){0,2}(?: and [1-9]\\d{0,3} more)?\\)(?: or enabled bidder rules)?|enabled bidder rules)\\. `
   + `(?:(?:To keep them with your saved ${OPTION}(?:(?:, ${OPTION}){0,2} and ${OPTION})?, select|Select) ${CHOICE}(?: or ${CHOICE})? in Script setup and save(?:, or turn off bidder rules)?`
-  + `|No available script version applies ${OPTION}(?:(?:, | and )${OPTION}){0,3} together)\\. Your saved settings and previous packages are unchanged\\.$`, 'u');
+  + `|${NO_VERSION})\\. Your saved settings and previous packages are unchanged\\.$`, 'u');
 const diagnostics = [
   SCRIPT_GUIDANCE,
   /^Adaptive auction timeout (?:requires script 3\.26\.0\. Select it in Script setup and save, or turn off adaptive timeout\. Your saved rules are kept\.|must be an object\.|contains an unsupported field\.|enabled must be a boolean\.|minimum must not exceed maximum\.|\w+ must be an integer between \d+ and \d+\.)$/u,
@@ -32,4 +39,8 @@ export function configurationErrorMessage(error) {
   const message = error instanceof Error ? error.message : '';
   if (message.length > 4000 || /[\r\n\u0000-\u001f\u007f]/u.test(message)) return GENERIC;
   return diagnostics.some(pattern => pattern.test(message)) ? message : GENERIC;
+}
+/** Whether the error is one of the known configuration diagnostics, shown as is, rather than the generic message. */
+export function knownConfigurationError(error) {
+  return configurationErrorMessage(error) !== GENERIC;
 }

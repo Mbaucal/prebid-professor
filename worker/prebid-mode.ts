@@ -5,7 +5,7 @@ import { readPreviewSnapshot } from './runtime/builtin-preview-service.mjs';
 import { digest } from './runtime/preview-snapshot.mjs';
 import { runtimeCatalog, prepareSiteRuntimeSelection } from './test-workspace/runtime-catalog.mjs';
 import { commitSiteConfiguration } from './site-runtime/service.mjs';
-import { bidCacheScriptVersions, bidCacheSettings, requireEligibleOverrides, supportsNamedScripts } from './site-runtime/prebid-cache-settings.mjs';
+import { bidCacheNoticedScriptApplies, bidCacheScriptVersions, bidCacheSettings, requireEligibleOverrides, supportsNamedScripts } from './site-runtime/prebid-cache-settings.mjs';
 import { CACHE_POSITIONS } from './experiments/position-cache-settings.mjs';
 import { BID_CACHE_RUNTIME_VERSION, bidCacheEligibleCodes, runtimeSupportsBidCache, type BidCacheUnitRow } from '../shared/bid-cache/eligibility.mjs';
 
@@ -112,8 +112,11 @@ async function buildPayload(db: D1Database, siteId: string, config: JsonRecord):
     bidCachePositions: bidCacheEligibleCodes(units, config),
     bidCacheRuntimeVersion: BID_CACHE_RUNTIME_VERSION,
     // The versions the panels name, the same as Generate's bid caching refusal: those that apply bid caching with the
-    // site's other saved options, at most two, such as ["3.24.0 (Preview)", "3.26.0 (Preview)"]; empty when none does.
+    // site's other saved options, at most two, such as ["3.25.1 (Preview)", "3.26.0 (Preview)"]; empty when no version
+    // without a runtime notice applies them.
     bidCacheScriptVersions: bidCacheScriptVersions(config, bidders.results ?? []),
+    // Whether a version with a runtime notice applies them: never named, but still selectable in Script setup.
+    bidCacheNoticedScriptApplies: bidCacheNoticedScriptApplies(config, bidders.results ?? []),
     ...selectedRuntime(config),
     // Only adds a sentence about new named scripts. It never changes which settings can be
     // saved or which positions are listed. Named scripts keep the reviewed inventory of
