@@ -235,6 +235,10 @@ export function customRules(source) {
             .map((x) => text(x, "Key-value vrednost", 40)),
         ),
       ];
+      // These plans create EXACT values, so GAM's dynamic-match wildcard
+      // exception for * and ~ does not apply. Google: valid key-value entry.
+      if (values.some(value => /["'=!+#*~;^()<>\[\],&]/.test(value)))
+        fail('Key-value vrednosti ne smeju sadržati rezervisane GAM znakove: " \' = ! + # * ~ ; ^ ( ) < > [ ] , &.');
       if (values.length > 20) fail("Najviše 20 vrednosti po dodatnom ključu.");
       return { key, values };
     });

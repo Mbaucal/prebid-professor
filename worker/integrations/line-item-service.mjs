@@ -508,7 +508,10 @@ export async function lineItemResponse(
         relatedAdJob.canClosePreview=false;
       }
     }
-    return jobView(value,pending,{noWriteAttempts,relatedAdJob});
+    return {...jobView(value,pending,{noWriteAttempts,relatedAdJob}),
+      canCancel: value.status === 'creating' && (!pending ||
+        (disjointAttempt(value,pending) && (abortedBeforeDispatch(pending) ||
+          Date.now() >= pending.startedAt + 90000)))};
   };
   const blockedResponse=async(active,message='Drugi posao trenutno koristi key-values. Nije pokrenut novi upis.')=>{
     if(active!==true&&active?.actor===actor&&active.origin===origin){
@@ -751,6 +754,11 @@ export async function lineItemResponse(
     return json({...readOnly,error:readOnly.readOnlyReason},409);
   }
   if (action === "cancel") {
+    if (input.cursor !== undefined && input.cursor !== job.cursor)
+      fail('Posao je u međuvremenu promenjen. Osvežite stanje pre zaustavljanja.');
+    if ((Object.hasOwn(input,'confirm') || Object.hasOwn(input,'confirmNetwork')) &&
+        (input.confirm !== true || input.confirmNetwork !== job.plan.networkCode || input.cursor !== job.cursor))
+      fail('Potvrdite prikazanu mrežu i trenutno stanje posla pre zaustavljanja.',422);
     if(attempt&&!disjointAttempt(job,attempt))
       fail('Ishod ranijeg key-values upisa nije potvrđen. Najpre proverite ishod; posao i rezervacija nisu zaustavljeni.');
     if (attempt && !abortedBeforeDispatch(attempt) && Date.now() < attempt.startedAt + 90000)
@@ -778,10 +786,16 @@ export async function lineItemResponse(
     if(gate.blocked)return blockedResponse(gate.blocked);
   }
   const { client, connection } = await clientFor(job.plan.networkCode);
-  if (connection.revision !== job.connectionRevision)
+  const readOnlyTargetingCheck = action === 'check' && ['key','value'].includes(job.phase);
+  if (connection.revision !== job.connectionRevision && !readOnlyTargetingCheck)
     fail(
       "GAM konekcija je promenjena. Zaustavite posao i napravite novi pregled.",
     );
+  if (readOnlyTargetingCheck) {
+    const network = await client.network();
+    if (String(network?.networkCode) !== job.plan.networkCode)
+      fail('GAM provera ne potvrđuje istu mrežu. Ishod nije potvrđen; upis nije ponovljen.');
+  }
   if (action === "start") {
     if (input.confirmNetwork !== job.plan.networkCode || input.confirm !== true)
       fail("Potvrdite prikazanu mrežu i plan.", 422);
@@ -945,8 +959,12 @@ export async function lineItemResponse(
       if(targetingPhase)await releaseTargetingIfSafe(bucket,job);
       return json(await view(job));
     }
+    if (!Number.isSafeInteger(attempt.startedAt) || attempt.startedAt < 0 || attempt.startedAt > Date.now() ||
+        ![undefined,'create','update'].includes(attempt.operation) ||
+        (attempt.operation === 'update' && job.phase !== 'key'))
+      fail('Sačuvani pokušaj nema pouzdano vreme ili vrstu upisa. Upis nije ponovljen.');
     if (!await parentsVerified()) return json(await view(job, attempt));
-    const states = await inspectEntities(client, batch, job.plan);
+    const states = await inspectEntities(client, batch, job.plan, { completeTargetingScope: targetingPhase });
     if ([...states.values()].some((r) => ["unverified", "blocked"].includes(r.state))) {
       job.verificationResults = Object.fromEntries(states);
       job.error = "Provera GAM-a nije završena. Nepotvrđeni upis nije ponovljen; ponovite proveru istog posla.";
@@ -961,6 +979,16 @@ export async function lineItemResponse(
     const attemptedBatch = batch.filter((entity) => attempted.has(entity.key));
     if (attemptedBatch.length !== attempted.size)
       fail("Sačuvani pokušaj se ne poklapa sa ovim korakom. Upis nije ponovljen.");
+    // A read-only Check can use refreshed credentials to unblock a failed
+    // old job, including a connection changed during the read itself. Never
+    // migrate its immutable plan/revision or authorize Step with new credentials.
+    const requiresNewPreview = readOnlyTargetingCheck &&
+      (connection.revision !== job.connectionRevision ||
+        (await connected(job.plan.networkCode)).revision !== job.connectionRevision);
+    const recoveryNotice = message => {
+      job.recovery = {cursor:job.cursor,message:message+(requiresNewPreview
+        ? ' GAM konekcija je promenjena. Zaustavite ovaj posao i napravite novi pregled; sačuvani plan nije promenjen.' : ''),requiresNewPreview};
+    };
     for(const entity of attemptedBatch){
       const state=states.get(entity.key);
       if(!entity.reporting||state?.state!=='existing')continue;
@@ -977,6 +1005,7 @@ export async function lineItemResponse(
       if (reportingParentsNeedUpdate) {
         job.phase = "key"; job.offset = 0; job.cursor++;
       } else finishBatch(job, batch, states);
+      if (requiresNewPreview) recoveryNotice('Ishod prethodnog pokušaja je potvrđen.');
       await save(bucket, job, stored.etag);
       if (job.status === "completed") await release(bucket, job);
       else if(targetingPhase)await releaseTargetingIfSafe(bucket,job);
@@ -991,6 +1020,28 @@ export async function lineItemResponse(
       delete job.verificationResults;
       job.error = "";
       advance(job, 0);
+      if (requiresNewPreview) recoveryNotice('Ishod prethodnog pokušaja je proveren. Nije ponovljen upis.');
+      await save(bucket, job, stored.etag);
+      return json(await view(job));
+    }
+    // Pre-operation-field journals represented creates only. They still need
+    // the same saved phase, exact batch keyset, complete read and deadline.
+    if (targetingPhase && [undefined, "create"].includes(attempt.operation) &&
+        Number.isSafeInteger(attempt.startedAt) && attempt.startedAt >= 0 &&
+        Date.now() >= attempt.startedAt + 90000 &&
+        attemptedBatch.every((entity) => ["existing", "new", "update"].includes(states.get(entity.key)?.state))) {
+      // The bounded write window has elapsed and a complete, fresh name-scope
+      // read proved exactly what exists. Keep the targeting lease and retire
+      // this cursor with CAS. A later explicit step rereads all names and only
+      // creates what is still absent; a late conflicting GAM create is rejected
+      // by GAM's unique-name constraint and reconciled, never blindly repeated.
+      recordResult(job, batch, states);
+      delete job.verificationResults;
+      job.error = "";
+      advance(job, 0);
+      const existing = attemptedBatch.filter((entity) => states.get(entity.key)?.state !== "new").length;
+      recoveryNotice(`Ishod prethodnog pokušaja je proveren. ${existing} stavki već postoji; ${attemptedBatch.length-existing} nedostaje. Nije ponovljen upis.`+
+        (requiresNewPreview?'':' Možete nastaviti preostale stavke ili zaustaviti posao.'));
       await save(bucket, job, stored.etag);
       return json(await view(job));
     }

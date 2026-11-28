@@ -499,7 +499,7 @@ function incompatibilityReason(entity, actual, plan) {
     return "Line item ima dodatna ograničenja kreativa, učestalosti ili ciljeva.";
   return "Line item ima drugačiji inventory ili custom targeting.";
 }
-export async function inspectEntities(client, batch, plan) {
+export async function inspectEntities(client, batch, plan, { completeTargetingScope = false } = {}) {
   const results = new Map(),
     groups = new Map();
   for (const e of batch) {
@@ -530,7 +530,16 @@ export async function inspectEntities(client, batch, plan) {
       p = first.payload;
     let rows;
     try {
-    if (first.id || first.knownId)
+    if (completeTargetingScope && ["key", "value"].includes(kind)) {
+      // Recovery must prove absence across the whole case-insensitive name
+      // scope, including siblings that an indexed or ID-only read can miss.
+      const scope = kind === "value" ? `customTargetingKeyId = ${numericId(String(p.customTargetingKeyId))}` : "";
+      const result = await client.query(kind, scope, {}, { limit: 500, maxPages: 20 });
+      if (!result || !Array.isArray(result.rows) || !Number.isSafeInteger(result.total) ||
+          result.total < 0 || result.more !== false || result.rows.length !== result.total)
+        throw new GamError("GAM provera ishoda nije vratila ceo traženi opseg. Ponovite proveru.", 502);
+      rows = result.rows;
+    } else if (first.id || first.knownId)
       rows = await client.byIds(kind, items.map((e) => e.id || e.knownId),
         kind === "value" ? { parentId: p.customTargetingKeyId } : {});
     else if (kind === "association")
@@ -574,7 +583,9 @@ export async function inspectEntities(client, batch, plan) {
     }
     for (const e of items) {
       const matches = rows.filter((r) =>
-        e.id || e.knownId
+        completeTargetingScope && ["key", "value"].includes(kind)
+          ? sameEntityName(kind, r.name, e.payload.name)
+          : e.id || e.knownId
           ? scalar(r.id, e.id || e.knownId)
           : kind === "association"
             ? scalar(r.lineItemId, e.payload.lineItemId) &&
@@ -820,6 +831,8 @@ export function jobView(job, attempt, {noWriteAttempts=false,relatedAdJob}={}) {
       ...reportingResults(job,states),
     } } : {}),
     error: job.error || "",
+    ...(job.recovery?.cursor === job.cursor && job.status === "creating"
+      ? { recoveryMessage: job.recovery.message, requiresNewPreview: job.recovery.requiresNewPreview === true } : {}),
     awaitingCheck: Boolean(attempt) && job.status === "creating",
     retryAfter: attempt && Number.isFinite(attempt.startedAt) && !attempt.preDispatchAborted
       ? Math.max(0, Math.ceil((attempt.startedAt + 90000 - Date.now()) / 1000))
