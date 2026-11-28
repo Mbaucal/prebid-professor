@@ -118,11 +118,43 @@ export type SizeMapBreakpoint = {
   sizes: SizeMapSize[];
 };
 
+export type SizeMapReference = {
+  /** page-type: the generator selects this map by name (<page type>_<base map>) for these units.
+   * outstream: saved responsive Outstream video size choices that are keyed by this map name. */
+  source: 'ad-unit' | 'rule' | 'advanced-rule' | 'page-type' | 'outstream';
+  scope: string;
+  label: string;
+  pageType?: string;
+  baseMap?: string;
+  units?: string[];
+};
+
+/** A page-type selection that a rename or delete would change; requires explicit confirmation. */
+export type SizeMapPageTypeChange = {
+  pageType: string;
+  base: string;
+  codes: string[];
+  from: string | null;
+  to: string | null;
+  message: string;
+};
+
+export type SizeMapPageTypeConfirmation = {
+  token: string;
+  changes: SizeMapPageTypeChange[];
+  /** Positions whose saved Outstream video sizes for this map are removed. */
+  videoUnits: string[];
+  /** Outstream positions (map-based player sizing) that would newly use a page-type map whose
+   * video size is not chosen or not available; Generate stops until that is fixed. */
+  videoSizes?: Array<{ code: string; map: string; message: string }>;
+};
+
 export type SizeMap = {
   id: string;
   publisherId: string;
   name: string;
   map: SizeMapBreakpoint[];
+  references?: SizeMapReference[];
   createdAt: string;
   updatedAt: string;
 };
@@ -132,7 +164,10 @@ export type CreateSizeMapInput = {
   map: SizeMapBreakpoint[];
 };
 
-export type UpdateSizeMapInput = Partial<CreateSizeMapInput>;
+export type UpdateSizeMapInput = Partial<CreateSizeMapInput> & {
+  /** Token from a 409 page-type confirmation; only valid while the same changes apply. */
+  confirmPageTypeChanges?: string;
+};
 
 export type DuplicateSizeMapInput = {
   name: string;
@@ -199,10 +234,14 @@ export type UnitRule = {
 export type CreateUnitRuleInput = {
   ruleKey: string;
   rule: UnitRuleConfig;
+  /** Leave an inherited Refresh schedule in charge of this rule's interval (base-rule presets). */
+  followInheritedSchedule?: boolean;
 };
 
 export type UpdateUnitRuleInput = {
   rule: UnitRuleConfig;
+  /** updatedAt of the rule the editor loaded; a rule saved since then is refused with 409. */
+  expectedUpdatedAt?: string;
 };
 
 export type DuplicateUnitRuleInput = {
@@ -224,7 +263,15 @@ export type BidderOverride = {
   updatedAt: string;
 };
 
-export type Bidder = {
+export type BidderSchain = import('../../shared/bidder-accounts/settings.mjs').BidderAccountSchain;
+
+export type BidderAccountFields = {
+  baseAdapter?: string;
+  displayName?: string;
+  schain?: BidderSchain;
+};
+
+export type Bidder = BidderAccountFields & {
   id: string;
   publisherId: string;
   bidder: string;
@@ -235,15 +282,15 @@ export type Bidder = {
   updatedAt: string;
 };
 
-export type CreateBidderInput = {
+export type CreateBidderInput = BidderAccountFields & {
   bidder: string;
   params?: JsonObject;
   enabled?: boolean;
 };
 
-export type UpdateBidderInput = Partial<CreateBidderInput>;
+export type UpdateBidderInput = Partial<CreateBidderInput> & { expectedUpdatedAt?: string };
 
-export type DuplicateBidderInput = {
+export type DuplicateBidderInput = BidderAccountFields & {
   bidder: string;
   enabled?: boolean;
   copyOverrides?: boolean;
@@ -364,17 +411,35 @@ export type UnitRulesResponse = {
 export type UnitRuleResponse = {
   ok: true;
   unitRule: UnitRule;
+  /** Rules whose Unit rules interval was given its own fixed schedule by this save. */
+  keptUnitRuleIntervals?: string[];
 };
 
 export type DeleteUnitRuleResponse = {
   ok: true;
   deletedId: string;
+  keptUnitRuleIntervals?: string[];
+};
+
+export type UnitRuleSaveResult = {
+  unitRule: UnitRule;
+  keptUnitRuleIntervals: string[];
 };
 
 export type BiddersResponse = {
   ok: true;
   bidders: Bidder[];
+  /** Script versions that apply bidder accounts with the site's other saved options, such as "3.22.2 (Preview)". */
+  accountScriptVersions: string[];
+  /** Whether a version with a runtime notice applies them. Such a version is never named. */
+  accountNoticedScriptApplies?: boolean;
+  /** Whether the saved script applies them. */
+  selectedScriptAppliesAccounts?: boolean;
 };
+
+/** What the Bidders account notes say about script versions, from BiddersResponse. Null while it is unknown: while
+ * loading, after a load failure, or when the server sends no list. */
+export type AccountScripts = { versions: string[]; noticedApplies: boolean; selectedApplies: boolean };
 
 export type BidderResponse = {
   ok: true;

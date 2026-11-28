@@ -1,0 +1,9 @@
+# Connected TEST build directory follow-up
+
+A clean checkout of reviewed tree `537f530d6a008794f10505ee963ebbd3324cc00c` reproduced a local build-contract defect. From `ops/runtime-test`, the documented command (`npm --prefix ../.. ci --ignore-scripts`, activation check, built-in preparation, TEST workspace preparation) installed the locked tools and generated the pinned archives, then failed at `prepare-site-ab-baseline.mjs:11` with `ENOENT .generated/tanjug-pilot/ads.js`. The wrapper resolved two reads and its output against the caller's directory; CI had prepared from the repository root.
+
+Those three filesystem paths now resolve from `import.meta.url`, matching the imported preparation scripts. The existing CI preparation step runs from the documented deployment directory, followed sequentially by a focused foreign-directory regression. The regression failed on the old wrapper and passes after the fix; it supplies a poisoned local input, requires the five reviewed root artifacts to stay byte-identical, and rejects stray caller/deployment-directory outputs.
+
+Clean installation and preparation from `ops/runtime-test` now pass. All **77 generated files** exactly match root-directory preparation; hashes are recorded in `build-cwd-evidence.json`. Both config dry-runs succeed and produce the unchanged reviewed Worker SHA-256 `30d6a2409558d89fea6f5463f934bdba3983936a4f782d4094d4de25552a799f`. Strict app/worker/tooling typechecks, production build and the existing compiled named-library smoke (**17/17**) pass. No runtime, UI, schema, binding, dependency or lockfile changes are included.
+
+This is local evidence (Node 24.19.0); the permanent CI gate uses its pinned Node 22 setup. Cloudflare's failed build log was unavailable, so this proves a reproducible build-directory defect, not the exact contents or sole cause of the remote failure. No deployment was performed by these checks.

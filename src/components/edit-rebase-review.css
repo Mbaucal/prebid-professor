@@ -1,0 +1,6 @@
+.edit-rebase-review { padding:10px 12px; border:1px solid #efc4a8; border-radius:8px; color:#7a3d15; background:#fff7f0; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.edit-rebase-review ul { margin:4px 0 0; padding-left:18px; }
+.edit-rebase-review li + li { margin-top:2px; }
+.edit-rebase-review p { margin:4px 0 0; color:inherit; font-size:12px; }
+.edit-rebase-review > :first-child { margin-top:0; }
+.advanced-refresh-page .edit-rebase-review { margin:0 0 16px; }

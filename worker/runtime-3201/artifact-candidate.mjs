@@ -1,0 +1,108 @@
+import { descriptor as rawDescriptor } from '../../.generated/runtime-3201-manifest.mjs';
+import { validateRuntimeDescriptor } from '../runtime/version-pin.mjs';
+import { compileRuntime3201, idempotentStickyStyles } from './compiler.mjs';
+import { dealPlan } from '../../shared/deals/gam-plan.mjs';
+import { reportingContract } from '../runtime-reporting-v1/contract.mjs';
+const runtimeDescriptor=validateRuntimeDescriptor(rawDescriptor);
+import { previewInput } from './snapshot.mjs';
+import { digest } from '../runtime/preview-snapshot.mjs';
+import { assertPinnedRuntime } from '../runtime/version-pin.mjs';
+import { prebidRequirements, sha256 } from '../runtime/prebid-artifact-check.mjs';
+import { finalizeJavaScript } from '../runtime/artifact-minifier.mjs';
+import { stickyStyles, installSharedStickyStyles } from '../runtime-3191/styles.mjs';
+
+const text = new TextEncoder();
+const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/** In-memory only. Never creates a stored Release, changes a channel or publishes. */
+export async function buildArtifactCandidate({ snapshot, takeOver = { enabled: false }, pin, buildTimestamp, prebid = null, countryTarget = 'main' }) {
+  assertPinnedRuntime(pin, runtimeDescriptor, { configSchemaVersion: 1, capabilities: ['config-preview'] });
+  const input = previewInput(snapshot, runtimeDescriptor, buildTimestamp, takeOver, countryTarget);
+  const config = JSON.parse(snapshot.config.config_json);
+  const outputConfig = config.runtimeControls?.output ?? {};
+  const cleanComments = outputConfig.cleanComments ?? true;
+  if (typeof cleanComments !== 'boolean') throw new Error('Output cleanComments must be a boolean.');
+  const requirements = prebidRequirements(input, config);
+  if (requirements.issues.length) throw new Error(requirements.issues.map((issue) => issue.message).join(' '));
+  let prebidPin = null;
+  if (input.outstream.disabledRefreshCodes.length && prebid?.report?.build?.version !== '11.34.0') throw Error('This Outstream pilot requires the verified Prebid 11.34.0 build.');
+  if (requirements.required) {
+    if (!prebid?.report || prebid.report.status !== 'checked' || prebid.report.siteId !== snapshot.site.id || !(prebid.bytes instanceof ArrayBuffer)) {
+      throw new Error('A checked Prebid artifact for this site is required.');
+    }
+    if (prebid.bytes.byteLength < 1 || prebid.bytes.byteLength > 8 * 1024 * 1024) throw new Error('Tessera bundles support Prebid files up to 8 MB.');
+    const hash = await sha256(prebid.bytes);
+    if (hash !== prebid.report.build?.sha256 || prebid.bytes.byteLength !== prebid.report.build?.byteSize) throw new Error('Prebid artifact changed after verification.');
+    if (JSON.stringify(requirements.modules) !== JSON.stringify(prebid.report.requiredModules)) throw new Error('Prebid requirements differ from the generated configuration.');
+    prebidPin = { ...prebid.report.build, modules: [...prebid.report.declaredModules] };
+  } else if (prebid !== null) throw new Error('Do not attach a Prebid artifact to a GAM-only bundle.');
+
+  // Validate layout before parsing/minifying source. This never guesses unsupported settings.
+  const placeholderCss = input.conditionalCss;
+  const stickyCss = stickyStyles(input.options.sticky.bottomAdUnitId);
+  const generated = compileRuntime3201(input);
+  const js = await finalizeJavaScript(idempotentStickyStyles(installSharedStickyStyles(generated.adsJs, stickyCss)), { cleanComments });
+  const files = Object.create(null);
+  files['ads.js'] = text.encode(js.adsJs);
+  files['ads.min.js'] = text.encode(js.adsMinJs);
+  files['sticky.css'] = text.encode(stickyCss || '/* Sticky is disabled for this configuration. */\n');
+  files['min-height.css'] = text.encode(placeholderCss);
+  const countryReportingContract = {
+    ...reportingContract,
+    scope: 'per-key',
+    keys: {
+      ...Object.fromEntries(Object.entries(reportingContract.keys).map(([key, value]) => [key, {...value, scope:'slot'}])),
+      geo_country: {scope:'page', values:'Detected ISO 3166-1 alpha-2 country code, for example RS or DE; omitted while pending or unknown.',
+        meaning:'Cloudflare network exit country, including VPN/proxy exits. Available to subsequent requests after detection; not visitor nationality or proof of physical location.'},
+    },
+    limitations: [...reportingContract.limitations.map(value => value.replace('Keys are slot-level only;', 'Auction keys are slot-level only;')),
+      'The seven request/auction labels above remain slot-level. geo_country is page-level; do not override this reserved key with publisher or slot targeting.',
+      'Detection never forces a refresh. Earlier requests omit geo_country; unknown does not invent a country. GEO rules affect only explicitly configured positions.'],
+  };
+  files['gam-reporting.json'] = text.encode(JSON.stringify(countryReportingContract, null, 2) + '\n');
+  files['deals-plan.json'] = text.encode(JSON.stringify(dealPlan(snapshot,input.deals??{schemaVersion:1,entries:[]}),null,2)+'\n');
+  if (prebid) files['prebid.js'] = new Uint8Array(prebid.bytes.slice(0));
+  // Only normalized public runtime settings, never arbitrary saved admin/connector fields.
+  files['config.json'] = text.encode(`${JSON.stringify({ schemaVersion: 1, siteId: snapshot.site.id, runtime: pin,
+    core: input.core, options: input.options, deals: input.deals, outstream: input.outstream, adPosition: input.overlay, lazyRules: input.lazyRules, conditionalUnits: input.conditionalUnits, sizeMapNormalization: input.sizeMapNormalization, countrySignal: input.countrySignal, interstitialRules: input.interstitialRules, output: { cleanComments }, prebidBuild: prebidPin }, null, 2)}\n`);
+  const units = input.core.explicitUnits.filter((u) => u.id !== input.options.sticky.bottomAdUnitId && u.id !== input.overlay?.code);
+  const htmlUnits = units.map((u) => `  <div id="${escapeHtml(u.id)}" class="wrapperAd${u.type === 'BTF' ? ' lazyAd' : ''}"></div>`).join('\n');
+  const pbTag = requirements.required ? '  <script src="./prebid.js"></script>\n' : '';
+  files['implementation.html'] = text.encode(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tessera 3.20.1 — ${escapeHtml(snapshot.site.name)}</title>
+<!-- Tessera 3.20.1 integration example. Place the site's approved CMP before ad libraries. -->
+<link rel="stylesheet" href="./min-height.css">
+<!-- sticky.css is optional: ads.js injects the identical stylesheet. -->
+<script async src="https://securepubads.g.doubleclick.net/tag/js/gpt.js" crossorigin="anonymous"></script>
+${pbTag}<script defer src="./ads.min.js"></script>
+</head><body>
+${htmlUnits}
+</body></html>\n`);
+  const csv = (v) => `"${String(v).replace(/"/g, '""')}"`;
+  files['div-export.csv'] = text.encode(['ad_unit,type,html', ...units.map((u) => [u.id, u.type,
+    `<div id="${escapeHtml(u.id)}" class="wrapperAd${u.type === 'BTF' ? ' lazyAd' : ''}"></div>`].map(csv).join(','))].join('\n') + '\n');
+  files['README.txt'] = text.encode(`Tessera 3.20.1\n\nGenerated from the saved site configuration and an exact Tessera runtime source. Generating or downloading this bundle does not change the publisher CMS, ads.txt or live script URLs. Save, stage and publish through the release workflow when ready.\n\nads.js and ads.min.js have the same parser-validated behavior. Use one, never both. Load the approved CMP before ad libraries. When Prebid is included, load prebid.js before the Tessera script. sticky.css matches the injected stylesheet and is optional. min-height.css supplies responsive placeholders, excluding Sticky and TakeOver. Empty or fluid-only breakpoints reset reserved height to 0.\n\nimplementation.html shows the script order and saved ad containers. Serving it can request real Google ads using the configured GAM paths; review it on the intended authorized site.\n\nRuntime: ${pin.runtimeVersion}\nSource SHA-256: ${pin.runtimeSha256}\nPrebid: ${prebidPin ? `${prebidPin.version} / ${prebidPin.sha256}` : 'disabled (GAM / AdX only)'}\n`);
+  const manifest = {
+    schemaVersion: 1, kind: 'builtin-runtime-candidate', completeRelease: false,
+    siteId: snapshot.site.id, buildTimestamp, configHash: await digest(snapshot),
+    runtime: pin, prebidBuild: prebidPin, minifier: js.minifier,
+    patches: [...generated.patches, 'shared injected/exported sticky stylesheet', 'responsive zero-height reset', 'parser-based output formatting'],
+    warnings: [...generated.warnings, 'Package creation, staging and publication are separate explicit actions.'],
+    files: {},
+  };
+  files['README.txt'] = text.encode(new TextDecoder().decode(files['README.txt']) +
+    '\nGAM reporting\nThis version adds seven slot-level request labels. GAM-only sends refresh_count, refresh_bucket, refresh_interval and refresh_policy, with no aq_* values. Completed Prebid auctions also report positive current-auction bid counts and the auction timeout flag. See gam-reporting.json for every value and its meaning.\n\nCreate the custom targeting keys/values and enable reporting in GAM before collecting results. Downloading or selecting this version does not configure GAM reporting. Counts are requests and bids, not impressions, winning demand or revenue. Old packages retain their original behavior.\n');
+  files['README.txt'] = text.encode(new TextDecoder().decode(files['README.txt']) + '\nConsent readiness\nThis version waits for a completed TCF CMP decision with explicit GDPR scope. Unknown scope, missing CMP or pending user choice never become a non-personalized-ad fallback. Rejection is passed to GPT/Prebid through the CMP; these libraries enforce their serving/activity rules. No mode is inferred from a timer. A later CMP event can resume blocked work.\nPrebid readiness waits at most 3 seconds per page after the first completed decision, pre-auction hooks have a separate 10-second watchdog, and the bid deadline starts at the matching auctionInit. Failures request GAM only after a valid CMP decision, with no stale hb_* or aq_* data. Local diagnostics: window.__tesseraReadiness.snapshot(), with phase/timing only, never TC strings or IDs.\nThe previous direct ID5 localStorage-to-PPID bridge is disabled in this version pending its separate review. Existing ID5 Prebid module configuration remains under TCF enforcement.\nHosted publisher CMP/GPT verification is still required; offline tests do not prove live Google wire parameters or revenue.\n');
+  files['README.txt'] = text.encode(new TextDecoder().decode(files['README.txt']) + '\nDeals and Outstream\nDeals use native returned bidder-specific deal/adId targeting. A configured Deal ID alone never makes a GAM line item eligible. Native Send All Bids exposes one selected bid per bidder per position; simultaneous same-bidder responses are not independently targetable. GAM priority is configured separately according to the commercial agreement; this package never writes to GAM.\nOutstream is a PubMatic / Prebid 11.34.0 pilot. Confirm partner activation, renderer ID, VAST cache and compatible GAM/PUC creative in staging. Responsive video sizes come from the saved position size map at the current viewport. Single eligible sizes are automatic; multi-size breakpoints use the saved choice. Banner sizes are unchanged. A pending video bid is not rendered after a viewport change selects different video dimensions. Video may render only from the selected creative. Automatic refresh stays off on all video-enabled positions; player lifecycle and revenue require separate hosted verification.\n');
+  files['README.txt'] = text.encode(new TextDecoder().decode(files['README.txt']) + '\nFixed in 3.16.1\n- Effective position refresh rules start the content scheduler. A site without refresh overrides uses its inherited 30-second baseline after explicitly selecting this version. Explicitly disabled rules stay disabled.\n- Wall-clock gaps are measured from actual requests, including the initial request; a larger saved gap can delay the first automatic refresh. Sticky follows its inherited schedule, empty Sticky retries remain possible, and duplicate tab pause events preserve remaining dwell time. refresh_interval reports the effective minimum spacing (the greater of interval and wall-clock gap). Refresh counters advance only for actual allowed automatic requests.\n- An empty, invalid or timed-out TakeOver releases exactly one consent-gated Interstitial fallback. A viewport-disabled TakeOver skips cleanly; its diagnostics expose current map dimensions.\n- Initial pages without content wrappers discover configured wrappers for at most 20 seconds. This is not general infinite-scroll inventory. Existing configured lazy rules keep ownership of their requests.\n- Cached lazy targeting is revalidated against current-auction, unexpired native Prebid responses, including bidder-specific Send All Bids keys. When all previous bids expired, one replacement auction is allowed before one GAM dispatch.\n- Late window.adsKeywords is polled for 2.5 seconds and can affect later requests. Set keywords before ads.js for initial targeting and page-type size maps. SChain values are preserved exactly.\n- Generated syntax is parser-checked as ES2015. This is a syntax boundary, not a guarantee of every older browser API or polyfill.\nLimits\nThe existing safe GAM-only path after an in-flight CMP decision change is retained. Automatic CMP recovery, GEO decisions, general SPA inventory discovery and additional video partners are not added. Old scripts and saved packages remain unchanged.\n');
+  files['README.txt'] = text.encode(new TextDecoder().decode(files['README.txt']) + '\nFixed in 3.16.2\n- An empty Sticky retry that the refresh interval or minimum wall-clock gap refuses is rescheduled for the exact remaining time instead of stopping. If the device clock moved back and the retry is still refused, it is rescheduled again, at most three times per retry and only while no other Sticky request was made. The retry count, maximum refreshes, Sticky close, page visibility and CMP decision still apply, and no request is sent earlier than the saved gap after the previous actual request.\n- An empty Sticky retry that becomes due while the page is hidden, or just as the page is paused, waits for the page to become active again. A refresh gap computed for one attempt is not reused by a later timer.\n- A position, including a filled Sticky, whose Default, group and position refresh settings save no minimum in-view percentage now uses the inherited threshold at refresh time: 50% unless the Default refresh, or the ATF refresh when there is no Default refresh, saves another value. Saved percentages, including 0, are unchanged, and the view entry and exit thresholds are the same as in 3.16.1.\n- While a queued content refresh is still waiting to be sent, the content timer already uses the next schedule step, so a later shorter step (for example 30, 90, 45 s) returns to the 3.16.0 request times when the queued request is sent within that next step. With very short steps and slower sends it waits as 3.16.1 did. No request is made before the interval that the actual refresh count allows; refresh counts still advance only for actual requests, and the minimum wall-clock gap still applies.\nEverything else is identical to 3.16.1. Old scripts and saved packages remain unchanged.\n');
+  files['README.txt'] = text.encode(new TextDecoder().decode(files['README.txt']) + '\nKey-value rules in 3.17.0\nSet window.adsKeywords before ads.js. Existing Rules by ad unit select a Banner or Sticky size map on the page; generating a package never needs the future page value. Comparisons are case-sensitive; arrays match any value (negative comparisons require no matches), and missing/empty keys only match notExists. First matching rule wins in descending priority; ties retain Default, group, exact and saved order. No match uses the directly assigned base map. The decision is kept for that position on the page, including refresh; resize uses the responsive rows of the same map. Disabled mappings do nothing; a Disable slot action defines no GPT slot and makes no Prebid request. Enable never activates an inventory item disabled in Config. Conditional TakeOver and Outstream rules are not supported in this version and receive a specific validation message. Existing nonconditional behavior and CMP gates are unchanged.\n');
+  files['README.txt'] = text.encode(new TextDecoder().decode(files['README.txt']) + '\nCountry recognition in 3.18.0\nSelecting this version enables one credential-free background lookup per document. Source: Cloudflare network exit country, including VPN/proxy exits. No IP address is returned, and no cookie, localStorage or shared cache is used. Fetch and body have one 1500 ms deadline. Missing data, blocked network and failures settle to unknown. Ads never await this result. CMP, bidder, map and targeting decisions are unchanged. Read window.__AD_GEO.getSnapshot() or await window.__AD_GEO.ready() for diagnostics and future consumers. Duplicate loads reuse the result; a new page load is needed after changing VPN. An unrelated existing __AD_GEO property is preserved.\nCountry service: ' + input.countrySignal.endpoint + '\nFor publisher CSP, allow this HTTPS origin in connect-src. Existing saved packages are unchanged.\n');
+  files['README.txt'] = text.encode(new TextDecoder().decode(files['README.txt']) + '\nCountry rules in 3.19.0\nThis version supersedes the diagnostics-only behavior described above. The detected country is supplied to geo_country conditions and sent to GAM as a page-level geo_country key. Publisher adsKeywords cannot override that reserved key. Only positions with an active country condition wait for the bounded lookup; all other positions continue normally. Unknown has no value: it only matches does not exist. No matching rule keeps the assigned map/state. For Only Serbia, use Disable slot with ANY geo_country does not equal RS or geo_country does not exist, at a higher priority than other matching rules. First matching rule wins; enable alone does not exclude other countries. Selected maps stay fixed for the page, including resize and refresh. GEO never forces a refresh. Requests sent before detection omit geo_country.\nInterstitial fallback rules apply only to the existing TakeOver-owned fallback. They do not create a standalone Interstitial or control external GAM codeless formats. Configure external codeless targeting in GAM. Unknown/denied fallback keeps suppression; allowed fallback still waits for consent and no-fill. Do not add a second GPT Interstitial over an active codeless implementation.\nFor GAM reporting create geo_country and required country values, and mark the key reportable. This package does not edit GAM.\n');
+  files['README.txt'] = text.encode(new TextDecoder().decode(files['README.txt']) + '\nViewport size maps in 3.20.0\nBanner and Sticky select the largest fitting viewport by width first, then height, exactly as GPT maps do. Equal widths with different minimum heights are supported; duplicate width/height pairs in maps reachable by enabled positions are rejected. Unassigned draft maps do not block generation. Empty rows disable sizes. Fluid-only rows remain eligible for GAM without numeric Prebid banner sizes. Reserved CSS uses the largest fixed creative height in the selected row; it is not a maximum creative height and does not bound fluid. Sticky and TakeOver retain their own layout and are excluded from placeholder CSS. Category, GEO and legacy page-type map selection share the responsive reservation. The selected map stays fixed per page; resize uses its applicable breakpoint. A never-requested ATF Banner or bottom Sticky can start when a resize makes its map eligible, through the existing consent and lazy gates. Resize does not force requests for previously served positions, reopen a closed Sticky, or change BTF scheduling.\nA map without [0,0] is normalized with an explicit empty [0,0] row, so an unmatched viewport cannot fall back to all declared sizes. config.json records these map names in sizeMapNormalization.emptyBaselineAdded. Saved site settings and existing packages are not rewritten. Responsive Outstream keeps its reviewed width-only restriction.\nExact bidder overrides for saved disabled or draft positions remain stored but are omitted from this package. Re-enabling the position restores those overrides on the next generation; references to genuinely missing positions still fail validation.\n');
+  files['README.txt'] = text.encode(new TextDecoder().decode(files['README.txt']) + '\nCombined in 3.20.1\nThis version includes the viewport size-map and initial resize recovery behavior of 3.20.0 with exact GAM ad unit codes from 3.19.1. Punctuation, Unicode, leading digits and prototype-shaped names are retained through GPT/Prebid, HTML, CSS, conditional rules and bidder overrides. Temporary build identifiers never appear in the exported package. Existing frozen runtimes, selected site versions and saved packages are unchanged.\n');
+  for (const [name, bytes] of Object.entries(files)) manifest.files[name] = { byteSize: bytes.byteLength, sha256: await sha256(bytes) };
+  files['manifest.json'] = text.encode(`${JSON.stringify(manifest, null, 2)}\n`);
+  return { manifest, files };
+}

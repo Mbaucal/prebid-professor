@@ -1,9 +1,13 @@
+import { cloneAuthenticatedRequest } from './http';
 import { apiError, json } from './http';
 import {
   generateReleaseForDemandMode,
   validateReleaseForDemandMode,
 } from './prebid-mode-release';
 import type { ReleaseEnv } from './releases';
+import { assertJavaScriptSyntax } from './javascript-syntax';
+import { checkedLegacyPrebidModules } from './legacy-prebid-requirements';
+import { patchLegacyStickyPortal } from './legacy-sticky-portal.mjs';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -140,7 +144,7 @@ function ensureVarAfter(source: string, anchorName: string, name: string, value:
     'm',
   );
   if (!anchor.test(source)) throw new Error(`Generated runtime does not contain variable ${anchorName}.`);
-  return source.replace(anchor, `$1\\n  var ${name} = ${jsonLiteral(value)};`);
+  return source.replace(anchor, (_match, anchor: string) => `${anchor}\n  var ${name} = ${jsonLiteral(value)};`);
 }
 
 function replaceWindowValue(source: string, name: string, value: unknown): string {
@@ -167,7 +171,7 @@ function ensureWindowMetadata(
   if (!/window\.ADOPS_GENERATOR_PROFILE_VERSION\s*=/.test(source)) {
     additions.push(`      window.ADOPS_GENERATOR_PROFILE_VERSION = ${jsonLiteral(profileVersion)};`);
   }
-  return additions.length ? source.replace(marker, `$1\\n${additions.join('\\n')}`) : source;
+  return additions.length ? source.replace(marker, (_match, anchor: string) => `${anchor}\n${additions.join('\n')}`) : source;
 }
 
 function patchGenericSticky(source: string): string {
@@ -307,6 +311,7 @@ function patchRuntime(
   source = replaceVar(source, 'STICKY_TOP_TARGET_ID', controls.sticky.topAdUnitId, false);
   source = replaceVar(source, 'ALLOW_CLOSE_PORTAL', controls.sticky.allowClosePortal, false);
   source = patchGenericSticky(source);
+  source = patchLegacyStickyPortal(source, controls.sticky.allowClosePortal);
   source = patchFloors(source, controls);
   source = ensureWindowMetadata(source, profileId, profileVersion);
   if (controls.output.cleanComments) {
@@ -359,21 +364,16 @@ function addCompilerPatch(manifest: JsonRecord, patch: string): void {
   manifest.compiler = compiler;
 }
 
-async function currentPrebidModules(env: ReleaseEnv, siteId: string): Promise<string[]> {
-  if (!env.DB) return [];
+async function missingPrebidModules(env: ReleaseEnv, siteId: string, config: JsonRecord): Promise<string[]> {
+  if (!env.DB || config.enablePrebid === false) return [];
   const row = await env.DB
-    .prepare(`SELECT modules_json FROM prebid_builds
+    .prepare(`SELECT version, modules_json, file_key FROM prebid_builds
               WHERE publisher_id = ? AND status = 'current'
               ORDER BY uploaded_at DESC LIMIT 1`)
     .bind(siteId)
-    .first<{ modules_json: string }>();
+    .first<{ version: string; modules_json: string; file_key: string }>();
   if (!row) return [];
-  try {
-    const parsed = JSON.parse(row.modules_json) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
-  } catch {
-    return [];
-  }
+  return checkedLegacyPrebidModules(config, row, env.BUILDS);
 }
 
 export async function validateReleaseWithRuntimeControls(
@@ -396,14 +396,17 @@ export async function validateReleaseWithRuntimeControls(
   }
 
   const errors = Array.isArray(payload.errors) ? [...payload.errors] : [];
-  if (state.prebidEnabled && state.controls.floors.configured && state.controls.floors.enabled) {
-    const modules = await currentPrebidModules(env, siteId);
-    if (!modules.includes('priceFloors')) {
+  if (state.prebidEnabled) {
+    try {
+      for (const module of await missingPrebidModules(env, siteId, state.config)) {
       errors.push({
         code: 'prebid_module_missing',
         area: 'runtime_controls',
-        message: 'Current Prebid.js is missing priceFloors while floor enforcement is enabled.',
+        message: `Current Prebid.js is missing ${module}, required by this site's consent, currency or User ID settings.`,
       });
+      }
+    } catch (error) {
+      errors.push({ code: 'prebid_module_missing', area: 'runtime_controls', message: error instanceof Error ? error.message : 'Prebid module requirements could not be verified.' });
     }
   }
 
@@ -432,14 +435,16 @@ export async function generateReleaseWithRuntimeControls(
     return apiError(error instanceof Error ? error.message : 'Runtime controls could not be read.', 422);
   }
 
-  if (state.prebidEnabled && state.controls.floors.configured && state.controls.floors.enabled) {
-    const modules = await currentPrebidModules(env, siteId);
-    if (!modules.includes('priceFloors')) {
-      return apiError('Current Prebid.js is missing priceFloors while floor enforcement is enabled.', 422);
+  if (state.prebidEnabled) {
+    try {
+      const missing = await missingPrebidModules(env, siteId, state.config);
+      if (missing.length) return apiError(`Current Prebid.js is missing required modules: ${missing.join(', ')}.`, 422);
+    } catch (error) {
+      return apiError(error instanceof Error ? error.message : 'Prebid module requirements could not be verified.', 422);
     }
   }
 
-  const base = await generateReleaseForDemandMode(request.clone(), env, siteId);
+  const base = await generateReleaseForDemandMode(cloneAuthenticatedRequest(request), env, siteId);
   const responseText = await base.text();
   let payload: JsonRecord;
   try {
@@ -468,6 +473,8 @@ export async function generateReleaseWithRuntimeControls(
     const profileVersion = String(profile.version ?? 'unknown');
     const patchedAds = patchRuntime(adsSource, state.controls, siteId, version, profileId, profileVersion);
     const patchedAdsMin = patchRuntime(adsMinSource, state.controls, siteId, version, profileId, profileVersion);
+    assertJavaScriptSyntax(patchedAds, 'ads.js');
+    assertJavaScriptSyntax(patchedAdsMin, 'ads.min.js');
 
     const config = parseRecord(configSource);
     config.runtimeControls = state.controls;
@@ -483,6 +490,7 @@ export async function generateReleaseWithRuntimeControls(
     manifest.configHash = configHash;
     addCompilerPatch(manifest, 'clean generated runtime comments and English header');
     addCompilerPatch(manifest, 'generic sticky host selectors');
+    if (state.controls.sticky.allowClosePortal) addCompilerPatch(manifest, 'legacy Sticky close portal styles, positioning and button lifecycle');
     if (state.controls.floors.configured) addCompilerPatch(manifest, 'runtime floor controls');
 
     const files = isRecord(manifest.files) ? manifest.files : {};
@@ -527,7 +535,7 @@ export async function generateReleaseWithRuntimeControls(
       .catch(() => undefined);
     return apiError(
       'Release was generated, but runtime-control post-processing failed.',
-      500,
+      422,
       error instanceof Error ? error.message : String(error),
     );
   }

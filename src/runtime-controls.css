@@ -273,3 +273,18 @@
     grid-template-columns: 1fr;
   }
 }
+.runtime-controls-compatibility {
+  padding: 12px 14px;
+  border: 1px solid #b8d7ef;
+  border-radius: 10px;
+  color: #31546f;
+  background: #eef8ff;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.runtime-controls-compatibility.needs-review {
+  border-color: #fed7aa;
+  color: #9a3412;
+  background: #fff7ed;
+}

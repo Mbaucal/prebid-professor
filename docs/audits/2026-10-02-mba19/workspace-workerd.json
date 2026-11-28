@@ -1,0 +1,243 @@
+{
+  "scope": "LOCAL workerd + Miniflare D1/R2 persisted to temporary disk; NOT hosted Cloudflare",
+  "miniflareVersion": "5.20260730.0-alpha",
+  "compiledSha256": "30d6a2409558d89fea6f5463f934bdba3983936a4f782d4094d4de25552a799f",
+  "checks": [
+    {
+      "name": "Unauthenticated request leaves local D1 uninitialized",
+      "passed": true
+    },
+    {
+      "name": "Compiled Worker performs real signed-session login in workerd",
+      "passed": true
+    },
+    {
+      "name": "Foreign Origin cannot initialize local D1",
+      "passed": true
+    },
+    {
+      "name": "Authenticated status reports empty storage without initialization",
+      "passed": true
+    },
+    {
+      "name": "Atomic schema preparation works with Miniflare D1",
+      "passed": true
+    },
+    {
+      "name": "Repeated preparation does not replace existing test data",
+      "passed": true
+    },
+    {
+      "name": "Only the synthetic site is seeded",
+      "passed": true
+    },
+    {
+      "name": "Real workerd generation does not save a release",
+      "passed": true
+    },
+    {
+      "name": "Reviewed Save writes through Miniflare D1 and R2",
+      "passed": true
+    },
+    {
+      "name": "Conditional R2 puts and repeated Save are idempotent",
+      "passed": true
+    },
+    {
+      "name": "One exact package is listed after two Save requests",
+      "passed": true
+    },
+    {
+      "name": "Read verifies saved bytes without making them publishable",
+      "passed": true
+    },
+    {
+      "name": "Downloaded ads.js matches the original reviewed source",
+      "passed": true
+    },
+    {
+      "name": "Nine-file package omits Prebid in GPT-only mode",
+      "passed": true
+    },
+    {
+      "name": "The selected local persistence directory is actually populated",
+      "passed": true
+    },
+    {
+      "name": "Local D1 survives a full workerd restart",
+      "passed": true
+    },
+    {
+      "name": "Local R2 preserves the byte-identical ZIP after restart",
+      "passed": true
+    },
+    {
+      "name": "Every saved file is byte-identical after restart",
+      "passed": true
+    },
+    {
+      "name": "Legacy publish and public draft CDN routes remain unavailable",
+      "passed": true
+    },
+    {
+      "name": "Actual D1 schema drift fails closed rather than trusting the marker",
+      "passed": true
+    },
+    {
+      "name": "Signed-out access to stored data is rejected",
+      "passed": true
+    },
+    {
+      "name": "No outbound application fetch was attempted",
+      "passed": true
+    }
+  ],
+  "events": [
+    {
+      "phase": "authentication",
+      "method": "GET",
+      "path": "/test-api/status",
+      "status": 401,
+      "local": true
+    },
+    {
+      "phase": "authentication",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "status": 303,
+      "local": true
+    },
+    {
+      "phase": "authentication",
+      "method": "POST",
+      "path": "/test-api/setup",
+      "status": 403,
+      "local": true
+    },
+    {
+      "phase": "authentication",
+      "method": "GET",
+      "path": "/test-api/status",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "setup",
+      "method": "POST",
+      "path": "/test-api/setup",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "setup",
+      "method": "POST",
+      "path": "/test-api/setup",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "generate",
+      "method": "POST",
+      "path": "/test-api/generate",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "generate",
+      "method": "GET",
+      "path": "/test-api/releases",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "save",
+      "method": "POST",
+      "path": "/test-api/save",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "save",
+      "method": "POST",
+      "path": "/test-api/save",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "save",
+      "method": "GET",
+      "path": "/test-api/releases",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "save",
+      "method": "GET",
+      "path": "/test-api/releases/builtin-draft-51f03adf7c38f05e796d122a5345fcf72e538e6439199b27b988babbe948bdf2",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "save",
+      "method": "GET",
+      "path": "/test-api/releases/builtin-draft-51f03adf7c38f05e796d122a5345fcf72e538e6439199b27b988babbe948bdf2/download",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "restart",
+      "method": "GET",
+      "path": "/test-api/releases",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "restart",
+      "method": "GET",
+      "path": "/test-api/releases/builtin-draft-51f03adf7c38f05e796d122a5345fcf72e538e6439199b27b988babbe948bdf2/download",
+      "status": 200,
+      "local": true
+    },
+    {
+      "phase": "guards",
+      "method": "POST",
+      "path": "/api/publishers/test-site/publish",
+      "status": 404,
+      "local": true
+    },
+    {
+      "phase": "guards",
+      "method": "GET",
+      "path": "/cdn/test-site/builtin-draft-51f03adf7c38f05e796d122a5345fcf72e538e6439199b27b988babbe948bdf2/ads.js",
+      "status": 404,
+      "local": true
+    },
+    {
+      "phase": "guards",
+      "method": "GET",
+      "path": "/test-api/status",
+      "status": 409,
+      "local": true
+    },
+    {
+      "phase": "guards",
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "status": 204,
+      "local": true
+    },
+    {
+      "phase": "guards",
+      "method": "GET",
+      "path": "/test-api/status",
+      "status": 401,
+      "local": true
+    }
+  ],
+  "externalAttempts": 0,
+  "passed": 22,
+  "failed": 0,
+  "productionChanged": false,
+  "hostedTest": false,
+  "credentialsInArtifact": false
+}

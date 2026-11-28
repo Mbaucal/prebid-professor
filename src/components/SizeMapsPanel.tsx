@@ -129,8 +129,11 @@ export default function SizeMapsPanel({ publisherId, onChanged }: Props) {
       if (!unit.sizeMapKey) return;
       result.set(unit.sizeMapKey, [...(result.get(unit.sizeMapKey) ?? []), unit.code]);
     });
+    sizeMaps.forEach((map) => {
+      if (map.references) result.set(map.name, map.references.map(reference => reference.label));
+    });
     return result;
-  }, [adUnits]);
+  }, [adUnits, sizeMaps]);
 
   function openCreate() {
     setMode('create');
@@ -204,7 +207,9 @@ export default function SizeMapsPanel({ publisherId, onChanged }: Props) {
       }
       await load();
       await onChanged?.();
-      closeForm();
+      setMode(null);
+      setSource(null);
+      setFormError(null);
     } catch (requestError) {
       setFormError(requestError instanceof Error ? requestError.message : 'Size map operation failed.');
     } finally {
@@ -215,8 +220,9 @@ export default function SizeMapsPanel({ publisherId, onChanged }: Props) {
   async function remove(item: SizeMap) {
     const usedBy = usage.get(item.name) ?? [];
     const message = usedBy.length
-      ? `${item.name} is used by ${usedBy.join(', ')} and cannot be deleted until those ad units are reassigned.`
+      ? `${item.name} is used by ${usedBy.join(', ')}. Reassign these references before deleting it.`
       : `Delete size map ${item.name}?`;
+    if (usedBy.length) { setError(message); return; }
     if (!window.confirm(message)) return;
 
     try {
@@ -242,7 +248,7 @@ export default function SizeMapsPanel({ publisherId, onChanged }: Props) {
           </button>
         </div>
 
-        {error ? <div className="form-error config-error">{error}</div> : null}
+        {error ? <div role="alert" className="form-error config-error">{error}</div> : null}
         {loading ? <div className="config-loading">Loading size maps from D1…</div> : null}
 
         <div className="size-map-grid">
@@ -256,7 +262,7 @@ export default function SizeMapsPanel({ publisherId, onChanged }: Props) {
                     <span>{item.map.length} breakpoint(s)</span>
                   </div>
                   <span className={usedBy.length ? 'map-usage used' : 'map-usage'}>
-                    {usedBy.length ? `${usedBy.length} unit(s)` : 'unused'}
+                    {usedBy.length ? `${usedBy.length} reference(s)` : 'unused'}
                   </span>
                 </div>
 
@@ -319,7 +325,7 @@ export default function SizeMapsPanel({ publisherId, onChanged }: Props) {
               <label>
                 <span>Size map name</span>
                 <input autoFocus onChange={(event) => setName(event.target.value)} placeholder="Billboard" value={name} />
-                <small>Renaming a map updates all ad units that reference it.</small>
+                <small>Renaming a map updates ad units and saved rules that reference it.</small>
               </label>
 
               <div className="breakpoint-editor">

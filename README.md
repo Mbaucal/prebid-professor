@@ -6,9 +6,9 @@ Cloudflare-hosted AdOps control plane and release manager for custom publisher i
 
 ## Project source of truth
 
-Product scope, architecture, current status, acceptance tests, safety rules, and the working backlog are maintained in [`PROJECT.md`](./PROJECT.md).
+Start with the current [Linear PM checkpoint](https://linear.app/mbaucal/document/tessera-start-here-aktuelni-pm-rad-57156b7568fa) for priorities, owners and current evidence. [`AGENTS.md`](./AGENTS.md) defines parallel work, UX review and delivery expectations.
 
-Update that document whenever a feature is completed, a product decision changes, or a requirement is recovered from earlier planning.
+[`PROJECT.md`](./PROJECT.md) preserves product scope, decisions, acceptance criteria and historical implementation notes. Confirm older statuses against the current issue and code before repeating work. Keep the PM checkpoint short; record detailed evidence in the relevant issue or feature document.
 
 ## Current platform
 

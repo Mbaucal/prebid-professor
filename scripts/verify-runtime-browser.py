@@ -30,6 +30,46 @@ def count(page, slot):
 def wait_visible(page):
     page.wait_for_function('takeOverDebug.state().visible', timeout=3000)
 
+def failure_diagnostics(page):
+    """Read the failing frame only; never wait, retry, or change the assertion."""
+    try:
+        return page.evaluate('''() => {
+          const inspect = (id) => {
+            const element = document.getElementById(id);
+            if (!element) return null;
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return {
+              className: element.className,
+              ariaHidden: element.getAttribute('aria-hidden'),
+              disabled: element.disabled ?? null,
+              style: Object.fromEntries(['display', 'visibility', 'opacity', 'pointerEvents',
+                'transitionProperty', 'transitionDuration', 'transitionDelay']
+                .map(key => [key, style[key]])),
+              bounds: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
+              clientRectCount: element.getClientRects().length,
+              animations: element.getAnimations().map(animation => {
+                const timing = animation.effect?.getComputedTiming();
+                return {transitionProperty: animation.transitionProperty ?? null,
+                  playState: animation.playState, currentTime: animation.currentTime,
+                  startTime: animation.startTime, duration: timing?.duration ?? null,
+                  progress: timing?.progress ?? null};
+              })
+            };
+          };
+          const now = performance.now();
+          const frameTime = document.timeline.currentTime;
+          return {performanceNow: now, frameTime,
+            millisecondsSinceFrame: frameTime == null ? null : now - frameTime,
+            documentVisibility: document.visibilityState,
+            activeElementId: document.activeElement?.id ?? null,
+            logicalState: window.takeOverDebug?.state?.() ?? null,
+            overlay: inspect('adsx-takeover-overlay'),
+            close: inspect('adsx-takeover-close')};
+        }''')
+    except Exception as error:
+        return {'diagnosticsError': str(error)}
+
 def run_case(browser, name, callback, source='standard', width=1280, options=None):
     page = browser.new_page(viewport={'width': width, 'height': 900 if width > 1000 else 740})
     errors, requests = [], []
@@ -47,7 +87,8 @@ def run_case(browser, name, callback, source='standard', width=1280, options=Non
         require(not requests, f'Unexpected external requests: {requests}')
         results.append({'name': name, 'passed': True, 'externalRequests': len(requests)})
     except Exception as error:
-        results.append({'name': name, 'passed': False, 'error': str(error), 'browserErrors': errors, 'externalRequests': len(requests)})
+        results.append({'name': name, 'passed': False, 'error': str(error), 'browserErrors': errors,
+                        'externalRequests': len(requests), 'failureDiagnostics': failure_diagnostics(page)})
     finally:
         page.close()
 

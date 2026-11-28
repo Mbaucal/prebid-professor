@@ -1,3 +1,4 @@
+import {applyBidderAccountSchema} from './bidder-account-schema.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
@@ -10,6 +11,7 @@ export function isolatedStore({ databasePath = ':memory:', persistedObjects = nu
   const sqlite = new DatabaseSync(databasePath);
   const sql = readFileSync(new URL('../../migrations/0001_initial.sql',import.meta.url),'utf8');
   sqlite.exec(sql.slice(0,sql.indexOf('INSERT OR IGNORE INTO publishers')));
+  applyBidderAccountSchema(sqlite);
   sqlite.exec(readFileSync(new URL('../../worker/runtime/sql/builtin-draft-storage.sql',import.meta.url),'utf8'));
   sqlite.prepare('INSERT OR IGNORE INTO publishers (id,name,domain,gam_path) VALUES (?,?,?,?)')
     .run('test-site','Offline fixture','example.invalid','/123/test/');

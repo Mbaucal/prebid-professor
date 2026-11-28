@@ -1,0 +1,18 @@
+.app-form-dialog {
+  border: 0;
+  padding: 24px;
+  background: transparent;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  box-sizing: border-box;
+}
+.app-form-dialog[open] { display: grid; place-items: center; }
+.app-form-dialog::backdrop { background: rgb(12 17 24 / 72%); backdrop-filter: blur(3px); }
+.app-form-dialog .modal-card { margin: 0; }
+@media (max-width: 600px) {
+  .app-form-dialog { padding: 12px; }
+  .app-form-dialog .modal-card { max-height: calc(100dvh - 24px); }
+}

@@ -1,0 +1,76 @@
+{
+  "scope": "LOCAL compiled TEST Workers on tools-owned Miniflare; no hosted deployment or live ads. GAM-only 3.14/3.15.",
+  "base": "893bf83fbefc29dca966207574f57ce35575e9de",
+  "baselineWorkerSha256": "1237490e7876c0c36ddbf592c960f24a2b006892505494bf026a8a9c67ecd289",
+  "modernWorkerSha256": "1237490e7876c0c36ddbf592c960f24a2b006892505494bf026a8a9c67ecd289",
+  "checks": [
+    {
+      "name": "Both actual compiled Workers enforce authentication and foreign-Origin refusal",
+      "passed": true
+    },
+    {
+      "name": "3.14.0: explicit exact selection with stale-write protection; catalog unchanged",
+      "passed": true
+    },
+    {
+      "name": "3.14.0: modern Generate, both compiled Save regenerations, duplicate Save, reopen and exact ZIP agree",
+      "passed": true
+    },
+    {
+      "name": "3.15.0: explicit exact selection with stale-write protection; catalog unchanged",
+      "passed": true
+    },
+    {
+      "name": "3.15.0: modern Generate, both compiled Save regenerations, duplicate Save, reopen and exact ZIP agree",
+      "passed": true
+    },
+    {
+      "name": "Both versions remain byte-identical after later selection and persistent workerd restart",
+      "passed": true
+    },
+    {
+      "name": "Zero outbound requests",
+      "passed": true
+    }
+  ],
+  "artifacts": [
+    {
+      "version": "3.14.0",
+      "buildTimestamp": "20261005_182201",
+      "runtimeSha256": "ddfb7326bef527aafd0f0bceca343287e2ded9dfa8c11095c5ac9378b5a89871",
+      "zipSha256": "524d053cd94142b68ddfc16a5550b1c69d3c5d9f1c9039742a8a5a85641d8eff",
+      "files": {
+        "README.txt": "dbdf143f791d47f8d70c61074ab96cc29ee95fa22221613943ffed0417502648",
+        "ads.js": "4c6d14246ef4902d0141bf9bcf09a900aa0a96f0da9c8616b00dbe94326427f4",
+        "ads.min.js": "1e4651915ed8db0d7f36887932450a11f6bb68b728089f8481f78f01e9d5661f",
+        "config.json": "8d23f1b29823572ff5e6b2a6295dd255948434aebd6f1c8cc6554bbdbd8e6fd7",
+        "div-export.csv": "bbad2d0efd8c83ad31c2acbc931bb31b289f5d046eb23d550bf1dd7b02a29296",
+        "gam-reporting.json": "7b09cb7449c47850a19167572de9b7df7b05764216cac230ad5753485031effc",
+        "implementation.html": "ada85a73b2be0bceebd3858c5cf241442f875256b6fe12ef59b040139f226647",
+        "manifest.json": "798866ecec9523db523f914e4ce0f64b692e0247d8ea18de8ad26a1cb502dc15",
+        "min-height.css": "4401a1c94aabcf6ed02282a4c448495d8e44daae12447862862ed1ab2b7de4c9",
+        "sticky.css": "6485c0d25d17fd5aec692d1c175fe3db7e2ea72551d58dde14c2ce3d5483ba3f"
+      }
+    },
+    {
+      "version": "3.15.0",
+      "buildTimestamp": "20261005_182207",
+      "runtimeSha256": "ef166b6da60a36e3e8817f6df4e2a961e34868382cdb0fae5e36751c545b6528",
+      "zipSha256": "ed1ee4767e193160ebc2d213d360aeebad03c8e991461bf2bdf65656b290f101",
+      "files": {
+        "README.txt": "9f1b4046c64a809e4e7f576ee491c7d104bfe8c1aa96828abae5a9b09122b4db",
+        "ads.js": "b68f953bd687e45779401cd5bdff76680654fe050740792a83ce97d2d00e9bc6",
+        "ads.min.js": "0eb0268184c29c062e576939845da65082edcc8c24467f352f88d41df055946d",
+        "config.json": "0a1e52c0da3afa9b4d2cb8ae7c5b25fb49c3d3286aad0a5876b8750dc2244622",
+        "div-export.csv": "bbad2d0efd8c83ad31c2acbc931bb31b289f5d046eb23d550bf1dd7b02a29296",
+        "gam-reporting.json": "7b09cb7449c47850a19167572de9b7df7b05764216cac230ad5753485031effc",
+        "implementation.html": "ada85a73b2be0bceebd3858c5cf241442f875256b6fe12ef59b040139f226647",
+        "manifest.json": "d5f449b3ef9b5a1f3a1fe48d59760f45243e7fcee93e508b1a27c73349eb1ce6",
+        "min-height.css": "4401a1c94aabcf6ed02282a4c448495d8e44daae12447862862ed1ab2b7de4c9",
+        "sticky.css": "6485c0d25d17fd5aec692d1c175fe3db7e2ea72551d58dde14c2ce3d5483ba3f"
+      }
+    }
+  ],
+  "externalRequests": 0,
+  "passed": 7
+}

@@ -1,3 +1,5 @@
+import { readSizeMapReferences, mutateSizeMap } from './size-map-references';
+import { copyAuthenticatedActor } from './http';
 import type {
   CreateSizeMapInput,
   DuplicateSizeMapInput,
@@ -145,7 +147,12 @@ export async function listSizeMaps(env: DatabaseEnv, siteId: string): Promise<Re
     .bind(siteId)
     .all<SizeMapRow>();
 
-  return json({ ok: true, sizeMaps: (result.results ?? []).map(toSizeMap) });
+  try {
+    const references = await readSizeMapReferences(env.DB, siteId);
+    return json({ ok: true, sizeMaps: (result.results ?? []).map(row => ({ ...toSizeMap(row), references: references.byMap.get(row.name) ?? [] })) });
+  } catch {
+    return apiError('Size map references could not be loaded. Review the saved unit rules and site configuration.', 422);
+  }
 }
 
 export async function createSizeMap(
@@ -244,48 +251,12 @@ export async function updateSizeMap(
     }
   }
 
-  const now = new Date().toISOString();
-  const actor = getActor(request);
-
   try {
-    await env.DB.batch([
-      env.DB
-        .prepare(
-          `UPDATE size_maps
-           SET name = ?, map_json = ?, updated_at = ?
-           WHERE publisher_id = ? AND id = ?`,
-        )
-        .bind(name, JSON.stringify(map), now, siteId, sizeMapId),
-      env.DB
-        .prepare(
-          `UPDATE ad_units
-           SET size_map_key = ?, updated_at = ?
-           WHERE publisher_id = ? AND size_map_key = ?`,
-        )
-        .bind(name, now, siteId, current.name),
-      env.DB
-        .prepare(
-          `INSERT INTO audit_log (
-             id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-           ) VALUES (?, ?, 'size_map.updated', ?, 'size_map', ?, ?, ?)`,
-        )
-        .bind(
-          crypto.randomUUID(),
-          actor,
-          siteId,
-          sizeMapId,
-          JSON.stringify({ previousName: current.name, name, breakpoints: map.length }),
-          now,
-        ),
-    ]);
+    const failure = await mutateSizeMap(env.DB, siteId, current, getActor(request), { name, map }, input.confirmPageTypeChanges);
+    if (failure) return apiError(failure.error, failure.status, failure.confirmation ? { confirmation: failure.confirmation } : undefined);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const conflict = /unique|constraint/i.test(message);
-    return apiError(
-      conflict ? `Size map "${name}" already exists on this site.` : 'Size map update failed.',
-      conflict ? 409 : 500,
-      message,
-    );
+    const conflict = /unique|constraint/i.test(error instanceof Error ? error.message : '');
+    return apiError(conflict ? `Size map "${name}" already exists on this site.` : 'Size map update failed. Reload and review the saved rules before trying again.', conflict ? 409 : 500);
   }
 
   return json({ ok: true, sizeMap: await fetchSizeMap(env.DB, siteId, sizeMapId) });
@@ -308,11 +279,11 @@ export async function duplicateSizeMap(
     return apiError(error instanceof Error ? error.message : 'Invalid JSON body.');
   }
 
-  const syntheticRequest = new Request(request.url, {
+  const syntheticRequest = copyAuthenticatedActor(request, new Request(request.url, {
     method: 'POST',
     headers: request.headers,
     body: JSON.stringify({ name: input.name, map: source.map }),
-  });
+  }));
   return createSizeMap(syntheticRequest, env, siteId);
 }
 
@@ -326,38 +297,26 @@ export async function deleteSizeMap(
   const current = await fetchSizeMap(env.DB, siteId, sizeMapId);
   if (!current) return apiError('Size map not found.', 404);
 
-  const references = await env.DB
-    .prepare('SELECT code FROM ad_units WHERE publisher_id = ? AND size_map_key = ? ORDER BY code')
-    .bind(siteId, current.name)
-    .all<{ code: string }>();
-  const usedBy = (references.results ?? []).map((item) => item.code);
-  if (usedBy.length) {
-    return apiError(
-      `Size map "${current.name}" is still used by ${usedBy.length} ad unit(s).`,
-      409,
-      { usedBy },
-    );
+  // Optional JSON body: {confirmPageTypeChanges} from the previous 409 confirmation.
+  // An empty body is the same as no body, whatever its content type.
+  let confirmPageTypeChanges: unknown;
+  if ((request.headers.get('content-type') ?? '').includes('application/json')) {
+    const text = await request.text();
+    if (text.trim()) {
+      try { confirmPageTypeChanges = (JSON.parse(text) as { confirmPageTypeChanges?: unknown } | null)?.confirmPageTypeChanges; }
+      catch { return apiError('Invalid JSON body.'); }
+    }
   }
 
-  const actor = getActor(request);
-  const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB
-      .prepare(
-        `INSERT INTO audit_log (
-           id, actor, action, publisher_id, entity_type, entity_id, details_json, created_at
-         ) VALUES (?, ?, 'size_map.deleted', ?, 'size_map', ?, ?, ?)`,
-      )
-      .bind(
-        crypto.randomUUID(),
-        actor,
-        siteId,
-        sizeMapId,
-        JSON.stringify({ name: current.name }),
-        now,
-      ),
-    env.DB.prepare('DELETE FROM size_maps WHERE publisher_id = ? AND id = ?').bind(siteId, sizeMapId),
-  ]);
+  try {
+    const failure = await mutateSizeMap(env.DB, siteId, current, getActor(request), null, confirmPageTypeChanges);
+    if (failure) return apiError(failure.error, failure.status, {
+      ...(failure.references ? { references: failure.references } : {}),
+      ...(failure.confirmation ? { confirmation: failure.confirmation } : {}),
+    });
+  } catch {
+    return apiError('Size map deletion failed. Reload and review the saved rules before trying again.', 500);
+  }
 
   return json({ ok: true, deletedId: sizeMapId });
 }

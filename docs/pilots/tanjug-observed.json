@@ -1,0 +1,1049 @@
+{
+  "domain": "tanjug.rs",
+  "inspectedAt": "2026-09-14T09:18:52.228Z",
+  "sourceFiles": [
+    {
+      "name": "ads.js",
+      "url": "https://tanjug.pages.dev/ads.js",
+      "bytes": 42211,
+      "sha256": "8d65c0109e6ce4d07b4ca3fb37a65406ef0a5d5614dff7d92169af3b6969e254",
+      "contentType": "application/javascript"
+    },
+    {
+      "name": "prebid.js",
+      "url": "https://tanjug.pages.dev/prebid.js",
+      "bytes": 288642,
+      "sha256": "c201f89c622fe33ff5131741750b2d07cf089414b01b8b609efee3ad8ba745b4",
+      "contentType": "application/javascript"
+    }
+  ],
+  "bidders": [
+    {
+      "bidder": "criteo",
+      "params": {
+        "networkId": 9517
+      }
+    },
+    {
+      "bidder": "openx",
+      "params": {
+        "unit": 564138077,
+        "delDomain": "ringieraxelspr-d.openx.net"
+      }
+    },
+    {
+      "bidder": "teads",
+      "params": {
+        "pageId": 236100,
+        "placementId": 252872
+      }
+    },
+    {
+      "bidder": "pubmatic",
+      "params": {
+        "publisherId": "158892",
+        "adSlot": "7257773"
+      }
+    }
+  ],
+  "observedSiteDraft": {
+    "site": {
+      "name": "Tanjug — TEST pilot",
+      "domain": "tanjug.rs",
+      "gamPath": "/22852026051/Tanjug.rs-Display/"
+    },
+    "units": [
+      {
+        "code": "Billboard",
+        "type": "ATF",
+        "sizeMap": "Billboard",
+        "enabled": true
+      },
+      {
+        "code": "Billboard_2",
+        "type": "BTF",
+        "sizeMap": "Billboard_BTF",
+        "enabled": true
+      },
+      {
+        "code": "Billboard_3",
+        "type": "BTF",
+        "sizeMap": "Billboard_BTF",
+        "enabled": true
+      },
+      {
+        "code": "Branding_Left",
+        "type": "ATF",
+        "sizeMap": "Branding_Map",
+        "enabled": true
+      },
+      {
+        "code": "Branding_Right",
+        "type": "ATF",
+        "sizeMap": "Branding_Map",
+        "enabled": true
+      },
+      {
+        "code": "P1",
+        "type": "ATF",
+        "sizeMap": "P",
+        "enabled": true
+      },
+      {
+        "code": "P2",
+        "type": "BTF",
+        "sizeMap": "P",
+        "enabled": true
+      },
+      {
+        "code": "P3",
+        "type": "BTF",
+        "sizeMap": "P",
+        "enabled": true
+      },
+      {
+        "code": "P4",
+        "type": "BTF",
+        "sizeMap": "P",
+        "enabled": true
+      },
+      {
+        "code": "P5",
+        "type": "BTF",
+        "sizeMap": "P",
+        "enabled": true
+      },
+      {
+        "code": "P6",
+        "type": "BTF",
+        "sizeMap": "P",
+        "enabled": true
+      },
+      {
+        "code": "P7",
+        "type": "BTF",
+        "sizeMap": "P",
+        "enabled": true
+      },
+      {
+        "code": "P8",
+        "type": "BTF",
+        "sizeMap": "P",
+        "enabled": true
+      },
+      {
+        "code": "InText_1",
+        "type": "BTF",
+        "sizeMap": "InText",
+        "enabled": true
+      },
+      {
+        "code": "InText_2",
+        "type": "BTF",
+        "sizeMap": "InText",
+        "enabled": true
+      },
+      {
+        "code": "InText_3",
+        "type": "BTF",
+        "sizeMap": "InText",
+        "enabled": true
+      },
+      {
+        "code": "InText_4",
+        "type": "BTF",
+        "sizeMap": "InText",
+        "enabled": true
+      },
+      {
+        "code": "InText_5",
+        "type": "BTF",
+        "sizeMap": "InText",
+        "enabled": true
+      },
+      {
+        "code": "Sticky",
+        "type": "ATF",
+        "sizeMap": "Sticky",
+        "enabled": true
+      }
+    ],
+    "maps": [
+      {
+        "name": "Billboard",
+        "breakpoints": [
+          {
+            "minWidth": 0,
+            "sizes": [
+              [
+                360,
+                100
+              ],
+              [
+                360,
+                50
+              ],
+              [
+                320,
+                100
+              ],
+              [
+                320,
+                80
+              ],
+              [
+                320,
+                50
+              ],
+              [
+                300,
+                100
+              ],
+              [
+                300,
+                75
+              ],
+              [
+                300,
+                50
+              ]
+            ]
+          },
+          {
+            "minWidth": 469,
+            "sizes": [
+              [
+                468,
+                60
+              ]
+            ]
+          },
+          {
+            "minWidth": 768,
+            "sizes": [
+              [
+                750,
+                200
+              ],
+              [
+                750,
+                100
+              ],
+              [
+                728,
+                90
+              ]
+            ]
+          },
+          {
+            "minWidth": 1024,
+            "sizes": [
+              [
+                970,
+                250
+              ],
+              [
+                970,
+                90
+              ],
+              [
+                970,
+                66
+              ],
+              [
+                950,
+                90
+              ],
+              [
+                728,
+                90
+              ]
+            ]
+          },
+          {
+            "minWidth": 1200,
+            "sizes": [
+              [
+                1200,
+                250
+              ],
+              [
+                1060,
+                250
+              ],
+              [
+                1000,
+                100
+              ],
+              [
+                990,
+                250
+              ],
+              [
+                980,
+                250
+              ],
+              [
+                980,
+                240
+              ],
+              [
+                980,
+                120
+              ],
+              [
+                980,
+                90
+              ],
+              [
+                970,
+                250
+              ],
+              [
+                970,
+                90
+              ],
+              [
+                970,
+                66
+              ],
+              [
+                950,
+                90
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Billboard_BTF",
+        "breakpoints": [
+          {
+            "minWidth": 0,
+            "sizes": [
+              [
+                320,
+                100
+              ],
+              [
+                300,
+                50
+              ]
+            ]
+          },
+          {
+            "minWidth": 469,
+            "sizes": [
+              [
+                468,
+                60
+              ],
+              [
+                320,
+                100
+              ],
+              [
+                300,
+                100
+              ]
+            ]
+          },
+          {
+            "minWidth": 910,
+            "sizes": [
+              [
+                800,
+                250
+              ],
+              [
+                750,
+                200
+              ],
+              [
+                750,
+                100
+              ],
+              [
+                728,
+                90
+              ],
+              [
+                580,
+                280
+              ],
+              [
+                468,
+                60
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Branding_Map",
+        "breakpoints": [
+          {
+            "minWidth": 0,
+            "sizes": []
+          },
+          {
+            "minWidth": 1300,
+            "sizes": [
+              [
+                160,
+                600
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "InText",
+        "breakpoints": [
+          {
+            "minWidth": 0,
+            "sizes": [
+              "fluid",
+              [
+                1,
+                1
+              ],
+              [
+                336,
+                280
+              ],
+              [
+                320,
+                250
+              ],
+              [
+                320,
+                240
+              ],
+              [
+                300,
+                250
+              ],
+              [
+                250,
+                250
+              ],
+              [
+                200,
+                200
+              ],
+              [
+                320,
+                100
+              ],
+              [
+                320,
+                80
+              ],
+              [
+                320,
+                50
+              ],
+              [
+                300,
+                100
+              ],
+              [
+                300,
+                75
+              ],
+              [
+                300,
+                50
+              ]
+            ]
+          },
+          {
+            "minWidth": 469,
+            "sizes": [
+              "fluid",
+              [
+                1,
+                1
+              ],
+              [
+                468,
+                60
+              ],
+              [
+                336,
+                280
+              ],
+              [
+                320,
+                250
+              ],
+              [
+                320,
+                240
+              ],
+              [
+                300,
+                250
+              ],
+              [
+                250,
+                250
+              ],
+              [
+                200,
+                200
+              ],
+              [
+                320,
+                50
+              ],
+              [
+                300,
+                50
+              ]
+            ]
+          },
+          {
+            "minWidth": 768,
+            "sizes": [
+              "fluid",
+              [
+                1,
+                1
+              ],
+              [
+                580,
+                280
+              ],
+              [
+                336,
+                280
+              ],
+              [
+                320,
+                250
+              ],
+              [
+                320,
+                240
+              ],
+              [
+                300,
+                250
+              ],
+              [
+                250,
+                250
+              ],
+              [
+                200,
+                200
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "P",
+        "breakpoints": [
+          {
+            "minWidth": 0,
+            "sizes": [
+              [
+                300,
+                250
+              ],
+              [
+                250,
+                250
+              ],
+              [
+                200,
+                200
+              ],
+              [
+                300,
+                100
+              ],
+              [
+                300,
+                50
+              ],
+              [
+                320,
+                100
+              ],
+              [
+                320,
+                50
+              ]
+            ]
+          },
+          {
+            "minWidth": 768,
+            "sizes": [
+              [
+                300,
+                600
+              ],
+              [
+                300,
+                300
+              ],
+              [
+                300,
+                250
+              ],
+              [
+                250,
+                250
+              ],
+              [
+                160,
+                600
+              ],
+              [
+                120,
+                600
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Sticky",
+        "breakpoints": [
+          {
+            "minWidth": 0,
+            "sizes": [
+              [
+                300,
+                50
+              ],
+              [
+                320,
+                50
+              ],
+              [
+                300,
+                100
+              ],
+              [
+                320,
+                100
+              ]
+            ]
+          },
+          {
+            "minWidth": 469,
+            "sizes": [
+              [
+                468,
+                60
+              ],
+              [
+                300,
+                50
+              ],
+              [
+                320,
+                50
+              ],
+              [
+                300,
+                100
+              ],
+              [
+                320,
+                100
+              ]
+            ]
+          },
+          {
+            "minWidth": 1024,
+            "sizes": [
+              [
+                728,
+                90
+              ],
+              [
+                970,
+                90
+              ],
+              [
+                980,
+                90
+              ],
+              [
+                1000,
+                100
+              ],
+              [
+                750,
+                100
+              ]
+            ]
+          },
+          {
+            "minWidth": 1600,
+            "sizes": [
+              [
+                728,
+                90
+              ],
+              [
+                970,
+                90
+              ],
+              [
+                980,
+                90
+              ],
+              [
+                1000,
+                100
+              ],
+              [
+                750,
+                100
+              ],
+              [
+                750,
+                200
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "bottomStickyId": "Sticky"
+  },
+  "minimalBannerStickyDraft": {
+    "site": {
+      "name": "Tanjug — TEST pilot",
+      "domain": "tanjug.rs",
+      "gamPath": "/22852026051/Tanjug.rs-Display/"
+    },
+    "units": [
+      {
+        "code": "Billboard",
+        "type": "ATF",
+        "sizeMap": "Billboard",
+        "enabled": true
+      },
+      {
+        "code": "Sticky",
+        "type": "ATF",
+        "sizeMap": "Sticky",
+        "enabled": true
+      }
+    ],
+    "maps": [
+      {
+        "name": "Billboard",
+        "breakpoints": [
+          {
+            "minWidth": 0,
+            "sizes": [
+              [
+                360,
+                100
+              ],
+              [
+                360,
+                50
+              ],
+              [
+                320,
+                100
+              ],
+              [
+                320,
+                80
+              ],
+              [
+                320,
+                50
+              ],
+              [
+                300,
+                100
+              ],
+              [
+                300,
+                75
+              ],
+              [
+                300,
+                50
+              ]
+            ]
+          },
+          {
+            "minWidth": 469,
+            "sizes": [
+              [
+                468,
+                60
+              ]
+            ]
+          },
+          {
+            "minWidth": 768,
+            "sizes": [
+              [
+                750,
+                200
+              ],
+              [
+                750,
+                100
+              ],
+              [
+                728,
+                90
+              ]
+            ]
+          },
+          {
+            "minWidth": 1024,
+            "sizes": [
+              [
+                970,
+                250
+              ],
+              [
+                970,
+                90
+              ],
+              [
+                970,
+                66
+              ],
+              [
+                950,
+                90
+              ],
+              [
+                728,
+                90
+              ]
+            ]
+          },
+          {
+            "minWidth": 1200,
+            "sizes": [
+              [
+                1200,
+                250
+              ],
+              [
+                1060,
+                250
+              ],
+              [
+                1000,
+                100
+              ],
+              [
+                990,
+                250
+              ],
+              [
+                980,
+                250
+              ],
+              [
+                980,
+                240
+              ],
+              [
+                980,
+                120
+              ],
+              [
+                980,
+                90
+              ],
+              [
+                970,
+                250
+              ],
+              [
+                970,
+                90
+              ],
+              [
+                970,
+                66
+              ],
+              [
+                950,
+                90
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Sticky",
+        "breakpoints": [
+          {
+            "minWidth": 0,
+            "sizes": [
+              [
+                300,
+                50
+              ],
+              [
+                320,
+                50
+              ],
+              [
+                300,
+                100
+              ],
+              [
+                320,
+                100
+              ]
+            ]
+          },
+          {
+            "minWidth": 469,
+            "sizes": [
+              [
+                468,
+                60
+              ],
+              [
+                300,
+                50
+              ],
+              [
+                320,
+                50
+              ],
+              [
+                300,
+                100
+              ],
+              [
+                320,
+                100
+              ]
+            ]
+          },
+          {
+            "minWidth": 1024,
+            "sizes": [
+              [
+                728,
+                90
+              ],
+              [
+                970,
+                90
+              ],
+              [
+                980,
+                90
+              ],
+              [
+                1000,
+                100
+              ],
+              [
+                750,
+                100
+              ]
+            ]
+          },
+          {
+            "minWidth": 1600,
+            "sizes": [
+              [
+                728,
+                90
+              ],
+              [
+                970,
+                90
+              ],
+              [
+                980,
+                90
+              ],
+              [
+                1000,
+                100
+              ],
+              [
+                750,
+                100
+              ],
+              [
+                750,
+                200
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "bottomStickyId": "Sticky"
+  },
+  "fullEditorValidation": "accepted after raising TEST sizes per breakpoint to 32",
+  "minimalEditorValidation": "accepted",
+  "sourcePrebid": {
+    "version": "10.10.0",
+    "modules": [
+      "consentManagementGpp",
+      "consentManagementTcf",
+      "criteoBidAdapter",
+      "criteoIdSystem",
+      "gppControl_usnat",
+      "gppControl_usstates",
+      "gptPreAuction",
+      "id5IdSystem",
+      "lotamePanoramaIdSystem",
+      "openxBidAdapter",
+      "pubmaticBidAdapter",
+      "sharedIdSystem",
+      "storageControl",
+      "tcfControl",
+      "teadsBidAdapter",
+      "teadsIdSystem",
+      "userId"
+    ]
+  },
+  "fullObservedModuleRequirements": [
+    "consentManagementTcf",
+    "criteoBidAdapter",
+    "criteoIdSystem",
+    "currency",
+    "id5IdSystem",
+    "lotamePanoramaIdSystem",
+    "openxBidAdapter",
+    "priceFloors",
+    "pubmaticBidAdapter",
+    "schain",
+    "sharedIdSystem",
+    "tcfControl",
+    "teadsBidAdapter",
+    "teadsIdSystem",
+    "userId"
+  ],
+  "missingSourceDeclarations": [
+    "currency",
+    "priceFloors",
+    "schain"
+  ],
+  "limitations": [
+    "Static source inspection only, no publisher JS executed.",
+    "Module requirements include observed but not yet confirmed Lotame and supply-chain settings.",
+    "TakeOver GAM setup and actual CMP are unconfirmed.",
+    "No hosted settings were saved."
+  ]
+}
