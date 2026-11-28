@@ -15,9 +15,11 @@ function fixture({body=bytes,status='current',modules=config.modules}={}){
 test('candidate pins its exact upstream lock, source patch, compiled renderers and content identity',async()=>{
   assert.equal(config.version,OBSERVER435_UPSTREAM.version);assert.equal(manifest.sourceCommit,OBSERVER435_UPSTREAM.commit);
   assert.equal(manifest.upstreamLockSha256,OBSERVER435_UPSTREAM.lockSha256);assert.equal(manifest.variant,'tessera-observer-lifecycle-1');
-  assert.equal(manifest.moduleSelection.kind,'reviewed-tanjug-derived-profile');
-  assert.equal(manifest.moduleSelection.inputSha256,sha(await readFile(new URL('../../vendor/prebid/tanjug-11.34.0/prebid-config.json',import.meta.url))));
+  assert.equal(manifest.moduleSelection.kind,'explicit-module-profile');
+  assert.equal(manifest.moduleSelection.inputSha256,sha(await readFile(new URL('prebid-config.json',folder))));
   assert.equal(bytes.length,manifest.byteSize);assert.equal(sha(bytes),manifest.buildSha256);
+  assert.equal(manifest.buildSha256,'d58129a05e32ea325cbbb8bbf8531b4676b7df5ace5b32a3f8474beb8dff5889');
+  assert.equal(manifest.executableBodySha256,'31964338d1f3e6c3f6c822747bbc97569e18ff2f52592570a545c0f8a2903ce3');
   assert.deepEqual(parsePrebidHeader(bytes.toString().slice(0,500000)),{version:config.version,modules:config.modules});
   assert.equal(sha(await readFile(new URL('observer-lifecycle.patch',folder))),manifest.patchSha256);
   assert.equal(manifest.patches.find(row=>row.name==='creative/reporting.js').afterSha256,sha(OBSERVER435_REPORTING_SOURCE));

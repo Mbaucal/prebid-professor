@@ -122,3 +122,21 @@ test('invalid, test-only, and implicit-version module selections fail before bui
     {version:'11.34.0',modules:['consentManagementTcf','tcfControl','contextualAuditRtdProvider']},
     {version:'11.34.0',modules:['connectadBidAdapter']}])assert.throws(()=>observer435Modules(profile,true));
 });
+test('retained no-registration handles release inactive and API-absent documents immediately',()=>{
+  const source=OBSERVER435_REPORTING_SOURCE.replace('export function ','function ');
+  const code=`import vm from 'node:vm';
+    const sandbox={window:{document:{}}};
+    vm.runInNewContext(${JSON.stringify(source)}+'\\nglobalThis.register=registerReportingObserver;',sandbox);
+    function setup(mode){
+      const view={addEventListener(){},removeEventListener(){}};
+      const document={defaultView:mode==='inactive'?null:view};view.document=document;
+      const stop=sandbox.register(()=>{},['intervention'],document);
+      return{stop,document:new WeakRef(document),view:new WeakRef(view)};
+    }
+    const retained=[setup('inactive'),setup('missing-api')];
+    for(let i=0;i<20;i++){await new Promise(resolve=>setImmediate(resolve));globalThis.gc();}
+    for(const result of retained){if(result.document.deref()||result.view.deref())throw Error('No-registration handle roots document/window');result.stop();}
+  `;
+  const result=spawnSync(process.execPath,['--expose-gc','--input-type=module'],{input:code,encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr);
+});

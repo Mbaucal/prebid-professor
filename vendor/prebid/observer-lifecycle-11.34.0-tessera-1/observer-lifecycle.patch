@@ -25,10 +25,10 @@ index f9f3fdc..3f5642f 100644
    const resize = () => {
      // force redraw - for some reason this is needed to get the right dimensions
 diff --git a/creative/reporting.js b/creative/reporting.js
-index 394b9b0..73cb351 100644
+index 394b9b0..d5c1010 100644
 --- a/creative/reporting.js
 +++ b/creative/reporting.js
-@@ -1,12 +1,42 @@
+@@ -1,12 +1,45 @@
 +// One registration per live render document, without rooting detached documents.
 +const registrations = new WeakMap();
 +
@@ -66,7 +66,10 @@ index 394b9b0..73cb351 100644
 +    // An explicit inactive document must not fall back to the cached renderer realm.
 +    view = document === undefined ? window : document?.defaultView;
 +    owner = document === undefined ? view?.document : document;
-+    if (!view || !owner || !('ReportingObserver' in view)) return disconnect;
++    if (!view || !owner || !('ReportingObserver' in view)) {
++      disconnect();
++      return disconnect;
++    }
 +    registrations.get(owner)?.();
 +    observer = new view.ReportingObserver((reports) => {
 +      if (!disposed && reports?.length) callback(reports[0]);

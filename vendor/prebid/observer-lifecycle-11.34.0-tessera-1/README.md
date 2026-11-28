@@ -5,7 +5,7 @@ This is a new, separately identified Tessera build based on upstream Prebid
 remain 11.34.0. The filename, selected build ID and SHA256 distinguish this variant.
 
 `prebid.js` SHA256:
-`207447491758d3f46c7c201297ddca08b0e4f340e3423e366eed122a826e7e0c`.
+`d58129a05e32ea325cbbb8bbf8531b4676b7df5ace5b32a3f8474beb8dff5889`.
 
 The reviewed **20-module profile is derived from Tanjug's frozen module list**.
 Its bidder adapters are criteo, openx, pubmatic and teads. It is not a universal

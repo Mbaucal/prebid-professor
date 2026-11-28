@@ -65,7 +65,10 @@ export function registerReportingObserver(callback, types, document) {
     // An explicit inactive document must not fall back to the cached renderer realm.
     view = document === undefined ? window : document?.defaultView;
     owner = document === undefined ? view?.document : document;
-    if (!view || !owner || !('ReportingObserver' in view)) return disconnect;
+    if (!view || !owner || !('ReportingObserver' in view)) {
+      disconnect();
+      return disconnect;
+    }
     registrations.get(owner)?.();
     observer = new view.ReportingObserver((reports) => {
       if (!disposed && reports?.length) callback(reports[0]);

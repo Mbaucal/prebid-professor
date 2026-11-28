@@ -29,6 +29,10 @@
     "userId",
     "videoModule"
   ],
+  "moduleSelection": {
+    "kind": "explicit-module-profile",
+    "inputSha256": "7c8751ae8fdcc192f65f0c3376dd49691d05f6b5a3683328d9ba2a6f38300a40"
+  },
   "canonicalContextualModule": {
     "path": "worker/runtime-321/prebid-module.mjs",
     "sourceFileSha256": "dbcbebe801a3679ad49fc8981a29049ad12d30dca97c43737bec576f5a6ac9d1",
@@ -36,17 +40,21 @@
   },
   "nodeVersion": "v24.22.1",
   "npmVersion": "11.9.0",
-  "byteSize": 309141,
-  "buildSha256": "207447491758d3f46c7c201297ddca08b0e4f340e3423e366eed122a826e7e0c",
+  "byteSize": 309145,
+  "buildSha256": "d58129a05e32ea325cbbb8bbf8531b4676b7df5ace5b32a3f8474beb8dff5889",
+  "buildDate": "2026-11-28",
+  "upstreamBannerDate": "2026-11-28",
+  "executableBodySha256": "31964338d1f3e6c3f6c822747bbc97569e18ff2f52592570a545c0f8a2903ce3",
+  "bannerNormalization": "UTC date comment line only; executable bytes unchanged",
   "rendererSha256": {
-    "display": "2d3c168109d197bb2e7054cee57102a4a44e0c8c14ac1da09d6430cd194786cb",
-    "native": "654d509ef9207758fdb3c68ae7ef8a4b300a0fdae89f7541b2ed4898ba78d75c"
+    "display": "fce1a61fdb5c535d8710c9e2ec2b8f372380490b287a5a7e9dd7373aa5bba525",
+    "native": "9ad1299b95092c2d6fa24b531fc234bc32c8e30c8fd894f3a29fb7a65d781d1b"
   },
   "patches": [
     {
       "name": "creative/reporting.js",
       "beforeSha256": "a1cb0023df943fd3339f931b4ff39054bda6fb144fdd5e66d8f9a1a47b719a56",
-      "afterSha256": "4c3e969170d7e4cc3c89611fa2649819bd6685255169bffc81bae03e76d0fb44"
+      "afterSha256": "e14317377e15d393bea2f1e3d84cb25c06db4b12a9418961f2e621105e9edf3f"
     },
     {
       "name": "creative/renderers/display/renderer.js",
@@ -60,13 +68,5 @@
     }
   ],
   "scope": "Separate opt-in Prebid build. No publisher activation, runtime change, SSP acceptance or revenue claim.",
-  "patchSha256": "0a36c96d66d41bc30a9dde74be70d302cdc50c6210246bda775e0fdf93dcbc03",
-  "moduleSelection": {
-    "kind": "reviewed-tanjug-derived-profile",
-    "inputSha256": "de139b2d73fe3202c931f2457d2f7788804ad9a5171cac3840f6d225340c4702"
-  },
-  "buildDate": "2026-11-28",
-  "upstreamBannerDate": "2026-11-28",
-  "executableBodySha256": "9e65da03fd62189f60028357bc2047169c792cad3cfe269fd35d28514a766b7d",
-  "bannerNormalization": "UTC date comment line only; executable bytes unchanged"
+  "patchSha256": "9595ec18fcf11c1adf715af08769b443601e17ff958caa9bfdb4415fdfdc6a17"
 }

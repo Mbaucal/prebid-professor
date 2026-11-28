@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir,readFile,writeFile,unlink} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {OBSERVER435_UPSTREAM,observer435Sha as sha} from './observer435-patch.mjs';
+import {OBSERVER435_UPSTREAM,observer435Sha as sha,normalizeObserver435Banner} from './observer435-patch.mjs';
 const root=resolve(import.meta.dirname,'..'),args=process.argv.slice(2);
 assert(args.length===4&&args[0]==='--upstream'&&args[2]==='--out','Use --upstream <owned patched checkout> --out <empty fixture directory>.');
 const upstream=resolve(args[1]),out=resolve(args[3]);
@@ -20,9 +20,11 @@ const modules=[...candidate.modules,moduleName].sort();assert.equal(new Set(modu
 run('npx',['--no-install','gulp','build',`--modules=${modules.join(',')}`]);
 for(const file of candidate.patches)assert.equal(sha(await readFile(resolve(upstream,file.name))),file.afterSha256);
 assert.equal(sha(await readFile(resolve(upstream,'package-lock.json'))),OBSERVER435_UPSTREAM.lockSha256);
-const bytes=await readFile(resolve(upstream,'build/dist/prebid.js'));
+const normalized=normalizeObserver435Banner(await readFile(resolve(upstream,'build/dist/prebid.js')),candidate.buildDate),{bytes}=normalized;
 const manifest={...candidate,kind:'observer435-native-integration-fixture',variant:'fixture-only-with-audit-provider',isProductionCandidate:false,
   modules,byteSize:bytes.length,buildSha256:sha(bytes),productionCandidateSha256:candidate.buildSha256,
+  upstreamBannerDate:normalized.upstreamBannerDate,executableBodySha256:normalized.executableBodySha256,
+  moduleSelection:{kind:'synthetic-integration-extension',productionProfile:candidate.moduleSelection,extraModules:[moduleName]},
   auditModule:{path:'tests/contextual-native/audit-rtd-provider.js',sha256:sha(audit)},
   scope:'Synthetic native regression instrumentation only. This21-module build is not the20-module production candidate and is not for publisher upload.'};
 delete manifest.rendererSha256;delete manifest.patchSha256;
